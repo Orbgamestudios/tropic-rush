@@ -69,14 +69,23 @@ the fight and costs walking time. A solo player is always choosing between fight
 
 ### Camera and screen
 
-- Leaning toward an angled top-down camera (about 50°) that follows your hero, showing part of a
-  much larger island. **Decided** that the island is larger than the view; the camera angle is a
-  "might" from the owner, so treat it as likely but not final.
-- No minimap. **Decided**
-- Off-screen teammates and the gunboat could be shown by small arrows at the screen edge, with the
-  gunboat's targeting view serving as the big-picture view. **Proposed**
-- Landscape or portrait. **Open.** The code is currently portrait (720x1280). Twin-stick controls
-  usually suit landscape.
+**Decided:**
+
+- A MOBA-style camera: angled top-down (about 50°), following your hero, showing part of a much
+  larger island. Third person was considered and rejected. Compared with it, the MOBA camera:
+  - plays better with two thumbs
+  - shows incoming mortar fire and teammates without a minimap
+  - matches the gunboat's targeting view
+  - leaves more of the phone's power for graphics, because the view distance is bounded
+- Landscape. The code is still portrait (720x1280) and changes when the 3D build starts.
+- No minimap.
+
+**Proposed:**
+
+- Dynamic zoom: a bit closer while running, wider in big fights, a quick close-up on supers, and a
+  pinch to zoom within limits.
+- Off-screen teammates and the gunboat are shown by small arrows at the screen edge. The gunboat's
+  targeting view is the big-picture view.
 
 ## Heroes
 
@@ -229,12 +238,33 @@ Reference images in [concept/](concept/):
 
 ## Tech plan
 
+**Decided:**
+
+- **Quality bar:** high-quality 3D close to the concept art, with animations and smooth shading,
+  not flat vector or simple graphics. The owner left the engine choice to us.
+- **Engine:** Three.js replaces Phaser (2D). Reasons:
+  - It stays a web app: native Unity/Godot/Unreal iPhone builds need a Mac with Xcode, and the
+    owner is on ChromeOS Linux, while those engines' web exports are heavy on iPhone Safari.
+  - It uses WebGPU on current iPhones with a WebGL fallback.
+  - It blends skeletal animations and loads standard glTF/GLB models.
+  - It supports soft shadows and post-processing such as bloom and color grading.
+
+  Keep the Vite, PWA and Cloudflare setup.
+
 **Proposed:**
 
-- **Engine:** switch the engine from Phaser (2D) to Three.js for 3D. Keep the Vite, PWA and
-  Cloudflare setup.
+- **Art pipeline:** quality comes mostly from assets, not the engine.
+  1. Turn concept images into draft models with AI image-to-3D (Tripo or Meshy).
+  2. Clean them up in Blender, which runs on the owner's Linux.
+  3. Animate humanoid heroes with Mixamo (run, shoot, throw, die). The Tank gets a simple rig for
+     its treads, turret and hatch.
+  4. Export to GLB.
+
+  Check each tool's license before relying on it; free tiers sometimes limit commercial use.
 - **Models:** the smooth, painted style means characters and key buildings need custom models
   with simple textures. Free low-poly packs won't match.
+- **What to expect:** in game, the look can get close to the top-down concept images. Poster-level
+  cinematic lighting is beyond real time on a phone.
 - **Multiplayer:** Cloudflare Durable Objects:
   - One per raid. It runs the authoritative simulation at 15–20 ticks per second over WebSockets.
   - One per crew island. It saves the base and its timers.
@@ -246,7 +276,8 @@ Reference images in [concept/](concept/):
 
 Each step should be playable on the owner's iPhone before the next one starts.
 
-1. **Look test:** one 3D island in this art style, running smoothly on an iPhone.
+1. **Look test:** in Three.js, landscape, with the MOBA camera, one 3D island in this art style
+   and one animated hero, running smoothly on an iPhone.
 2. **Solo raid:** one hero against a small island, ending in a win or a loss.
 3. **Gunboat:** walking back, boarding, the targeting camera, the three abilities, and energy.
 4. **Co-op raid:** a game server, 2–5 players joining by invite code, and no respawns.

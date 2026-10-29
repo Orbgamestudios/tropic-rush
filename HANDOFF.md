@@ -54,8 +54,9 @@ Done on the owner's machine (2026-10-29, ChromeOS Linux / Debian 12):
   `build.command`, so the deploy command builds the game itself. Checked live: same build as
   local, caching headers as intended, boots without errors (Chromium, WebKit), works offline.
 - Step 6 in progress: the game design (co-op island raids, 7 heroes, art direction) is in
-  `docs/DESIGN.md` with concept art in `docs/concept/`. The engine switch (Phaser to Three.js)
-  and screen orientation are still open there; no game code has been written yet.
+  `docs/DESIGN.md` with concept art in `docs/concept/`. Decided: Three.js replaces Phaser, with a
+  MOBA-style angled camera in landscape and a high-quality 3D look. No game code has been written
+  yet; the next step is the look test (build order step 1 in the design doc).
 
 ## First steps
 
