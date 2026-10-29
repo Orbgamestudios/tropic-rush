@@ -2,7 +2,7 @@
 // `npm run deploy` builds and uploads; `npm run cf:dev` runs Cloudflare's runtime locally.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "my-pwa-game",
+  "name": "tropic-rush",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",

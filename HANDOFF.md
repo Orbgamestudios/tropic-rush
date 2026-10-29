@@ -46,6 +46,10 @@ Done on the owner's machine (2026-10-29, ChromeOS Linux / Debian 12):
 - Step 2: `npm run phone` and `npm run phone:preview` both work. The owner confirmed on their
   iPhone that the game loads and plays, installs to the Home Screen, and opens and plays in
   airplane mode.
+- Step 4: public repo https://github.com/Orbgamestudios/tropic-rush; its first CI run passed.
+  Commits here use the repo-local identity `Orbgamestudios <284842900+Orbgamestudios@users.noreply.github.com>`.
+- Step 5 in progress: the Worker is renamed to `tropic-rush` in `wrangler.jsonc` to match the
+  repo, and the owner is connecting the repo in the Cloudflare dashboard (deploy on push).
 
 ## First steps
 
