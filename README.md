@@ -1,10 +1,10 @@
-# My PWA Game
+# Tropic Rush
 
-A mobile web game built with **Phaser 4 + TypeScript + Vite**, installable on iPhone from Safari
-(Share → Add to Home Screen), working offline, and hosted on **Cloudflare**.
+A co-op island-raid game for iPhone, built with **Three.js + TypeScript + Vite**. It installs from
+Safari (Share → Add to Home Screen), works offline, and is hosted on **Cloudflare**.
 
-The included "Tap Rush" demo is just a placeholder that proves the whole pipeline works.
-Replace it with your game.
+This is a playable draft of a solo raid with placeholder models. The game's design is in
+[docs/DESIGN.md](docs/DESIGN.md).
 
 ## First-time setup
 
@@ -14,6 +14,22 @@ Replace it with your game.
 
 Recommended editor: [VS Code](https://code.visualstudio.com). It will offer to install the
 recommended extensions (Biome, Vitest, Playwright), which format on save and run tests inline.
+
+## How to play the draft
+
+Hold the phone sideways. Pick a hero and an island, then destroy the enemy headquarters before
+the timer runs out. There are no respawns.
+
+| On a phone                                              | On a computer         | Does                         |
+| ------------------------------------------------------- | --------------------- | ---------------------------- |
+| Drag on the left half                                   | WASD or arrow keys    | Move                         |
+| Drag on the right half                                  | Hold the mouse button | Aim and fire                 |
+| Quick tap on the right half                             | Q                     | Fire at the nearest building |
+| Super button (fills as you deal damage)                 | Space                 | Use your super               |
+| "Board gunboat" (appears near the boat)                 | E                     | Board or leave the gunboat   |
+| In the gunboat: pick an ability, tap the island to fire | 1, 2, 3 and click     | Artillery, Barrage, Heal     |
+
+Destroying buildings earns gunboat energy (⚡). Each ability costs more every time you use it.
 
 ## Commands
 
@@ -63,31 +79,34 @@ src/
   main.ts              entry point
   pwa.ts               service worker registration + update button
   debug.ts             ?debug on-screen console
+  style.css            HUD, menus and joystick styles
   game/
-    config.ts          Phaser config (720x1280 portrait design size, EXPAND scaling)
-    scenes/            TitleScene, PlayScene
-    logic/             pure game rules, no Phaser, unit tested
+    Game.ts            menus, raid loop, wiring
+    controls.ts        touch sticks, mouse and keyboard
     save.ts            localStorage save data
+    logic/             the rules (island, heroes, buildings, raid, gunboat), unit tested
+    render/            Three.js: island, placeholder models, effects, camera
+    ui/                HUD, menus, health bars
+docs/
+  DESIGN.md            the game design
+  ASSET_PROMPTS.md     Gemini prompts for every model
+  concept/             concept art and T-pose references
 public/
   icon.svg             source for every app icon (generated at build time)
   _headers             Cloudflare caching rules
-e2e/                   Playwright tests (boot, installability, offline)
+e2e/                   Playwright tests (boot, raid start, installability, offline)
 scripts/phone.mjs      the `npm run phone` script
 wrangler.jsonc         Cloudflare deployment config
 ```
 
-Keep game rules in `src/game/logic/` as plain functions and test them with Vitest. Scenes should
-mostly wire input and rendering to those functions.
-
-## Renaming the game
-
-Search for `My PWA Game`, `My Game` and `my-pwa-game` in `vite.config.ts`, `index.html`,
-`wrangler.jsonc`, `package.json` and `src/game/save.ts`. Replace `public/icon.svg` with your icon.
+Keep game rules in `src/game/logic/` as plain functions with no Three.js imports, and test them
+with Vitest. The renderer only draws the rules' state.
 
 ## iPhone things to know
 
-- iOS ignores the manifest's `orientation`, so design for portrait and let EXPAND scaling
-  handle the rest. The canvas stays inside the safe area (notch, Dynamic Island, home bar).
-- Sound can only start after the first tap. Phaser unlocks audio automatically on that tap.
+- iOS ignores the manifest's `orientation`, so the game shows a "turn your phone sideways" screen
+  when held upright. The canvas stays inside the safe area (notch, Dynamic Island, home bar).
+- Sound can only start after the first tap.
 - There's no vibration API on iOS Safari.
 - The installed Home Screen app has its own storage, separate from Safari tabs.
+- On slower phones the game lowers its resolution, then its shadow detail, to keep frames smooth.

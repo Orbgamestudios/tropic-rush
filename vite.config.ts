@@ -9,12 +9,12 @@ export default defineConfig({
   server: { allowedHosts: tunnelHosts },
   preview: { allowedHosts: tunnelHosts },
   build: {
-    // Phaser alone is ~1.3 MB; that's expected for a game and gets cached by the service worker.
+    // Three.js is several hundred KB; that's expected for a game and gets cached by the service worker.
     chunkSizeWarningLimit: 2000,
     rolldownOptions: {
       output: {
-        // Keep Phaser in its own chunk so shipping a game update doesn't re-download the engine.
-        codeSplitting: { groups: [{ name: "phaser", test: /node_modules[\\/]phaser/ }] },
+        // Keep Three.js in its own chunk so shipping a game update doesn't re-download the engine.
+        codeSplitting: { groups: [{ name: "three", test: /node_modules[\\/]three/ }] },
       },
       onLog(level, log, handler) {
         // eruda (the ?debug console) uses eval internally; nothing to fix on our side.
@@ -33,11 +33,11 @@ export default defineConfig({
       // Generates favicon, apple-touch-icon and manifest icons from pwa-assets.config.ts.
       pwaAssets: { config: true },
       manifest: {
-        name: "My PWA Game",
-        short_name: "My Game",
-        description: "A mobile web game.",
+        name: "Tropic Rush",
+        short_name: "Tropic Rush",
+        description: "Co-op island raids for crews of up to five.",
         display: "standalone",
-        orientation: "portrait",
+        orientation: "landscape",
         start_url: "/",
         scope: "/",
         background_color: "#0b1020",
@@ -45,7 +45,9 @@ export default defineConfig({
       },
       workbox: {
         // Precache everything the game needs so it runs fully offline once installed.
-        globPatterns: ["**/*.{js,css,html,svg,png,webp,jpg,ico,json,mp3,ogg,m4a,wav,woff2}"],
+        globPatterns: [
+          "**/*.{js,css,html,svg,png,webp,jpg,ico,json,glb,gltf,bin,ktx2,mp3,ogg,m4a,wav,woff2}",
+        ],
         // The ?debug console is only fetched on demand.
         globIgnores: ["**/eruda-*.js"],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,

@@ -19,6 +19,22 @@ test("boots without errors and fills the screen", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("starts a raid from the menus", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Play" }).click();
+  await page.getByRole("button", { name: /Rifleman/ }).click();
+  await page.getByRole("button", { name: "Start raid" }).click();
+
+  const timer = page.locator(".hud-timer");
+  await expect(timer).toBeVisible();
+  await expect(timer).toHaveText(/^4:\d\d$/, { timeout: 40_000 });
+  await expect(page.locator(".hud-destroyed")).toHaveText("0% destroyed");
+  expect(errors).toEqual([]);
+});
+
 test("is installable to the Home Screen", async ({ page, request }) => {
   await page.goto("/");
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);

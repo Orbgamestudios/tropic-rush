@@ -302,3 +302,37 @@ Each step should be playable on the owner's iPhone before the next one starts.
 5. **Home island:** building on tiles, resources, the refinery, HQ limits, and a shared save.
 6. **World map:** clouds, island ratings, and rewards.
 7. **Content and polish:** balance, events, and sound.
+
+### Draft status (2026-10-29)
+
+Steps 1–3 exist as a first playable draft with placeholder models, at the owner's request
+("T-pose models first, rough draft of the game before animating"). The draft has:
+
+- **Look:** Three.js in landscape with the MOBA camera.
+- **Islands:** generated islands, with the same buildings per HQ level and different layouts.
+- **Heroes:** all 7 heroes, with their attacks and supers from the Proposed table.
+- **Enemies:** defenses that shoot back (gun turret, mortar with its blind spot, harpoon,
+  flamethrower) and hidden beach mines.
+- **Gunboat:** walking back to the boat, boarding, the targeting view, the three abilities and
+  escalating energy costs.
+- **Raid rules:** no respawns, a 5-minute timer, and results.
+
+Heroes are simple primitives with a procedural walk, not rigged models yet.
+
+Choices made while building the draft. All are **Proposed**:
+
+- **Island difficulty:** the hero-select screen offers HQ levels 1–3, named Outpost, Fort and
+  Stronghold, shown with 1–3 crew dots. All 7 heroes are selectable for testing; the Barracks
+  unlocks come later.
+- **Cover:** rocks and sandbags block shots both ways. Short sandbag walls stand in front of gun
+  turrets and harpoons, facing the beach, so attackers have to flank them.
+- **Non-attacking buildings:** the watchtower doesn't attack, and neither does the headquarters.
+- **Gunboat boarding:** a hero can board from up to 6.5 m away (the boat is about 6.5 m long).
+- **Starting energy:** the crew starts with 10 gunboat energy. Defenses give 4–5 when destroyed,
+  other buildings 3.
+- **Firing:** holding the aim fires continuously, and a quick tap fires at the nearest building
+  for a moment.
+- **Medic playing solo:** the Medic heals teammates in a cone and herself a little, so a solo
+  Medic isn't helpless.
+- **Balance check:** a unit test makes sure a bot rifleman can beat a level-1 island solo. Nothing
+  else is balanced yet.

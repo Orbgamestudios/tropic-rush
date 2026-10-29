@@ -1,23 +1,11 @@
-import Phaser from "phaser";
-import { PlayScene } from "./scenes/PlayScene";
-import { TitleScene } from "./scenes/TitleScene";
+/** The rules advance in fixed steps so a raid plays the same at any frame rate. */
+export const SIM_STEP = 1 / 60;
 
-/** Design resolution (portrait). EXPAND mode grows one axis to fill any iPhone aspect ratio. */
-export const DESIGN_WIDTH = 720;
-export const DESIGN_HEIGHT = 1280;
+/** At most this many seconds of simulation per frame, so a stalled tab doesn't fast-forward. */
+export const MAX_FRAME_SECONDS = 0.1;
 
-export function createGameConfig(parent: string): Phaser.Types.Core.GameConfig {
-  return {
-    type: Phaser.AUTO,
-    parent,
-    backgroundColor: "#0b1020",
-    scale: {
-      mode: Phaser.Scale.EXPAND,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-      width: DESIGN_WIDTH,
-      height: DESIGN_HEIGHT,
-    },
-    input: { activePointers: 3 },
-    scene: [TitleScene, PlayScene],
-  };
-}
+/** Seconds between the raid ending and the results screen. */
+export const RESULTS_DELAY = 1.8;
+
+/** Defenses closer than this pull the camera back to show the fight. */
+export const COMBAT_ZOOM_DISTANCE = 18;

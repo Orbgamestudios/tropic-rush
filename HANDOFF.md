@@ -55,8 +55,11 @@ Done on the owner's machine (2026-10-29, ChromeOS Linux / Debian 12):
   local, caching headers as intended, boots without errors (Chromium, WebKit), works offline.
 - Step 6 in progress: the game design (co-op island raids, 7 heroes, art direction) is in
   `docs/DESIGN.md` with concept art in `docs/concept/`. Decided: Three.js replaces Phaser, with a
-  MOBA-style angled camera in landscape and a high-quality 3D look. No game code has been written
-  yet; the next step is the look test (build order step 1 in the design doc).
+  MOBA-style angled camera in landscape and a high-quality 3D look.
+- The Tap Rush demo is replaced by a playable solo-raid draft on Three.js with placeholder models
+  (build order steps 1–3; see "Draft status" in the design doc). The owner is making models through
+  Gemini (prompts in `docs/ASSET_PROMPTS.md`) and an image-to-3D tool. Next: swap in their GLB
+  models as they arrive, then the owner's feedback on feel and balance, then co-op (step 4).
 
 ## First steps
 

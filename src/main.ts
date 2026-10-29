@@ -1,7 +1,6 @@
 import "./style.css";
-import Phaser from "phaser";
 import { maybeLoadDebugConsole } from "./debug";
-import { createGameConfig } from "./game/config";
+import { Game } from "./game/Game";
 import { setupPwa } from "./pwa";
 
 maybeLoadDebugConsole();
@@ -9,5 +8,7 @@ maybeLoadDebugConsole();
 // iOS Safari ignores user-scalable=no for pinch gestures, so block them here.
 document.addEventListener("gesturestart", (event) => event.preventDefault());
 
-new Phaser.Game(createGameConfig("game"));
+const container = document.getElementById("game");
+if (!container) throw new Error("Missing #game container");
+new Game(container);
 setupPwa();
