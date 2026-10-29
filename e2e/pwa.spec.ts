@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { preview } from "vite";
 
 test("boots without errors and fills the screen", async ({ page }) => {
   const errors: string[] = [];
@@ -28,11 +29,14 @@ test("is installable to the Home Screen", async ({ page, request }) => {
   expect(manifest.icons).toContainEqual(expect.objectContaining({ sizes: "512x512" }));
 });
 
-test("works offline after the first visit", async ({ page, context }) => {
-  await page.goto("/");
+test("works offline after the first visit", async ({ page }) => {
+  // Shut down a server of our own instead of using context.setOffline(): in WebKit, Playwright's
+  // offline emulation (and request routing) also blocks pages the service worker serves from cache.
+  const server = await preview({ preview: { port: 0 }, logLevel: "silent" });
+  await page.goto(server.resolvedUrls?.local[0] ?? "");
   await page.evaluate(() => navigator.serviceWorker.ready);
 
-  await context.setOffline(true);
+  await server.close();
   await page.reload();
   await expect(page.locator("#game canvas")).toBeVisible();
 });
