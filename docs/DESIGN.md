@@ -91,17 +91,34 @@ the fight and costs walking time. A solo player is always choosing between fight
 
 Seven heroes. **Decided:** the roster and every look below. A crew of 5 picks from them.
 
-| Hero      | Look (**Decided**)                                                                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rifleman  | Stocky man with a square jaw, blue safari suit (short-sleeve belted jacket with chest pockets, shorts, knee socks), blue pith helmet, wooden rifle       |
-| Medic     | Girl, blonde high ponytail, no hat, round glasses, blue safari suit with long pants, boxy green med backpack with a white plus                           |
-| Tank      | A vehicle: chunky sand-colored tank with blue trim and an oversized barrel, driven by a girl in the blue safari uniform and a blue sailor hat            |
-| Heavy     | Huge black man, buzz cut, full neat beard, blue tank top, brown pants, ammo belt over the shoulder, minigun                                              |
-| Bazooka   | Lean girl, black bob under a backwards cap, aviator sunglasses, blue tank top, khaki pants tucked into boots, bazooka                                    |
-| Grenadier | Neat and put together: trimmed beard, tidy tucked-in short-sleeve shirt, orange neckerchief, straw panama hat, grenades hanging from a belt at the waist |
-| Engineer  | Big bushy moustache, goggles on his forehead, short-sleeve tropical flower-print shirt, tool belt, big wrench, folded turret on his backpack             |
+| Hero      | Look (**Decided**)                                                                                                                                                                              |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rifleman  | Stocky man with a square jaw, blue safari suit (short-sleeve belted jacket with chest pockets, shorts, knee socks), blue pith helmet, wooden rifle                                              |
+| Medic     | Girl, blonde high ponytail, no hat, round glasses, blue safari suit with long pants, boxy green med backpack with a white plus                                                                  |
+| Tank      | A vehicle: chunky sand-colored tank with blue trim and an oversized barrel, driven by a girl in a blue sailor hat, a blue short-sleeve uniform shirt, a blue skirt, white socks and black boots |
+| Heavy     | Huge black man, buzz cut, full neat beard, blue tank top, brown pants, ammo belt over the shoulder, minigun                                                                                     |
+| Bazooka   | Lean girl, black bob under a backwards cap, aviator sunglasses, blue tank top, khaki pants tucked into boots, a classic olive bazooka tube                                                      |
+| Grenadier | Neat and put together: trimmed beard, tidy tucked-in short-sleeve shirt, orange neckerchief, straw panama hat, grenades hanging from a belt at the waist                                        |
+| Engineer  | Big bushy moustache, goggles on his forehead, short-sleeve tropical flower-print shirt, tool belt, red pipe wrench, folded turret on his backpack                                               |
 
-Reference: [concept/cast-lineup.jpeg](concept/cast-lineup.jpeg).
+References:
+
+- [concept/cast-lineup.jpeg](concept/cast-lineup.jpeg): all 7 heroes together.
+- [concept/tpose/](concept/tpose/): a front T-pose of each character and the tank, ready for
+  image-to-3D.
+- One image per held item, cut from `props-sheet-v2.jpeg`. Weapons and backpacks are modeled
+  separately and attached to the hand or back:
+  - `prop-rifle`
+  - `prop-medic-backpack`
+  - `prop-minigun`
+  - `prop-bazooka`
+  - `prop-grenade`
+  - `prop-wrench`
+  - `prop-engineer-backpack`
+  - `prop-turret-deployed` (the Engineer's super)
+- The Engineer's backpack is still the simple version; the owner wants a more detailed one.
+- `props-sheet-v1.jpeg` is an earlier attempt with an RPG-style launcher and an odd wrench, kept
+  for reference only.
 
 Gameplay is a first pass that hasn't been reviewed with the owner yet. **Proposed:**
 
@@ -235,6 +252,7 @@ Reference images in [concept/](concept/):
 | `raid-topdown-simple.jpeg`    | The right texture simplicity; but the grass-to-sand edge is too abrupt                 |
 | `raid-key-art.jpeg`           | Poster mood. In game, the gunboat has one seat, not a crew                             |
 | `raid-third-person-wide.jpeg` | Rejected direction: too much distance and forest. The Tank girl holds the wrong weapon |
+| `tpose/`                      | T-poses and single props for making 3D models (see Heroes)                             |
 
 ## Tech plan
 
