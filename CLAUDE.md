@@ -3,6 +3,11 @@
 Mobile web game: Phaser 4 + TypeScript (strict) + Vite 8, shipped as an iPhone PWA via
 vite-plugin-pwa, hosted on Cloudflare Workers static assets (`wrangler.jsonc`).
 
+Live at https://tropic-rush.solitary-sky-76c1.workers.dev. The GitHub repo
+(Orbgamestudios/tropic-rush) is connected in the Cloudflare dashboard, so every push to `main`
+deploys (deploy command `npx wrangler deploy`, which builds first). Cloudflare doesn't post build
+results to GitHub; check the live site or ask the owner for the build log.
+
 ## Commands
 
 - `npm run check`: typecheck + Biome lint + Vitest. Run before every commit.

@@ -48,10 +48,12 @@ Done on the owner's machine (2026-10-29, ChromeOS Linux / Debian 12):
   airplane mode.
 - Step 4: public repo https://github.com/Orbgamestudios/tropic-rush; its first CI run passed.
   Commits here use the repo-local identity `Orbgamestudios <284842900+Orbgamestudios@users.noreply.github.com>`.
-- Step 5 in progress: the Worker is renamed to `tropic-rush` in `wrangler.jsonc` to match the
-  repo, and the repo is connected in the Cloudflare dashboard (deploy on push). The first
-  Cloudflare build ran no build command, so `wrangler deploy` failed on a missing `dist/`;
-  `wrangler.jsonc` now has `build.command`, so the deploy command builds the game itself.
+- Step 5: live at https://tropic-rush.solitary-sky-76c1.workers.dev, deployed on every push to
+  `main`. The Worker is renamed to `tropic-rush` to match the repo. The first Cloudflare build ran
+  no build command, so `wrangler deploy` failed on a missing `dist/`; `wrangler.jsonc` now has
+  `build.command`, so the deploy command builds the game itself. Checked live: same build as
+  local, caching headers as intended, boots without errors (Chromium, WebKit), works offline.
+- Left: step 6, and the owner installing the live address on their iPhone.
 
 ## First steps
 
