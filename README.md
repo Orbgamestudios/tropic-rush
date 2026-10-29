@@ -44,12 +44,13 @@ Saving a file on your computer reloads it on the phone instantly. It works on an
 ## Deploying to Cloudflare
 
 **Option A: automatic (recommended).** Push this project to GitHub, then in the Cloudflare
-dashboard go to _Workers & Pages → Create → Import a repository_ and pick it. Use build command
-`npm run build` and deploy command `npx wrangler deploy`. Every push to `main` deploys, and
-other branches can get their own preview URLs.
+dashboard go to _Workers & Pages → Create → Import a repository_ and pick it. The deploy command
+`npx wrangler deploy` is all it needs: it builds the game first (`build` in `wrangler.jsonc`), so
+the build command can stay empty. Every push to `main` deploys, and other branches can get their
+own preview URLs.
 
 **Option B: from your computer.** Run `npx wrangler login` once, then `npm run deploy`.
-It prints your game's URL (`https://my-pwa-game.<you>.workers.dev`); add a custom domain in the
+It prints your game's URL (`https://tropic-rush.<you>.workers.dev`); add a custom domain in the
 dashboard whenever you like.
 
 Then on the iPhone: open the URL in Safari → Share → **Add to Home Screen**. When you deploy a

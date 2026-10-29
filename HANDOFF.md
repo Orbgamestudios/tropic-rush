@@ -49,7 +49,9 @@ Done on the owner's machine (2026-10-29, ChromeOS Linux / Debian 12):
 - Step 4: public repo https://github.com/Orbgamestudios/tropic-rush; its first CI run passed.
   Commits here use the repo-local identity `Orbgamestudios <284842900+Orbgamestudios@users.noreply.github.com>`.
 - Step 5 in progress: the Worker is renamed to `tropic-rush` in `wrangler.jsonc` to match the
-  repo, and the owner is connecting the repo in the Cloudflare dashboard (deploy on push).
+  repo, and the repo is connected in the Cloudflare dashboard (deploy on push). The first
+  Cloudflare build ran no build command, so `wrangler deploy` failed on a missing `dist/`;
+  `wrangler.jsonc` now has `build.command`, so the deploy command builds the game itself.
 
 ## First steps
 

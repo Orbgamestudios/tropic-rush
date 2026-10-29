@@ -4,6 +4,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tropic-rush",
   "compatibility_date": "2026-10-01",
+  // Build before every `wrangler deploy` / `wrangler dev`, so the Cloudflare dashboard needs only
+  // the deploy command and can never upload a missing or stale ./dist.
+  "build": { "command": "npm run build" },
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
