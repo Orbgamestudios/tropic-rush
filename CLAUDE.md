@@ -21,6 +21,13 @@ vite-plugin-pwa, hosted on Cloudflare Workers static assets (`wrangler.jsonc`).
 - Save data goes through `src/game/save.ts`; bump the key's version suffix on breaking changes.
 - New asset file types must match `workbox.globPatterns` in `vite.config.ts` or they won't work offline.
 
+## Cloud sessions
+
+- The container starts without `node_modules`: run `npm ci` first.
+- `npm run phone` (public tunnel) isn't available here. Check changes with `npm run check`,
+  `npm run e2e` and Playwright screenshots at an iPhone viewport, then push to GitHub; the
+  owner tests on their iPhone through the deployed Cloudflare URL.
+
 ## iOS constraints
 
 - Touch only: make hit areas generous (`TOUCH_FORGIVENESS`), no hover states.
