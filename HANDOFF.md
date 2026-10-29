@@ -53,7 +53,9 @@ Done on the owner's machine (2026-10-29, ChromeOS Linux / Debian 12):
   no build command, so `wrangler deploy` failed on a missing `dist/`; `wrangler.jsonc` now has
   `build.command`, so the deploy command builds the game itself. Checked live: same build as
   local, caching headers as intended, boots without errors (Chromium, WebKit), works offline.
-- Left: step 6, and the owner installing the live address on their iPhone.
+- Step 6 in progress: the game design (co-op island raids, 7 heroes, art direction) is in
+  `docs/DESIGN.md` with concept art in `docs/concept/`. The engine switch (Phaser to Three.js)
+  and screen orientation are still open there; no game code has been written yet.
 
 ## First steps
 

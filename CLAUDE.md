@@ -8,6 +8,10 @@ Live at https://tropic-rush.solitary-sky-76c1.workers.dev. The GitHub repo
 deploys (deploy command `npx wrangler deploy`, which builds first). Cloudflare doesn't post build
 results to GitHub; check the live site or ask the owner for the build log.
 
+The game being designed is in `docs/DESIGN.md`, with concept art in `docs/concept/`. Read it before
+gameplay or art work, and respect its Decided / Proposed / Open labels: confirm Proposed items with
+the owner before building on them. The current code is still the "Tap Rush" placeholder.
+
 ## Commands
 
 - `npm run check`: typecheck + Biome lint + Vitest. Run before every commit.
