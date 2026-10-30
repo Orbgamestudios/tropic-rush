@@ -1,21 +1,20 @@
-// The crew's home island: a raised sand plateau holding the build grid, a sloping beach, a
-// sand-colored cliff curving around the back, and animated water. Sand only for now; trees,
-// rocks and real building models come later.
+// The crew's home island: a long sand island with four terraces climbing it in a zigzag (one per
+// build zone, each higher than the last), sand-colored cliffs between them, a tall cliff across
+// the back, and animated water. Sand only for now; trees, rocks and real models come later.
 
 import * as THREE from "three";
-import { GRID_COLUMNS, GRID_ORIGIN, GRID_ROWS, TILE } from "../logic/crewIsland";
+import { TILE, ZONES, zoneBounds } from "../logic/crewIsland";
 import { clamp, smoothstep } from "../logic/vec";
 
-// Island outline: a rounded rectangle (superellipse), centered a little north of the grid.
-const CENTER = { x: 0, y: -3 };
-const HALF_X = 46;
-const HALF_Y = 40;
+// Island outline: a rounded rectangle (superellipse), long north-south to hold the terraces.
+const CENTER = { x: 0, y: -35 };
+const HALF_X = 62;
+const HALF_Y = 78;
 const POWER = 4;
 
-/** Height of the flat plateau the grid sits on. */
-export const PLATEAU = 2.2;
-const BEACH_START = 0.8; // superellipse radius where the plateau starts sloping down
-const CLIFF_TOP = 13;
+/** Height of zone 1, the landing area. */
+export const PLATEAU = ZONES[0]?.height ?? 2.2;
+const BEACH_START = 0.88; // superellipse radius where the ground starts sloping to the beach
 
 export function islandRadius(x: number, y: number): number {
   const dx = Math.abs((x - CENTER.x) / HALF_X);
@@ -23,29 +22,43 @@ export function islandRadius(x: number, y: number): number {
   return (dx ** POWER + dy ** POWER) ** (1 / POWER);
 }
 
-/** Roughly how far from the shoreline a point is, in meters (positive out at sea). */
-export function seaDistance(x: number, y: number): number {
-  return (islandRadius(x, y) - 1) * Math.min(HALF_X, HALF_Y);
+/** Raised blocks of land (meters): the zigzag terraces and the back cliff. Each zone's build
+ * area sits inside its block with a few meters to spare, so the cliffs never cut into it. */
+interface Block {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  height: number;
 }
 
-/** Where the cliff starts rising: it curves forward along the sides to wrap around the grid. */
-function cliffEdge(x: number): number {
-  return -17 + (x / 34) ** 2 * 6 + 0.8 * Math.sin(x * 0.21) + 0.4 * Math.sin(x * 0.53 + 1);
+const zoneHeight = (id: number) => ZONES[id - 1]?.height ?? PLATEAU;
+const BLOCKS: readonly Block[] = [
+  { x0: -90, x1: -1, y0: -46, y1: -15, height: zoneHeight(2) }, // west terrace
+  { x0: -1, x1: 90, y0: -72, y1: -15, height: zoneHeight(3) }, // east terrace
+  { x0: -90, x1: 7, y0: -104, y1: -46, height: zoneHeight(4) }, // summit
+  { x0: 7, x1: 90, y0: -104, y1: -72, height: 24 }, // back cliff, east
+  { x0: -90, x1: 90, y0: -160, y1: -104, height: 24 }, // back cliff
+];
+
+/** 1 inside a block, falling to 0 over a few meters outside it: a steep sand cliff. */
+function blockMask(b: Block, x: number, y: number): number {
+  const wobble = 0.7 * Math.sin(x * 0.23 + y * 0.11) + 0.5 * Math.sin(y * 0.31 - x * 0.07);
+  const outside = Math.max(b.x0 - x, x - b.x1, b.y0 - y, y - b.y1) + wobble;
+  return 1 - smoothstep(0, 3, outside);
 }
 
 export function homeHeight(x: number, y: number): number {
   const r = islandRadius(x, y);
-  if (r >= 1) return -0.15 - Math.min(5, (r - 1) * HALF_Y * 0.22);
-  // Beach: an even slope from the plateau down to the waterline.
+  if (r >= 1) return -0.15 - Math.min(5, (r - 1) * HALF_X * 0.25);
+  // Beach: an even slope from the landing area's height down to the waterline.
   const beach = smoothstep(1, BEACH_START, r);
   let h = PLATEAU * (0.08 + 0.92 * beach) - 0.15 * (1 - beach);
-  // Cliff: rises steeply north of its edge line, then drops into the sea at the island's rim.
-  const behind = cliffEdge(x) - y;
-  const rise = smoothstep(0.5, 5.5, behind);
-  if (rise > 0) {
-    const top = CLIFF_TOP + 1.5 * Math.sin(x * 0.11) + 0.5 * Math.sin(x * 0.27 + 2);
-    const rim = smoothstep(1, 0.9, r); // the cliff falls away into the water at the edge
-    h = Math.max(h, PLATEAU + (top - PLATEAU) * rise * rim);
+  // Terraces and cliffs, falling away into the sea at the island's rim.
+  const rim = smoothstep(1, 0.93, r);
+  for (const b of BLOCKS) {
+    const m = blockMask(b, x, y);
+    if (m > 0) h = Math.max(h, PLATEAU + (b.height - PLATEAU) * m * rim);
   }
   return h;
 }
@@ -89,13 +102,13 @@ const CLIFF_SAND = new THREE.Color(0xe6c88f);
 const SEABED = new THREE.Color(0xbfe0c8);
 
 function buildGround(): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(140, 130, 280, 260);
+  const geometry = new THREE.PlaneGeometry(150, 196, 250, 326);
   geometry.rotateX(-Math.PI / 2);
   const pos = geometry.getAttribute("position");
   const uv = geometry.getAttribute("uv");
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
-    const y = pos.getZ(i) - 4;
+    const y = pos.getZ(i) + CENTER.y;
     pos.setXYZ(i, x, homeHeight(x, y), y);
     uv.setXY(i, x / 7, y / 7); // ripples repeat every 7 m
   }
@@ -109,7 +122,7 @@ function buildGround(): THREE.Mesh {
     if (h < -0.15) c.copy(WET_SAND).lerp(SEABED, smoothstep(-0.15, -3, h));
     else c.copy(WET_SAND).lerp(DRY_SAND, smoothstep(0, 0.55, h));
     // Steep cliff faces a shade warmer and darker, so the cliff reads against the sky.
-    c.lerp(CLIFF_SAND, clamp(steep * 2.2, 0, 1) * smoothstep(PLATEAU, PLATEAU + 2, h));
+    c.lerp(CLIFF_SAND, clamp(steep * 2.4, 0, 1) * smoothstep(PLATEAU, PLATEAU + 1.5, h));
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
     colors[i * 3 + 2] = c.b;
@@ -203,12 +216,15 @@ export interface HomeIslandView {
   update(time: number, fog: THREE.Fog, sunDirection: THREE.Vector3): void;
   /** Brightens the grid lines while a building is being placed or moved. */
   setGridEmphasis(on: boolean): void;
+  /** Shows grids on open zones and a haze over locked ones. */
+  setUnlocked(count: number): void;
   dispose(): void;
 }
 
-function buildGrid(): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
-  const width = GRID_COLUMNS * TILE;
-  const depth = GRID_ROWS * TILE;
+function buildGrid(
+  width: number,
+  depth: number,
+): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
   const geometry = new THREE.PlaneGeometry(width, depth);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.ShaderMaterial({
@@ -244,9 +260,40 @@ function buildGrid(): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
     `,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(GRID_ORIGIN.x + width / 2, PLATEAU + 0.03, GRID_ORIGIN.y + depth / 2);
   mesh.renderOrder = 1;
   return { mesh, material };
+}
+
+/** A soft haze with diagonal stripes over a locked zone. */
+function lockedHaze(width: number, depth: number): THREE.Mesh {
+  const geometry = new THREE.PlaneGeometry(width, depth);
+  geometry.rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uSize: { value: new THREE.Vector2(width, depth) } },
+    vertexShader: /* glsl */ `
+      varying vec2 vLocal;
+      uniform vec2 uSize;
+      void main() {
+        vLocal = position.xz + uSize * 0.5;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec2 vLocal;
+      uniform vec2 uSize;
+      void main() {
+        float stripe = step(0.5, fract((vLocal.x + vLocal.y) / 4.0));
+        vec2 edge = min(vLocal, uSize - vLocal);
+        float border = smoothstep(0.0, 2.0, min(edge.x, edge.y));
+        gl_FragColor = vec4(0.42, 0.33, 0.2, (0.1 + 0.06 * stripe) * border);
+      }
+    `,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 1;
+  return mesh;
 }
 
 export function buildHomeIsland(): HomeIslandView {
@@ -268,13 +315,24 @@ export function buildHomeIsland(): HomeIslandView {
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
   });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), waterMaterial);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), waterMaterial);
   water.rotation.x = -Math.PI / 2;
   water.position.y = 0;
   root.add(water);
 
-  const grid = buildGrid();
-  root.add(grid.mesh);
+  const zones = ZONES.map((zone) => {
+    const bounds = zoneBounds(zone);
+    const grid = buildGrid(bounds.w, bounds.h);
+    const haze = lockedHaze(bounds.w, bounds.h);
+    for (const [mesh, lift] of [
+      [grid.mesh, 0.03],
+      [haze, 0.05],
+    ] as const) {
+      mesh.position.set(bounds.x + bounds.w / 2, zone.height + lift, bounds.y + bounds.h / 2);
+      root.add(mesh);
+    }
+    return { zone, grid, haze };
+  });
 
   return {
     root,
@@ -287,7 +345,14 @@ export function buildHomeIsland(): HomeIslandView {
       (u.uSunDir as THREE.IUniform<THREE.Vector3>).value.copy(sunDirection);
     },
     setGridEmphasis(on) {
-      (grid.material.uniforms.uStrength as THREE.IUniform<number>).value = on ? 0.45 : 0.18;
+      for (const z of zones)
+        (z.grid.material.uniforms.uStrength as THREE.IUniform<number>).value = on ? 0.45 : 0.18;
+    },
+    setUnlocked(count) {
+      for (const z of zones) {
+        z.grid.mesh.visible = z.zone.id <= count;
+        z.haze.visible = z.zone.id > count;
+      }
     },
     dispose() {
       root.traverse((o) => {

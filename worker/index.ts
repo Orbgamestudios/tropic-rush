@@ -118,7 +118,8 @@ export class CrewIsland extends DurableObject<Env> {
 
     if (message.t === "op") {
       const op = message.op;
-      const target = op.kind === "place" ? op.building?.id : op.id;
+      const target =
+        op.kind === "place" ? op.building?.id : op.kind === "unlock" ? undefined : op.id;
       if (target && this.holderOf(target, me.memberId)) {
         send(ws, { t: "reject", opId: message.opId, reason: "A crewmate is moving that" });
         this.sendState(ws, null);

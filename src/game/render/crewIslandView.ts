@@ -10,9 +10,12 @@ import {
   footprint,
   type PlacedBuilding,
   TILE,
+  ZONES,
+  zoneBounds,
+  zoneOf,
 } from "../logic/crewIsland";
 import { clamp, lerp, type Vec2, vec } from "../logic/vec";
-import { buildHomeIsland, type HomeIslandView, PLATEAU } from "./homeIsland";
+import { buildHomeIsland, type HomeIslandView, homeHeight, PLATEAU } from "./homeIsland";
 import { COLORS } from "./palette";
 import { rbox } from "./shapes";
 import type { Stage } from "./stage";
@@ -72,8 +75,16 @@ function blockModel(type: BuildingType, rotated: boolean): THREE.Group {
   return g;
 }
 
+/** Ground height for a building: its zone's terrace, or the terrain under it if it's off-grid. */
+function groundFor(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rotated">): number {
+  const zone = zoneOf(b);
+  if (zone) return zone.height;
+  const c = buildingCenter(b);
+  return Math.max(PLATEAU, homeHeight(c.x, c.y));
+}
+
 const MIN_DISTANCE = 22;
-const MAX_DISTANCE = 95;
+const MAX_DISTANCE = 165;
 const PITCH = 0.98; // about 56 degrees
 
 /** The home island's camera: always facing north, panned and zoomed by the player. */
@@ -90,16 +101,24 @@ class HomeCamera {
   pan(dx: number, dy: number): void {
     const fov = THREE.MathUtils.degToRad(this.stage.camera.fov);
     const perPixel = (2 * this.smoothDistance * Math.tan(fov / 2)) / this.stage.height;
-    this.focus.x = clamp(this.focus.x - dx * perPixel, -40, 40);
-    this.focus.z = clamp(this.focus.z - (dy * perPixel) / Math.sin(PITCH), -25, 38);
+    this.focus.x = clamp(this.focus.x - dx * perPixel, -50, 50);
+    this.focus.z = clamp(this.focus.z - (dy * perPixel) / Math.sin(PITCH), -100, 38);
   }
 
   zoom(factor: number): void {
     this.distance = clamp(this.distance * factor, MIN_DISTANCE, MAX_DISTANCE);
   }
 
+  /** Points the camera at a world spot (meters), e.g. a zone's center. */
+  lookAt(x: number, y: number): void {
+    this.focus.x = clamp(x, -50, 50);
+    this.focus.z = clamp(y, -100, 38);
+  }
+
   update(dt: number): void {
     const k = 1 - Math.exp(-dt * 10);
+    // Rise and fall with the terrace being looked at.
+    this.focus.y = Math.max(PLATEAU, homeHeight(this.focus.x, this.focus.z));
     this.smoothFocus.lerp(this.focus, k);
     this.smoothDistance = lerp(this.smoothDistance, this.distance, k);
     const cam = this.stage.camera;
@@ -113,7 +132,7 @@ class HomeCamera {
     this.stage.setFogRange(this.smoothDistance + 60, this.smoothDistance + 260);
   }
 
-  /** The point on the plateau under a screen position, or null. */
+  /** The ground point under a screen position: the nearest terrace the ray lands on, or null. */
   groundPoint(clientX: number, clientY: number, rect: DOMRect): Vec2 | null {
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
@@ -121,8 +140,27 @@ class HomeCamera {
     );
     this.raycaster.setFromCamera(ndc, this.stage.camera);
     const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(this.plane, hit)) return null;
-    return vec(hit.x, hit.z);
+    let best: Vec2 | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const zone of ZONES) {
+      this.plane.constant = -zone.height;
+      if (!this.raycaster.ray.intersectPlane(this.plane, hit)) continue;
+      const b = zoneBounds(zone);
+      const margin = 4;
+      const inside =
+        hit.x >= b.x - margin &&
+        hit.x <= b.x + b.w + margin &&
+        hit.z >= b.y - margin &&
+        hit.z <= b.y + b.h + margin;
+      const d = hit.distanceTo(this.raycaster.ray.origin);
+      if (inside && d < bestDistance) {
+        best = vec(hit.x, hit.z);
+        bestDistance = d;
+      }
+    }
+    if (best) return best;
+    this.plane.constant = -PLATEAU;
+    return this.raycaster.ray.intersectPlane(this.plane, hit) ? vec(hit.x, hit.z) : null;
   }
 }
 
@@ -198,7 +236,7 @@ export class CrewIslandView {
         this.root.add(entry.group);
       }
       const center = buildingCenter(b);
-      entry.group.position.set(center.x, PLATEAU, center.y);
+      entry.group.position.set(center.x, groundFor(b), center.y);
       entry.group.visible = b.id !== hiddenId;
       const held = holders.some((h) => h.buildingId === b.id);
       entry.group.traverse((o) => {
@@ -244,9 +282,10 @@ export class CrewIslandView {
     }
     const center = buildingCenter(b);
     const { w, h } = footprint(b.type, b.rotated);
-    this.previewGroup.position.set(center.x, PLATEAU + 0.05, center.y);
+    const ground = groundFor(b);
+    this.previewGroup.position.set(center.x, ground + 0.05, center.y);
     this.tiles.scale.set(w * TILE, 1, h * TILE);
-    this.tiles.position.set(center.x, PLATEAU + 0.06, center.y);
+    this.tiles.position.set(center.x, ground + 0.06, center.y);
     this.tilesMaterial.color.set(preview.valid ? 0x5fe08a : 0xff5a4a);
     this.previewGroup.traverse((o) => {
       if (o instanceof THREE.Mesh)
@@ -260,7 +299,7 @@ export class CrewIslandView {
     const center = buildingCenter(b);
     const { w, h } = footprint(b.type, b.rotated);
     this.selection.scale.set(w * TILE + 0.6, 1, h * TILE + 0.6);
-    this.selection.position.set(center.x, PLATEAU + 0.05, center.y);
+    this.selection.position.set(center.x, groundFor(b) + 0.05, center.y);
   }
 
   private placeTags(layout: CrewLayout, holders: readonly Holder[]): void {
@@ -278,9 +317,11 @@ export class CrewIslandView {
       }
       tag.textContent = `${holder.name} is moving this`;
       const center = buildingCenter(b);
-      const p = new THREE.Vector3(center.x, PLATEAU + BLOCK_HEIGHT[b.type] + 1.2, center.y).project(
-        this.stage.camera,
-      );
+      const p = new THREE.Vector3(
+        center.x,
+        groundFor(b) + BLOCK_HEIGHT[b.type] + 1.2,
+        center.y,
+      ).project(this.stage.camera);
       tag.style.transform = `translate(${(((p.x + 1) / 2) * this.stage.width).toFixed(1)}px, ${(((1 - p.y) / 2) * this.stage.height).toFixed(1)}px) translate(-50%, -100%)`;
     }
     for (const [id, tag] of this.tags) {
@@ -297,6 +338,30 @@ export class CrewIslandView {
       this.stage.fog,
       this.stage.sun.position.clone().sub(this.stage.sun.target.position).normalize(),
     );
+  }
+
+  setUnlocked(count: number): void {
+    this.unlocked = count;
+    this.island.setUnlocked(count);
+  }
+
+  private unlocked = 1;
+
+  /** Where each zone's center appears on screen (CSS pixels), for the lock and unlock labels. */
+  zoneScreenPositions(): { id: number; x: number; y: number; visible: boolean }[] {
+    return ZONES.map((zone) => {
+      const b = zoneBounds(zone);
+      // Open zones get their name at the front edge, out of the buildings' way; locked ones in
+      // the middle, where the Unlock button goes.
+      const anchorY = zone.id <= this.unlocked ? b.y + b.h - 1.5 : b.y + b.h / 2;
+      const p = new THREE.Vector3(b.x + b.w / 2, zone.height + 1, anchorY).project(
+        this.stage.camera,
+      );
+      const x = ((p.x + 1) / 2) * this.stage.width;
+      const y = ((1 - p.y) / 2) * this.stage.height;
+      const visible = p.z < 1 && x > 0 && x < this.stage.width && y > 0 && y < this.stage.height;
+      return { id: zone.id, x, y, visible };
+    });
   }
 
   /** Building label for menus. */

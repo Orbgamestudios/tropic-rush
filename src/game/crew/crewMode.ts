@@ -10,12 +10,13 @@ import {
   type CrewLayout,
   cornerFor,
   fits,
-  GRID_COLUMNS,
-  GRID_ROWS,
   type LayoutOp,
   type PlacedBuilding,
   sanitizeLayout,
   tileAt,
+  ZONES,
+  zoneBounds,
+  zoneOf,
 } from "../logic/crewIsland";
 import { distance, vec } from "../logic/vec";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
@@ -89,6 +90,8 @@ export class CrewMode {
       onRotate: () => this.rotateSelected(),
       onRemove: () => this.removeSelected(),
       onDone: () => this.select(null),
+      onUnlock: (zone) => this.unlock(zone),
+      onZoneFocus: (zone) => this.focusZone(zone),
     });
     surface.addEventListener("pointerdown", (e) => this.onDown(e));
     surface.addEventListener("pointermove", (e) => this.onMove(e));
@@ -166,7 +169,9 @@ export class CrewMode {
     this.view.sync(this.layout, hidden, others);
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
+    this.view.setUnlocked(this.layout.unlocked);
     this.view.update(dt, time);
+    this.ui.placeZoneLabels(this.view.zoneScreenPositions(), this.layout.unlocked);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -261,6 +266,7 @@ export class CrewMode {
           ? [{ id: save.memberId, name: save.nickname, online: true }]
           : [];
     this.ui.setCrew(save.crewCode, members, save.crewCode ? this.status : "solo");
+    this.ui.setProgress(this.layout.unlocked);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -272,6 +278,7 @@ export class CrewMode {
     this.layout = next;
     writeLocalLayout(next);
     this.client?.sendOp(op);
+    this.ui.setProgress(next.unlocked);
     return true;
   }
 
@@ -296,10 +303,27 @@ export class CrewMode {
       return;
     }
     const holder = this.heldByOther(b.id);
-    const label = holder
-      ? `${BUILDINGS[b.type].label} (${holder.name} is moving it)`
-      : BUILDINGS[b.type].label;
-    this.ui.setSelection(`${label}: drag it to move`, b.type !== "headquarters");
+    const zone = zoneOf(b);
+    const detail = holder ? `${holder.name} is moving it` : `${zone?.name ?? ""} · drag to move`;
+    this.ui.setSelection(
+      { type: b.type, label: BUILDINGS[b.type].label, detail },
+      b.type !== "headquarters",
+    );
+  }
+
+  private unlock(zone: number): void {
+    if (this.commit({ kind: "unlock", zone })) {
+      const name = ZONES[zone - 1]?.name ?? "";
+      this.ui.flash(`${name} unlocked!`);
+      this.focusZone(zone);
+    }
+  }
+
+  private focusZone(id: number): void {
+    const zone = ZONES[id - 1];
+    if (!zone || !this.view) return;
+    const b = zoneBounds(zone);
+    this.view.camera.lookAt(b.x + b.w / 2, b.y + b.h / 2);
   }
 
   private rotateSelected(): void {
@@ -403,7 +427,7 @@ export class CrewMode {
     if (!this.view) return;
     const focus = this.view.camera.focus;
     const start = cornerFor(building.type, false, vec(focus.x, focus.z));
-    for (let radius = 0; radius < Math.max(GRID_COLUMNS, GRID_ROWS); radius++) {
+    for (let radius = 0; radius < 50; radius++) {
       for (let dy = -radius; dy <= radius; dy++) {
         for (let dx = -radius; dx <= radius; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;

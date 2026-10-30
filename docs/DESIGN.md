@@ -193,12 +193,29 @@ Starting size ratios, in hero heights:
 - It's a deeper island, with a sand-colored cliff across the back.
 - For now everything is sand, with better-looking sand and water. Trees, rocks and real building
   models come later.
+- The island is larger and expands toward the back, with the cliff pushed back. It has 4 sections
+  at different heights, arranged in a zigzag, which unlock as the crew progresses.
 
 **Built:** the crew island screen, reached from the title screen.
 
-- **Island:** the sand island, with a raised plateau, a sloping beach and a curved cliff. The
-  water is animated and lighter in the shallows, with foam at the shore.
-- **Grid:** a build grid of 26 × 16 tiles, 2 m each.
+- **Island:** a long sand island. The four zones are terraces, each about 4 m higher than the
+  last, with sand cliffs between them and a tall cliff across the back. The water is animated and
+  lighter in the shallows, with foam at the shore.
+- **Zones** (2 m tiles), climbing in a zigzag:
+  1. Landing: the front, 26 × 16 tiles, open from the start.
+  2. West terrace: back-left, 19 × 11.
+  3. East terrace: further back on the right, 20 × 11.
+  4. Summit: the far back-left, 23 × 13.
+
+  Locked zones show a striped haze and no grid. The next one shows an Unlock button, which unlocks
+  it for the whole crew in real time, in order. A building must sit wholly inside an open zone.
+- **UI:**
+  - A crew card with avatar initials and online rings.
+  - The crew code with a share button (the iPhone share sheet).
+  - An "Island n/4" progress bar; tapping a segment flies the camera to that zone.
+  - A compact build drawer with Defenses and Resources tabs and a Hide button.
+  - A floating panel for the selected building, with rotate, remove and done buttons.
+  - Each zone's name over the island.
 - **Building:** drag a building from the build bar, or tap it to drop it at the nearest free
   spot. Tap a building to select it, then drag it to move it, rotate it or remove it. The
   headquarters can't be removed. Buildings are plain blocks sized to their footprints.
@@ -213,6 +230,9 @@ Starting size ratios, in hero heights:
   Safari and the Home Screen app keep separate storage, so they count as two players.
 - Crewmates show only as name tags on the buildings they're moving, not as walking characters.
 - Building is free: no resources or HQ-level limits yet.
+- Unlocking zones is free for now: any crewmate can unlock the next zone. It should be tied to
+  progress (HQ level or resources) once those exist.
+- Building icons are emoji placeholders until there's real art.
 - Footprints in tiles:
   - headquarters 6×6
   - defenses 2×2

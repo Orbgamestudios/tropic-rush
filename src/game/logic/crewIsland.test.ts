@@ -6,12 +6,12 @@ import {
   type CrewLayout,
   cornerFor,
   fits,
-  GRID_COLUMNS,
-  GRID_ROWS,
   type PlacedBuilding,
   sanitizeLayout,
   starterLayout,
   tileAt,
+  ZONES,
+  zoneOf,
 } from "./crewIsland";
 
 const turret = (id: string, x: number, y: number, rotated = false): PlacedBuilding => ({
@@ -22,29 +22,65 @@ const turret = (id: string, x: number, y: number, rotated = false): PlacedBuildi
   rotated,
 });
 
+const empty = (unlocked = 1): CrewLayout => ({ buildings: [], unlocked });
+
 function place(layout: CrewLayout, b: PlacedBuilding): CrewLayout {
   const next = applyOp(layout, { kind: "place", building: b });
   if (!next) throw new Error(`could not place ${b.id}`);
   return next;
 }
 
-describe("crew island layout", () => {
-  it("starts with only the headquarters, inside the grid", () => {
-    const layout = starterLayout();
-    expect(layout.buildings).toHaveLength(1);
-    expect(layout.buildings[0]?.type).toBe("headquarters");
-    expect(fits({ buildings: [] }, layout.buildings[0] as PlacedBuilding)).toBe(true);
+const zone = (id: number) => {
+  const z = ZONES[id - 1];
+  if (!z) throw new Error(`no zone ${id}`);
+  return z;
+};
+
+describe("crew island zones", () => {
+  it("climbs in a zigzag: each zone higher and further back, alternating sides", () => {
+    for (let i = 1; i < ZONES.length; i++) {
+      const prev = zone(i);
+      const next = zone(i + 1);
+      expect(next.height).toBeGreaterThan(prev.height);
+      expect(next.y).toBeLessThan(prev.y);
+    }
+    const centerX = (id: number) => zone(id).x + zone(id).w / 2;
+    expect(centerX(2)).toBeLessThan(centerX(3));
+    expect(centerX(4)).toBeLessThan(centerX(3));
   });
 
-  it("places buildings on free tiles and refuses overlaps and the grid edge", () => {
-    let layout = place({ buildings: [] }, turret("a", 0, 0));
+  it("starts with zone 1 open and its headquarters inside it", () => {
+    const layout = starterLayout();
+    expect(layout.unlocked).toBe(1);
+    expect(layout.buildings).toHaveLength(1);
+    expect(zoneOf(layout.buildings[0] as PlacedBuilding)?.id).toBe(1);
+  });
+
+  it("only allows building in unlocked zones, unlocked one at a time", () => {
+    const inZone2 = turret("t", zone(2).x, zone(2).y);
+    expect(applyOp(empty(), { kind: "place", building: inZone2 })).toBeNull();
+    expect(applyOp(empty(), { kind: "unlock", zone: 3 })).toBeNull();
+    const opened = applyOp(empty(), { kind: "unlock", zone: 2 });
+    expect(opened?.unlocked).toBe(2);
+    expect(opened && applyOp(opened, { kind: "place", building: inZone2 })).not.toBeNull();
+    expect(
+      applyOp({ ...empty(), unlocked: ZONES.length }, { kind: "unlock", zone: ZONES.length + 1 }),
+    ).toBeNull();
+  });
+
+  it("refuses buildings that straddle a zone edge or sit outside every zone", () => {
+    const open = { ...empty(), unlocked: ZONES.length };
+    expect(applyOp(open, { kind: "place", building: turret("a", zone(1).w - 1, 0) })).toBeNull();
+    expect(applyOp(open, { kind: "place", building: turret("a", 0, zone(1).h - 1) })).toBeNull();
+    expect(applyOp(open, { kind: "place", building: turret("a", -1, 4) })).toBeNull();
+  });
+});
+
+describe("crew island layout", () => {
+  it("places buildings on free tiles and refuses overlaps", () => {
+    let layout = place(empty(), turret("a", 0, 0));
     expect(applyOp(layout, { kind: "place", building: turret("b", 1, 1) })).toBeNull();
     layout = place(layout, turret("b", 2, 0));
-    expect(
-      applyOp(layout, { kind: "place", building: turret("c", GRID_COLUMNS - 1, 0) }),
-    ).toBeNull();
-    expect(applyOp(layout, { kind: "place", building: turret("c", 0, GRID_ROWS - 1) })).toBeNull();
-    expect(applyOp(layout, { kind: "place", building: turret("c", -1, 4) })).toBeNull();
     expect(layout.buildings).toHaveLength(2);
   });
 
@@ -60,15 +96,11 @@ describe("crew island layout", () => {
   });
 
   it("moves and rotates a building if the new spot is free", () => {
-    let layout = place(
-      { buildings: [] },
-      { id: "s", type: "storehouse", x: 0, y: 0, rotated: false },
-    );
+    let layout = place(empty(), { id: "s", type: "storehouse", x: 0, y: 0, rotated: false });
     layout = place(layout, turret("t", 4, 0));
     // Rotating swaps the storehouse's 3x2 footprint to 2x3.
     const rotated = applyOp(layout, { kind: "move", id: "s", x: 0, y: 0, rotated: true });
     expect(rotated?.buildings.find((b) => b.id === "s")?.rotated).toBe(true);
-    // Moving onto the turret is refused; moving next to it is fine.
     expect(applyOp(layout, { kind: "move", id: "s", x: 3, y: 0, rotated: false })).toBeNull();
     expect(applyOp(layout, { kind: "move", id: "s", x: 0, y: 3, rotated: false })).not.toBeNull();
     expect(applyOp(layout, { kind: "move", id: "missing", x: 0, y: 3, rotated: false })).toBeNull();
@@ -86,22 +118,28 @@ describe("crew island layout", () => {
     const center = buildingCenter(b);
     expect(tileAt(center)).toEqual({ x: 6, y: 4 });
     expect(cornerFor("gunTurret", false, center)).toEqual({ x: 5, y: 3 });
-    const layout = place({ buildings: [] }, b);
+    const layout = place(empty(), b);
     expect(buildingAtTile(layout, { x: 6, y: 4 })?.id).toBe("t");
     expect(buildingAtTile(layout, { x: 7, y: 4 })).toBeUndefined();
+    expect(fits(layout, turret("u", 7, 3))).toBe(true);
   });
 
-  it("cleans up untrusted layout data", () => {
+  it("cleans up untrusted layout data, keeping unlocked zones", () => {
     expect(sanitizeLayout(null)).toEqual(starterLayout());
     const messy = {
+      unlocked: 2,
       buildings: [
         ...starterLayout().buildings,
         turret("ok", 0, 0),
+        turret("west", zone(2).x, zone(2).y),
         turret("overlap", 1, 1),
         { id: "bad", type: "spaceship", x: 0, y: 8 },
         { id: "half", type: "gunTurret", x: 1.5, y: 8 },
       ],
     };
-    expect(sanitizeLayout(messy).buildings.map((b) => b.id)).toEqual(["hq", "ok"]);
+    const clean = sanitizeLayout(messy);
+    expect(clean.unlocked).toBe(2);
+    expect(clean.buildings.map((b) => b.id)).toEqual(["hq", "ok", "west"]);
+    expect(sanitizeLayout({ unlocked: 99, buildings: [] }).unlocked).toBe(ZONES.length);
   });
 });
