@@ -78,7 +78,8 @@ the fight and costs walking time. A solo player is always choosing between fight
 **Decided:**
 
 - A MOBA-style camera: angled top-down (about 50°), following your hero, showing part of a much
-  larger island. Third person was considered and rejected as the main view; the owner has since
+  larger island. Every camera looks north-east from over the beach, so buildings sit on a diamond
+  rather than square on (Decided 2026-10-30). Third person was considered and rejected as the main view; the owner has since
   asked for it as an option (below). Compared with it, the MOBA camera:
   - plays better with two thumbs
   - shows incoming mortar fire and teammates without a minimap
@@ -145,6 +146,10 @@ Gameplay is a first pass that hasn't been reviewed with the owner yet. **Propose
   HQ levels up.
 - Hero levels are personal to each player.
 - As heroes level up, their outfits gain pieces, but silhouettes and headgear stay the same.
+- **Perks (Decided 2026-10-30):** levelling a hero is an event, not just bigger numbers. Each hero
+  has four perks of their own, earned at levels 3, 5, 7 and 10, shown as a locked track on the
+  stats card, and revealed one at a time on a full-screen level-up. **Proposed:** what each perk
+  does (`src/game/logic/heroProgress.ts`).
 
 ## Islands
 
@@ -221,14 +226,20 @@ Starting size ratios, in hero heights:
 - **Island:** the shared rounded diamond, with the raid islands' terrain, shader sea, shore
   dressing and mist, a dirt trail from the landing beach to the HQ, and the gunboat moored off
   the beach. The building grid only shows while placing or moving a building.
-- **Clearing (Decided 2026-10-30, replacing the 4 unlockable zones):** a new island is
-  overgrown. Only an 18 m clearing round the HQ and the trail are open; the rest of the grass is
-  covered in patches the crew clears to make room, and better tools come with HQ levels:
-  - Brush and thickets (Axe, HQ 1), palm groves (Axe), rocks (Pickaxe, HQ 2), dense jungle
-    (Chainsaw, HQ 3) and boulders (Dynamite, HQ 5). Easy ones grow near the HQ, harder ones
-    further out.
-  - Tap a patch to see its tool, cost and what it gives back (timber or stone). Clearing costs
-    gold (plus stone or scrap for the big ones). Loose brush touching a cleared patch goes with it.
+- **Clearing (Decided 2026-10-30, replacing the 4 unlockable zones):** clearing the whole island
+  is the work of months. A new island is overgrown. Only an 18 m clearing round the HQ and the
+  trail are open; the rest of the grass is covered in patches the crew clears to make room:
+  - Four tools come with HQ levels and each upgrades through 5 levels: Axe (HQ 1), Pickaxe (HQ 2),
+    Chainsaw (HQ 3) and Dynamite (HQ 5). The Tools button buys and upgrades them.
+  - Brush, thickets and palm groves take the Axe, rocks the Pickaxe, dense jungle the Chainsaw and
+    boulders Dynamite.
+  - Each patch has a tier from 1 to 5 by its distance from the HQ, and a tool must reach that
+    tier's level, so the far edges wait for the best tools.
+  - Clearing takes real time, on the server's clock. A worker starts the job, it keeps going with
+    the app closed, and a countdown pin stands over it. Better tools work faster.
+  - Workers limit how many jobs run at once: 1, and 1 more every 4 HQ levels, up to 4.
+  - Tap a patch to see its tool, tier, time, cost and what it gives back (timber or stone). Loose
+    brush touching a cleared patch goes with it.
   - The layout is the same on every island (fixed seed); the server stores which patches are
     cleared and checks every clearing with the same rules. Islands from before this change keep
     their buildings: the ground under them counts as cleared.
@@ -252,8 +263,10 @@ Starting size ratios, in hero heights:
 - Joining uses a nickname and a 6-character crew code, with no accounts or passwords. On iPhone,
   Safari and the Home Screen app keep separate storage, so they count as two players.
 - Crewmates show only as name tags on the buildings they're moving, not as walking characters.
-- Clearing costs and rewards are a first draft: brush 15 gold, thicket 40, grove 90, rocks 150,
-  jungle 400 + 100 stone, boulder 700 + 60 scrap.
+- Clearing numbers are a first draft (`src/game/logic/crewIsland.ts`): costs from brush 15 gold to
+  boulder 700 + 60 scrap; base times from 6 minutes (brush) to 18 hours (boulder); tier 1 to 5
+  takes 1, 2.5, 6, 12 and 20 times as long. A unit test holds the whole island above 90 days of
+  work with every tool maxed and 4 workers.
 - The progression numbers (costs, production, capacity, which HQ level unlocks what) are a first
   draft, not balanced.
   - Starting stock: 600 gold, 600 timber, 300 stone, 100 scrap.
@@ -345,8 +358,8 @@ like theme but polished and simple"):
   - the hero on a stone-and-steel pedestal: drag to spin it, and it drops in when chosen
   - a stats card with HP, Attack, Speed and Range bars (a ghost bar previews the next level)
   - the super ability
-  - a target-island picker
-  - LEVEL UP (gold) or UNLOCK (medals), and RAID!
+  - the hero's perk track
+  - LEVEL UP (gold) or UNLOCK (medals), and RAID, which opens the world map
   - a SQUAD column: tap + to bring up to 4 unlocked heroes as AI squadmates, tap one to drop it.
     Choosing a squadmate as your hero swaps the two.
 - **Raid HUD:**
@@ -414,8 +427,21 @@ like theme but polished and simple"):
 ## World map
 
 **Decided:** the crew's island sits in the middle, nearby islands are visible, and clouds cover
-everything beyond. **Proposed:** the Lookout Tower's level sets how far the clouds are pushed back,
-and tapping an island shows its rating, beaches and loot.
+everything beyond. **Proposed:** the Lookout Tower's level sets how far the clouds are pushed back.
+
+**Decided 2026-10-30:**
+
+- The way in is on foot: unlocked heroes stroll slowly and at random round the base. Tap one to
+  open their upgrades and RAID, which opens the map. There's no separate raid button on the island.
+- The map is a deep blue sea with small 3D islands, framed by thick cloud at the screen's edges.
+  Every island has a plate with its headquarters level and difficulty (Easy, Fair, Hard, Deadly,
+  relative to your HQ). Tapping one shows its defenses and loot, with Attack. The only other
+  control is Return to island.
+- Islands lie organically, in loose chains and open water, not in a ring. Their coasts and sizes
+  vary.
+
+**Proposed:** a new scatter every day, with harder bases generally further from home. An island
+beaten today shows as Beaten until tomorrow's map.
 
 ## Art direction
 

@@ -565,6 +565,11 @@
   white-space: nowrap;
 }
 
+/* Clear of the panel's close button. */
+.crew-tools-note {
+  padding-right: 34px;
+}
+
 .crew-tool-rows {
   display: flex;
   flex-direction: column;

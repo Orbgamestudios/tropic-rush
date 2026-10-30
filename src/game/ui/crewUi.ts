@@ -170,7 +170,7 @@ export class CrewUi {
   private readonly clearTime = el("div", "crew-clearing-time");
   private readonly toolsPanel = el("div", "crew-join crew-tools");
   private readonly toolRows = el("div", "crew-tool-rows");
-  private readonly toolWorkers = el("div", "crew-night-stats");
+  private readonly toolWorkers = el("div", "crew-night-stats crew-tools-note");
   private readonly pinLayer = el("div", "crew-pin-layer");
   private readonly pins = new Map<string, HTMLElement>();
   private readonly clearButton: HTMLButtonElement;
@@ -729,6 +729,9 @@ export class CrewUi {
   /** Places the countdowns over the patches being cleared; call every frame. */
   placeJobPins(pins: readonly JobPin[]): void {
     const live = new Set<string>();
+    // Measured in this layer's own pixels, which the UI size setting scales.
+    const width = this.pinLayer.clientWidth;
+    const height = this.pinLayer.clientHeight;
     for (const pin of pins) {
       live.add(pin.id);
       let node = this.pins.get(pin.id);
@@ -739,7 +742,7 @@ export class CrewUi {
       }
       node.style.display = pin.visible ? "block" : "none";
       node.textContent = pin.time;
-      node.style.transform = `translate(${pin.x.toFixed(1)}px, ${pin.y.toFixed(1)}px) translate(-50%, -100%)`;
+      node.style.transform = `translate(${(pin.x * width).toFixed(1)}px, ${(pin.y * height).toFixed(1)}px) translate(-50%, -100%)`;
     }
     for (const [id, node] of this.pins) {
       if (live.has(id)) continue;

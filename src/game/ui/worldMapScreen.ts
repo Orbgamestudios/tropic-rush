@@ -1,7 +1,7 @@
 // The world map's overlay: a plate on every island with its difficulty, a card when one is
 // tapped (what's there, what it pays, Attack), and one way out: Return to island.
 
-import type { MapIsland } from "../logic/worldMap";
+import { islandRadius, type MapIsland } from "../logic/worldMap";
 import { button, el } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
@@ -9,7 +9,7 @@ import { icon } from "./kit/icons";
 export interface WorldMapHandlers {
   onAttack(island: MapIsland): void;
   onReturn(): void;
-  /** Where a map spot is on screen. */
+  /** Where a map spot is on screen, as fractions of its width and height. */
   screen(x: number, y: number): { x: number; y: number };
 }
 
@@ -104,9 +104,12 @@ export class WorldMapScreen {
 
   /** Keeps the plates on their islands; call every frame. */
   update(): void {
+    // Measured in this layer's own pixels, which the UI size setting scales.
+    const width = this.root.clientWidth;
+    const height = this.root.clientHeight;
     for (const { island, pin } of this.islands) {
-      const p = this.handlers.screen(island.x, island.y - (2.6 + island.size * 2.4) * 0.9);
-      pin.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
+      const p = this.handlers.screen(island.x, island.y - islandRadius(island.size) * 0.7);
+      pin.style.transform = `translate(${(p.x * width).toFixed(1)}px, ${(p.y * height).toFixed(1)}px) translate(-50%, -100%)`;
     }
   }
 }

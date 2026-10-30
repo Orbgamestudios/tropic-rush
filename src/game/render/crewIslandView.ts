@@ -389,7 +389,7 @@ export class CrewIslandView {
     return this.heroes.heroAt(x, y);
   }
 
-  /** Where each clearing job's countdown goes on screen (CSS pixels). */
+  /** Where each clearing job's countdown goes, as fractions of the screen's width and height. */
   jobPins(jobs: readonly ClearJob[], now: number): JobPin[] {
     const pins: JobPin[] = [];
     for (const job of jobs) {
@@ -398,9 +398,9 @@ export class CrewIslandView {
       const cx = GRID_ORIGIN.x + (o.x + o.w / 2) * TILE;
       const cy = GRID_ORIGIN.y + (o.y + o.h / 2) * TILE;
       const p = new THREE.Vector3(cx, homeHeight(cx, cy) + 5, cy).project(this.stage.camera);
-      const x = ((p.x + 1) / 2) * this.stage.width;
-      const y = ((1 - p.y) / 2) * this.stage.height;
-      const visible = p.z < 1 && x > 0 && x < this.stage.width && y > 40 && y < this.stage.height;
+      const x = (p.x + 1) / 2;
+      const y = (1 - p.y) / 2;
+      const visible = p.z < 1 && x > 0 && x < 1 && y > 0.1 && y < 1;
       pins.push({ id: job.id, x, y, visible, time: formatDuration(job.doneAt - now) });
     }
     return pins;

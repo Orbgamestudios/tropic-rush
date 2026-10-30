@@ -1082,20 +1082,29 @@
 .map-return {
   position: absolute;
   left: 18px;
-  bottom: 30px;
+  bottom: 18px;
 }
 
+/* A brass plate alongside the round button, and part of its hit area. */
 .map-return-label {
   position: absolute;
-  left: 50%;
-  bottom: -18px;
-  transform: translateX(-50%);
+  left: calc(100% - 8px);
+  top: 50%;
+  z-index: -1;
+  transform: translateY(-50%);
+  padding: 7px 16px 7px 18px;
+  border: 2px solid var(--brass);
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 4px 8px rgb(0 0 0 / 0.4);
   font-family: var(--display);
-  font-size: 13px;
-  letter-spacing: 0.5px;
+  font-size: 15px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
   white-space: nowrap;
-  color: #fff;
+  color: var(--cream);
   text-shadow: var(--outline-thin);
 }
 

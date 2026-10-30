@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { createRng } from "../logic/rng";
-import type { MapIsland } from "../logic/worldMap";
+import { islandRadius, type MapIsland } from "../logic/worldMap";
 import { cloudTexture } from "./clouds";
 import { buildingModel, gunboatModel, paintCrew } from "./models";
 import { COLORS } from "./palette";
@@ -22,6 +22,10 @@ import { vertexColored } from "./shapes";
 import type { Stage } from "./stage";
 
 const PITCH = 1.12;
+/** The closest the camera gets, and the point of the sea it looks at. */
+const MIN_DISTANCE = 104;
+const LOOK_Z = 2;
+const CLOUD_PUFFS = 150;
 
 const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uTime;
@@ -36,15 +40,15 @@ const OCEAN_FRAGMENT = /* glsl */ `
   }
   void main() {
     vec2 p = vWorld.xz;
-    float r = length(p * vec2(0.8, 1.2));
-    vec3 color = mix(vec3(0.05, 0.42, 0.72), vec3(0.02, 0.2, 0.46), smoothstep(10.0, 72.0, r));
-    float a = noise(p * 0.6 + uTime * 0.12);
-    float b = noise(p * 1.4 - uTime * 0.09);
-    color += (a - 0.5) * 0.06;
-    color += vec3(0.8, 0.95, 1.0) * pow(a * b * 1.9, 6.0) * 0.5;
-    // Faint chart rings round home.
-    float ring = 1.0 - smoothstep(0.0, 0.1, abs(fract(r / 16.0) - 0.5) - 0.48);
-    color += vec3(0.5, 0.75, 1.0) * ring * 0.06;
+    // Open water darkens outwards, along a coast of noise and not a clean circle.
+    float wander = noise(p * 0.03 + 7.0) * 40.0;
+    float r = length(p * vec2(0.75, 1.3)) + wander;
+    vec3 color = mix(vec3(0.012, 0.14, 0.4), vec3(0.004, 0.05, 0.19), smoothstep(30.0, 115.0, r));
+    // Slow patches of lighter and darker water, then a few thin wave crests.
+    color *= 0.82 + noise(p * 0.06 + uTime * 0.012) * 0.4;
+    float a = noise(p * 0.22 + vec2(uTime * 0.08, 0.0));
+    float b = noise(p * 0.55 - vec2(0.0, uTime * 0.06));
+    color += vec3(0.5, 0.75, 0.95) * smoothstep(0.66, 0.74, a * 0.55 + b * 0.45) * 0.035;
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -71,26 +75,39 @@ function shallowsTexture(): THREE.CanvasTexture {
   return t;
 }
 
-/** A little island: shallows, sand, grass and trees, with room for a base in the middle. */
+/** A little island: shallows, a coast of a few overlapping blobs, grass and trees, with room for a base. */
 function miniIsland(seed: number, radius: number, shallows: THREE.Material): THREE.Group {
   const g = new THREE.Group();
   const rng = createRng(seed);
-  const plane = new THREE.PlaneGeometry(radius * 4.6, radius * 4.6);
+  // The land turns as one, so no two coasts face the same way; a base on it stays square on.
+  const ground = new THREE.Group();
+  ground.rotation.y = rng() * Math.PI * 2;
+  g.add(ground);
+  const plane = new THREE.PlaneGeometry(radius * 4.4, radius * 3.4);
   plane.rotateX(-Math.PI / 2);
   const glow = new THREE.Mesh(plane, shallows);
   glow.position.y = 0.05;
-  g.add(glow);
-  const sand = lump(radius * 1.2, 2, seed % 100, COLORS.sand);
-  sand.scale(1, 0.14, 0.85);
-  const grass = lump(radius, 2, (seed % 100) + 3, 0x6fbf4c);
-  grass.scale(0.95, 0.2, 0.74);
-  grass.translate(0, 0.25, -radius * 0.04);
-  const land = new THREE.Mesh(
-    mergeGeometries([sand.toNonIndexed(), grass.toNonIndexed()]),
-    vertexColored(),
-  );
+  ground.add(glow);
+  const parts: THREE.BufferGeometry[] = [];
+  const blob = (x: number, z: number, size: number, stretch: number) => {
+    const sand = lump(radius * size * 1.2, 2, seed % 100, COLORS.sand);
+    sand.scale(1, 0.14, stretch);
+    sand.translate(x, 0, z);
+    const grass = lump(radius * size, 2, (seed % 100) + 3, 0x6fbf4c);
+    grass.scale(0.95, 0.2, stretch * 0.87);
+    grass.translate(x, 0.25, z - radius * 0.04);
+    parts.push(sand.toNonIndexed(), grass.toNonIndexed());
+  };
+  blob(0, 0, 1, 0.7 + rng() * 0.3);
+  // One or two headlands off the main body, for a coastline with some shape.
+  const headlands = 1 + Math.floor(rng() * 2);
+  for (let i = 0; i < headlands; i++) {
+    const a = rng() * Math.PI * 2;
+    blob(Math.cos(a) * radius * 0.75, Math.sin(a) * radius * 0.5, 0.42 + rng() * 0.2, 0.8);
+  }
+  const land = new THREE.Mesh(mergeGeometries(parts), vertexColored());
   land.receiveShadow = true;
-  g.add(land);
+  ground.add(land);
   const palms: PropInstance[] = [];
   const trees: PropInstance[] = [];
   const bushes: PropInstance[] = [];
@@ -109,7 +126,7 @@ function miniIsland(seed: number, radius: number, shallows: THREE.Material): THR
   }
   const sway = swaying();
   const lifted = () => 0.4;
-  g.add(
+  ground.add(
     instanced(sharedShapes().palm, palms, true, sway, lifted),
     instanced(sharedShapes().tree, trees, true, sway, lifted),
     instanced(sharedShapes().bush, bushes, false, sway, lifted),
@@ -153,6 +170,7 @@ export class WorldMapView {
     depthWrite: false,
   });
   private readonly boat = gunboatModel();
+  private cloudAspect = 0;
   private savedBackground: THREE.Scene["background"] = null;
   private savedFog: THREE.Scene["fog"] = null;
 
@@ -184,24 +202,14 @@ export class WorldMapView {
     this.boat.root.scale.setScalar(0.5);
     this.root.add(this.boat.root);
 
-    // A ring of cloud round the map, as one mesh.
-    const rng = createRng(21);
-    const texture = cloudTexture();
-    const quads: THREE.BufferGeometry[] = [];
-    for (let i = 0; i < 110; i++) {
-      const a = rng() * Math.PI * 2;
-      const r = 1 + rng() * 0.35;
-      const size = 26 + rng() * 34;
-      const quad = new THREE.PlaneGeometry(size, size * 0.66);
-      quad.rotateX(-PITCH);
-      quad.translate(Math.cos(a) * r * 92, 7 + rng() * 5, Math.sin(a) * r * 52);
-      quads.push(quad);
-    }
-    const merged = mergeGeometries(quads, false) ?? new THREE.BufferGeometry();
-    for (const q of quads) q.dispose();
     this.clouds = new THREE.Mesh(
-      merged,
-      new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }),
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({
+        map: cloudTexture(),
+        transparent: true,
+        depthWrite: false,
+        fog: false,
+      }),
     );
     this.clouds.renderOrder = 5;
     this.root.add(this.clouds);
@@ -214,7 +222,7 @@ export class WorldMapView {
     this.islands.clear();
     this.smoke.length = 0;
     for (const island of islands) {
-      const radius = 2.6 + island.size * 2.4;
+      const radius = islandRadius(island.size);
       const g = miniIsland(island.seed, radius, this.shallows);
       g.position.set(island.x, 0, island.y);
       // A taste of the base: a headquarters, and towers the harder it gets.
@@ -269,15 +277,51 @@ export class WorldMapView {
     }
     const cam = this.stage.camera;
     // Pull back far enough that the whole map fits, however wide the screen.
-    const distance = Math.max(84, 118 / (this.stage.width / this.stage.height));
-    cam.position.set(0, Math.sin(PITCH) * distance, Math.cos(PITCH) * distance);
-    cam.lookAt(0, 0, 0);
+    const aspect = this.stage.width / this.stage.height;
+    const distance = Math.max(MIN_DISTANCE, 240 / aspect);
+    cam.position.set(0, Math.sin(PITCH) * distance, LOOK_Z + Math.cos(PITCH) * distance);
+    cam.lookAt(0, 0, LOOK_Z);
+    cam.updateMatrixWorld();
+    if (aspect !== this.cloudAspect) this.frameClouds(aspect);
     this.stage.focusShadows(new THREE.Vector3(0, 0, 0), 70);
   }
 
-  /** Where a map spot appears on screen (CSS pixels). */
+  /**
+   * Banks cloud up round the edges of the screen, thickest in the corners, whatever its shape:
+   * each puff is placed on screen and then walked back down the camera's ray to cloud height.
+   */
+  private frameClouds(aspect: number): void {
+    this.cloudAspect = aspect;
+    const cam = this.stage.camera;
+    const rng = createRng(21);
+    const quads: THREE.BufferGeometry[] = [];
+    const ray = new THREE.Vector3();
+    for (let i = 0; i < CLOUD_PUFFS; i++) {
+      // Along one edge, bunched towards its ends, and mostly past the edge with a few reaching in.
+      const along = Math.sign(rng() - 0.5) * rng() ** 0.6;
+      const sideways = rng() < 0.35;
+      const into = (sideways ? 1.1 : 1.14) - rng() ** 2 * 0.24;
+      const flip = rng() < 0.5 ? 1 : -1;
+      const nx = sideways ? flip * into : along * 1.1;
+      const ny = sideways ? along * 1.1 : flip * into;
+      ray.set(nx, ny, 0.5).unproject(cam).sub(cam.position).normalize();
+      const height = 6 + rng() * 7;
+      const reach = (height - cam.position.y) / ray.y;
+      const size = (sideways ? 26 : 18) + rng() * 20;
+      const quad = new THREE.PlaneGeometry(size, size * 0.66);
+      quad.rotateX(-PITCH);
+      quad.translate(cam.position.x + ray.x * reach, height, cam.position.z + ray.z * reach);
+      quads.push(quad);
+    }
+    const merged = mergeGeometries(quads, false) ?? new THREE.BufferGeometry();
+    for (const q of quads) q.dispose();
+    this.clouds.geometry.dispose();
+    this.clouds.geometry = merged;
+  }
+
+  /** Where a map spot appears, as a fraction of the screen's width and height. */
   screen(x: number, y: number): { x: number; y: number } {
     const p = new THREE.Vector3(x, 2, y).project(this.stage.camera);
-    return { x: ((p.x + 1) / 2) * this.stage.width, y: ((1 - p.y) / 2) * this.stage.height };
+    return { x: (p.x + 1) / 2, y: (1 - p.y) / 2 };
   }
 }
