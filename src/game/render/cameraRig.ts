@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 import { terrainHeight } from "../logic/island";
-import { clamp, lerp, type Vec2, vec } from "../logic/vec";
+import { angleDiff, clamp, lerp, type Vec2, vec } from "../logic/vec";
 import type { Stage } from "./stage";
 
 export type RigMode = "follow" | "boat" | "orbit";
@@ -12,6 +12,13 @@ export type RigMode = "follow" | "boat" | "orbit";
 /** Follow camera pitch at tilt 0, and how much each unit of tilt adds. */
 const FOLLOW_PITCH = 0.6;
 const FOLLOW_PITCH_PER_TILT = 0.54;
+/** The behind-the-hero camera: lower and closer, swinging round to follow the hero's heading. */
+const BEHIND_PITCH = 0.42;
+const BEHIND_DISTANCE = 17;
+const BEHIND_HEIGHT = 1.5;
+const BEHIND_TURN_RATE = 2.4;
+/** The little push-in while firing. */
+const BEHIND_FIRE_ZOOM = 0.92;
 const FOLLOW_NEAR = 28;
 const FOLLOW_FAR = 34;
 /** The zoom setting scales the follow distance across this range. */
@@ -29,6 +36,8 @@ export class CameraRig {
   /** Player settings: tilt (lower looks out further, higher looks down), zoom (0 close, 1 far). */
   tilt = 0;
   zoom = 0.37;
+  /** Follow from close behind the hero instead of from above. */
+  behind = false;
   readonly boatFocus = new THREE.Vector3(0, 0, -10);
 
   private readonly target = new THREE.Vector3(0, 0, -8);
@@ -40,23 +49,45 @@ export class CameraRig {
 
   constructor(private readonly stage: Stage) {}
 
+  /** How far the view is turned from north, in radians; sticks are turned to match. */
+  get turn(): number {
+    return this.yaw;
+  }
+
   /** Jumps straight to the desired view (no easing), e.g. when a raid starts. */
   snap(focus: Vec2 | null): void {
+    this.yaw = 0;
     this.update(10, focus);
   }
 
-  update(dt: number, focus: Vec2 | null, lead: Vec2 = vec(0, 0)): void {
+  /** `heading` is the direction to swing behind (null holds the view), `firing` pushes in. */
+  update(
+    dt: number,
+    focus: Vec2 | null,
+    lead: Vec2 = vec(0, 0),
+    heading: number | null = null,
+    firing = false,
+  ): void {
     const desired = new THREE.Vector3();
     let distance: number;
     let pitch: number;
     let yaw = 0;
+    let turnRate = 5;
     switch (this.mode) {
       case "follow": {
         const f = focus ?? vec(0, 0);
+        const zoom = lerp(FOLLOW_ZOOM[0], FOLLOW_ZOOM[1], this.zoom);
+        if (this.behind) {
+          desired.set(f.x, terrainHeight(f.x, f.y) + BEHIND_HEIGHT, f.y);
+          distance = BEHIND_DISTANCE * zoom * (firing ? BEHIND_FIRE_ZOOM : 1);
+          pitch = BEHIND_PITCH + FOLLOW_PITCH_PER_TILT * this.tilt;
+          // Sit opposite the way the hero faces.
+          yaw = heading === null ? this.yaw : Math.atan2(-Math.cos(heading), -Math.sin(heading));
+          turnRate = BEHIND_TURN_RATE;
+          break;
+        }
         desired.set(f.x + lead.x, terrainHeight(f.x, f.y) + 0.8, f.y + lead.y);
-        distance =
-          lerp(FOLLOW_NEAR, FOLLOW_FAR, this.zoomOut) *
-          lerp(FOLLOW_ZOOM[0], FOLLOW_ZOOM[1], this.zoom);
+        distance = lerp(FOLLOW_NEAR, FOLLOW_FAR, this.zoomOut) * zoom;
         pitch = FOLLOW_PITCH + FOLLOW_PITCH_PER_TILT * this.tilt;
         break;
       }
@@ -76,7 +107,10 @@ export class CameraRig {
     this.target.lerp(desired, k);
     this.distance = lerp(this.distance, distance, k);
     this.pitch = lerp(this.pitch, pitch, k);
-    this.yaw = this.mode === "orbit" ? yaw : lerp(this.yaw, yaw, k);
+    this.yaw =
+      this.mode === "orbit"
+        ? yaw
+        : this.yaw + angleDiff(yaw, this.yaw) * (1 - Math.exp(-dt * turnRate));
 
     const cam = this.stage.camera;
     const flat = Math.cos(this.pitch) * this.distance;

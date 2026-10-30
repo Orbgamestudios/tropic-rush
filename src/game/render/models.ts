@@ -59,7 +59,7 @@ export function buildingModel(type: BuildingType): BuildingModel {
       break;
     }
     case "gunTurret": {
-      root.add(sandbagRing(1.95, 2, C.sandbag));
+      root.add(sandbagRing(1.95, 3, C.sandbag));
       root.add(at(cyl(1.05, 1.3, 2.6, C.enemyDark), 0, 1.3, 0));
       head = at(new THREE.Group(), 0, 3.15, 0);
       head.add(rbox(1.8, 1.25, 1.6, C.enemyRust));
@@ -70,7 +70,7 @@ export function buildingModel(type: BuildingType): BuildingModel {
       break;
     }
     case "mortar": {
-      root.add(sandbagRing(2.05, 2, C.sandbag));
+      root.add(sandbagRing(2.05, 3, C.sandbag));
       root.add(at(cyl(1.6, 1.6, 0.12, C.woodDark, 20), 0, 0.06, 0));
       head = at(new THREE.Group(), 0, 0.5, 0);
       head.add(cyl(0.55, 0.7, 0.4, C.enemyDark));

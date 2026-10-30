@@ -78,7 +78,8 @@ the fight and costs walking time. A solo player is always choosing between fight
 **Decided:**
 
 - A MOBA-style camera: angled top-down (about 50°), following your hero, showing part of a much
-  larger island. Third person was considered and rejected. Compared with it, the MOBA camera:
+  larger island. Third person was considered and rejected as the main view; the owner has since
+  asked for it as an option (below). Compared with it, the MOBA camera:
   - plays better with two thumbs
   - shows incoming mortar fire and teammates without a minimap
   - matches the gunboat's targeting view
@@ -331,6 +332,11 @@ like theme but polished and simple"):
 - **Settings** (pause menu, on the island and in raids): raid camera tilt and zoom, UI size and
   sound, saved on the phone. Defaults are tilt 0.00 and UI 0.70 (**Decided**), and both go above
   and below those.
+- **Behind-the-hero camera** (Settings → Camera, **Decided** as an option): lower and closer,
+  swinging round to follow the hero's heading, with a small push-in while firing. Sticks turn
+  with the view, so pushing up always goes forward.
+- **Finishing effects:** soft bloom on bright things, a gentle vignette, softer shadows. They
+  switch off on devices that can't keep up.
 - **Controls editor** (Settings → Controls, **Decided**): drag the move stick, fire stick and
   Super button anywhere and resize each one. x and y are shares of the screen (0 to 1). Settings
   shows every value, so the owner can send them to become the defaults.
@@ -536,5 +542,8 @@ Choices made while building the draft. All are **Proposed**:
   for a moment.
 - **Medic playing solo:** the Medic heals teammates in a cone and herself a little, so a solo
   Medic isn't helpless.
-- **Balance check:** a unit test makes sure a bot rifleman can beat a level-1 island solo. Nothing
-  else is balanced yet.
+- **Defense strength (raised 2026-10-30, owner's request, for more strategy):** gun turret 50
+  damage every 0.42 s, mortar 220 every 3.6 s, harpoon 230 every 2.6 s, flamethrower 28 every 0.13
+  s. That's about 65% more damage per second than the first draft.
+- **Balance check:** a unit test makes sure a bot rifleman can usually beat a level-1 island solo
+  (in tuning it won 4 of 8, and with a squad 8 of 8). Nothing else is balanced yet.

@@ -99,15 +99,13 @@ function plantsFor(o: Obstacle, out: Record<Kind, PropInstance[]>): void {
       put("fern", 0.9 + rng() * 0.3, 1, 0.1);
       break;
     case "thicket":
-      many("bush", 3, 0.9, 0.6);
-      put("ear", 1 + rng() * 0.4);
+      many("bush", 2, 1, 0.6);
       many("fern", 3, 0.9, 0.5);
       break;
     case "grove":
-      many("palm", 3, 0.85, 0.45, 0.2);
-      if (rng() < 0.5) put("tree", 0.8 + rng() * 0.3, 1, 0.3);
-      many("bush", 2, 1, 0.5);
-      many("ear", 2, 0.9, 0.5);
+      many("palm", 2, 0.95, 0.45, 0.2);
+      put("bush", 1.1 + rng() * 0.4);
+      put("ear", 1 + rng() * 0.5);
       many("fern", 4, 0.9, 0.5);
       break;
     case "rocks":
@@ -117,11 +115,9 @@ function plantsFor(o: Obstacle, out: Record<Kind, PropInstance[]>): void {
       many("fern", 2, 0.8, 0.4);
       break;
     case "jungle":
-      many("tree", 4, 0.9, 0.65, 0.16);
-      put("palm", 1 + rng() * 0.4, 1, 0.2);
-      many("ear", 4, 1, 0.6);
+      many("tree", 3, 1.05, 0.6, 0.16);
+      many("ear", 2, 1.1, 0.6);
       many("fern", 5, 1, 0.5);
-      many("bush", 2, 1, 0.5);
       break;
     case "boulder":
       out.rock.push({
@@ -227,12 +223,13 @@ export class OvergrowthView {
     const still = vertexColored();
     const add = (kind: Kind, shadow: boolean, material: THREE.Material) =>
       this.plants.add(chunked(g[kind], out[kind], shadow, material, homeHeight));
+    // Only the tall plants cast shadows: the rest would double their cost for little you can see.
     add("palm", true, sway);
     add("tree", true, sway);
     add("ear", false, sway);
     add("fern", false, sway);
-    add("bush", true, sway);
-    add("rock", true, still);
+    add("bush", false, sway);
+    add("rock", false, still);
     add("pebbles", false, still);
     add("tuft", false, sway);
     add("red", false, sway);

@@ -28,6 +28,7 @@ export class PauseMenu {
   private readonly retreat: HTMLButtonElement;
   private readonly title: HTMLElement;
   private readonly sound: HTMLButtonElement;
+  private readonly cameraMode: HTMLButtonElement;
   /** Every value in one place, easy to read off and pass on. */
   private readonly summary = el("div", "pause-summary");
   private inRaid = true;
@@ -83,17 +84,24 @@ export class PauseMenu {
       handlers.onSettings(next);
       this.refresh();
     });
+    this.cameraMode = button({ label: "Camera: top", icon: "map", variant: "steel", size: "sm" });
+    this.cameraMode.addEventListener("click", () => {
+      const s = handlers.settings();
+      handlers.onSettings({ ...s, camera: s.camera === "top" ? "behind" : "top" });
+      this.refresh();
+    });
+    const toggles = el("div", "pause-row");
+    toggles.append(this.cameraMode, this.sound);
     const row = el("div", "pause-row");
     row.append(
-      this.sound,
       button({
         label: "Reset",
         icon: "rotate",
         variant: "steel",
         size: "sm",
         onClick: () => {
-          const { muted, controls } = handlers.settings();
-          handlers.onSettings({ ...DEFAULT_SETTINGS, muted, controls });
+          const { muted, controls, camera } = handlers.settings();
+          handlers.onSettings({ ...DEFAULT_SETTINGS, muted, controls, camera });
           this.refresh();
         },
       }),
@@ -117,6 +125,7 @@ export class PauseMenu {
       this.sliders.zoom.input.closest(".pause-slider") ?? el("div"),
       this.sliders.uiScale.input.closest(".pause-slider") ?? el("div"),
       this.summary,
+      toggles,
       row,
     );
 
@@ -157,6 +166,7 @@ export class PauseMenu {
       slider.input.dispatchEvent(new Event("refresh"));
     }
     setLabel(this.sound, s.muted ? "Sound off" : "Sound on");
+    setLabel(this.cameraMode, s.camera === "top" ? "Camera: top" : "Camera: behind");
     this.paintSummary();
   }
 

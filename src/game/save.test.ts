@@ -56,6 +56,7 @@ describe("save", () => {
         tilt: -0.2,
         zoom: 0.9,
         uiScale: 1.1,
+        camera: "behind",
         muted: true,
         controls: {
           move: { x: 0.2, y: 0.8, size: 1.3 },

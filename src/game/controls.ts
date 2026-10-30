@@ -147,9 +147,16 @@ export class Controls {
     if (this.mode !== "hero") return null;
     const radius = this.stickRadius(this.layout.aim.size);
     if (this.right && Math.hypot(this.right.dx, this.right.dy) > AIM_DEADZONE)
-      return clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1);
+      return this.toWorld(clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1));
     if (this.mouse.down && this.lastHero) return this.mouseAim(this.lastHero);
     return null;
+  }
+
+  /** Turns a stick direction into a world direction, for when the camera isn't facing north. */
+  private toWorld(v: Vec2): Vec2 {
+    const c = Math.cos(this.rig.turn);
+    const s = Math.sin(this.rig.turn);
+    return vec(c * v.x + s * v.y, c * v.y - s * v.x);
   }
 
   private mouseAim(heroPos: Vec2): Vec2 | null {
@@ -174,6 +181,7 @@ export class Controls {
     const radius = this.stickRadius(this.layout.move.size);
     if (this.left) move = clampLength(vec(this.left.dx / radius, this.left.dy / radius), 1);
     else move = this.keyboardMove();
+    move = this.toWorld(move);
 
     const input: HeroInput = {
       move,
@@ -336,7 +344,9 @@ export class Controls {
       const dragged = Math.hypot(this.right.dx, this.right.dy);
       const radius = this.stickRadius(this.layout.aim.size);
       if (!cancelled && dragged > AIM_DEADZONE)
-        this.pendingLock = clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1);
+        this.pendingLock = this.toWorld(
+          clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1),
+        );
       else if (!cancelled && quick && dragged < TAP_DISTANCE) this.pendingAutoAim = true;
       this.goHome(this.right);
       this.right = null;

@@ -144,7 +144,9 @@ export class Game {
 
     this.applySettings();
     this.enterCrew();
-    if (new URLSearchParams(location.search).has("testhooks")) this.installTestHooks();
+    const params = new URLSearchParams(location.search);
+    if (params.has("testhooks")) this.installTestHooks();
+    this.stage.holdQuality = params.has("fullquality");
     requestAnimationFrame(this.frame);
   }
 
@@ -176,6 +178,7 @@ export class Game {
     const s = this.save.settings;
     this.rig.tilt = s.tilt;
     this.rig.zoom = s.zoom;
+    this.rig.behind = s.camera === "behind";
     this.container.style.setProperty("--ui-scale", String(s.uiScale));
     this.controls.uiScale = s.uiScale;
     this.controls.setLayout(s.controls);
@@ -314,10 +317,12 @@ export class Game {
   }
 
   private readonly frame = (now: number): void => {
-    const dt = Math.min(MAX_FRAME_SECONDS, (now - this.last) / 1000);
+    const frameTime = (now - this.last) / 1000;
+    const dt = Math.min(MAX_FRAME_SECONDS, frameTime);
     this.last = now;
     this.time += dt;
-    this.stage.adaptQuality(dt);
+    // The real frame time, so a device that's struggling badly drops quality straight away.
+    this.stage.adaptQuality(frameTime);
     if (this.phase === "crew") this.crew.frame(dt, this.time);
     else if (this.phase === "heroes") this.showcase.update(dt, this.time);
     else this.raidFrame(dt, now);
@@ -360,7 +365,8 @@ export class Game {
     }
     // Once the player is down, watch whoever is still fighting.
     const watched = hero.alive ? hero : (state.heroes.find((h) => h.alive) ?? hero);
-    this.rig.update(dt, watched.pos, vec(0, -3));
+    const heading = watched.moving || watched.firing ? watched.facing : null;
+    this.rig.update(dt, watched.pos, vec(0, -3), heading, watched.firing);
     view.aim = this.phase === "raid" && !this.paused ? this.controls.aimPreview() : null;
     view.update(
       state,
@@ -383,9 +389,10 @@ export class Game {
       boat.x < this.stage.width &&
       boat.y > 0 &&
       boat.y < this.stage.height;
-    // The follow camera faces north, so map directions match screen directions (south is down).
+    // Map directions plus the camera's turn give screen directions (south is down at no turn).
     // Projecting the boat itself would flip it once it's behind the camera.
-    const angle = Math.atan2(state.boat.pos.y - hero.pos.y, state.boat.pos.x - hero.pos.x);
+    const angle =
+      Math.atan2(state.boat.pos.y - hero.pos.y, state.boat.pos.x - hero.pos.x) + this.rig.turn;
     this.hud.update(
       state,
       hero,

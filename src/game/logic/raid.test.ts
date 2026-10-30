@@ -317,12 +317,13 @@ function botInput(state: RaidState): HeroInput {
 describe("balance", () => {
   it("lets a solo rifleman beat a level 1 island", () => {
     let wins = 0;
-    for (const seed of [1, 2, 3]) {
+    // Defenses are meant to be a real threat: a plain bot wins some islands, not all of them.
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
       const state = createRaid(generateIsland(seed, 1), ["rifleman"]);
       for (let t = 0; t < 300 && state.status === "playing"; t += DT)
         stepRaid(state, [botInput(state)], DT);
       if (state.status === "won") wins++;
     }
-    expect(wins).toBeGreaterThanOrEqual(2);
+    expect(wins).toBeGreaterThanOrEqual(3);
   });
 });

@@ -272,12 +272,13 @@ export function bushGeometry(): THREE.BufferGeometry {
     [0.05, 0.32, -0.42, 0.42],
   ] as const;
   blobs.forEach(([x, y, z, r], i) => {
-    const g = lump(r, 1, i * 2.3, i % 2 ? COLORS.bush : 0x5aab4c);
+    // Plenty of these on an island: only the two big lumps get the finer mesh.
+    const g = lump(r, i < 2 ? 1 : 0, i * 2.3, i % 2 ? COLORS.bush : 0x5aab4c);
     g.translate(x, y, z);
     parts.push(g);
   });
   // A few red berries.
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     const berry = new THREE.SphereGeometry(0.06, 4, 3);
     const a = i * 1.3;
     berry.translate(Math.cos(a) * 0.5, 0.45 + (i % 2) * 0.2, Math.sin(a) * 0.5);
@@ -287,7 +288,11 @@ export function bushGeometry(): THREE.BufferGeometry {
 }
 
 export function rockGeometry(): THREE.BufferGeometry {
-  const geometry = new THREE.IcosahedronGeometry(1, 2);
+  // Welded so the normals come out smooth instead of faceted.
+  const raw = new THREE.IcosahedronGeometry(1, 2);
+  raw.deleteAttribute("normal");
+  raw.deleteAttribute("uv");
+  const geometry = mergeVertices(raw);
   const pos = geometry.getAttribute("position");
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -331,15 +336,14 @@ export function pebblesGeometry(): THREE.BufferGeometry {
 
 export function sandbagPileGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  const bags = [
-    [-0.42, 0.21, 0],
-    [0.42, 0.21, 0],
-    [0, 0.58, 0],
-  ] as const;
-  for (const [x, y, z] of bags) {
-    const bag = new RoundedBoxGeometry(0.88, 0.42, 0.6, 2, 0.17);
-    bag.translate(x, y, z);
-    parts.push(painted(bag, COLORS.sandbag));
+  // Four courses, chest-high on a hero, offset like brickwork.
+  for (let course = 0; course < 4; course++) {
+    const shift = course % 2 ? 0.1 : -0.1;
+    for (const x of [-0.42, 0.42]) {
+      const bag = new RoundedBoxGeometry(0.88, 0.42, 0.6, 2, 0.17);
+      bag.translate(x + shift, 0.21 + course * 0.38, 0);
+      parts.push(painted(bag, course % 2 ? 0xd8c498 : COLORS.sandbag));
+    }
   }
   return merge(parts);
 }

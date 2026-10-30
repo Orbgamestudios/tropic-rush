@@ -68,6 +68,8 @@ export class Effects {
       };
     }
     particle.material.color.set(color);
+    // Flashes and sparks burn brighter than white, so the bloom catches them.
+    if (kind === "flash" || kind === "spark") particle.material.color.multiplyScalar(2.6);
     particle.material.opacity = opacity;
     particle.mesh.position.copy(pos);
     particle.mesh.scale.setScalar(startScale);

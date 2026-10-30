@@ -39,6 +39,8 @@ export interface ControlSpot {
 export type ControlName = "move" | "aim" | "super";
 export type ControlLayout = Record<ControlName, ControlSpot>;
 
+export type CameraMode = "top" | "behind";
+
 /** Player settings from the pause menu. */
 export interface Settings {
   /** Raid camera tilt: 0 is the default, lower looks out further, higher looks down. */
@@ -47,6 +49,8 @@ export interface Settings {
   zoom: number;
   /** Size of every menu, button and the HUD. */
   uiScale: number;
+  /** Raid camera: the angled view from above, or following close behind the hero. */
+  camera: CameraMode;
   muted: boolean;
   /** Where the sticks and the Super button sit, and how big they are. */
   controls: ControlLayout;
@@ -69,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tilt: 0,
   zoom: 0.37,
   uiScale: 0.7,
+  camera: "top",
   muted: false,
   controls: DEFAULT_CONTROLS,
   rev: SETTINGS_REV,
@@ -100,6 +105,7 @@ function readSettings(value: unknown): Settings {
     uiScale: current
       ? ranged(v.uiScale, UI_SCALE_RANGE[0], UI_SCALE_RANGE[1], DEFAULT_SETTINGS.uiScale)
       : DEFAULT_SETTINGS.uiScale,
+    camera: v.camera === "behind" ? "behind" : "top",
     muted: v.muted === true,
     controls: readControls(v.controls),
     rev: SETTINGS_REV,
