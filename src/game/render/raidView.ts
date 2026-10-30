@@ -538,7 +538,15 @@ export class RaidView {
       if (!damaged && !near && b.type !== "headquarters") continue;
       const p = this.screenPosition(b.pos, BUILDINGS[b.type].height + 0.9, camera, width, height);
       if (!p.inFront) continue;
-      this.labels.place(b.id, "enemy", p.x, p.y, b.hp / b.maxHp, b.type === "headquarters");
+      this.labels.place(
+        b.id,
+        "enemy",
+        p.x,
+        p.y,
+        b.hp / b.maxHp,
+        b.type === "headquarters",
+        b.maxHp,
+      );
     }
     for (const h of state.heroes) {
       if (!h.alive || h.inBoat) continue;
@@ -550,11 +558,11 @@ export class RaidView {
         width,
         height,
       );
-      if (p.inFront) this.labels.place(h.id, "crew", p.x, p.y, h.hp / h.maxHp);
+      if (p.inFront) this.labels.place(h.id, "crew", p.x, p.y, h.hp / h.maxHp, false, h.maxHp);
     }
     for (const t of state.turrets) {
       const p = this.screenPosition(t.pos, 1.7, camera, width, height);
-      if (p.inFront) this.labels.place(t.id, "crew", p.x, p.y, t.hp / t.maxHp);
+      if (p.inFront) this.labels.place(t.id, "crew", p.x, p.y, t.hp / t.maxHp, false, t.maxHp);
     }
     this.labels.end();
   }

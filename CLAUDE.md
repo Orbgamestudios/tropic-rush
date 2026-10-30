@@ -30,7 +30,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/logic/`: the rules, with no Three.js or DOM imports. Each file has a colocated
   `*.test.ts`. `raid.ts` is the raid simulation and updates its state in place for speed; it is
   meant to move to a Durable Object server for multiplayer later.
-  - `island.ts`: coastline, terrain height and the seeded layout generator.
+  - `island.ts`: coastline (the shared rounded-diamond shape with a south-west landing beach),
+    terrain height and the seeded layout generator.
   - `buildings.ts`: building stats and the HQ-level table.
   - `heroes.ts`: hero stats.
   - `gunboat.ts`: gunboat abilities and energy costs.
@@ -47,8 +48,22 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   - `worker/index.ts`: the Cloudflare Worker, with one `CrewIsland` Durable Object per crew code.
     It checks every change with the same `crewIsland.ts` rules and sends the whole layout to
     everyone.
-  - `src/game/render/homeIsland.ts`: the sand island, cliff and water shader.
+  - `src/game/logic/economy.ts`: resources, costs, HQ-level limits and level caps, shared with
+    the server.
+  - `src/game/render/homeIsland.ts`: the island (plateau, hills, beach) and water shader.
   - `src/game/crew/crewMode.ts`: touch handling and syncing.
+- UI: every screen is HTML over the 3D view, styled in `src/styles/` and built from the kit in
+  `src/game/ui/kit/`:
+  - `dom.ts`: buttons, panels, plates, pills, stat bars, tiles.
+  - `icons.ts`: the hand-drawn SVG icon set.
+  - `fx.ts`: synthesized UI sounds and sparkles.
+
+  The screens are `title.ts`, `heroSelect.ts` (with `render/showcase.ts`, the 3D pedestal),
+  `hud.ts`, `pause.ts`, `results.ts` and `crewUi.ts`. `render/thumbnails.ts` renders hero
+  portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero levels,
+  unlocks and raid rewards.
+- Real models live in `public/models/` (meshopt-compressed GLB; `render/heroAssets.ts` loads
+  them). Raw TRELLIS outputs stay in the untracked `models-wip/`.
 - To test the crew server locally, run `npx wrangler dev`. It builds, then serves the game and
   runs the Durable Object. `npm run dev` and `npm run phone` have no crew server, so the crew
   island falls back to offline mode there.

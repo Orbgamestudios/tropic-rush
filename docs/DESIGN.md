@@ -153,6 +153,9 @@ Gameplay is a first pass that hasn't been reviewed with the owner yet. **Propose
 - There's a moderate amount of palm clusters, bushes and boulders, which act as cover. Not dense
   forest, and not empty.
 - Buildings are big relative to heroes.
+- Every island starts from the crew island's shape: a rounded diamond with one landing beach on
+  the south-west. The base sits on flat ground beyond the beach, with hills rising behind it.
+  The crew lands on that beach, and the gunboat waits in its shallows.
 
 Starting size ratios, in hero heights:
 
@@ -184,44 +187,47 @@ Starting size ratios, in hero heights:
 
 ## Home island and crew
 
-### Crew island draft (2026-10-29)
+### Crew island draft (2026-10-30)
 
 **Decided:**
 
 - Crew members build on their island together in real time.
 - The island is 3D and tile-based, so buildings can be placed and moved around.
-- It's a deeper island, with a sand-colored cliff across the back.
-- For now everything is sand, with better-looking sand and water. Trees, rocks and real building
-  models come later.
-- The island is larger and expands toward the back, with the cliff pushed back. It has 4 sections
-  at different heights, arranged in a zigzag, which unlock as the crew progresses.
+- The island follows [concept/crew-island-base.webp](concept/crew-island-base.webp), about twice as
+  large, with **one** beach, on the bottom-left (south-west), shallowing out into the water.
+- Buildings all stand on one flat level. Around it the landscape is organic and rises and falls.
+- Grass fades smoothly into sand.
+- This is also the shape every enemy island starts from.
+- Progression: a new island starts with only its headquarters and some resources. Producers
+  (mills and the like) make resources passively. At the start you can also build a gun turret and
+  a mortar.
+  - One of each producer.
+  - Storages unlock at HQ 3: one per resource at HQ 3, two each at HQ 7, three each at HQ 20.
+  - Storages upgrade to level 8 at most.
+  - Every building's level is capped by the headquarters' level.
 
-**Built:** the crew island screen, reached from the title screen.
+**Built:**
 
-- **Island:** a long sand island. The four zones are terraces, each about 4 m higher than the
-  last, with sand cliffs between them and a tall cliff across the back. The water is animated and
-  lighter in the shallows, with foam at the shore.
-- **Zones** (2 m tiles), climbing in a zigzag:
-  1. Landing: the front, 26 × 16 tiles, open from the start.
-  2. West terrace: back-left, 19 × 11.
-  3. East terrace: further back on the right, 20 × 11.
-  4. Summit: the far back-left, 23 × 13.
-
-  Locked zones show a striped haze and no grid. The next one shows an Unlock button, which unlocks
-  it for the whole crew in real time, in order. A building must sit wholly inside an open zone.
-- **UI:**
-  - A crew card with avatar initials and online rings.
-  - The crew code with a share button (the iPhone share sheet).
-  - An "Island n/4" progress bar; tapping a segment flies the camera to that zone.
-  - A compact build drawer with Defenses and Resources tabs and a Hide button.
-  - A floating panel for the selected building, with rotate, remove and done buttons.
-  - Each zone's name over the island.
-- **Building:** drag a building from the build bar, or tap it to drop it at the nearest free
-  spot. Tap a building to select it, then drag it to move it, rotate it or remove it. The
-  headquarters can't be removed. Buildings are plain blocks sized to their footprints.
-- **Sync:** each crew has its own server on Cloudflare. It checks every change with the same rules
-  as the phone, saves the island, and sends the whole island to every crewmate. A building
-  someone is moving is locked to them, with a name tag.
+- **Island:** a wide, rounded diamond. The flat grass build plateau in the middle has an organic
+  outline. Grass hills rise around it, tallest to the north and east, and drop as sandy cliffs
+  into the sea. A long beach on the south-west slopes gently into shallow water. The water is
+  animated, with a wider band of shallows off the beach.
+- **Zones:** the plateau is split into 4 sections of about 270+ tiles each (2 m tiles), with
+  wavy borders. Zone 1 is the Landing, by the beach; then the West, East and North fields. The
+  next one shows an Unlock button. Locked zones show a striped haze.
+- **Progression** (`src/game/logic/economy.ts`):
+  - Resources are Gold, Timber, Stone and Scrap.
+  - Producers: Gold mine, Lumber mill and Stone quarry from HQ 1, and the Scrap yard from HQ 2.
+  - Storages: the Gold vault, Timber shed, Stone yard and Scrap bin.
+  - Defenses start with one gun turret and one mortar. More of them, and the harpoon, flamethrower
+    and watchtower, unlock at higher HQ levels.
+  - The HQ goes up to level 20. A building's level cap is HQ level minus its unlock level plus 1,
+    up to its maximum.
+  - Resources build up over time, from the server's clock, up to what the HQ and storages hold.
+  - Building and upgrading are instant and cost resources.
+- **Sync:** each crew has its own server on Cloudflare. It checks every change, costs included,
+  with the same rules as the phone, saves the island, and sends the whole island to every
+  crewmate. A building someone is moving is locked to them, with a name tag.
 - **Offline:** the island keeps working on the phone, and the server's copy wins on reconnect.
 
 **Proposed** (defaults, not yet confirmed by the owner):
@@ -229,18 +235,24 @@ Starting size ratios, in hero heights:
 - Joining uses a nickname and a 6-character crew code, with no accounts or passwords. On iPhone,
   Safari and the Home Screen app keep separate storage, so they count as two players.
 - Crewmates show only as name tags on the buildings they're moving, not as walking characters.
-- Building is free: no resources or HQ-level limits yet.
-- Unlocking zones is free for now: any crewmate can unlock the next zone. It should be tied to
-  progress (HQ level or resources) once those exist.
-- Building icons are emoji placeholders until there's real art.
+- Unlocking zones is free for now, in order. It could be tied to HQ level.
+- The progression numbers (costs, production, capacity, which HQ level unlocks what) are a first
+  draft, not balanced.
+  - Starting stock: 600 gold, 600 timber, 300 stone, 100 scrap.
+  - Producers make 900 per hour at level 1, and 30% more each level.
+- Removing a building gives nothing back.
 - Footprints in tiles:
   - headquarters 6×6
   - defenses 2×2
-  - resource buildings and the refinery 3×3
-  - storehouse 3×2
+  - producers and the refinery 3×3
+  - storages 3×2
 
-**Not built yet:** the world map with other crews' islands, the home screen UI, resources, and
-leaving or switching crews.
+**Not built yet:**
+
+- the world map with other crews' islands
+- leaving or switching crews
+- build timers
+- the refinery's processed materials
 
 **Decided** (from the original brief):
 
@@ -261,6 +273,74 @@ leaving or switching crews.
 - Short build timers, since friends play together.
 - An idea: AI raider fleets sometimes attack the home island, and whoever is online defends it
   together.
+
+## UI and menus
+
+**Decided:** the whole UI was redone (2026-10-30), taking direct inspiration from the owner's
+mockups. The aim is to be better than them, not an exact copy:
+
+- [concept/ui-hero-select.jpg](concept/ui-hero-select.jpg)
+- [concept/ui-raid-hud.jpg](concept/ui-raid-hud.jpg)
+- [concept/ui-raid-jungle.jpg](concept/ui-raid-jungle.jpg)
+- [concept/ui-raid-beach.jpg](concept/ui-raid-beach.jpg)
+
+The look:
+
+- **Frames and panels:** chunky beveled steel frames, steel name plates over dark panels, and tan
+  cards for stats.
+- **Buttons:** glossy blue, steel, gold, green and red buttons that sink when pressed. Each has an
+  icon and a word.
+- **Text:** bold outlined lettering.
+- **Currency:** pills with a big icon on the end.
+
+**Built:**
+
+- **Title:** the logo on rotating sun rays over the orbiting home island, a RAID button and a
+  CREW ISLAND button.
+- **Hero select:**
+  - a roster of 3D-rendered portraits with gear-shaped level badges and medal locks
+  - the hero on a stone-and-steel pedestal: drag to spin it, and it drops in when chosen
+  - a stats card with HP, Attack, Speed and Range bars (a ghost bar previews the next level)
+  - the super ability
+  - a target-island picker
+  - LEVEL UP (gold) or UNLOCK (medals), and RAID!
+- **Raid HUD:**
+  - a portrait card with health and super bars
+  - a timer and destruction plate
+  - pause, a live minimap, and energy and loot pills
+  - a MOVE stick and a FIRE pad resting in the corners
+  - Super and gunboat buttons
+  - a gunboat ability tray
+  - damage numbers over hits
+- **Pause and results:** a pause menu (resume, sound, retreat). The results show a
+  VICTORY/DEFEAT banner, stars that stamp in, stats, and loot counting up.
+- **Crew island:** the same style, with:
+  - resource pills that fill to capacity
+  - building cards with 3D icons, costs, counts and HQ locks
+  - an info panel with LEVEL UP
+  - buildings shown as their 3D models in crew colors
+- **Feel:** synthesized UI sounds, sparkles, and a wipe between screens.
+
+**Proposed:**
+
+- Players earn gold from raids: destruction × 2 × island level, plus 150 × level for a win.
+- Medals come from wins: one per island level.
+- Gold levels heroes up, from 1 to 10. Each level adds 8% health and damage.
+- Medals unlock the heroes beyond the starting three:
+  - Grenadier: 2
+  - Bazooka: 3
+  - Engineer: 4
+  - Tank: 6
+- Hero levels and both currencies are personal, not shared with the crew.
+- Hero names on the cards:
+  - Sgt. Steele (Rifleman)
+  - Doc Penny (Medic)
+  - Tilly & Tank (Tank)
+  - Big Mo (Heavy)
+  - Ace (Bazooka)
+  - Mr. Pemberton (Grenadier)
+  - Gus (Engineer)
+- Stars: 1 for 50% destroyed, 1 for the HQ (the win), and 1 for 100%.
 
 ## World map
 
@@ -375,13 +455,14 @@ Steps 1–3 exist as a first playable draft with placeholder models, at the owne
   escalating energy costs.
 - **Raid rules:** no respawns, a 5-minute timer, and results.
 
-Heroes are simple primitives with a procedural walk, not rigged models yet.
+Heroes are simple primitives with a procedural walk, not rigged models yet. The menus show the
+Rifleman's TRELLIS model (arms lowered from its T-pose by a script) on the hero-select pedestal.
 
 Choices made while building the draft. All are **Proposed**:
 
 - **Island difficulty:** the hero-select screen offers HQ levels 1–3, named Outpost, Fort and
-  Stronghold, shown with 1–3 crew dots. All 7 heroes are selectable for testing; the Barracks
-  unlocks come later.
+  Stronghold, shown with 1–3 stars. Rifleman, Heavy and Medic are open from the start; the others
+  unlock with medals (see UI and menus).
 - **Cover:** rocks and sandbags block shots both ways. Short sandbag walls stand in front of gun
   turrets and harpoons, facing the beach, so attackers have to flank them.
 - **Non-attacking buildings:** the watchtower doesn't attack, and neither does the headquarters.

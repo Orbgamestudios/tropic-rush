@@ -1,14 +1,25 @@
-// The in-raid HUD, drawn in HTML over the 3D view.
+// The in-raid HUD, in HTML over the 3D view:
+// - top-left: the hero's portrait card with level badge, health and super bars
+// - top-middle: time left and how much of the island is destroyed
+// - top-right: pause, a live minimap, gunboat energy and the loot so far
+// - bottom-middle: the gunboat's abilities; bottom-right: super and gunboat buttons (the move
+//   stick and fire pad themselves belong to Controls)
+// - an arrow at the screen edge pointing back to the gunboat when it's out of view
 
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
-import { HEROES } from "../logic/heroes";
+import { HEROES, type SuperKind } from "../logic/heroes";
+import { HERO_NAMES, raidReward } from "../logic/heroProgress";
+import { shoreRadius } from "../logic/island";
 import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
+import { CurrencyPill, el, formatNumber, levelBadge } from "./kit/dom";
+import { sfx } from "./kit/fx";
+import { type IconName, icon } from "./kit/icons";
 
 export interface HudHandlers {
   onSuper(): void;
   onBoat(): void;
   onAbility(ability: Ability): void;
-  onRetreat(): void;
+  onPause(): void;
 }
 
 export interface BoatMarker {
@@ -17,81 +28,172 @@ export interface BoatMarker {
   onScreen: boolean;
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  text = "",
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text) node.textContent = text;
-  return node;
-}
+const SUPER_ICONS: Record<SuperKind, IconName> = {
+  sprint: "speed",
+  sandbags: "sandbags",
+  ram: "ram",
+  volley: "rocket",
+  smoke: "smoke",
+  healZone: "heal",
+  turret: "turret",
+};
+
+const ABILITY_ICONS: Record<Ability, IconName> = {
+  artillery: "artillery",
+  barrage: "barrage",
+  heal: "heal",
+};
 
 function formatTime(seconds: number): string {
   const s = Math.max(0, Math.ceil(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+function stop(node: HTMLElement): void {
+  // Taps on HUD elements must not also start a joystick underneath.
+  node.addEventListener("pointerdown", (e) => e.stopPropagation());
+}
+
 export class Hud {
   readonly root = el("div", "hud");
-  private readonly heroName = el("div", "hud-hero-name");
-  private readonly hpFill = el("div", "hud-meter-fill hud-hp-fill");
-  private readonly timer = el("div", "hud-timer");
-  private readonly destroyed = el("div", "hud-destroyed");
-  private readonly energy = el("div", "hud-energy");
-  private readonly superButton = el("button", "hud-super");
-  private readonly superLabel = el("span", "hud-super-label", "SUPER");
-  private readonly boardButton = el("button", "hud-board", "Board gunboat");
-  private readonly boatPanel = el("div", "hud-boat");
+  private readonly portrait = el("img", "hud-portrait-img");
+  private readonly level = el("div", "hud-level");
+  private readonly name = el("div", "hud-name");
+  private readonly hpFill = el("div", "hud-bar-fill");
+  private readonly hpLag = el("div", "hud-bar-lag");
+  private readonly hpText = el("span", "hud-bar-text");
+  private readonly superFill = el("div", "hud-bar-fill");
+  private readonly superText = el("span", "hud-bar-text");
+  private readonly timer = el("span", "hud-objective-time");
+  private readonly destroyed = el("span", "hud-objective-pct");
+  private readonly objectiveFill = el("div", "hud-objective-fill");
+  private readonly energy = new CurrencyPill("energy", "Gunboat energy");
+  private readonly loot = new CurrencyPill("coin", "Loot");
+  private readonly map = el("canvas", "hud-minimap-canvas");
+  private readonly superButton = el("button", "hud-round hud-super");
+  private readonly superRing = el("div", "hud-super-ring");
+  private readonly superIcon = el("div", "hud-super-icon");
+  private readonly boatButton = el("button", "hud-round hud-boat");
+  private readonly boatLabel = el("span", "hud-round-label", "Board");
+  private readonly tray = el("div", "hud-tray");
+  private readonly trayHint = el("div", "hud-tray-hint");
   private readonly abilityButtons = new Map<
     Ability,
     { button: HTMLButtonElement; cost: HTMLElement }
   >();
-  private readonly arrow = el("div", "hud-boat-arrow", "⚓");
+  private readonly arrow = el("div", "hud-boat-arrow");
+  private readonly flashText = el("div", "hud-flash");
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastHp = -1;
+  private lagHp = 0;
+  private superReady = false;
+  private mapTimer = 0;
+  private superKind: SuperKind | null = null;
+  private onFoot = true;
 
   constructor(parent: HTMLElement, handlers: HudHandlers) {
-    const top = el("div", "hud-top");
-    const heroPanel = el("div", "hud-panel hud-hero");
-    const hpMeter = el("div", "hud-meter");
-    hpMeter.append(this.hpFill);
-    heroPanel.append(this.heroName, hpMeter);
-    const raidPanel = el("div", "hud-panel hud-raid");
-    raidPanel.append(this.timer, this.destroyed);
-    const right = el("div", "hud-right");
-    const retreat = el("button", "hud-retreat", "Retreat");
-    retreat.addEventListener("click", () => handlers.onRetreat());
-    right.append(this.energy, retreat);
-    top.append(heroPanel, raidPanel, right);
+    // Hero card.
+    const card = el("div", "hud-card");
+    const frame = el("div", "hud-portrait");
+    this.portrait.alt = "";
+    frame.append(this.portrait, this.level);
+    const bars = el("div", "hud-bars");
+    const hp = el("div", "hud-bar hud-bar-hp");
+    hp.append(this.hpLag, this.hpFill, this.hpText);
+    const sup = el("div", "hud-bar hud-bar-super");
+    sup.append(this.superFill, this.superText);
+    const hpRow = el("div", "hud-bar-row");
+    hpRow.append(icon("heart", "hud-bar-icon"), hp);
+    const supRow = el("div", "hud-bar-row");
+    supRow.append(icon("energy", "hud-bar-icon"), sup);
+    bars.append(this.name, hpRow, supRow);
+    card.append(frame, bars);
 
-    this.superButton.append(this.superLabel);
+    // Objective.
+    const objective = el("div", "hud-objective");
+    const objRow = el("div", "hud-objective-row");
+    objRow.append(
+      icon("clock", "hud-objective-icon"),
+      this.timer,
+      icon("skull", "hud-objective-icon"),
+      this.destroyed,
+    );
+    const objTrack = el("div", "hud-objective-track");
+    objTrack.append(this.objectiveFill);
+    objective.append(objRow, objTrack);
+
+    // Top-right: pause, minimap, pills.
+    const right = el("div", "hud-right");
+    const pause = el("button", "hud-pause");
+    pause.setAttribute("aria-label", "Pause");
+    pause.append(icon("pause", "hud-pause-icon"), el("span", "hud-pause-label", "Pause"));
+    pause.addEventListener("click", () => {
+      sfx.press();
+      handlers.onPause();
+    });
+    const minimap = el("div", "hud-minimap");
+    this.map.width = 128;
+    this.map.height = 128;
+    minimap.append(this.map, el("div", "hud-minimap-north"));
+    const mapRow = el("div", "hud-map-row");
+    mapRow.append(pause, minimap);
+    const pills = el("div", "hud-pills");
+    pills.append(this.energy.root, this.loot.root);
+    right.append(mapRow, pills);
+
+    // Super and gunboat buttons.
+    this.superButton.setAttribute("aria-label", "Super");
+    this.superButton.append(this.superRing, this.superIcon, el("span", "hud-round-label", "Super"));
     this.superButton.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
+      if (this.superReady) sfx.press();
       handlers.onSuper();
     });
-    this.boardButton.addEventListener("click", () => handlers.onBoat());
+    this.boatButton.setAttribute("aria-label", "Board gunboat");
+    this.boatButton.append(icon("anchor", "hud-boat-icon"), this.boatLabel);
+    this.boatButton.addEventListener("click", () => {
+      sfx.press();
+      handlers.onBoat();
+    });
 
-    const hint = el("div", "hud-boat-hint", "Gunboat: drag to look around, tap the island to fire");
-    const abilities = el("div", "hud-abilities");
+    // Gunboat abilities.
     for (const ability of ABILITY_ORDER) {
-      const button = el("button", "hud-ability");
-      const label = el("span", "hud-ability-label", ABILITIES[ability].label);
-      const cost = el("span", "hud-ability-cost");
-      button.append(label, cost);
-      button.addEventListener("click", () => handlers.onAbility(ability));
-      abilities.append(button);
-      this.abilityButtons.set(ability, { button, cost });
+      const b = el("button", "hud-slot");
+      b.setAttribute("aria-label", ABILITIES[ability].label);
+      const cost = el("span", "hud-slot-cost");
+      b.append(
+        icon(ABILITY_ICONS[ability], "hud-slot-icon"),
+        el("span", "hud-slot-label", ABILITIES[ability].label),
+        cost,
+      );
+      b.addEventListener("click", () => {
+        if (this.onFoot) {
+          sfx.error();
+          this.flash("Board the gunboat to call it in");
+          return;
+        }
+        sfx.press();
+        handlers.onAbility(ability);
+      });
+      this.tray.append(b);
+      this.abilityButtons.set(ability, { button: b, cost });
     }
-    const leave = el("button", "hud-leave", "Back to the beach");
-    leave.addEventListener("click", () => handlers.onBoat());
-    this.boatPanel.append(hint, abilities, leave);
-    this.arrow.append(el("span", "hud-boat-arrow-tip"));
+    const trayBox = el("div", "hud-tray-box");
+    trayBox.append(this.trayHint, this.tray);
 
-    this.root.append(top, this.superButton, this.boardButton, this.boatPanel, this.arrow);
-    // Taps on HUD elements must not also start a joystick underneath.
-    for (const node of [top, this.boardButton, this.boatPanel]) {
-      node.addEventListener("pointerdown", (e) => e.stopPropagation());
-    }
+    this.arrow.append(icon("anchor", "hud-boat-arrow-icon"), el("span", "hud-boat-arrow-tip"));
+
+    this.root.append(
+      card,
+      objective,
+      right,
+      trayBox,
+      this.superButton,
+      this.boatButton,
+      this.arrow,
+      this.flashText,
+    );
+    for (const node of [card, objective, right, trayBox, this.boatButton]) stop(node);
     this.root.style.display = "none";
     parent.append(this.root);
   }
@@ -100,56 +202,187 @@ export class Hud {
     this.root.style.display = visible ? "block" : "none";
   }
 
+  /** Sets the hero card's picture and level at the start of a raid. */
+  setHero(portraitUrl: Promise<string>, level: number): void {
+    this.portrait.removeAttribute("src");
+    void portraitUrl.then((url) => {
+      this.portrait.src = url;
+    });
+    this.level.replaceChildren(levelBadge(level));
+    this.lastHp = -1;
+    this.superKind = null;
+  }
+
+  flash(message: string): void {
+    this.flashText.textContent = message;
+    this.flashText.classList.add("on");
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => this.flashText.classList.remove("on"), 1600);
+  }
+
   update(
     state: RaidState,
     hero: RaidHero,
     canBoard: boolean,
     selected: Ability,
     boat: BoatMarker,
+    islandLevel: number,
+    dt: number,
   ): void {
     const spec = HEROES[hero.kind];
-    this.heroName.textContent = spec.name;
-    this.hpFill.style.width = `${(hero.hp / hero.maxHp) * 100}%`;
+    this.name.textContent = HERO_NAMES[hero.kind];
+    if (this.superKind !== spec.super) {
+      this.superKind = spec.super;
+      this.superIcon.replaceChildren(icon(SUPER_ICONS[spec.super]));
+    }
+
+    // Health, with a trailing "damage taken" bar.
+    const hpFraction = Math.max(0, hero.hp / hero.maxHp);
+    if (this.lastHp < 0) this.lagHp = hpFraction;
+    if (hero.hp < this.lastHp) this.root.querySelector(".hud-card")?.classList.add("hurt");
+    else this.root.querySelector(".hud-card")?.classList.remove("hurt");
+    this.lastHp = hero.hp;
+    this.lagHp = Math.max(hpFraction, this.lagHp - dt * 0.35);
+    this.hpFill.style.width = `${hpFraction * 100}%`;
+    this.hpLag.style.width = `${this.lagHp * 100}%`;
+    this.hpText.textContent = `${formatNumber(Math.ceil(hero.hp))} / ${formatNumber(hero.maxHp)}`;
+    this.hpFill.classList.toggle("low", hpFraction < 0.3);
+
+    const charge = Math.min(1, hero.superCharge);
+    this.superFill.style.width = `${charge * 100}%`;
+    this.superText.textContent =
+      charge >= 1 ? `${spec.superName} ready!` : `Super ${Math.round(charge * 100)}%`;
+    const ready = charge >= 1;
+    if (ready && !this.superReady) sfx.coin();
+    this.superReady = ready;
+    this.superButton.classList.toggle("ready", ready);
+    this.superButton.style.setProperty("--charge", `${charge * 360}deg`);
+
+    const percent = destructionPercent(state);
     this.timer.textContent = formatTime(state.timeLimit - state.time);
-    this.destroyed.textContent = `${destructionPercent(state)}% destroyed`;
-    this.energy.textContent = `⚡ ${state.energy}`;
+    this.timer.classList.toggle("urgent", state.timeLimit - state.time < 30);
+    this.destroyed.textContent = `${percent}%`;
+    this.objectiveFill.style.width = `${percent}%`;
+    this.energy.set(state.energy);
+    this.loot.set(raidReward(false, percent, islandLevel).gold);
 
-    const onFoot = hero.alive && !hero.inBoat;
-    this.superButton.style.display = onFoot ? "flex" : "none";
-    const charge = Math.round(hero.superCharge * 100);
-    this.superButton.style.setProperty("--charge", `${charge}%`);
-    this.superButton.classList.toggle("ready", hero.superCharge >= 1);
-    this.superLabel.textContent = hero.superCharge >= 1 ? spec.superName : `${charge}%`;
-
-    this.boardButton.style.display = onFoot && canBoard ? "block" : "none";
-    this.boatPanel.style.display = hero.inBoat ? "flex" : "none";
-    if (hero.inBoat) {
-      for (const [ability, { button, cost }] of this.abilityButtons) {
-        const price = nextAbilityCost(state, ability);
-        cost.textContent = `⚡ ${price}`;
-        button.classList.toggle("selected", ability === selected);
-        button.classList.toggle("unaffordable", price > state.energy);
-      }
+    this.onFoot = hero.alive && !hero.inBoat;
+    this.superButton.style.display = this.onFoot ? "flex" : "none";
+    this.boatButton.style.display = (this.onFoot && canBoard) || hero.inBoat ? "flex" : "none";
+    this.boatButton.setAttribute("aria-label", hero.inBoat ? "Back to the beach" : "Board gunboat");
+    this.boatLabel.textContent = hero.inBoat ? "Land" : "Board";
+    this.boatButton.classList.toggle("glow", this.onFoot && canBoard);
+    this.trayHint.textContent = hero.inBoat
+      ? "Tap the island to fire"
+      : canBoard
+        ? "Board the gunboat to fire these"
+        : "Gunboat support";
+    this.tray.classList.toggle("active", hero.inBoat);
+    for (const [ability, { button, cost }] of this.abilityButtons) {
+      const price = nextAbilityCost(state, ability);
+      cost.textContent = String(price);
+      button.classList.toggle("selected", hero.inBoat && ability === selected);
+      button.classList.toggle("unaffordable", price > state.energy);
     }
 
     // Point at the gunboat when it's off screen.
-    const showArrow = onFoot && !boat.onScreen;
+    const showArrow = this.onFoot && !boat.onScreen;
     this.arrow.style.display = showArrow ? "flex" : "none";
     if (showArrow) {
       const w = this.root.clientWidth;
       const h = this.root.clientHeight;
-      const cx = w / 2;
-      const cy = h / 2;
       const angle = boat.angle;
-      const margin = 34;
+      const margin = 46;
       const scale = Math.min(
         (w / 2 - margin) / Math.max(1e-6, Math.abs(Math.cos(angle))),
         (h / 2 - margin) / Math.max(1e-6, Math.abs(Math.sin(angle))),
       );
-      const x = cx + Math.cos(angle) * scale;
-      const y = cy + Math.sin(angle) * scale;
+      // Keep clear of the hero card, the minimap column and the bottom controls.
+      const x = Math.max(60, Math.min(w - 150, w / 2 + Math.cos(angle) * scale));
+      const y = Math.max(96, Math.min(h - 140, h / 2 + Math.sin(angle) * scale));
       this.arrow.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       this.arrow.style.setProperty("--angle", `${angle}rad`);
+    }
+
+    this.mapTimer -= dt;
+    if (this.mapTimer <= 0) {
+      this.mapTimer = 0.1;
+      this.drawMap(state, hero);
+    }
+  }
+
+  /** The minimap: island, buildings, the gunboat and the crew, north up. */
+  private drawMap(state: RaidState, hero: RaidHero): void {
+    const g = this.map.getContext("2d");
+    if (!g) return;
+    const size = this.map.width;
+    const scale = size / 190;
+    const cx = size / 2;
+    const cy = size / 2;
+    const px = (x: number) => cx + x * scale;
+    const py = (y: number) => cy + y * scale;
+    g.clearRect(0, 0, size, size);
+    const sea = g.createRadialGradient(cx, cy, 10, cx, cy, size * 0.7);
+    sea.addColorStop(0, "#56c7d8");
+    sea.addColorStop(1, "#1a7fa6");
+    g.fillStyle = sea;
+    g.fillRect(0, 0, size, size);
+    const shore = (inset: number) => {
+      g.beginPath();
+      for (let i = 0; i <= 64; i++) {
+        const a = (i / 64) * Math.PI * 2;
+        const r = shoreRadius(a) - inset;
+        const x = px(Math.cos(a) * r);
+        const y = py(Math.sin(a) * r);
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.closePath();
+    };
+    shore(-2);
+    g.fillStyle = "#f2d79b";
+    g.fill();
+    shore(9);
+    g.fillStyle = "#5fae46";
+    g.fill();
+    for (const b of state.buildings) {
+      if (b.destroyed) {
+        g.fillStyle = "rgba(40, 30, 20, 0.5)";
+        g.fillRect(px(b.pos.x) - 1.5, py(b.pos.y) - 1.5, 3, 3);
+        continue;
+      }
+      const isHq = b.type === "headquarters";
+      g.fillStyle = isHq ? "#ffd84a" : "#e5503a";
+      g.strokeStyle = "#1a2232";
+      g.lineWidth = 1;
+      const r = isHq ? 4 : 2.4;
+      g.beginPath();
+      g.rect(px(b.pos.x) - r, py(b.pos.y) - r, r * 2, r * 2);
+      g.fill();
+      g.stroke();
+    }
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.arc(px(state.boat.pos.x), py(state.boat.pos.y), 3, 0, Math.PI * 2);
+    g.fill();
+    for (const h of state.heroes) {
+      if (!h.alive) continue;
+      const x = px(h.pos.x);
+      const y = py(h.pos.y);
+      g.save();
+      g.translate(x, y);
+      g.rotate(h.facing + Math.PI / 2);
+      g.fillStyle = h.id === hero.id ? "#4fb3ff" : "#9fd4ff";
+      g.strokeStyle = "#ffffff";
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(0, -6);
+      g.lineTo(4.5, 5);
+      g.lineTo(-4.5, 5);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.restore();
     }
   }
 }

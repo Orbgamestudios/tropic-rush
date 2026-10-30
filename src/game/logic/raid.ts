@@ -61,6 +61,8 @@ export type Team = "crew" | "enemy";
 export interface RaidHero {
   id: number;
   kind: HeroKind;
+  /** Health and damage multiplier from the hero's level (1 at level 1). */
+  power: number;
   pos: Vec2;
   /** Radians on the ground plane; 0 is east. */
   facing: number;
@@ -234,19 +236,26 @@ export const IDLE_INPUT: HeroInput = {
   boatAbility: null,
 };
 
-export function createRaid(layout: IslandLayout, kinds: readonly HeroKind[]): RaidState {
+/** `powers` are each hero's level multipliers (see heroPower); missing ones are 1. */
+export function createRaid(
+  layout: IslandLayout,
+  kinds: readonly HeroKind[],
+  powers: readonly number[] = [],
+): RaidState {
   const rng = createRng(layout.seed ^ 0x5bd1e995);
   let nextId = 1;
   const heroes = kinds.map((kind, i): RaidHero => {
     const spec = HEROES[kind];
     const offset = (i - (kinds.length - 1) / 2) * 2.2;
+    const power = powers[i] ?? 1;
     return {
       id: nextId++,
       kind,
+      power,
       pos: vec(layout.spawn.x + offset, layout.spawn.y),
       facing: -Math.PI / 2,
-      hp: spec.hp,
-      maxHp: spec.hp,
+      hp: spec.hp * power,
+      maxHp: spec.hp * power,
       alive: true,
       inBoat: false,
       moving: false,
@@ -462,7 +471,17 @@ function updateAttack(
         hero.firing = true;
         hero.burstTimer -= dt;
         if (hero.burstTimer <= 0) {
-          spawnDirect(state, hero, "bullet", hero.burstDir, atk.speed, atk.range, atk.damage, 0, 1);
+          spawnDirect(
+            state,
+            hero,
+            "bullet",
+            hero.burstDir,
+            atk.speed,
+            atk.range,
+            atk.damage * hero.power,
+            0,
+            1,
+          );
           hero.burstLeft--;
           hero.burstTimer = atk.interval;
           if (hero.burstLeft === 0) hero.reload = atk.reload;
@@ -483,7 +502,17 @@ function updateAttack(
       if (hero.reload <= 0) {
         const spread = (state.rng() - 0.5) * 2 * atk.spread;
         const shotDir = fromAngle(angleOf(dir) + spread);
-        spawnDirect(state, hero, "bullet", shotDir, atk.speed, atk.range, atk.damage, 0, 1);
+        spawnDirect(
+          state,
+          hero,
+          "bullet",
+          shotDir,
+          atk.speed,
+          atk.range,
+          atk.damage * hero.power,
+          0,
+          1,
+        );
         hero.reload = lerp(atk.slowInterval, atk.fastInterval, hero.spin);
       }
       return;
@@ -498,7 +527,7 @@ function updateAttack(
           dir,
           atk.speed,
           atk.range,
-          atk.damage,
+          atk.damage * hero.power,
           atk.splash,
           atk.buildingBonus,
         );
@@ -520,7 +549,7 @@ function updateAttack(
           to,
           duration,
           3 + reach * 0.25,
-          atk.damage,
+          atk.damage * hero.power,
           atk.splash,
         );
         hero.reload = atk.reload;
@@ -529,7 +558,15 @@ function updateAttack(
     }
     case "spray": {
       if (dir && hero.reload <= 0) {
-        sprayTick(state, hero, dir, atk.range, atk.damage, atk.heal, atk.coneHalfAngle);
+        sprayTick(
+          state,
+          hero,
+          dir,
+          atk.range,
+          atk.damage * hero.power,
+          atk.heal,
+          atk.coneHalfAngle,
+        );
         hero.reload = atk.reload;
       }
       return;
@@ -611,7 +648,7 @@ function activateSuper(state: RaidState, hero: RaidHero): void {
           dir,
           atk.speed,
           atk.range,
-          atk.damage,
+          atk.damage * hero.power,
           atk.splash,
           atk.buildingBonus,
         );

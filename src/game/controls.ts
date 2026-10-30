@@ -1,6 +1,7 @@
 // Turns touches, mouse and keyboard into HeroInput for the rules.
-// Phone: left thumb moves (a stick appears where you touch), right thumb aims and fires (hold to
-// keep firing, quick tap to auto-aim at the nearest building). In the gunboat: drag to look
+// Phone: left thumb moves, right thumb aims and fires (hold to keep firing, quick tap to
+// auto-aim at the nearest building). Both sticks rest in their corners and jump to wherever the
+// thumb lands on that half of the screen, then spring back home. In the gunboat: drag to look
 // around, tap the island to fire the selected ability.
 // Computer: WASD/arrows move, hold the mouse to aim and fire, Space super, E gunboat, 1-3 abilities.
 
@@ -9,6 +10,7 @@ import { ABILITY_ORDER } from "./logic/gunboat";
 import type { HeroInput } from "./logic/raid";
 import { clampLength, length, normalize, scale, sub, type Vec2, vec } from "./logic/vec";
 import type { CameraRig } from "./render/cameraRig";
+import { iconSvg } from "./ui/kit/icons";
 
 export type ControlMode = "off" | "hero" | "boat";
 
@@ -42,9 +44,27 @@ function stickElements(
   kind: string,
 ): { base: HTMLElement; knob: HTMLElement } {
   const base = document.createElement("div");
-  base.className = `stick stick-${kind}`;
+  base.className = `stick stick-${kind} home`;
   const knob = document.createElement("div");
   knob.className = "stick-knob";
+  if (kind === "move") {
+    // Four little arrows round the ring, a "MOVE" label and a curved hint arrow.
+    for (const dir of ["up", "right", "down", "left"]) {
+      const arrow = document.createElement("span");
+      arrow.className = `stick-arrow stick-arrow-${dir}`;
+      base.append(arrow);
+    }
+    const label = document.createElement("div");
+    label.className = "stick-label";
+    label.innerHTML = `<span>MOVE</span><svg viewBox="0 0 60 40" aria-hidden="true"><path d="M4 8c22-6 42 2 50 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="M46 30l9 4 2-10" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    base.append(label);
+  } else {
+    knob.innerHTML = iconSvg("crosshair");
+    const label = document.createElement("div");
+    label.className = "stick-label stick-label-aim";
+    label.textContent = "FIRE";
+    base.append(label);
+  }
   base.append(knob);
   surface.append(base);
   return { base, knob };
@@ -87,6 +107,9 @@ export class Controls {
     this.mode = mode;
     this.reset();
     this.surface.dataset.mode = mode;
+    const visible = mode === "hero" ? "block" : "none";
+    this.leftVisual.base.style.display = visible;
+    this.rightVisual.base.style.display = visible;
   }
 
   pressSuper(): void {
@@ -186,7 +209,8 @@ export class Controls {
 
   private startStick(e: PointerEvent, visual: { base: HTMLElement; knob: HTMLElement }): Stick {
     const rect = this.surface.getBoundingClientRect();
-    visual.base.style.display = "block";
+    visual.base.classList.remove("home");
+    visual.base.classList.add("active");
     visual.base.style.left = `${e.clientX - rect.left}px`;
     visual.base.style.top = `${e.clientY - rect.top}px`;
     visual.knob.style.transform = "translate(-50%, -50%)";
@@ -246,16 +270,25 @@ export class Controls {
       return;
     }
     if (this.left?.pointerId === e.pointerId) {
-      this.left.base.style.display = "none";
+      this.goHome(this.left);
       this.left = null;
     }
     if (this.right?.pointerId === e.pointerId) {
       const quick = performance.now() - this.right.startTime < TAP_MS;
       if (!cancelled && quick && Math.hypot(this.right.dx, this.right.dy) < TAP_DISTANCE)
         this.pendingAutoAim = true;
-      this.right.base.style.display = "none";
+      this.goHome(this.right);
       this.right = null;
     }
+  }
+
+  /** Sends a stick back to its resting spot in the corner. */
+  private goHome(visual: { base: HTMLElement; knob: HTMLElement }): void {
+    visual.base.classList.add("home");
+    visual.base.classList.remove("active");
+    visual.base.style.left = "";
+    visual.base.style.top = "";
+    visual.knob.style.transform = "translate(-50%, -50%)";
   }
 
   private reset(): void {
@@ -263,7 +296,7 @@ export class Controls {
     this.right = null;
     this.pan = null;
     this.mouse.down = false;
-    this.leftVisual.base.style.display = "none";
-    this.rightVisual.base.style.display = "none";
+    this.goHome(this.leftVisual);
+    this.goHome(this.rightVisual);
   }
 }

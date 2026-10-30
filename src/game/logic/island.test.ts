@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BUILDINGS, HQ_LEVELS, MAX_HQ_LEVEL } from "./buildings";
 import { BOARD_DISTANCE } from "./gunboat";
 import { generateIsland, isOnGrass, isOnLand, shoreDistance } from "./island";
-import { distance, vec } from "./vec";
+import { add, distance, normalize, scale, vec } from "./vec";
 
 const SEEDS = [1, 2, 3, 42, 1234, 98765];
 
@@ -47,15 +47,18 @@ describe("generateIsland", () => {
     }
   });
 
-  it("lands the crew on the beach with the gunboat in reach", () => {
+  it("lands the crew on the south-west beach with the gunboat in reach", () => {
     for (const seed of SEEDS) {
       const island = generateIsland(seed, 1);
       expect(isOnLand(island.spawn.x, island.spawn.y)).toBe(true);
+      expect(island.spawn.x).toBeLessThan(0);
+      expect(island.spawn.y).toBeGreaterThan(0);
       expect(isOnLand(island.boatExit.x, island.boatExit.y)).toBe(true);
       expect(shoreDistance(island.boat.x, island.boat.y)).toBeLessThan(0);
       // A hero walking down to the waterline next to the boat can board it.
+      const inland = normalize(vec(-island.boat.x, -island.boat.y));
       let edge = vec(island.boat.x, island.boat.y);
-      while (!isOnLand(edge.x, edge.y, 0.8)) edge = vec(edge.x, edge.y - 0.1);
+      while (!isOnLand(edge.x, edge.y, 0.8)) edge = add(edge, scale(inland, 0.1));
       expect(distance(edge, island.boat)).toBeLessThanOrEqual(BOARD_DISTANCE);
     }
   });

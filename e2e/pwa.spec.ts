@@ -9,7 +9,7 @@ test("boots without errors and fills the screen", async ({ page }) => {
   });
 
   await page.goto("/");
-  const canvas = page.locator("#game canvas");
+  const canvas = page.locator("#game > canvas");
   await expect(canvas).toBeVisible();
 
   const box = await canvas.boundingBox();
@@ -19,19 +19,19 @@ test("boots without errors and fills the screen", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("starts a raid from the menus", async ({ page }) => {
+test("picks a hero and starts a raid", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/");
-  await page.getByRole("button", { name: /Raid/ }).click();
-  await page.getByRole("button", { name: /Rifleman/ }).click();
-  await page.getByRole("button", { name: "Start raid" }).click();
+  await page.getByRole("button", { name: "Raid", exact: true }).click();
+  await page.getByRole("button", { name: "Rifleman" }).click();
+  await page.getByRole("button", { name: "Raid!" }).click();
 
-  const timer = page.locator(".hud-timer");
+  const timer = page.locator(".hud-objective-time");
   await expect(timer).toBeVisible();
   await expect(timer).toHaveText(/^4:\d\d$/, { timeout: 40_000 });
-  await expect(page.locator(".hud-destroyed")).toHaveText("0% destroyed");
+  await expect(page.locator(".hud-objective-pct")).toHaveText("0%");
   expect(errors).toEqual([]);
 });
 
@@ -54,7 +54,7 @@ test("works offline after the first visit", async ({ page }) => {
 
   await server.close();
   await page.reload();
-  await expect(page.locator("#game canvas")).toBeVisible();
+  await expect(page.locator("#game > canvas")).toBeVisible();
 });
 
 test("builds on the crew island offline", async ({ page }) => {

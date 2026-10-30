@@ -10,6 +10,16 @@ function memoryStorage() {
   };
 }
 
+const LEVELS = {
+  rifleman: 1,
+  medic: 1,
+  tank: 1,
+  heavy: 1,
+  bazooka: 1,
+  grenadier: 1,
+  engineer: 1,
+};
+
 const DEFAULTS: SaveData = {
   hero: "rifleman",
   level: 1,
@@ -18,6 +28,10 @@ const DEFAULTS: SaveData = {
   nickname: "",
   crewCode: "",
   memberId: "",
+  gold: 300,
+  medals: 0,
+  heroLevels: LEVELS,
+  unlocked: ["rifleman", "medic", "heavy"],
 };
 
 describe("save", () => {
@@ -31,6 +45,10 @@ describe("save", () => {
       nickname: "Ada",
       crewCode: "ABC234",
       memberId: "m-1",
+      gold: 1234,
+      medals: 5,
+      heroLevels: { ...LEVELS, grenadier: 4 },
+      unlocked: ["rifleman", "medic", "heavy", "grenadier"],
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
@@ -47,9 +65,22 @@ describe("save", () => {
     const storage = memoryStorage();
     storage.items.set(
       "tropic-rush:save:v1",
-      JSON.stringify({ hero: "wizard", level: 9, wins: -2, bestDestruction: 400 }),
+      JSON.stringify({
+        hero: "wizard",
+        level: 9,
+        wins: -2,
+        bestDestruction: 400,
+        heroLevels: { rifleman: 50, medic: -1 },
+        unlocked: ["dragon", "tank"],
+      }),
     );
-    expect(loadSave(storage)).toEqual({ ...DEFAULTS, level: 3, bestDestruction: 100 });
+    expect(loadSave(storage)).toEqual({
+      ...DEFAULTS,
+      level: 3,
+      bestDestruction: 100,
+      heroLevels: { ...LEVELS, rifleman: 10 },
+      unlocked: ["rifleman", "medic", "tank", "heavy"],
+    });
   });
 
   it("reports failure instead of throwing when storage is full", () => {

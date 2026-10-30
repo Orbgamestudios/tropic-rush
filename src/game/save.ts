@@ -1,4 +1,5 @@
-import { HERO_KINDS, type HeroKind } from "./logic/heroes";
+import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
+import { MAX_HERO_LEVEL } from "./logic/heroProgress";
 
 // Bump the version suffix if the shape of SaveData changes incompatibly.
 const KEY = "tropic-rush:save:v1";
@@ -15,7 +16,20 @@ export interface SaveData {
   crewCode: string;
   /** Random id that tells the crew server this phone is the same player next time. */
   memberId: string;
+  /** Personal gold, won on raids and spent levelling heroes. */
+  gold: number;
+  /** Personal medals, won with victories and spent unlocking heroes. */
+  medals: number;
+  /** Each hero's level (1 to 10). */
+  heroLevels: Record<HeroKind, number>;
+  /** Heroes this player can pick. */
+  unlocked: HeroKind[];
 }
+
+const starters = (): HeroKind[] => HERO_KINDS.filter((k) => STARTER_HEROES.includes(k));
+
+const startLevels = (): Record<HeroKind, number> =>
+  Object.fromEntries(HERO_KINDS.map((k) => [k, 1])) as Record<HeroKind, number>;
 
 const DEFAULT_SAVE: SaveData = {
   hero: "rifleman",
@@ -25,6 +39,10 @@ const DEFAULT_SAVE: SaveData = {
   nickname: "",
   crewCode: "",
   memberId: "",
+  gold: 300,
+  medals: 0,
+  heroLevels: startLevels(),
+  unlocked: starters(),
 };
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
@@ -42,10 +60,17 @@ function text(value: unknown, max: number): string {
 export function loadSave(storage: Storage = localStorage): SaveData {
   try {
     const raw = storage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SAVE };
+    if (!raw) return { ...DEFAULT_SAVE, heroLevels: startLevels(), unlocked: starters() };
     const parsed: Partial<Record<keyof SaveData, unknown>> = JSON.parse(raw);
     const hero = HERO_KINDS.find((k) => k === parsed.hero) ?? DEFAULT_SAVE.hero;
     const level = count(parsed.level, 3);
+    const rawLevels = (parsed.heroLevels ?? {}) as Partial<Record<HeroKind, unknown>>;
+    const heroLevels = startLevels();
+    for (const k of HERO_KINDS) heroLevels[k] = Math.max(1, count(rawLevels[k], MAX_HERO_LEVEL));
+    const rawUnlocked = Array.isArray(parsed.unlocked) ? parsed.unlocked : [];
+    const unlocked = HERO_KINDS.filter(
+      (k) => STARTER_HEROES.includes(k) || rawUnlocked.includes(k),
+    );
     return {
       hero,
       level: level >= 1 ? level : DEFAULT_SAVE.level,
@@ -54,9 +79,13 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       nickname: text(parsed.nickname, 16),
       crewCode: text(parsed.crewCode, 6),
       memberId: text(parsed.memberId, 64),
+      gold: parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold),
+      medals: count(parsed.medals),
+      heroLevels,
+      unlocked,
     };
   } catch {
-    return { ...DEFAULT_SAVE };
+    return { ...DEFAULT_SAVE, heroLevels: startLevels(), unlocked: starters() };
   }
 }
 

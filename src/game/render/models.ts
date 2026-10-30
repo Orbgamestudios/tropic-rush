@@ -201,6 +201,79 @@ export function buildingModel(type: BuildingType): BuildingModel {
       root.add(at(rbox(1.6, 2.2, 0.2, C.enemyRust), 0, 1.1, 1.82));
       break;
     }
+    case "goldVault": {
+      root.add(at(rbox(4.2, 2.8, 3.2, C.darkMetal), 0, 1.4, 0));
+      root.add(at(rbox(4.4, 0.35, 3.4, C.enemyRust), 0, 2.9, 0));
+      // The round vault door with a gold rim and spokes.
+      const door = at(cyl(1, 1, 0.25, C.metal, 24), 0, 1.35, 1.66, Math.PI / 2, 0, 0);
+      root.add(door);
+      root.add(at(cyl(1.08, 1.08, 0.12, C.gold, 24), 0, 1.35, 1.62, Math.PI / 2, 0, 0));
+      for (let i = 0; i < 3; i++)
+        root.add(at(rbox(1.5, 0.12, 0.12, C.gold), 0, 1.35, 1.82, 0, 0, (i * Math.PI) / 3));
+      // Gold bars stacked on the roof.
+      for (let i = 0; i < 5; i++) {
+        const row = i < 3 ? 0 : 1;
+        const x = row === 0 ? (i - 1) * 0.75 : (i - 3.5) * 0.75;
+        root.add(at(rbox(0.65, 0.32, 1.1, C.gold), x, 3.25 + row * 0.32, -0.4));
+      }
+      break;
+    }
+    case "timberShed": {
+      for (const [x, z] of [
+        [-2, -1.5],
+        [2, -1.5],
+        [-2, 1.5],
+        [2, 1.5],
+      ] as const)
+        root.add(at(rbox(0.3, 3, 0.3, C.woodDark), x, 1.5, z));
+      root.add(at(rbox(4.8, 0.22, 3.8, C.tin), 0, 3.1, 0, 0.14, 0, 0));
+      for (let row = 0; row < 3; row++) {
+        for (let i = 0; i < 4 - row; i++) {
+          root.add(
+            at(barrel(0.36, 3.8, C.wood, 12), 0, 0.38 + row * 0.64, (i - (3 - row) / 2) * 0.74),
+          );
+        }
+      }
+      break;
+    }
+    case "stoneYard": {
+      for (const [x, z, w, d] of [
+        [0, -1.6, 4.4, 0.5],
+        [-2, 0, 0.5, 3.2],
+        [2, 0, 0.5, 3.2],
+      ] as const)
+        root.add(at(rbox(w, 0.9, d, C.stone), x, 0.45, z));
+      const blocks = [
+        [-0.8, 0, -0.3],
+        [0.5, 0, -0.4],
+        [-0.2, 0, 0.8],
+        [0.9, 0, 0.7],
+        [-0.2, 1, 0.1],
+        [0.6, 1, 0.2],
+      ] as const;
+      for (const [x, layer, z] of blocks)
+        root.add(at(rbox(1, 0.8, 1, C.stone), x, 0.4 + layer * 0.8, z, 0, x * 0.4, 0));
+      root.add(at(cyl(0.16, 0.2, 3.6, C.woodDark, 8), -1.7, 1.8, 1.3));
+      root.add(at(rbox(2.6, 0.2, 0.2, C.woodDark), -0.6, 3.5, 1.3, 0, 0, -0.1));
+      root.add(at(cyl(0.03, 0.03, 1.4, C.metal, 6), 0.5, 2.8, 1.3));
+      break;
+    }
+    case "scrapBin": {
+      root.add(at(rbox(4, 1.6, 3, C.enemyRust), 0, 0.8, 0));
+      root.add(at(rbox(3.5, 0.2, 2.5, C.darkMetal), 0, 1.55, 0));
+      const junk = [
+        [-0.9, 1.8, -0.4, 1, 0.7, 0.8, C.metal],
+        [0.6, 1.9, 0.3, 1.2, 0.6, 0.9, C.tin],
+        [0.1, 2.3, -0.2, 0.8, 0.6, 0.7, C.enemyDark],
+        [-0.5, 2.1, 0.7, 0.7, 0.5, 0.6, C.metal],
+      ] as const;
+      junk.forEach(([x, y, z, w, h, d, color], i) => {
+        root.add(at(rbox(w, h, d, color), x, y, z, 0.3 * i, 0.6 * i, 0.2 * i));
+      });
+      root.add(at(barrel(0.12, 2.4, C.metal, 8), 0.9, 2.6, -0.5, 0.4, 0.3, 0.9));
+      root.add(at(barrel(0.42, 1.2, C.enemyDark, 12), 2.4, 0.6, 1, 0, 0, 0));
+      break;
+    }
     case "refinery": {
       for (const z of [-1, 1]) {
         root.add(at(cyl(1.1, 1.1, 3, C.enemyDark), -0.8, 1.5, z * 1.2));

@@ -16,70 +16,63 @@ import {
   zoneOf,
   zoneTiles,
 } from "../logic/crewIsland";
-import { STORAGES } from "../logic/economy";
 import { clamp, lerp, type Vec2, vec } from "../logic/vec";
+import { visibleBox } from "./heroAssets";
 import { buildHomeIsland, type HomeIslandView, homeHeight, PLATEAU } from "./homeIsland";
+import { buildingModel } from "./models";
 import { COLORS } from "./palette";
 import { rbox } from "./shapes";
 import type { Stage } from "./stage";
 
-const BLOCK_HEIGHT: Record<BuildingType, number> = {
-  headquarters: 6,
-  gunTurret: 2.4,
-  mortar: 1.8,
-  harpoon: 2,
-  flamethrower: 2.6,
-  watchtower: 5,
-  goldMine: 2.4,
-  lumberCamp: 2.2,
-  quarry: 2,
-  scrapYard: 1.8,
-  storehouse: 2.6,
-  goldVault: 2.4,
-  timberShed: 2.6,
-  stoneYard: 1.8,
-  scrapBin: 2.2,
-  refinery: 3.6,
-};
-
-const DEFENSES = new Set<BuildingType>([
-  "gunTurret",
-  "mortar",
-  "harpoon",
-  "flamethrower",
-  "watchtower",
+/** Enemy paint becomes crew paint on the home island: rust to crew blue, charcoal to steel. */
+const CREW_PAINT = new Map<number, number>([
+  [COLORS.enemyRust, COLORS.crewBlue],
+  [COLORS.enemyDark, 0x55657e],
 ]);
 
-function blockColor(type: BuildingType): number {
-  if (type === "headquarters") return COLORS.crewBlue;
-  if (DEFENSES.has(type)) return 0x5c6f86;
-  if (STORAGES[type] || type === "refinery") return 0x8a8f96;
-  return COLORS.woodLight;
-}
-
-/** A placeholder block for a building: a base in its color with a crew-blue roof band. */
-function blockModel(type: BuildingType, rotated: boolean): THREE.Group {
+/**
+ * A building on the crew island: its 3D model, repainted in crew colors and turned to face the
+ * beach, standing on a paved pad the size of its footprint.
+ */
+function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
   const { w, h } = footprint(type, rotated);
-  const height = BLOCK_HEIGHT[type];
   const g = new THREE.Group();
-  const width = w * TILE - 0.5;
-  const depth = h * TILE - 0.5;
-  const base = rbox(width, height, depth, blockColor(type));
-  base.position.y = height / 2;
-  g.add(base);
-  const roof = rbox(
-    width + 0.1,
-    0.35,
-    depth + 0.1,
-    type === "headquarters" ? COLORS.crewBlueDark : COLORS.crewBlue,
+  const width = w * TILE - 0.3;
+  const depth = h * TILE - 0.3;
+  const pad = rbox(width, 0.3, depth, 0xd8ccb0);
+  pad.position.y = 0.15;
+  pad.receiveShadow = true;
+  const trim = rbox(width + 0.12, 0.16, depth + 0.12, COLORS.crewBlueDark);
+  trim.position.y = 0.06;
+  g.add(trim, pad);
+  const model = buildingModel(type).root;
+  // Models face +x; face the beach (+z, towards the camera), or turn a quarter more if rotated.
+  model.rotation.y = -Math.PI / 2 + (rotated ? Math.PI / 2 : 0);
+  const box = visibleBox(model);
+  const size = box.getSize(new THREE.Vector3());
+  const fit = Math.min(
+    1,
+    (width - 0.4) / Math.max(0.1, size.x),
+    (depth - 0.4) / Math.max(0.1, size.z),
   );
-  roof.position.y = height + 0.1;
-  g.add(roof);
-  // Own materials, so one block can fade (while a crewmate holds it) without fading the rest.
+  model.scale.setScalar(fit);
+  model.position.y = 0.3;
+  g.add(model);
+  // Own materials, so one building can fade (while a crewmate holds it) without fading the rest.
   g.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.material = (o.material as THREE.MeshStandardMaterial).clone();
+    if (!(o instanceof THREE.Mesh)) return;
+    o.castShadow = true;
+    const m = (o.material as THREE.MeshStandardMaterial).clone();
+    const paint = m.color ? CREW_PAINT.get(m.color.getHex()) : undefined;
+    if (paint !== undefined) m.color.setHex(paint);
+    o.material = m;
   });
   return g;
+}
+
+/** Roughly how tall a building stands, for name tags. */
+function buildingHeight(type: BuildingType): number {
+  return BUILDINGS[type].height;
 }
 
 /** Ground height for a building: its zone's terrace, or the terrain under it if it's off-grid. */
@@ -250,7 +243,7 @@ export class CrewIslandView {
       let entry = this.blocks.get(b.id);
       if (!entry || entry.key !== key) {
         if (entry) this.root.remove(entry.group);
-        entry = { group: blockModel(b.type, b.rotated), key };
+        entry = { group: crewBuildingModel(b.type, b.rotated), key };
         this.blocks.set(b.id, entry);
         this.root.add(entry.group);
       }
@@ -285,7 +278,7 @@ export class CrewIslandView {
     const key = `${b.type}|${b.rotated}`;
     if (key !== this.previewKey) {
       this.previewGroup.clear();
-      const ghost = blockModel(b.type, b.rotated);
+      const ghost = crewBuildingModel(b.type, b.rotated);
       ghost.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.material = new THREE.MeshStandardMaterial({
@@ -338,7 +331,7 @@ export class CrewIslandView {
       const center = buildingCenter(b);
       const p = new THREE.Vector3(
         center.x,
-        groundFor(b) + BLOCK_HEIGHT[b.type] + 1.2,
+        groundFor(b) + buildingHeight(b.type) + 1.2,
         center.y,
       ).project(this.stage.camera);
       tag.style.transform = `translate(${(((p.x + 1) / 2) * this.stage.width).toFixed(1)}px, ${(((1 - p.y) / 2) * this.stage.height).toFixed(1)}px) translate(-50%, -100%)`;

@@ -5,21 +5,37 @@ import { BUILDINGS, type BuildingType, levelContents } from "./buildings";
 import { between, createRng, type Rng } from "./rng";
 import { add, distance, fromAngle, normalize, scale, smoothstep, sub, type Vec2, vec } from "./vec";
 
-const RADIUS_X = 80;
-const RADIUS_Y = 64;
+// Every island shares one design (the crew's home island has it too): a wide, rounded diamond
+// with one long landing beach on the south-west, the base on the flat ground beyond it, and
+// hills rising towards the other shores.
+const RADIUS_X = 96;
+const RADIUS_Y = 77;
+const ROUNDNESS = 2.4;
 
-/** The enemy base sits in the north half; the landing beach faces south (+y). */
-export const BASE_CENTER: Vec2 = { x: 0, y: -8 };
+/** The landing beach faces this way (south-west; x east, y south). */
+export const BEACH_DIRECTION: Vec2 = { x: -Math.SQRT1_2, y: Math.SQRT1_2 };
+
+/** The enemy base sits on the flat ground north-east of the middle, facing the beach. */
+export const BASE_CENTER: Vec2 = { x: 6, y: -10 };
 
 export function shoreRadius(angle: number): number {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  const ellipse = (RADIUS_X * RADIUS_Y) / Math.hypot(RADIUS_Y * c, RADIUS_X * s);
+  const sx = Math.cos(angle) / RADIUS_X;
+  const sy = Math.sin(angle) / RADIUS_Y;
+  // A rounded square turned 45 degrees makes the diamond.
+  const u = Math.abs(sx + sy) * Math.SQRT1_2;
+  const v = Math.abs(sx - sy) * Math.SQRT1_2;
+  const diamond = 1 / ((u ** ROUNDNESS + v ** ROUNDNESS) ** (1 / ROUNDNESS) * 1.25);
   const wobble =
-    0.06 * Math.sin(3 * angle + 1.3) +
-    0.035 * Math.sin(5 * angle + 0.4) +
-    0.02 * Math.sin(9 * angle + 2);
-  return ellipse * (1 + wobble);
+    0.04 * Math.sin(3 * angle + 1.3) +
+    0.03 * Math.sin(5 * angle + 0.4) +
+    0.015 * Math.sin(9 * angle + 2);
+  return diamond * (1 + wobble);
+}
+
+/** 1 along the landing beach's stretch of coast, 0 elsewhere, blending over a wide arc. */
+export function beachSide(x: number, y: number): number {
+  const length = Math.hypot(x, y) || 1;
+  return smoothstep(0.45, 0.9, (x * BEACH_DIRECTION.x + y * BEACH_DIRECTION.y) / length);
 }
 
 /** Roughly how far inland a point is: positive on land, negative in the sea. */
@@ -27,10 +43,9 @@ export function shoreDistance(x: number, y: number): number {
   return shoreRadius(Math.atan2(y, x)) - Math.hypot(x, y);
 }
 
-/** Beach width in meters; widest at the southern landing cove. */
+/** Beach width in meters: a long, wide landing beach on the south-west, thin sand elsewhere. */
 export function beachWidth(x: number, y: number): number {
-  const south = Math.max(0, Math.sin(Math.atan2(y, x)));
-  return 6 + 10 * south * south;
+  return 4 + 17 * beachSide(x, y);
 }
 
 export function isOnLand(x: number, y: number, margin = 0.8): boolean {
@@ -44,18 +59,21 @@ export function isOnGrass(x: number, y: number, margin = 0): boolean {
 /** Ground height in meters (render only; the rules treat the island as flat). */
 export function terrainHeight(x: number, y: number): number {
   const sd = shoreDistance(x, y);
-  if (sd <= 0) return Math.max(-2.4, sd * 0.12) - 0.08;
+  const side = beachSide(x, y);
+  // A long shallow shelf off the beach; deeper water below the other shores.
+  if (sd <= 0) return Math.max(-2.4, sd * (0.12 - 0.07 * side)) - 0.08;
   const bw = beachWidth(x, y);
   const beach = (Math.min(sd, bw) / bw) * 0.7;
-  const inland = smoothstep(bw, bw + 12, sd);
-  // Gentle hills, flattened under the base so buildings sit level.
-  const flat = 0.25 + 0.75 * smoothstep(26, 44, distance(vec(x, y), BASE_CENTER));
+  const inland = smoothstep(bw, bw + 12 + 8 * side, sd);
+  // Flat ground under the base; rolling hills around it, tallest away from the beach.
+  const flat = smoothstep(30, 50, distance(vec(x, y), BASE_CENTER));
   const hills =
     (Math.sin(x * 0.09 + 0.7) * Math.cos(y * 0.11 - 0.4) +
       0.5 * Math.sin(x * 0.17 + y * 0.13 + 1.9)) *
       0.5 +
     0.5;
-  return beach + inland * (0.4 + 2.4 * Math.max(0, hills) * flat);
+  const height = 1.6 + 5.5 * (1 - side);
+  return beach + inland * (0.4 + height * Math.max(0, hills) * flat);
 }
 
 export interface PlacedBuilding {
@@ -123,10 +141,10 @@ function overlaps(pos: Vec2, radius: number, others: readonly Placed[], gap: num
 export function generateIsland(seed: number, level: number): IslandLayout {
   const rng = createRng(seed);
   const contents = levelContents(level);
-  const south = vec(0, 1);
-  const spawn = pointAtShoreDistance(south, 5);
-  const boat = pointAtShoreDistance(south, -3, 7);
-  const boatExit = pointAtShoreDistance(south, 2.5, 7);
+  const landing = BEACH_DIRECTION;
+  const spawn = pointAtShoreDistance(landing, 5);
+  const boat = pointAtShoreDistance(landing, -3, 7);
+  const boatExit = pointAtShoreDistance(landing, 2.5, 7);
 
   const buildings: PlacedBuilding[] = [];
   const placed: Placed[] = [];
@@ -154,25 +172,31 @@ export function generateIsland(seed: number, level: number): IslandLayout {
     (center: Vec2, minAngle: number, maxAngle: number, minR: number, maxR: number) => () =>
       add(center, fromAngle(between(rng, minAngle, maxAngle), between(rng, minR, maxR)));
 
-  const hq = vec(between(rng, -6, 6), BASE_CENTER.y - 15 + between(rng, -3, 3));
-  const front = [0.12 * Math.PI, 0.88 * Math.PI] as const; // the beach side of the base
+  // Angles point from the base: towards the beach is the front, away from it the back.
+  const beachAngle = Math.atan2(landing.y, landing.x);
+  const hq = add(
+    add(BASE_CENTER, fromAngle(beachAngle + Math.PI, 13)),
+    vec(between(rng, -4, 4), between(rng, -4, 4)),
+  );
+  const front = [beachAngle - 0.38 * Math.PI, beachAngle + 0.38 * Math.PI] as const;
+  const back = [beachAngle + 0.3 * Math.PI, beachAngle + 1.7 * Math.PI] as const;
   const samplers: Record<BuildingType, () => Vec2> = {
     headquarters: () => hq,
     gunTurret: around(BASE_CENTER, front[0], front[1], 12, 25),
     harpoon: around(BASE_CENTER, front[0], front[1], 10, 22),
     mortar: around(BASE_CENTER, 0, Math.PI * 2, 5, 15),
-    flamethrower: around(hq, 0.1 * Math.PI, 0.9 * Math.PI, 9, 14),
+    flamethrower: around(hq, front[0], front[1], 9, 14),
     watchtower: around(BASE_CENTER, 0, Math.PI * 2, 14, 28),
-    goldMine: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
-    lumberCamp: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
-    quarry: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
-    scrapYard: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
+    goldMine: around(BASE_CENTER, back[0], back[1], 10, 30),
+    lumberCamp: around(BASE_CENTER, back[0], back[1], 10, 30),
+    quarry: around(BASE_CENTER, back[0], back[1], 10, 30),
+    scrapYard: around(BASE_CENTER, back[0], back[1], 10, 30),
     storehouse: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
     goldVault: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
     timberShed: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
     stoneYard: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
     scrapBin: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
-    refinery: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
+    refinery: around(BASE_CENTER, back[0], back[1], 10, 30),
   };
   // Defenses first so they get the front line, then everything else.
   const order: BuildingType[] = [
@@ -274,8 +298,13 @@ export function generateIsland(seed: number, level: number): IslandLayout {
 
   // Hidden beach mines between the landing and the base.
   const mines: Vec2[] = [];
+  const inland = normalize(sub(BASE_CENTER, spawn));
+  const across = vec(-inland.y, inland.x);
   for (let attempt = 0; attempt < 400 && mines.length < contents.mines; attempt++) {
-    const pos = vec(between(rng, -20, 20), spawn.y - between(rng, 9, 22));
+    const pos = add(
+      add(spawn, scale(inland, between(rng, 9, 22))),
+      scale(across, between(rng, -20, 20)),
+    );
     if (!isOnLand(pos.x, pos.y, 2) || overlaps(pos, 0.5, blockers(), 1.5)) continue;
     if (mines.some((m) => distance(m, pos) < 5)) continue;
     mines.push(pos);
