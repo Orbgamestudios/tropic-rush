@@ -447,6 +447,11 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
   control is Return to island.
 - Islands lie organically, in loose chains and open water, not in a ring. Their coasts and sizes
   vary.
+- **Scouting:** the island card also has Scout, a free look over the real base before attacking,
+  and free of charge. Drag and pinch round it. Every defense is listed with how many and its
+  highest level, red ground shows what's in range, and tapping a building gives its level and
+  numbers. From there it's Attack or Back to map. **Proposed:** mines look as faint as they do in
+  a raid, not hidden and not highlighted.
 
 **Proposed:** a new scatter every day, with harder bases generally further from home. An island
 beaten today shows as Beaten until tomorrow's map.

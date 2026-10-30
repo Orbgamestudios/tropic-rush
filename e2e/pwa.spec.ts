@@ -40,6 +40,28 @@ test("picks a hero and starts a raid", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("scouts an island, then attacks it", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/?testhooks");
+  await page.evaluate(() =>
+    (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
+  );
+  await page.getByRole("button", { name: "Raid", exact: true }).click();
+  await page.locator(".map-pin").first().click();
+  await page.getByRole("button", { name: "Scout" }).click();
+
+  await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 40_000 });
+  await page.getByRole("button", { name: "Back to map" }).click();
+  await page.locator(".map-pin").first().click();
+  await page.getByRole("button", { name: "Scout" }).click();
+  await page.getByRole("button", { name: "Attack" }).click();
+
+  await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 40_000 });
+  expect(errors).toEqual([]);
+});
+
 test("is installable to the Home Screen", async ({ page, request }) => {
   await page.goto("/");
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);

@@ -2,7 +2,7 @@
 // that headquarters level allows, and upgraded within the same level caps. A raid is a fight
 // against another crew's base, not a separate kind of map.
 
-import type { BuildingType } from "./buildings";
+import { BUILDINGS, type BuildingType } from "./buildings";
 import {
   buildingCenter,
   type CrewLayout,
@@ -111,6 +111,27 @@ export function enemyBase(seed: number, hq: number): TileBuilding[] {
 /** A tile building as the raid rules see it: a middle, and a level. */
 export function toRaidBuilding(b: TileBuilding): PlacedBuilding {
   return { type: b.type, pos: buildingCenter(b), level: b.level };
+}
+
+/** One kind of defense on a scouted base. */
+export interface ScoutRow {
+  type: BuildingType;
+  count: number;
+  /** The highest level among them. */
+  level: number;
+}
+
+/** What a scout reports back: every defense on a base, in build order. */
+export function scoutReport(buildings: readonly PlacedBuilding[]): ScoutRow[] {
+  const rows: ScoutRow[] = [];
+  for (const type of BUILD_ORDER) {
+    if (!BUILDINGS[type].attack) continue;
+    const found = buildings.filter((b) => b.type === type);
+    if (found.length === 0) continue;
+    const level = Math.max(...found.map((b) => b.level ?? 1));
+    rows.push({ type, count: found.length, level });
+  }
+  return rows;
 }
 
 /** A full raid island: an enemy base of this HQ level with cover, mines and a landing round it. */

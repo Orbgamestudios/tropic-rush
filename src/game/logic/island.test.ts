@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BUILDINGS, type BuildingType } from "./buildings";
 import { type CrewLayout, fits, hqLevel, obstacles } from "./crewIsland";
 import { allowedCount, levelCap } from "./economy";
-import { enemyBase, generateIsland } from "./enemyBase";
+import { enemyBase, generateIsland, scoutReport } from "./enemyBase";
 import { BOARD_DISTANCE } from "./gunboat";
 import { isOnGrass, isOnLand, shoreDistance } from "./island";
 import { createRaid } from "./raid";
@@ -43,12 +43,25 @@ describe("generateIsland", () => {
         const buildings = enemyBase(seed, hq);
         const layout: Pick<CrewLayout, "buildings" | "cleared"> = { buildings, cleared };
         expect(hqLevel(layout)).toBe(hq);
+        const types = Object.keys(BUILDINGS) as BuildingType[];
+        expect(buildings).toHaveLength(types.reduce((n, t) => n + allowedCount(t, hq), 0));
         for (const b of buildings) {
           expect(fits(layout, b)).toBe(true);
           if (b.type !== "headquarters") expect(b.level).toBeLessThanOrEqual(levelCap(b.type, hq));
           expect(b.level).toBeGreaterThanOrEqual(1);
         }
       }
+    }
+  });
+
+  it("reports every defense on a base to a scout", () => {
+    const { buildings } = generateIsland(3, 8);
+    const report = scoutReport(buildings);
+    const defenses = buildings.filter((b) => BUILDINGS[b.type].attack);
+    expect(report.reduce((n, row) => n + row.count, 0)).toBe(defenses.length);
+    for (const row of report) {
+      const levels = defenses.filter((b) => b.type === row.type).map((b) => b.level ?? 1);
+      expect(row.level).toBe(Math.max(...levels));
     }
   });
 

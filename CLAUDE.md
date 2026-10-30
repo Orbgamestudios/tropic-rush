@@ -72,7 +72,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 
   The game opens on the crew island (no title screen). Tapping a strolling hero opens
   `heroSelect.ts` (with `render/showcase.ts`, the 3D pedestal, and `levelUp.ts`, the perk reveal),
-  and its Raid button opens `worldMapScreen.ts`. The other screens are `hud.ts`, `pause.ts` (with
+  and its Raid button opens `worldMapScreen.ts`, which leads to `scoutScreen.ts` (with
+  `render/rangeRings.ts`) or the raid. The other screens are `hud.ts`, `pause.ts` (with
   settings and `controlsEditor.ts`), `replayBar.ts`, `results.ts` and `crewUi.ts`.
   `controlsEditor.ts` moves and sizes the sticks and Super. `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
   portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero levels,

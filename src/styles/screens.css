@@ -1049,7 +1049,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 5px;
-  width: 260px;
+  width: 310px;
   padding: 10px 12px 12px;
   border: 3px solid #4a6187;
   border-radius: 10px;
@@ -1133,6 +1133,129 @@
   white-space: nowrap;
   color: var(--cream);
   text-shadow: var(--outline-thin);
+}
+
+.map-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.map-card-actions > :last-child {
+  flex: 1;
+}
+
+/* ---------- Scouting ---------- */
+
+.scout {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.scout-title {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  padding: 7px 14px 8px;
+  border: 2px solid var(--brass);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 6px 12px rgb(0 0 0 / 0.4);
+}
+
+.scout-tag {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+.scout-name {
+  font-family: var(--display);
+  font-size: 21px;
+  letter-spacing: 0.6px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+.scout-rating {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.scout-tally {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.scout-tile {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  border: 2px solid var(--brass);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--navy-500), var(--navy-800));
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.scout-tile-icon {
+  position: absolute;
+  inset: 3px;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  object-fit: contain;
+}
+
+.scout-tile-count {
+  position: absolute;
+  right: 3px;
+  top: 0;
+  font-family: var(--display);
+  font-size: 17px;
+  color: #fff;
+  text-shadow: var(--outline-thin);
+}
+
+.scout-tile-level {
+  position: absolute;
+  left: 4px;
+  bottom: 1px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--gold-text);
+  text-shadow: 0 1px 0 var(--ink);
+}
+
+.scout-info {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: 50%;
+  padding: 7px 14px;
+  pointer-events: none;
+  border: 2px solid #4a6187;
+  border-radius: 9px;
+  background: rgb(10 22 42 / 0.9);
+  box-shadow: 0 0 0 1.5px var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--cream);
+}
+
+.scout-attack {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
 }
 
 /* ---------- Night raid replay ---------- */

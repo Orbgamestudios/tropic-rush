@@ -1,5 +1,5 @@
 // The world map's overlay: a plate on every island with its difficulty, a card when one is
-// tapped (what's there, what it pays, Attack), and one way out: Return to island.
+// tapped (what's there, what it pays, Scout and Attack), and one way out: Return to island.
 
 import { islandRadius, type MapIsland } from "../logic/worldMap";
 import { button, el } from "./kit/dom";
@@ -8,6 +8,7 @@ import { icon } from "./kit/icons";
 
 export interface WorldMapHandlers {
   onAttack(island: MapIsland): void;
+  onScout(island: MapIsland): void;
   onReturn(): void;
   /** Where a map spot is on screen, as fractions of its width and height. */
   screen(x: number, y: number): { x: number; y: number };
@@ -32,12 +33,23 @@ export class WorldMapScreen {
       label: "Attack",
       icon: "sword2",
       variant: "red",
-      size: "lg",
+      size: "md",
       onClick: () => {
         if (this.selected) handlers.onAttack(this.selected);
       },
     });
-    this.card.append(this.cardName, this.cardRating, this.cardFacts, this.attack);
+    const scout = button({
+      label: "Scout",
+      icon: "crosshair",
+      variant: "steel",
+      size: "md",
+      onClick: () => {
+        if (this.selected) handlers.onScout(this.selected);
+      },
+    });
+    const actions = el("div", "map-card-actions");
+    actions.append(scout, this.attack);
+    this.card.append(this.cardName, this.cardRating, this.cardFacts, actions);
     this.card.addEventListener("pointerdown", (e) => e.stopPropagation());
     const back = button({
       icon: "island",

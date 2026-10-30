@@ -8,7 +8,7 @@ import { terrainHeight } from "../logic/island";
 import { angleDiff, clamp, lerp, type Vec2, vec } from "../logic/vec";
 import type { Stage } from "./stage";
 
-export type RigMode = "follow" | "boat" | "orbit";
+export type RigMode = "follow" | "boat" | "orbit" | "scout";
 
 /** Follow camera pitch at tilt 0, and how much each unit of tilt adds. */
 const FOLLOW_PITCH = 0.6;
@@ -29,6 +29,10 @@ const BOAT_DISTANCE = 60;
 const ORBIT_PITCH = 0.6;
 const ORBIT_DISTANCE = 118;
 const PAN_LIMIT = 85;
+/** Looking over an enemy base before a raid: panned and zoomed by hand. */
+const SCOUT_PITCH = 0.95;
+const SCOUT_DISTANCE = [36, 140] as const;
+const SCOUT_START = 104;
 
 export class CameraRig {
   mode: RigMode = "orbit";
@@ -41,6 +45,7 @@ export class CameraRig {
   behind = false;
   readonly boatFocus = new THREE.Vector3(0, 0, -10);
 
+  private scoutDistance = SCOUT_START;
   private readonly target = new THREE.Vector3(0, 0, -8);
   private distance = ORBIT_DISTANCE;
   private pitch = ORBIT_PITCH;
@@ -104,6 +109,11 @@ export class CameraRig {
         distance = BOAT_DISTANCE;
         pitch = BOAT_PITCH;
         break;
+      case "scout":
+        desired.copy(this.boatFocus);
+        distance = this.scoutDistance;
+        pitch = SCOUT_PITCH;
+        break;
       case "orbit":
         desired.set(0, 0, -8);
         distance = ORBIT_DISTANCE;
@@ -135,7 +145,20 @@ export class CameraRig {
     else this.stage.setFogRange(110, 320);
   }
 
-  /** Drags the gunboat's view around the island. */
+  /** Starts looking over a base from above this spot. */
+  scoutOver(focus: Vec2): void {
+    this.mode = "scout";
+    this.scoutDistance = SCOUT_START;
+    this.boatFocus.set(focus.x, 0, focus.y);
+    this.snap(null);
+  }
+
+  /** Pinch or scroll while scouting: above 1 pulls back. */
+  scoutZoom(factor: number): void {
+    this.scoutDistance = clamp(this.scoutDistance * factor, SCOUT_DISTANCE[0], SCOUT_DISTANCE[1]);
+  }
+
+  /** Drags the gunboat's or the scout's view around the island. */
   pan(dxPixels: number, dyPixels: number): void {
     const fov = THREE.MathUtils.degToRad(this.stage.camera.fov);
     const metersPerPixel = (2 * this.distance * Math.tan(fov / 2)) / this.stage.height;

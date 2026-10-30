@@ -7,7 +7,7 @@ import { type ControlMode, Controls } from "./controls";
 import { CrewMode } from "./crew/crewMode";
 import { BUILDINGS } from "./logic/buildings";
 import { hqLevel } from "./logic/crewIsland";
-import { generateIsland } from "./logic/enemyBase";
+import { generateIsland, scoutReport } from "./logic/enemyBase";
 import type { HeroKind } from "./logic/heroes";
 import { heroPower, perkMods, raidReward } from "./logic/heroProgress";
 import { BASE_CENTER } from "./logic/island";
@@ -24,6 +24,7 @@ import {
   destructionPercent,
   type HeroInput,
   IDLE_INPUT,
+  type RaidBuilding,
   type RaidHero,
   type RaidState,
   stepRaid,
@@ -34,6 +35,7 @@ import { type MapIsland, worldIslands } from "./logic/worldMap";
 import { CameraRig } from "./render/cameraRig";
 import { updateWind } from "./render/props";
 import { RaidView } from "./render/raidView";
+import { RangeRings } from "./render/rangeRings";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
 import { heroPortrait } from "./render/thumbnails";
@@ -47,9 +49,10 @@ import { WorldLabels } from "./ui/labels";
 import { PauseMenu } from "./ui/pause";
 import { ReplayBar } from "./ui/replayBar";
 import { ResultsScreen } from "./ui/results";
+import { ScoutScreen } from "./ui/scoutScreen";
 import { WorldMapScreen } from "./ui/worldMapScreen";
 
-type Phase = "heroes" | "map" | "raid" | "ended" | "crew" | "replay";
+type Phase = "heroes" | "map" | "scout" | "raid" | "ended" | "crew" | "replay";
 
 function layer(parent: HTMLElement, className: string): HTMLDivElement {
   const div = document.createElement("div");
@@ -66,6 +69,8 @@ export class Game {
   private readonly controlsEditor: ControlsEditor;
   private readonly mapView: WorldMapView;
   private readonly mapScreen: WorldMapScreen;
+  private readonly scout: ScoutScreen;
+  private rangeRings: RangeRings | null = null;
   private mapHero: HeroKind = "rifleman";
   private mapSquad: HeroKind[] = [];
   private raidTarget: MapIsland | null = null;
@@ -149,8 +154,16 @@ export class Game {
     this.mapView = new WorldMapView(this.stage);
     this.mapScreen = new WorldMapScreen(screens, {
       onAttack: (island) => this.go(() => this.startRaid(this.mapHero, island, this.mapSquad)),
+      onScout: (island) => this.go(() => this.startScout(island)),
       onReturn: () => this.go(() => this.goHome()),
       screen: (x, y) => this.mapView.screen(x, y),
+    });
+    this.scout = new ScoutScreen(screens, {
+      onAttack: (island) => this.go(() => this.startRaid(this.mapHero, island, this.mapSquad)),
+      onBack: () => this.go(() => this.showMap(this.mapHero, this.mapSquad)),
+      onPan: (dx, dy) => this.rig.pan(dx, dy),
+      onZoom: (factor) => this.rig.scoutZoom(factor),
+      onTap: (x, y) => this.scoutTap(x, y),
     });
     this.replay = new ReplayBar(screens, {
       onSpeed: (speed) => {
@@ -242,6 +255,7 @@ export class Game {
   private hideScreens(): void {
     this.heroes.hide();
     this.mapScreen.hide();
+    this.scout.hide();
     this.mapView.show(false);
     this.results.hide();
     this.pause.show(false);
@@ -290,16 +304,14 @@ export class Game {
       this.view.dispose();
       this.view = null;
     }
+    this.rangeRings?.dispose();
+    this.rangeRings = null;
     this.labels.clear();
     this.state = null;
   }
 
-  private startRaid(hero: HeroKind, target: MapIsland, squad: readonly HeroKind[] = []): void {
-    this.updateSave({ hero });
-    this.endRaidWorld();
-    this.hideScreens();
-    this.islandLevel = target.tier;
-    this.raidTarget = target;
+  /** Sets a target island up, the same whether the crew is scouting it or landing. */
+  private loadRaid(hero: HeroKind, target: MapIsland, squad: readonly HeroKind[]) {
     const layout = generateIsland(target.seed, target.hq);
     const kinds = [hero, ...squad.filter((k) => k !== hero && this.save.unlocked.includes(k))];
     const state = createRaid(
@@ -311,6 +323,59 @@ export class Game {
     this.state = state;
     this.view = new RaidView(layout, state, this.labels);
     this.stage.scene.add(this.view.root);
+    return { layout, state, kinds };
+  }
+
+  /** A look over an enemy base from above before committing: the raid hasn't started. */
+  private startScout(target: MapIsland): void {
+    this.endRaidWorld();
+    this.hideScreens();
+    const { layout, state } = this.loadRaid(this.mapHero, target, this.mapSquad);
+    this.rangeRings = new RangeRings(state);
+    if (this.view) {
+      this.view.root.add(this.rangeRings.root);
+      this.view.showBars = false;
+    }
+    // Start over the middle of the base, so its whole spread is in view.
+    const { length } = state.buildings;
+    this.rig.scoutOver(
+      vec(
+        state.buildings.reduce((sum, b) => sum + b.pos.x, 0) / length,
+        state.buildings.reduce((sum, b) => sum + b.pos.y, 0) / length,
+      ),
+    );
+    this.phase = "scout";
+    this.scout.show(target, scoutReport(layout.buildings));
+  }
+
+  /** Tapping a defense while scouting: lights up its reach and says what it does. */
+  private scoutTap(x: number, y: number): RaidBuilding | null {
+    const point = this.rig.groundPoint(
+      x,
+      y,
+      this.stage.renderer.domElement.getBoundingClientRect(),
+    );
+    const found =
+      point &&
+      this.state?.buildings.find((b) => distance(b.pos, point) < BUILDINGS[b.type].radius + 1.5);
+    this.rangeRings?.select(found ? found.id : null);
+    return found || null;
+  }
+
+  private scoutFrame(dt: number): void {
+    if (!this.state || !this.view) return;
+    this.rig.update(dt, null);
+    const { camera, width, height } = this.stage;
+    this.view.update(this.state, dt, this.time, camera, width, height);
+  }
+
+  private startRaid(hero: HeroKind, target: MapIsland, squad: readonly HeroKind[] = []): void {
+    this.updateSave({ hero });
+    this.endRaidWorld();
+    this.hideScreens();
+    this.islandLevel = target.tier;
+    this.raidTarget = target;
+    const { layout, kinds } = this.loadRaid(hero, target, squad);
     this.accumulator = 0;
     this.phase = "raid";
     this.resultsAt = 0;
@@ -434,7 +499,8 @@ export class Game {
       this.mapView.update(this.time);
       this.mapScreen.update();
       updateWind(this.time, null);
-    } else this.raidFrame(dt, now);
+    } else if (this.phase === "scout") this.scoutFrame(dt);
+    else this.raidFrame(dt, now);
     this.stage.render();
     requestAnimationFrame(this.frame);
   };
