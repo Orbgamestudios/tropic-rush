@@ -64,10 +64,18 @@ describe("hero progress", () => {
     }
   });
 
+  it("gives every hero a signature move at level 5 that level 10 strengthens", () => {
+    for (const kind of HERO_KINDS) {
+      expect(perkMods(kind, 4).signature).toBe(0);
+      expect(perkMods(kind, 5).signature).toBe(1);
+      expect(perkMods(kind, 10).signature).toBe(2);
+    }
+  });
+
   it("adds perks up and shows them in the stats", () => {
     expect(perkMods("rifleman", 2).shots).toBe(0);
     expect(perkMods("rifleman", 10).shots).toBe(2);
     expect(perkMods("rifleman", 7).range).toBe(3);
-    expect(heroStats("heavy", 5).hp).toBeGreaterThan(heroStats("heavy", 4).hp * 1.3);
+    expect(heroStats("heavy", 7).hp).toBeGreaterThan(heroStats("heavy", 6).hp * 1.3);
   });
 });

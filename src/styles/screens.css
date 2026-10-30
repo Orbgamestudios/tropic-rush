@@ -786,6 +786,18 @@
   filter: none;
 }
 
+/* Signature moves stand out from the rest of the track even before they're earned. */
+.perk.signature {
+  border-color: #c9482e;
+  border-radius: 50%;
+}
+
+.perk.signature.earned {
+  border-color: #ff7a4d;
+  background: linear-gradient(180deg, #a83a22, #5c1c14);
+  box-shadow: 0 0 12px rgb(255 122 77 / 0.85);
+}
+
 .perk-icon {
   width: 100%;
   height: 100%;
@@ -896,6 +908,14 @@
   border-radius: 10px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.levelup-card.signature {
+  border-color: #ff7a4d;
+  background: linear-gradient(180deg, #a83a22, #4a1610);
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 0 24px rgb(255 122 77 / 0.8);
 }
 
 .levelup-card-icon {
@@ -1038,6 +1058,13 @@
     0 0 0 2px var(--ink),
     inset 0 0 0 1.5px rgb(220 174 90 / 0.4),
     0 10px 22px rgb(0 0 0 / 0.5);
+}
+
+/* Above the Return to island button. */
+.map-card.left {
+  right: auto;
+  left: 14px;
+  bottom: 96px;
 }
 
 .map-card.open {

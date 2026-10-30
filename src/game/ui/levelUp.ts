@@ -1,7 +1,7 @@
 // The level-up reveal: a burst of rays behind the hero's portrait, the new level, and on the
 // milestone levels the perk they've just earned. Tap to carry on.
 
-import type { Perk } from "../logic/heroProgress";
+import { isSignature, type Perk } from "../logic/heroProgress";
 import { button, el } from "./kit/dom";
 import { icon } from "./kit/icons";
 
@@ -41,10 +41,11 @@ export class LevelUpReveal {
     this.name.textContent = name;
     this.perk.replaceChildren();
     if (perk) {
-      const card = el("div", "levelup-card");
+      const signature = isSignature(perk);
+      const card = el("div", `levelup-card${signature ? " signature" : ""}`);
       card.append(
         icon("star", "levelup-card-icon"),
-        el("div", "levelup-card-tag", "New perk"),
+        el("div", "levelup-card-tag", signature ? "Signature move" : "New perk"),
         el("div", "levelup-card-name", perk.name),
         el("div", "levelup-card-text", perk.text),
       );

@@ -148,8 +148,16 @@ Gameplay is a first pass that hasn't been reviewed with the owner yet. **Propose
 - As heroes level up, their outfits gain pieces, but silhouettes and headgear stay the same.
 - **Perks (Decided 2026-10-30):** levelling a hero is an event, not just bigger numbers. Each hero
   has four perks of their own, earned at levels 3, 5, 7 and 10, shown as a locked track on the
-  stats card, and revealed one at a time on a full-screen level-up. **Proposed:** what each perk
-  does (`src/game/logic/heroProgress.ts`).
+  stats card, and revealed one at a time on a full-screen level-up.
+- **Signature moves (Proposed, 2026-10-30):** level 5 gives each hero a move no one else has, and
+  level 10 strengthens it. The numbers are in `SIGNATURE` in `src/game/logic/raid.ts`.
+  - Sgt. Steele, Ricochet: bullets bounce into the next building (twice at level 10).
+  - Doc Penny, Guardian angel: a hero who falls gets back up at 40% health, once a raid (twice).
+  - Big Mo, Explosive belt: at full spin every 8th round explodes (every 5th).
+  - Ace, Cluster warhead: rockets throw out 3 bomblets (5).
+  - Mr. Pemberton, Skipping stone: grenades skip on for a second blast (a third).
+  - Gus, Salvage: every building they destroy comes back as their turret for a while (full time).
+  - Tilly & Tank, Aftershock: every ram ends in a shockwave (far bigger).
 
 ## Islands
 

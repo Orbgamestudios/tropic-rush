@@ -85,6 +85,8 @@ export class WorldMapScreen {
   private select(island: MapIsland | null): void {
     this.selected = island;
     this.card.classList.toggle("open", island !== null);
+    // Opposite the island, so the card never covers the place it's about.
+    this.card.classList.toggle("left", island !== null && island.x > 0);
     for (const { island: i, pin } of this.islands) pin.classList.toggle("selected", i === island);
     if (!island) return;
     this.cardName.textContent = island.name;

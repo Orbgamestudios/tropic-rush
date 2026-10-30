@@ -35,6 +35,15 @@ describe("world map", () => {
     expect(worldIslands(3, 1)[0]?.x).not.toBe(worldIslands(3, 2)[0]?.x);
   });
 
+  it("keeps every island out of the clouds and the Return to island button's corner", () => {
+    for (let day = 0; day < 200; day++) {
+      for (const { x, y } of worldIslands(3, day)) {
+        expect(Math.abs(x)).toBeLessThanOrEqual(49);
+        expect(x < -24 && y > 13).toBe(false);
+      }
+    }
+  });
+
   it("doesn't lay islands out as a ring round home", () => {
     const spread = (day: number) => {
       const distances = worldIslands(3, day).map((i) => Math.hypot(i.x, i.y));

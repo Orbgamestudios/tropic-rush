@@ -29,8 +29,11 @@ export interface MapIsland {
 /** How far above the crew's HQ each island is; the nearest ones get the lowest of these. */
 const OFFSETS = [-1, 0, 0, 1, 1, 2, 2, 3, 4, 5] as const;
 
-/** The stretch of sea islands fall in, in map units (the home island is at 0, 0). */
-const SEA = { west: -56, east: 56, north: -25, south: 29 } as const;
+/** The stretch of sea islands fall in, in map units: home is at 0, 0, and cloud lies beyond. */
+const SEA = { west: -49, east: 49, north: -25, south: 29 } as const;
+
+/** Past this west and south is the corner the Return to island button sits in. */
+const BUTTON_CORNER = { x: -24, y: 13 } as const;
 
 /** Kept clear round the crew's own island and the gunboat beside it. */
 const HOME_CLEAR = 14;
@@ -83,6 +86,7 @@ function scatter(rng: () => number): Spot[] {
       y = clump.y + Math.sin(clump.lean) * along + Math.cos(clump.lean) * across;
     }
     if (x < SEA.west || x > SEA.east || y < SEA.north || y > SEA.south) continue;
+    if (x < BUTTON_CORNER.x && y > BUTTON_CORNER.y) continue;
     const spot = { x, y, size };
     if (Math.hypot(x, y) < HOME_CLEAR + islandRadius(size)) continue;
     if (spots.every((s) => apart(s, spot))) spots.push(spot);

@@ -62,6 +62,30 @@ const CREW_TURRET = {
 };
 const AUTO_FIRE_SECONDS = 0.6;
 
+/** What each hero's signature move does; see the perks in heroProgress.ts. */
+const SIGNATURE = {
+  /** Sgt. Steele: how far a bullet can jump, and how much of its damage it keeps. */
+  ricochetRange: 12,
+  ricochetDamage: 0.6,
+  /** Big Mo: every nth round at full spin explodes, by signature tier. */
+  explosiveEvery: [0, 8, 5],
+  explosiveDamage: 3,
+  explosiveSplash: 2.2,
+  /** Doc Penny: the health a fallen hero comes back with. */
+  angelHealth: 0.4,
+  /** Ace: bomblets per rocket are 1 + 2 × tier. */
+  bombletDamage: 0.25,
+  bombletSplash: 1.8,
+  /** Mr. Pemberton: each skip goes this far and keeps this much of the blast. */
+  skipDistance: 4.5,
+  skipDamage: 0.7,
+  /** Gus: a salvaged turret's share of a full turret's time, by tier. */
+  salvageTime: [0, 0.6, 1],
+  /** Tilly & Tank: the blast at the end of a ram, by tier. */
+  ramBlastRadius: [0, 4.5, 7],
+  ramBlastDamage: [0, 0.6, 1],
+} as const;
+
 export type Team = "crew" | "enemy";
 
 export interface RaidHero {
@@ -97,6 +121,10 @@ export interface RaidHero {
   autoDistance: number;
   /** The building this hero is locked onto and firing at, until it's gone or out of range. */
   targetId: number | null;
+  /** Rounds fired, for the minigun's explosive belt. */
+  shotCount: number;
+  /** Fallen heroes this medic has brought back this raid. */
+  saves: number;
 }
 
 export interface RaidBuilding {
@@ -149,6 +177,8 @@ export interface Projectile {
   traveled: number;
   maxDistance: number;
   lob: Lob | null;
+  /** Ricochets or grenade skips left, or the rocket's cluster tier. */
+  charges: number;
 }
 
 export interface Mine {
@@ -298,6 +328,8 @@ export function createRaid(
       autoFireTime: 0,
       autoDir: vec(0, -1),
       autoDistance: 0,
+      shotCount: 0,
+      saves: 0,
       targetId: null,
     };
   });
@@ -550,15 +582,18 @@ function updateAttack(
       if (hero.reload <= 0) {
         const spread = (state.rng() - 0.5) * 2 * atk.spread;
         const shotDir = fromAngle(angleOf(dir) + spread);
+        hero.shotCount++;
+        const every = SIGNATURE.explosiveEvery[hero.mods.signature] ?? 0;
+        const explosive = every > 0 && hero.spin >= 1 && hero.shotCount % every === 0;
         spawnDirect(
           state,
           hero,
-          "bullet",
+          explosive ? "shell" : "bullet",
           shotDir,
           atk.speed,
           atk.range + hero.mods.range,
-          atk.damage * hero.power,
-          0,
+          atk.damage * hero.power * (explosive ? SIGNATURE.explosiveDamage : 1),
+          explosive ? SIGNATURE.explosiveSplash : 0,
           1,
         );
         hero.reload = lerp(atk.slowInterval, atk.fastInterval, hero.spin) * hero.mods.reload;
@@ -599,6 +634,7 @@ function updateAttack(
           3 + reach * 0.25,
           atk.damage * hero.power,
           atk.splash,
+          hero.mods.signature,
         );
         hero.reload = atk.reload * hero.mods.reload;
       }
@@ -728,19 +764,23 @@ function activateSuper(state: RaidState, hero: RaidHero): void {
       return;
     case "turret": {
       const pos = add(hero.pos, scale(forward, 1.8));
-      state.turrets.push({
-        id: state.nextId++,
-        ownerId: hero.id,
-        pos: isOnLand(pos.x, pos.y, 0.5) ? pos : { ...hero.pos },
-        hp: CREW_TURRET.hp,
-        maxHp: CREW_TURRET.hp,
-        time: CREW_TURRET.seconds,
-        reload: 0,
-        aim: hero.facing,
-      });
+      placeTurret(state, hero, isOnLand(pos.x, pos.y, 0.5) ? pos : hero.pos, CREW_TURRET.seconds);
       return;
     }
   }
+}
+
+function placeTurret(state: RaidState, owner: RaidHero, pos: Vec2, seconds: number): void {
+  state.turrets.push({
+    id: state.nextId++,
+    ownerId: owner.id,
+    pos: { ...pos },
+    hp: CREW_TURRET.hp,
+    maxHp: CREW_TURRET.hp,
+    time: seconds,
+    reload: 0,
+    aim: owner.facing,
+  });
 }
 
 function updateRam(state: RaidState, hero: RaidHero, dt: number): void {
@@ -758,10 +798,20 @@ function updateRam(state: RaidState, hero: RaidHero, dt: number): void {
         radius: 1.5,
       });
       hero.ramTime = 0;
+      ramBlast(state, hero);
       return;
     }
   }
   moveHero(state, hero, sub(next, hero.pos));
+  if (hero.ramTime === 0) ramBlast(state, hero);
+}
+
+/** The Tank's signature: every ram ends in a shockwave. */
+function ramBlast(state: RaidState, hero: RaidHero): void {
+  const radius = SIGNATURE.ramBlastRadius[hero.mods.signature] ?? 0;
+  if (radius === 0) return;
+  const damage = RAM.damage * (SIGNATURE.ramBlastDamage[hero.mods.signature] ?? 0);
+  explode(state, hero.pos, radius, damage, "crew", hero.id, 1, 1);
 }
 
 function healHero(state: RaidState, hero: RaidHero, amount: number): number {
@@ -779,13 +829,29 @@ function damageHero(state: RaidState, hero: RaidHero, amount: number, heavyBonus
     amount * (spec.heavy ? heavyBonus : 1) * (hero.sprintTime > 0 ? SPRINT.damageTaken : 1);
   hero.hp -= taken;
   state.events.push({ type: "hit", pos: { ...hero.pos } });
-  if (hero.hp <= 0) {
+  if (hero.hp <= 0 && !guardianAngel(state, hero)) {
     hero.hp = 0;
     hero.alive = false;
     hero.firing = false;
     hero.moving = false;
     state.events.push({ type: "heroDown", id: hero.id, pos: { ...hero.pos } });
   }
+}
+
+/** The Medic's signature: pulls a falling hero back, a set number of times a raid. */
+function guardianAngel(state: RaidState, hero: RaidHero): boolean {
+  const medic = state.heroes.find(
+    (h) => h.kind === "medic" && h.alive && h.saves < h.mods.signature,
+  );
+  if (!medic) return false;
+  medic.saves++;
+  hero.hp = hero.maxHp * SIGNATURE.angelHealth;
+  state.events.push(
+    { type: "explosion", pos: { ...hero.pos }, radius: 1.2 },
+    { type: "heal", pos: { ...hero.pos } },
+    { type: "heal", pos: { ...medic.pos } },
+  );
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1087,6 +1153,11 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
   state.energy += BUILDINGS[b.type].energy;
   state.events.push({ type: "destroyed", id: b.id, pos: { ...b.pos }, buildingType: b.type });
   if (b.type === "headquarters") state.status = "won";
+  // The Engineer's signature: whatever they knock down, they rebuild as a turret of their own.
+  if (owner?.kind === "engineer") {
+    const share = SIGNATURE.salvageTime[owner.mods.signature] ?? 0;
+    if (share > 0) placeTurret(state, owner, b.pos, CREW_TURRET.seconds * share);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1113,6 +1184,7 @@ function makeProjectile(
     traveled: 0,
     maxDistance: 0,
     lob: null,
+    charges: 0,
   };
 }
 
@@ -1134,6 +1206,7 @@ function spawnDirect(
   p.splash = splash;
   p.buildingBonus = buildingBonus;
   p.maxDistance = range;
+  if (hero.kind === "rifleman" || hero.kind === "bazooka") p.charges = hero.mods.signature;
   state.projectiles.push(p);
   state.events.push({ type: "shot", pos: start, dir, kind, team: "crew", ownerId: hero.id });
 }
@@ -1169,12 +1242,14 @@ function spawnLob(
   peak: number,
   damage: number,
   splash: number,
+  charges = 0,
 ): Lob {
   const p = makeProjectile(state, kind, team, ownerId, from);
   const lob: Lob = { from: { ...from }, to: { ...to }, t: 0, duration, peak };
   p.lob = lob;
   p.damage = damage;
   p.splash = splash;
+  p.charges = charges;
   state.projectiles.push(p);
   if (kind !== "artillery") {
     state.events.push({
@@ -1190,8 +1265,11 @@ function spawnLob(
 }
 
 function updateProjectiles(state: RaidState, dt: number): void {
-  // Hits and explosions never spawn new projectiles, so filtering in one pass is safe.
-  state.projectiles = state.projectiles.filter((p) => stepProjectile(state, p, dt));
+  // Hits can spawn new projectiles (ricochets, bomblets, skips): they land in the fresh list.
+  const moving = state.projectiles;
+  state.projectiles = [];
+  const kept = moving.filter((p) => stepProjectile(state, p, dt));
+  state.projectiles = kept.concat(state.projectiles);
 }
 
 /** Moves one projectile; returns false once it has hit something or run out of range. */
@@ -1201,7 +1279,7 @@ function stepProjectile(state: RaidState, p: Projectile, dt: number): boolean {
     const t = clamp(p.lob.t / p.lob.duration, 0, 1);
     p.pos = vec(lerp(p.lob.from.x, p.lob.to.x, t), lerp(p.lob.from.y, p.lob.to.y, t));
     if (p.lob.t < p.lob.duration) return true;
-    explode(state, p.lob.to, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
+    detonate(state, p, p.lob.to);
     return false;
   }
 
@@ -1218,6 +1296,7 @@ function stepProjectile(state: RaidState, p: Projectile, dt: number): boolean {
       if (p.splash > 0) return impact(state, p);
       damageBuilding(state, b, p.damage * p.buildingBonus, p.ownerId);
       state.events.push({ type: "hit", pos: { ...p.pos } });
+      if (p.charges > 0) ricochet(state, p, b);
       return false;
     }
   } else {
@@ -1236,18 +1315,96 @@ function stepProjectile(state: RaidState, p: Projectile, dt: number): boolean {
   }
   if (p.traveled >= p.maxDistance) {
     // Rockets and shells burst at the end of their range; bullets just fade.
-    if (p.splash > 0)
-      explode(state, p.pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
+    if (p.splash > 0) detonate(state, p, p.pos);
     return false;
   }
   return true;
 }
 
 function impact(state: RaidState, p: Projectile): boolean {
-  if (p.splash > 0)
-    explode(state, p.pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
+  if (p.splash > 0) detonate(state, p, p.pos);
   else state.events.push({ type: "hit", pos: { ...p.pos } });
   return false;
+}
+
+/** A projectile's blast, and whatever the hero's signature adds to it. */
+function detonate(state: RaidState, p: Projectile, pos: Vec2): void {
+  explode(state, pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
+  if (p.charges === 0) return;
+  if (p.kind === "rocket") scatterBomblets(state, p, pos);
+  if (p.kind === "grenade" && p.lob) skipGrenade(state, p, p.lob, pos);
+}
+
+/** The Rifleman's signature: a bullet jumps from the building it hit to the next one along. */
+function ricochet(state: RaidState, p: Projectile, from: RaidBuilding): void {
+  let next: RaidBuilding | null = null;
+  let best: number = SIGNATURE.ricochetRange;
+  for (const b of state.buildings) {
+    if (b === from || b.destroyed) continue;
+    const gap = distance(from.pos, b.pos) - b.radius;
+    if (gap < best) {
+      next = b;
+      best = gap;
+    }
+  }
+  if (!next) return;
+  const dir = normalize(sub(next.pos, from.pos));
+  const start = add(from.pos, scale(dir, from.radius + 0.3));
+  const bounce = makeProjectile(state, p.kind, p.team, p.ownerId, start);
+  bounce.vel = scale(dir, length(p.vel));
+  bounce.damage = p.damage * SIGNATURE.ricochetDamage;
+  bounce.maxDistance = SIGNATURE.ricochetRange + next.radius;
+  bounce.charges = p.charges - 1;
+  state.projectiles.push(bounce);
+  state.events.push({
+    type: "shot",
+    pos: start,
+    dir,
+    kind: p.kind,
+    team: p.team,
+    ownerId: p.ownerId,
+  });
+}
+
+/** The Bazooka's signature: a rocket throws bomblets out round its blast. */
+function scatterBomblets(state: RaidState, p: Projectile, pos: Vec2): void {
+  const count = 1 + 2 * p.charges;
+  const damage = p.damage * p.buildingBonus * SIGNATURE.bombletDamage;
+  for (let i = 0; i < count; i++) {
+    const angle = ((i + state.rng() * 0.6) / count) * Math.PI * 2;
+    const to = add(pos, scale(fromAngle(angle), 2.5 + state.rng() * 2));
+    spawnLob(
+      state,
+      "grenade",
+      "crew",
+      p.ownerId,
+      pos,
+      to,
+      0.5,
+      2.2,
+      damage,
+      SIGNATURE.bombletSplash,
+    );
+  }
+}
+
+/** The Grenadier's signature: a grenade skips on along its line for another blast. */
+function skipGrenade(state: RaidState, p: Projectile, lob: Lob, pos: Vec2): void {
+  const to = add(pos, scale(normalize(sub(lob.to, lob.from)), SIGNATURE.skipDistance));
+  const damage = p.damage * SIGNATURE.skipDamage;
+  spawnLob(
+    state,
+    "grenade",
+    "crew",
+    p.ownerId,
+    pos,
+    to,
+    0.45,
+    1.8,
+    damage,
+    p.splash,
+    p.charges - 1,
+  );
 }
 
 function explode(

@@ -1,6 +1,7 @@
 // Personal hero progress: each player's heroes level up with gold won on raids, and medals from
 // victories unlock the heroes beyond the starting three. Every level adds health and damage, and
-// levels 3, 5, 7 and 10 each award a perk of that hero's own that changes how they play.
+// levels 3, 5, 7 and 10 each award a perk of that hero's own. Level 5 is the hero's signature
+// move, a new way to play that no one else has, and level 10 makes it stronger.
 // Draft numbers, not balanced yet. No engine imports.
 
 import { HEROES, type HeroAttack, type HeroKind, STARTER_HEROES } from "./heroes";
@@ -42,6 +43,8 @@ export interface PerkMods {
   shots: number;
   /** Extra range in meters. */
   range: number;
+  /** The tier of the hero's signature move: 0 none, 1 at level 5, 2 at level 10. */
+  signature: number;
 }
 
 export const NO_PERKS: PerkMods = {
@@ -52,6 +55,7 @@ export const NO_PERKS: PerkMods = {
   superRate: 1,
   shots: 0,
   range: 0,
+  signature: 0,
 };
 
 export interface Perk {
@@ -69,87 +73,112 @@ export const PERKS: Record<HeroKind, readonly Perk[]> = {
     { level: 3, name: "Steady hands", text: "One more shot in every burst.", mods: { shots: 1 } },
     {
       level: 5,
-      name: "Field promotion",
-      text: "Sprint charges 30% faster.",
-      mods: { superRate: 1.3 },
+      name: "Ricochet",
+      text: "Bullets bounce off a building into the next one.",
+      mods: { signature: 1 },
     },
     { level: 7, name: "Long barrel", text: "3 m more range.", mods: { range: 3 } },
     {
       level: 10,
       name: "Legend of the beach",
-      text: "Another shot per burst, and 15% more damage.",
-      mods: { shots: 1, damage: 1.15 },
+      text: "Ricochets bounce twice, and another shot per burst.",
+      mods: { signature: 1, shots: 1 },
     },
   ],
   medic: [
     { level: 3, name: "Bigger tank", text: "2 m more spray range.", mods: { range: 2 } },
-    { level: 5, name: "Iron stomach", text: "30% more health.", mods: { hp: 1.3 } },
     {
-      level: 7,
-      name: "Bedside manner",
-      text: "Field medkits come 35% faster.",
-      mods: { superRate: 1.35 },
+      level: 5,
+      name: "Guardian angel",
+      text: "Once a raid, a hero who falls gets back up.",
+      mods: { signature: 1 },
     },
+    { level: 7, name: "Iron stomach", text: "30% more health.", mods: { hp: 1.3 } },
     {
       level: 10,
       name: "Miracle worker",
-      text: "Sprays 25% faster, and moves 15% quicker.",
-      mods: { reload: 0.75, speed: 1.15 },
+      text: "Guardian angel works twice a raid, and sprays 25% faster.",
+      mods: { signature: 1, reload: 0.75 },
     },
   ],
   heavy: [
     { level: 3, name: "Hot barrels", text: "Fires 15% faster.", mods: { reload: 0.85 } },
-    { level: 5, name: "Thick skin", text: "30% more health.", mods: { hp: 1.3 } },
-    { level: 7, name: "Ammo belt", text: "20% more damage.", mods: { damage: 1.2 } },
+    {
+      level: 5,
+      name: "Explosive belt",
+      text: "At full spin, every 8th round explodes.",
+      mods: { signature: 1 },
+    },
+    { level: 7, name: "Thick skin", text: "30% more health.", mods: { hp: 1.3 } },
     {
       level: 10,
       name: "Big Mo's big day",
-      text: "Moves 20% quicker, and walls come 30% faster.",
-      mods: { speed: 1.2, superRate: 1.3 },
+      text: "Every 5th round explodes, and moves 20% quicker.",
+      mods: { signature: 1, speed: 1.2 },
     },
   ],
   bazooka: [
     { level: 3, name: "Quick loader", text: "Reloads 20% faster.", mods: { reload: 0.8 } },
-    { level: 5, name: "Long tube", text: "3 m more range.", mods: { range: 3 } },
-    { level: 7, name: "Bigger warhead", text: "25% more damage.", mods: { damage: 1.25 } },
+    {
+      level: 5,
+      name: "Cluster warhead",
+      text: "Rockets throw out 3 bomblets where they burst.",
+      mods: { signature: 1 },
+    },
+    { level: 7, name: "Long tube", text: "3 m more range.", mods: { range: 3 } },
     {
       level: 10,
       name: "Danger close",
-      text: "Rocket volleys come 40% faster, and reloads quicken again.",
-      mods: { superRate: 1.4, reload: 0.85 },
+      text: "5 bomblets a rocket, and volleys come 40% faster.",
+      mods: { signature: 1, superRate: 1.4 },
     },
   ],
   grenadier: [
     { level: 3, name: "Strong arm", text: "3 m more range.", mods: { range: 3 } },
-    { level: 5, name: "Quick pin", text: "Throws 20% faster.", mods: { reload: 0.8 } },
-    { level: 7, name: "Extra powder", text: "25% more damage.", mods: { damage: 1.25 } },
+    {
+      level: 5,
+      name: "Skipping stone",
+      text: "Grenades skip on for a second blast.",
+      mods: { signature: 1 },
+    },
+    { level: 7, name: "Quick pin", text: "Throws 20% faster.", mods: { reload: 0.8 } },
     {
       level: 10,
       name: "Stiff upper lip",
-      text: "40% more health, and smoke comes 30% faster.",
-      mods: { hp: 1.4, superRate: 1.3 },
+      text: "Grenades skip twice, and 40% more health.",
+      mods: { signature: 1, hp: 1.4 },
     },
   ],
   engineer: [
     { level: 3, name: "Spare parts", text: "Turrets come 30% faster.", mods: { superRate: 1.3 } },
-    { level: 5, name: "Tool belt", text: "Works 20% faster.", mods: { reload: 0.8 } },
+    {
+      level: 5,
+      name: "Salvage",
+      text: "Every building you destroy comes back as your turret, for a while.",
+      mods: { signature: 1 },
+    },
     { level: 7, name: "Hard hat", text: "30% more health.", mods: { hp: 1.3 } },
     {
       level: 10,
       name: "Master mechanic",
-      text: "25% more damage, and 2 m more range.",
-      mods: { damage: 1.25, range: 2 },
+      text: "Salvaged turrets last the full time, and 25% more damage.",
+      mods: { signature: 1, damage: 1.25 },
     },
   ],
   tank: [
     { level: 3, name: "Extra plating", text: "25% more health.", mods: { hp: 1.25 } },
-    { level: 5, name: "Tuned engine", text: "Moves 20% quicker.", mods: { speed: 1.2 } },
+    {
+      level: 5,
+      name: "Aftershock",
+      text: "Every ram ends in a shockwave.",
+      mods: { signature: 1 },
+    },
     { level: 7, name: "Autoloader", text: "Fires 25% faster.", mods: { reload: 0.75 } },
     {
       level: 10,
       name: "Tilly's pride",
-      text: "25% more damage, and rams come 30% faster.",
-      mods: { damage: 1.25, superRate: 1.3 },
+      text: "A far bigger shockwave, and rams come 30% faster.",
+      mods: { signature: 1, superRate: 1.3 },
     },
   ],
 };
@@ -167,8 +196,14 @@ export function perkMods(kind: HeroKind, level: number): PerkMods {
     out.superRate *= m.superRate ?? 1;
     out.shots += m.shots ?? 0;
     out.range += m.range ?? 0;
+    out.signature += m.signature ?? 0;
   }
   return out;
+}
+
+/** Whether a perk brings or strengthens the hero's signature move. */
+export function isSignature(perk: Perk): boolean {
+  return (perk.mods.signature ?? 0) > 0;
 }
 
 /** The perk a hero gets on reaching exactly this level, if any. */

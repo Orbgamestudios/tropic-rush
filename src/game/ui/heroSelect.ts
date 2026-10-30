@@ -7,6 +7,7 @@ import { HERO_KINDS, HEROES, type HeroKind, type SuperKind } from "../logic/hero
 import {
   HERO_NAMES,
   heroStats,
+  isSignature,
   levelUpCost,
   MAX_HERO_LEVEL,
   PERKS,
@@ -293,7 +294,10 @@ export class HeroSelect {
     this.perks.replaceChildren(
       ...PERKS[kind].map((perk) => {
         const earned = perk.level <= level;
-        const chip = el("button", `perk${earned ? " earned" : ""}`);
+        const chip = el(
+          "button",
+          `perk${earned ? " earned" : ""}${isSignature(perk) ? " signature" : ""}`,
+        );
         chip.setAttribute("aria-label", perk.name);
         chip.append(
           icon(earned ? "star" : "lock", "perk-icon"),
