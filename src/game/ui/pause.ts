@@ -1,7 +1,9 @@
 // The pause menu: resume, settings, and (in a raid) retreat. Settings has sliders for the raid
-// camera's tilt and zoom and the size of the whole UI, plus sound; changes apply as you drag.
+// camera's tilt and zoom and the size of the whole UI, sound, and the controls editor; changes
+// apply as you drag.
 
-import { DEFAULT_SETTINGS, type Settings, UI_SCALE_RANGE } from "../save";
+import { DEFAULT_SETTINGS, type Settings, TILT_RANGE, UI_SCALE_RANGE } from "../save";
+import { spotText } from "./controlsEditor";
 import { button, el, panel, setLabel } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
@@ -11,6 +13,7 @@ export interface PauseHandlers {
   onRetreat(): void;
   settings(): Settings;
   onSettings(settings: Settings): void;
+  onEditControls(): void;
 }
 
 interface Slider {
@@ -25,8 +28,9 @@ export class PauseMenu {
   private readonly retreat: HTMLButtonElement;
   private readonly title: HTMLElement;
   private readonly sound: HTMLButtonElement;
-  /** All three values on one line, easy to read off and pass on. */
+  /** Every value in one place, easy to read off and pass on. */
   private readonly summary = el("div", "pause-summary");
+  private inRaid = true;
   private readonly sliders: Record<"tilt" | "zoom" | "uiScale", Slider>;
 
   constructor(
@@ -67,7 +71,7 @@ export class PauseMenu {
     this.options = el("div", "pause-page pause-options");
     this.sliders = {
       // Exact values, so the player can read them off and pass them on as new defaults.
-      tilt: this.slider("Camera tilt", "map", 0, 1, (v) => v.toFixed(2)),
+      tilt: this.slider("Camera tilt", "map", TILT_RANGE[0], TILT_RANGE[1], (v) => v.toFixed(2)),
       zoom: this.slider("Camera zoom", "crosshair", 0, 1, (v) => v.toFixed(2)),
       uiScale: this.slider("UI size", "star", UI_SCALE_RANGE[0], UI_SCALE_RANGE[1], (v) =>
         v.toFixed(2),
@@ -88,9 +92,17 @@ export class PauseMenu {
         variant: "steel",
         size: "sm",
         onClick: () => {
-          handlers.onSettings({ ...DEFAULT_SETTINGS, muted: handlers.settings().muted });
+          const { muted, controls } = handlers.settings();
+          handlers.onSettings({ ...DEFAULT_SETTINGS, muted, controls });
           this.refresh();
         },
+      }),
+      button({
+        label: "Controls",
+        icon: "crosshair",
+        variant: "blue",
+        size: "sm",
+        onClick: () => handlers.onEditControls(),
       }),
       button({
         label: "Done",
@@ -117,11 +129,18 @@ export class PauseMenu {
   /** Opens or closes the menu. Outside a raid there's nothing to retreat from. */
   show(on: boolean, inRaid = true): void {
     this.root.style.display = on ? "flex" : "none";
+    this.inRaid = inRaid;
     this.retreat.style.display = inRaid ? "" : "none";
     if (on) {
       this.page("main");
       this.refresh();
     }
+  }
+
+  /** Reopens straight on the settings page, coming back from the controls editor. */
+  showSettings(): void {
+    this.show(true, this.inRaid);
+    this.page("options");
   }
 
   private page(which: "main" | "options"): void {
@@ -143,7 +162,16 @@ export class PauseMenu {
 
   private paintSummary(): void {
     const s = this.handlers.settings();
-    this.summary.textContent = `tilt ${s.tilt.toFixed(2)} · zoom ${s.zoom.toFixed(2)} · ui ${s.uiScale.toFixed(2)}`;
+    this.summary.replaceChildren(
+      el(
+        "div",
+        "",
+        `tilt ${s.tilt.toFixed(2)} · zoom ${s.zoom.toFixed(2)} · ui ${s.uiScale.toFixed(2)}`,
+      ),
+      el("div", "", spotText("Move", s.controls.move)),
+      el("div", "", spotText("Fire", s.controls.aim)),
+      el("div", "", spotText("Super", s.controls.super)),
+    );
   }
 
   private slider(

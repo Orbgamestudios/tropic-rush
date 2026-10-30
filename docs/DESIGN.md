@@ -199,9 +199,12 @@ Starting size ratios, in hero heights:
 
 - Crew members build on their island together in real time.
 - The island is 3D and tile-based, so buildings can be placed and moved around.
-- The island follows [concept/crew-island-base.webp](concept/crew-island-base.webp), about twice as
-  large, with **one** beach, on the bottom-left (south-west), shallowing out into the water.
-- Buildings all stand on one flat level. Around it the landscape is organic and rises and falls.
+- **The crew island and raid islands are the same island (Decided 2026-10-30):** one coastline,
+  one landing beach on the bottom-left (south-west) shallowing out into the water, the same
+  ground, sea, plants and mist. The owner preferred how the raid island feels, so the crew island
+  became that, replacing its separate, larger plateau island.
+- Forests run out to the island's edges, and all the grass can be built on, down to the top of
+  the beach. The ground rolls gently where buildings go, and hills rise near the far shores.
 - Grass fades smoothly into sand.
 - This is also the shape every enemy island starts from.
 - Progression: a new island starts with only its headquarters and some resources. Producers
@@ -214,13 +217,12 @@ Starting size ratios, in hero heights:
 
 **Built:**
 
-- **Island:** a wide, rounded diamond. The flat grass build plateau in the middle has an organic
-  outline. Grass hills rise around it, tallest to the north and east, and drop as sandy cliffs
-  into the sea. A long beach on the south-west slopes gently into shallow water. The water is
-  animated, with a wider band of shallows off the beach.
+- **Island:** the shared rounded diamond, with the raid islands' terrain, shader sea, shore
+  dressing and mist, a dirt trail from the landing beach to the HQ, and the gunboat moored off
+  the beach. The building grid only shows while placing or moving a building.
 - **Clearing (Decided 2026-10-30, replacing the 4 unlockable zones):** a new island is
-  overgrown. Only an 18 m clearing round the HQ is open; the rest of the plateau is covered in
-  patches the crew clears to make room, and better tools come with HQ levels:
+  overgrown. Only an 18 m clearing round the HQ and the trail are open; the rest of the grass is
+  covered in patches the crew clears to make room, and better tools come with HQ levels:
   - Brush and thickets (Axe, HQ 1), palm groves (Axe), rocks (Pickaxe, HQ 2), dense jungle
     (Chainsaw, HQ 3) and boulders (Dynamite, HQ 5). Easy ones grow near the HQ, harder ones
     further out.
@@ -327,8 +329,11 @@ like theme but polished and simple"):
   that opens the build drawer, and a big RAID button (bottom-right). Starting or joining a crew
   is from the crew button; until then the island is the phone's own.
 - **Settings** (pause menu, on the island and in raids): raid camera tilt and zoom, UI size and
-  sound, saved on the phone. Each slider shows its exact value, with all three on one line, so
-  the owner can send preferred values to become the defaults (now tilt 0.50, zoom 0.37, UI 1.00).
+  sound, saved on the phone. Defaults are tilt 0.00 and UI 0.70 (**Decided**), and both go above
+  and below those.
+- **Controls editor** (Settings → Controls, **Decided**): drag the move stick, fire stick and
+  Super button anywhere and resize each one. x and y are shares of the screen (0 to 1). Settings
+  shows every value, so the owner can send them to become the defaults.
 - **Hero select:**
   - a roster of 3D-rendered portraits with gear-shaped level badges and medal locks
   - the hero on a stone-and-steel pedestal: drag to spin it, and it drops in when chosen
@@ -343,9 +348,9 @@ like theme but polished and simple"):
   - the squad's portraits under it, with health bars and a KO mark when one falls
   - a timer and destruction plate
   - pause, a live minimap, and energy and loot pills
-  - a MOVE stick and a FIRE pad resting in the corners
+  - a move stick and a FIRE pad, resting where the controls editor puts them
   - Super and gunboat buttons
-  - a gunboat ability tray
+  - the gunboat ability tray, only while on the gunboat
   - damage numbers over hits
   - a glowing ring under your hero (green) and each squadmate (blue)
 - **Raid scenery:** the island looks like the jungle and beach mockups:

@@ -30,8 +30,9 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/logic/`: the rules, with no Three.js or DOM imports. Each file has a colocated
   `*.test.ts`. `raid.ts` is the raid simulation and updates its state in place for speed; it is
   meant to move to a Durable Object server for multiplayer later.
-  - `island.ts`: coastline (the shared rounded-diamond shape with a south-west landing beach),
-    terrain height and the seeded layout generator.
+  - `island.ts`: the one island every crew and raid uses: coastline (a rounded diamond with a
+    south-west landing beach), terrain height (`terrainHeight` for raids, `homeHeight` for the
+    crew's flatter build ground) and the seeded raid layout generator.
   - `buildings.ts`: building stats and the HQ-level table.
   - `heroes.ts`: hero stats.
   - `gunboat.ts`: gunboat abilities and energy costs.
@@ -56,7 +57,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
     everyone.
   - `src/game/logic/economy.ts`: resources, costs, HQ-level limits and level caps, shared with
     the server.
-  - `src/game/render/homeIsland.ts`: the island (plateau, hills, beach) and water shader.
+  - `src/game/render/crewIslandView.ts`: the crew island, built from the same `terrain.ts`,
+    `props.ts` and `clouds.ts` as a raid. `tileGrid.ts` is the grid shown while placing.
   - `src/game/crew/crewMode.ts`: touch handling and syncing.
 - UI: every screen is HTML over the 3D view, styled in `src/styles/` and built from the kit in
   `src/game/ui/kit/`:
@@ -66,7 +68,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 
   The game opens on the crew island (no title screen). The screens are `heroSelect.ts` (with
   `render/showcase.ts`, the 3D pedestal), `hud.ts`, `pause.ts` (with settings), `results.ts` and
-  `crewUi.ts`. `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
+  `crewUi.ts`. `controlsEditor.ts` moves and sizes the sticks and Super.
+  `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
   portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero levels,
   unlocks and raid rewards.
 - Real models live in `public/models/` (meshopt-compressed GLB; `render/heroAssets.ts` loads

@@ -3,8 +3,8 @@
 //   the squad's portraits with their health
 // - top-middle: time left and how much of the island is destroyed
 // - top-right: pause, a live minimap, gunboat energy and the loot so far
-// - bottom-middle: the gunboat's abilities; bottom-right: super and gunboat buttons (the move
-//   stick and fire pad themselves belong to Controls)
+// - bottom-middle, only on the gunboat: its abilities; bottom-right: the gunboat button, and the
+//   Super button wherever the settings put it (the move stick and fire pad belong to Controls)
 // - an arrow at the screen edge pointing back to the gunboat when it's out of view
 
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
@@ -12,6 +12,7 @@ import { HEROES, type HeroKind, type SuperKind } from "../logic/heroes";
 import { HERO_NAMES, raidReward } from "../logic/heroProgress";
 import { shoreRadius } from "../logic/island";
 import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
+import type { ControlSpot } from "../save";
 import { CurrencyPill, el, formatNumber, levelBadge } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
@@ -77,6 +78,7 @@ export class Hud {
   private readonly boatButton = el("button", "hud-round hud-boat");
   private readonly boatLabel = el("span", "hud-round-label", "Board");
   private readonly tray = el("div", "hud-tray");
+  private readonly trayBox = el("div", "hud-tray-box");
   private readonly trayHint = el("div", "hud-tray-hint");
   private readonly abilityButtons = new Map<
     Ability,
@@ -177,19 +179,13 @@ export class Hud {
         cost,
       );
       b.addEventListener("click", () => {
-        if (this.onFoot) {
-          sfx.error();
-          this.flash("Board the gunboat to call it in");
-          return;
-        }
         sfx.press();
         handlers.onAbility(ability);
       });
       this.tray.append(b);
       this.abilityButtons.set(ability, { button: b, cost });
     }
-    const trayBox = el("div", "hud-tray-box");
-    trayBox.append(this.trayHint, this.tray);
+    this.trayBox.append(this.trayHint, this.tray);
 
     this.arrow.append(icon("anchorGold", "hud-boat-arrow-icon"), el("span", "hud-boat-arrow-tip"));
 
@@ -198,19 +194,26 @@ export class Hud {
       this.squadBox,
       objective,
       right,
-      trayBox,
+      this.trayBox,
       this.superButton,
       this.boatButton,
       this.arrow,
       this.flashText,
     );
-    for (const node of [card, objective, right, trayBox, this.boatButton]) stop(node);
+    for (const node of [card, objective, right, this.trayBox, this.boatButton]) stop(node);
     this.root.style.display = "none";
     parent.append(this.root);
   }
 
   show(visible: boolean): void {
     this.root.style.display = visible ? "block" : "none";
+  }
+
+  /** Moves and sizes the Super button from the settings. */
+  setSuperSpot(spot: ControlSpot): void {
+    this.superButton.style.left = `${spot.x * 100}%`;
+    this.superButton.style.top = `${spot.y * 100}%`;
+    this.superButton.style.setProperty("--size", String(spot.size));
   }
 
   /** Sets the hero card's picture and level at the start of a raid. */
@@ -305,11 +308,8 @@ export class Hud {
     this.boatButton.setAttribute("aria-label", hero.inBoat ? "Back to the beach" : "Board gunboat");
     this.boatLabel.textContent = hero.inBoat ? "Land" : "Board";
     this.boatButton.classList.toggle("glow", this.onFoot && canBoard);
-    this.trayHint.textContent = hero.inBoat
-      ? "Tap the island to fire"
-      : canBoard
-        ? "Board the gunboat to fire these"
-        : "Gunboat support";
+    this.trayHint.textContent = "Tap the island to fire";
+    this.trayBox.style.display = hero.inBoat ? "flex" : "none";
     this.tray.classList.toggle("active", hero.inBoat);
     for (const [ability, { button, cost }] of this.abilityButtons) {
       const price = nextAbilityCost(state, ability);

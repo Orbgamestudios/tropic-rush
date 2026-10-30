@@ -56,8 +56,8 @@ export function isOnGrass(x: number, y: number, margin = 0): boolean {
   return shoreDistance(x, y) > beachWidth(x, y) + margin;
 }
 
-/** Ground height in meters (render only; the rules treat the island as flat). */
-export function terrainHeight(x: number, y: number): number {
+/** Ground height with the rolling hills scaled by `flat` (0 is level, 1 is full hills). */
+function heightWith(x: number, y: number, flat: number): number {
   const sd = shoreDistance(x, y);
   const side = beachSide(x, y);
   // A long shallow shelf off the beach; deeper water below the other shores.
@@ -65,8 +65,6 @@ export function terrainHeight(x: number, y: number): number {
   const bw = beachWidth(x, y);
   const beach = (Math.min(sd, bw) / bw) * 0.7;
   const inland = smoothstep(bw, bw + 12 + 8 * side, sd);
-  // Flat ground under the base; rolling hills around it, tallest away from the beach.
-  const flat = smoothstep(30, 50, distance(vec(x, y), BASE_CENTER));
   const hills =
     (Math.sin(x * 0.09 + 0.7) * Math.cos(y * 0.11 - 0.4) +
       0.5 * Math.sin(x * 0.17 + y * 0.13 + 1.9)) *
@@ -74,6 +72,19 @@ export function terrainHeight(x: number, y: number): number {
     0.5;
   const height = 1.6 + 5.5 * (1 - side);
   return beach + inland * (0.4 + height * Math.max(0, hills) * flat);
+}
+
+/** Ground height in meters (render only; the rules treat the island as flat). Flat ground under
+ * the base; rolling hills around it, tallest away from the beach. */
+export function terrainHeight(x: number, y: number): number {
+  return heightWith(x, y, smoothstep(30, 50, distance(vec(x, y), BASE_CENTER)));
+}
+
+/** The same island as home ground: gently rolling across the grass the crew builds on, with
+ * the hills only rising near the far shores. */
+export function homeHeight(x: number, y: number): number {
+  const inland = shoreDistance(x, y) - beachWidth(x, y);
+  return heightWith(x, y, 0.14 + 0.5 * smoothstep(26, 6, inland));
 }
 
 export interface PlacedBuilding {
@@ -138,13 +149,29 @@ function overlaps(pos: Vec2, radius: number, others: readonly Placed[], gap: num
   return others.some((o) => distance(pos, o.pos) < radius + o.radius + gap);
 }
 
+/** Where every island's beach landing is: heroes, the gunboat and where you step off it. */
+export function landingPoints(): { spawn: Vec2; boat: Vec2; boatExit: Vec2 } {
+  return {
+    spawn: pointAtShoreDistance(BEACH_DIRECTION, 5),
+    boat: pointAtShoreDistance(BEACH_DIRECTION, -3, 7),
+    boatExit: pointAtShoreDistance(BEACH_DIRECTION, 2.5, 7),
+  };
+}
+
+/** The dirt trail's bends, from the landing up to the headquarters. */
+export function trailPoints(spawn: Vec2, hq: Vec2): Vec2[] {
+  const mid = vec(
+    (spawn.x + hq.x) / 2 + (hq.y - spawn.y) * 0.12,
+    (spawn.y + hq.y) / 2 - (hq.x - spawn.x) * 0.12,
+  );
+  return [spawn, mid, hq];
+}
+
 export function generateIsland(seed: number, level: number): IslandLayout {
   const rng = createRng(seed);
   const contents = levelContents(level);
   const landing = BEACH_DIRECTION;
-  const spawn = pointAtShoreDistance(landing, 5);
-  const boat = pointAtShoreDistance(landing, -3, 7);
-  const boatExit = pointAtShoreDistance(landing, 2.5, 7);
+  const { spawn, boat, boatExit } = landingPoints();
 
   const buildings: PlacedBuilding[] = [];
   const placed: Placed[] = [];

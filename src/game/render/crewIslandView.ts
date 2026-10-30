@@ -1,6 +1,7 @@
-// Draws the crew island: the sand island, buildings as simple blocks on their tile footprints,
-// the placement preview, and name tags for crewmates moving things. Also owns the home
-// camera (drag to pan, pinch or wheel to zoom).
+// Draws the crew island: the same island as a raid (ground, sea, beach, mist and the moored
+// gunboat), the overgrowth, buildings on their tile footprints, the placement preview, and name
+// tags for crewmates moving things. Also owns the home camera (drag to pan, pinch or wheel to
+// zoom).
 
 import * as THREE from "three";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
@@ -8,21 +9,24 @@ import {
   buildingCenter,
   type CrewLayout,
   footprint,
+  HOME_START,
   type Obstacle,
   type PlacedBuilding,
   TILE,
-  ZONES,
-  zoneOf,
 } from "../logic/crewIsland";
-import { clamp, lerp, type Vec2, vec } from "../logic/vec";
+import { homeHeight, landingPoints } from "../logic/island";
+import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
+import { buildClouds, type CloudView } from "./clouds";
 import { visibleBox } from "./heroAssets";
-import { buildHomeIsland, type HomeIslandView, homeHeight, PLATEAU } from "./homeIsland";
-import { buildingModel } from "./models";
+import { buildingModel, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
-import { updateWind } from "./props";
+import { buildShore, updateWind } from "./props";
+import { homeScenery } from "./scenery";
 import { rbox } from "./shapes";
 import type { Stage } from "./stage";
+import { buildTerrain, type TerrainView } from "./terrain";
+import { buildTileGrid } from "./tileGrid";
 
 /** Enemy paint becomes crew paint on the home island: rust to crew blue, charcoal to steel. */
 const CREW_PAINT = new Map<number, number>([
@@ -44,7 +48,10 @@ function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
   pad.receiveShadow = true;
   const trim = rbox(width + 0.12, 0.16, depth + 0.12, COLORS.crewBlueDark);
   trim.position.y = 0.06;
-  g.add(trim, pad);
+  // A stone footing, so the pad sits level where the ground rolls away under it.
+  const footing = rbox(width + 0.2, 2.4, depth + 0.2, 0xb4a88e);
+  footing.position.y = -1.15;
+  g.add(footing, trim, pad);
   const model = buildingModel(type).root;
   // Models face +x; face the beach (+z, towards the camera), or turn a quarter more if rotated.
   model.rotation.y = -Math.PI / 2 + (rotated ? Math.PI / 2 : 0);
@@ -75,26 +82,27 @@ function buildingHeight(type: BuildingType): number {
   return BUILDINGS[type].height;
 }
 
-/** Ground height for a building: its zone's terrace, or the terrain under it if it's off-grid. */
+/** Ground height under a building's middle. */
 function groundFor(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rotated">): number {
-  const zone = zoneOf(b);
-  if (zone) return zone.height;
   const c = buildingCenter(b);
   return Math.max(0, homeHeight(c.x, c.y));
 }
 
+/** Fixes the home island's mist and beach dressing, the same for everyone. */
+const HOME_SEED = 7;
+
 const MIN_DISTANCE = 22;
 const MAX_DISTANCE = 165;
 const PITCH = 0.98; // about 56 degrees
-/** How far the camera can pan (meters): across the island and from the beach to the summit. */
-const PAN_X = 75;
-const PAN_BACK = -70;
-const PAN_FRONT = 60;
+/** How far the camera can pan (meters): the whole island, out to its shores. */
+const PAN_X = 90;
+const PAN_BACK = -82;
+const PAN_FRONT = 78;
 
 /** The home island's camera: always facing north, panned and zoomed by the player. */
 class HomeCamera {
-  readonly focus = new THREE.Vector3(-10, PLATEAU, 16);
-  distance = 88;
+  readonly focus = new THREE.Vector3(HOME_START.x, 1, HOME_START.y + 3);
+  distance = 62;
   private readonly smoothFocus = this.focus.clone();
   private smoothDistance = this.distance;
   private readonly raycaster = new THREE.Raycaster();
@@ -112,7 +120,7 @@ class HomeCamera {
     this.distance = clamp(this.distance * factor, MIN_DISTANCE, MAX_DISTANCE);
   }
 
-  /** Points the camera at a world spot (meters), e.g. a zone's center. */
+  /** Points the camera at a world spot (meters). */
   lookAt(x: number, y: number): void {
     this.focus.x = clamp(x, -PAN_X, PAN_X);
     this.focus.z = clamp(y, PAN_BACK, PAN_FRONT);
@@ -120,8 +128,8 @@ class HomeCamera {
 
   update(dt: number): void {
     const k = 1 - Math.exp(-dt * 10);
-    // Rise and fall with the terrace being looked at.
-    this.focus.y = Math.max(PLATEAU, homeHeight(this.focus.x, this.focus.z));
+    // Rise and fall with the ground being looked at.
+    this.focus.y = Math.max(0, homeHeight(this.focus.x, this.focus.z));
     this.smoothFocus.lerp(this.focus, k);
     this.smoothDistance = lerp(this.smoothDistance, this.distance, k);
     const cam = this.stage.camera;
@@ -150,7 +158,7 @@ class HomeCamera {
       homeHeight(origin.x + direction.x * t, origin.z + direction.z * t);
     // March from where the ray drops below the highest ground, then narrow down the crossing.
     const STEP = 1;
-    let t = Math.max(0, (origin.y - 26) / -direction.y);
+    let t = Math.max(0, (origin.y - 12) / -direction.y);
     for (let i = 0; i < 800; i++, t += STEP) {
       if (above(t + STEP) > 0) continue;
       let lo = t;
@@ -179,7 +187,9 @@ export interface Holder {
 export class CrewIslandView {
   readonly root = new THREE.Group();
   readonly camera: HomeCamera;
-  private readonly island: HomeIslandView;
+  private readonly terrain: TerrainView;
+  private readonly clouds: CloudView;
+  private readonly grid = buildTileGrid();
   private readonly blocks = new Map<string, { group: THREE.Group; key: string }>();
   private readonly previewGroup = new THREE.Group();
   private previewKey = "";
@@ -188,21 +198,37 @@ export class CrewIslandView {
     transparent: true,
     opacity: 0.35,
     depthWrite: false,
+    depthTest: false,
   });
   private readonly tiles: THREE.Mesh;
   private readonly selection: THREE.Mesh;
   private readonly tags = new Map<string, HTMLDivElement>();
-  private readonly overgrowth = new OvergrowthView();
+  private readonly overgrowth: OvergrowthView;
 
   constructor(
     private readonly stage: Stage,
     private readonly labelLayer: HTMLElement,
   ) {
     this.camera = new HomeCamera(stage);
-    this.island = buildHomeIsland();
-    // The whole plateau shows its grid; the overgrowth marks what isn't buildable yet.
-    this.island.setUnlocked(ZONES.length);
-    this.root.add(this.island.root, this.previewGroup, this.overgrowth.root);
+    const scenery = homeScenery(HOME_START);
+    const landing = landingPoints();
+    this.overgrowth = new OvergrowthView(scenery);
+    this.terrain = buildTerrain(scenery, { height: homeHeight, shade: this.overgrowth.shade });
+    this.clouds = buildClouds(HOME_SEED);
+    // Beyond the grass it's the raid islands' shore; the grass itself is the overgrowth.
+    const shore = buildShore(HOME_SEED, scenery, landing.spawn, homeHeight, -0.5);
+    const boat = gunboatModel();
+    boat.root.position.set(landing.boat.x, 0, landing.boat.y);
+    boat.root.rotation.y = -angleOf(sub(landing.spawn, landing.boat));
+    this.root.add(
+      this.terrain.root,
+      shore,
+      boat.root,
+      this.clouds.root,
+      this.grid,
+      this.previewGroup,
+      this.overgrowth.root,
+    );
 
     const tileGeometry = new THREE.PlaneGeometry(1, 1);
     tileGeometry.rotateX(-Math.PI / 2);
@@ -220,6 +246,7 @@ export class CrewIslandView {
         transparent: true,
         opacity: 0.4,
         depthWrite: false,
+        depthTest: false,
       }),
     );
     this.selection.renderOrder = 2;
@@ -229,7 +256,7 @@ export class CrewIslandView {
 
   /** Mirrors the layout: adds, moves and removes building blocks. */
   sync(layout: CrewLayout, hiddenId: string | null, holders: readonly Holder[]): void {
-    this.overgrowth.sync(layout.cleared);
+    this.overgrowth.sync(layout);
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
@@ -261,7 +288,7 @@ export class CrewIslandView {
   }
 
   showPreview(preview: Preview | null): void {
-    this.island.setGridEmphasis(preview !== null);
+    this.grid.visible = preview !== null;
     this.tiles.visible = preview !== null;
     if (!preview) {
       this.previewGroup.clear();
@@ -351,11 +378,8 @@ export class CrewIslandView {
     this.camera.update(dt);
     this.overgrowth.update(dt);
     updateWind(time, null);
-    this.island.update(
-      time,
-      this.stage.fog,
-      this.stage.sun.position.clone().sub(this.stage.sun.target.position).normalize(),
-    );
+    this.terrain.update(time);
+    this.clouds.update(time);
   }
 
   /** Building label for menus. */
@@ -367,10 +391,14 @@ export class CrewIslandView {
     // The plants share geometry and materials with other views: dispose them separately.
     this.root.remove(this.overgrowth.root);
     this.overgrowth.dispose();
+    this.clouds.dispose();
+    this.root.remove(this.clouds.root);
     for (const tag of this.tags.values()) tag.remove();
     this.tags.clear();
-    this.island.dispose();
+    this.root.remove(this.terrain.root);
+    this.terrain.dispose();
     this.root.traverse((o) => {
+      if (o instanceof THREE.InstancedMesh) o.dispose();
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
         (o.material as THREE.Material).dispose();

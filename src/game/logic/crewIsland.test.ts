@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BuildingType } from "./buildings";
 import {
   applyOp,
+  buildableTiles,
   buildBlocker,
   buildingAtTile,
   buildingCenter,
@@ -12,24 +13,22 @@ import {
   fits,
   footprint,
   GRID_ORIGIN,
+  HOME_START,
   hqLevel,
+  isBuildableTile,
   OBSTACLE_KINDS,
   obstacleAtTile,
   obstacles,
   type PlacedBuilding,
-  plateauInside,
   sanitizeLayout,
   settle,
   starterLayout,
   TILE,
   tileAt,
   tryOp,
-  ZONES,
-  zoneCenter,
-  zoneIdOfTile,
-  zoneTiles,
 } from "./crewIsland";
 import { costFor, START_RESOURCES } from "./economy";
+import { isOnGrass } from "./island";
 
 const NOW = 1_000_000_000;
 const HOUR = 3_600_000;
@@ -47,7 +46,7 @@ const turret = (id: string, x: number, y: number, rotated = false) =>
 const allCleared = () => obstacles().map((o) => o.id);
 
 /** A crew's island with its headquarters at a given level and plenty of every resource. By
- * default every obstacle is cleared, so placement tests can use the whole plateau. */
+ * default every obstacle is cleared, so placement tests can use the whole island. */
 function island(hq = 20, cleared: string[] = allCleared()): CrewLayout {
   const start = starterLayout(NOW);
   return {
@@ -58,32 +57,36 @@ function island(hq = 20, cleared: string[] = allCleared()): CrewLayout {
   };
 }
 
-/** A tile in zone 1 with an 8 x 6 block of open plateau, clear of the headquarters. */
+/** A tile with an 8 x 6 block of grass near the start, clear of the headquarters. */
 const O = (() => {
   const hq = starterLayout(NOW).buildings[0] as PlacedBuilding;
   const free = (x: number, y: number) =>
-    zoneIdOfTile(x, y) === 1 && !buildingAtTile({ buildings: [hq] } as CrewLayout, { x, y });
-  for (const t of zoneTiles(1)) {
+    isBuildableTile(x, y) && !buildingAtTile({ buildings: [hq] } as CrewLayout, { x, y });
+  const near = [...buildableTiles()].sort(
+    (a, b) => Math.hypot(a.x - hq.x, a.y - hq.y) - Math.hypot(b.x - hq.x, b.y - hq.y),
+  );
+  for (const t of near) {
     let ok = true;
     for (let dy = 0; dy < 6 && ok; dy++)
       for (let dx = 0; dx < 8 && ok; dx++) ok = free(t.x + dx, t.y + dy);
     if (ok) return t;
   }
-  throw new Error("no open spot in zone 1");
+  throw new Error("no open spot");
 })();
 const at = (dx: number, dy: number) => ({ x: O.x + dx, y: O.y + dy });
 
-/** The first tile in a zone with room for a 2x2 building. */
-function spotIn(zoneId: number): { x: number; y: number } {
-  const spot = zoneTiles(zoneId).find(
+/** A spot well away from the start with room for a 2x2 building. */
+const farSpot = (() => {
+  const spot = buildableTiles().find(
     (t) =>
-      zoneIdOfTile(t.x + 1, t.y) === zoneId &&
-      zoneIdOfTile(t.x, t.y + 1) === zoneId &&
-      zoneIdOfTile(t.x + 1, t.y + 1) === zoneId,
+      Math.hypot(t.x - O.x, t.y - O.y) > 20 &&
+      isBuildableTile(t.x + 1, t.y) &&
+      isBuildableTile(t.x, t.y + 1) &&
+      isBuildableTile(t.x + 1, t.y + 1),
   );
-  if (!spot) throw new Error(`no room in zone ${zoneId}`);
+  if (!spot) throw new Error("no far spot");
   return spot;
-}
+})();
 
 function place(layout: CrewLayout, b: PlacedBuilding): CrewLayout {
   const next = applyOp(layout, { kind: "place", building: b }, NOW);
@@ -91,48 +94,22 @@ function place(layout: CrewLayout, b: PlacedBuilding): CrewLayout {
   return next;
 }
 
-const zone = (id: number) => {
-  const z = ZONES[id - 1];
-  if (!z) throw new Error(`no zone ${id}`);
-  return z;
-};
-
-describe("crew island zones", () => {
-  it("splits one flat plateau into four sizable zones, landing first", () => {
-    for (const z of ZONES) {
-      expect(z.height).toBe(zone(1).height);
-      expect(zoneTiles(z.id).length).toBeGreaterThan(250);
+describe("crew island ground", () => {
+  it("is the raid island's grass: everything from the top of the beach inland", () => {
+    const tiles = buildableTiles();
+    expect(tiles.length).toBeGreaterThan(2400);
+    for (const t of tiles) {
+      const x = GRID_ORIGIN.x + (t.x + 0.5) * TILE;
+      const y = GRID_ORIGIN.y + (t.y + 0.5) * TILE;
+      expect(isOnGrass(x, y)).toBe(true);
     }
-    // Zone 1 is by the beach (south-west), then west, east and north.
-    const c = (id: number) => zoneCenter(zone(id));
-    expect(c(1).y).toBeGreaterThan(c(4).y);
-    expect(c(2).x).toBeLessThan(c(1).x);
-    expect(c(3).x).toBeGreaterThan(c(1).x);
-  });
-
-  it("has an organic outline, not a rectangle", () => {
-    const rows = new Map<number, number>();
-    for (const z of ZONES) for (const t of zoneTiles(z.id)) rows.set(t.y, (rows.get(t.y) ?? 0) + 1);
-    expect(new Set(rows.values()).size).toBeGreaterThan(8);
-    for (const z of ZONES) {
-      for (const t of zoneTiles(z.id)) {
-        expect(
-          plateauInside(GRID_ORIGIN.x + (t.x + 0.5) * TILE, GRID_ORIGIN.y + (t.y + 0.5) * TILE),
-        ).toBeGreaterThan(1);
-      }
-    }
-  });
-
-  it("gives every buildable tile exactly one zone", () => {
-    const seen = new Set<string>();
-    for (const z of ZONES) {
-      for (const t of zoneTiles(z.id)) {
-        const key = `${t.x},${t.y}`;
-        expect(seen.has(key)).toBe(false);
-        seen.add(key);
-        expect(zoneIdOfTile(t.x, t.y)).toBe(z.id);
-      }
-    }
+    // Right down to the beach: within a tile or two of the sand on every side.
+    const edge = tiles.filter((t) => {
+      const x = GRID_ORIGIN.x + (t.x + 0.5) * TILE;
+      const y = GRID_ORIGIN.y + (t.y + 0.5) * TILE;
+      return !isOnGrass(x, y, 3);
+    });
+    expect(edge.length).toBeGreaterThan(120);
   });
 
   it("starts overgrown, with a clearing round the headquarters", () => {
@@ -141,7 +118,12 @@ describe("crew island zones", () => {
     expect(layout.buildings).toHaveLength(1);
     expect(fits(layout, layout.buildings[0] as PlacedBuilding)).toBe(true);
     const all = obstacles();
-    expect(all.length).toBeGreaterThan(80);
+    expect(all.length).toBeGreaterThan(200);
+    // The forest runs out to the shore: nearly all the grass starts under an obstacle.
+    const covered = buildableTiles().filter((t) => obstacleAtTile(layout, t)).length;
+    expect(covered / buildableTiles().length).toBeGreaterThan(0.9);
+    const hq = layout.buildings[0] as PlacedBuilding;
+    expect(buildingCenter(hq).x).toBeCloseTo(HOME_START.x, -1);
     // Every kind shows up, and ids are unique.
     expect(new Set(all.map((o) => o.kind)).size).toBe(Object.keys(OBSTACLE_KINDS).length);
     expect(new Set(all.map((o) => o.id)).size).toBe(all.length);
@@ -179,14 +161,14 @@ describe("crew island zones", () => {
     expect(cleared && obstacleAtTile(cleared, thicket)).toBeUndefined();
   });
 
-  it("refuses buildings that poke off the plateau", () => {
+  it("refuses buildings that poke off the grass", () => {
     const open = island(20);
-    // The east-most tile of a row: a 2x2 building there pokes off the plateau.
-    const row = ZONES.flatMap((z) => zoneTiles(z.id)).filter((t) => t.y === O.y);
+    // The east-most tile of a row: a 2x2 building there pokes off the grass.
+    const row = buildableTiles().filter((t) => t.y === O.y);
     const edge = row.reduce((a, b) => (b.x > a.x ? b : a), O);
     expect(applyOp(open, { kind: "place", building: turret("a", edge.x, edge.y) }, NOW)).toBeNull();
-    const far = tileAt({ x: 90, y: -50 }); // the hills north-east of the plateau
-    expect(zoneIdOfTile(far.x, far.y)).toBeUndefined();
+    const far = tileAt({ x: 90, y: -50 }); // out at sea
+    expect(isBuildableTile(far.x, far.y)).toBe(false);
     expect(applyOp(open, { kind: "place", building: turret("a", far.x, far.y) }, NOW)).toBeNull();
   });
 });
@@ -277,7 +259,7 @@ describe("crew island progression", () => {
     ] as const) {
       let layout = island(hq);
       let placed = 0;
-      for (const t of zoneTiles(1)) {
+      for (const t of buildableTiles()) {
         const vault = building(`v${placed}`, "goldVault", t);
         if (!buildBlocker(layout, "goldVault") && fits(layout, vault)) {
           layout = place(layout, vault);
@@ -355,7 +337,7 @@ describe("crew island progression", () => {
       buildings: [
         { ...hq, level: 2 },
         { ...turret("ok", at(0, 0).x, at(0, 0).y), level: 9 },
-        turret("second", spotIn(2).x, spotIn(2).y), // HQ 2 allows only one gun turret
+        turret("second", farSpot.x, farSpot.y), // HQ 2 allows only one gun turret
         { ...building("m", "goldMine", at(4, 0)), level: undefined },
         turret("overlap", at(1, 1).x, at(1, 1).y),
         building("vault", "goldVault", at(0, 3)), // needs HQ 3
@@ -380,5 +362,11 @@ describe("crew island progression", () => {
         for (let x = b.x; x < b.x + w; x++) expect(obstacleAtTile(clean, { x, y })).toBeUndefined();
     }
     expect(clean.cleared).not.toContain("nonsense");
+    // A building left off the grass by an older island moves to the nearest spot.
+    const stray = { ...building("mine", "goldMine", tileAt({ x: 62, y: -44 })), level: 1 };
+    const moved = sanitizeLayout({ buildings: [hq, stray] }, NOW);
+    const kept = moved.buildings.find((b) => b.id === "mine");
+    expect(kept).toBeDefined();
+    if (kept) expect(fits(moved, kept)).toBe(true);
   });
 });

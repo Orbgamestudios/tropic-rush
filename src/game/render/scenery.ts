@@ -1,9 +1,18 @@
-// Where the raid island's scenery goes, shared by the ground colors (terrain.ts) and the plants
+// Where an island's scenery goes, shared by the ground colors (terrain.ts) and the plants
 // (props.ts): the dirt trail from the landing beach up to the headquarters, the clearing around
-// the base, and the jungle that crowds in everywhere else. Render only; the rules ignore it.
+// the base, and the jungle that crowds in everywhere else. Raid islands and the crew's home island
+// are the same island, so both use this; at home the jungle is the overgrowth instead. Render
+// only; the rules ignore it.
 
 import { BUILDINGS } from "../logic/buildings";
-import { BASE_CENTER, beachWidth, type IslandLayout, shoreDistance } from "../logic/island";
+import {
+  BASE_CENTER,
+  beachWidth,
+  type IslandLayout,
+  landingPoints,
+  shoreDistance,
+  trailPoints,
+} from "../logic/island";
 import { clamp, smoothstep, type Vec2, vec } from "../logic/vec";
 
 export interface SceneryMap {
@@ -26,14 +35,39 @@ function segmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
   return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
 }
 
+/** Meters to the middle of a gently winding trail through `points`. */
+function trailDistance(points: readonly Vec2[], x: number, y: number): number {
+  const p = vec(x, y);
+  let best = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a && b) best = Math.min(best, segmentDistance(p, a, b));
+  }
+  // A little wobble so the edges aren't ruler-straight.
+  return best + Math.sin(x * 0.31 + y * 0.17) * 0.5;
+}
+
+function grassAmount(x: number, y: number): number {
+  const wobble = Math.sin(x * 0.45 + y * 0.12) * 1.1 + Math.sin(y * 0.6 - x * 0.2) * 0.8;
+  return smoothstep(-2.2, 2.2, shoreDistance(x, y) - beachWidth(x, y) + wobble);
+}
+
+/** The crew's home island: just the trail up from the beach; the overgrowth is drawn on top. */
+export function homeScenery(hq: Vec2): SceneryMap {
+  const points = trailPoints(landingPoints().spawn, hq);
+  return {
+    trail: (x, y) => trailDistance(points, x, y),
+    jungle: () => 0,
+    room: () => Infinity,
+    grass: grassAmount,
+    pad: () => 0,
+  };
+}
+
 export function sceneryMap(layout: IslandLayout): SceneryMap {
   const hq = layout.buildings.find((b) => b.type === "headquarters")?.pos ?? BASE_CENTER;
-  // A gently winding trail: landing beach, a bend, the base's front, the HQ.
-  const mid = vec(
-    (layout.spawn.x + hq.x) / 2 + (hq.y - layout.spawn.y) * 0.12,
-    (layout.spawn.y + hq.y) / 2 - (hq.x - layout.spawn.x) * 0.12,
-  );
-  const points = [layout.spawn, mid, hq];
+  const points = trailPoints(layout.spawn, hq);
   const things = [
     ...layout.buildings.map((b) => ({ pos: b.pos, radius: BUILDINGS[b.type].radius })),
     ...layout.obstacles.map((o) => ({ pos: o.pos, radius: o.radius })),
@@ -49,22 +83,8 @@ export function sceneryMap(layout: IslandLayout): SceneryMap {
       24,
     ) + 7;
 
-  const trail = (x: number, y: number) => {
-    const p = vec(x, y);
-    let best = Infinity;
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i];
-      const b = points[i + 1];
-      if (a && b) best = Math.min(best, segmentDistance(p, a, b));
-    }
-    // A little wobble so the edges aren't ruler-straight.
-    return best + Math.sin(x * 0.31 + y * 0.17) * 0.5;
-  };
-
-  const grass = (x: number, y: number) => {
-    const wobble = Math.sin(x * 0.45 + y * 0.12) * 1.1 + Math.sin(y * 0.6 - x * 0.2) * 0.8;
-    return smoothstep(-2.2, 2.2, shoreDistance(x, y) - beachWidth(x, y) + wobble);
-  };
+  const trail = (x: number, y: number) => trailDistance(points, x, y);
+  const grass = grassAmount;
 
   const room = (x: number, y: number) => {
     let best = Infinity;

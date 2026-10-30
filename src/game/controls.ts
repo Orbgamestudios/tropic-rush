@@ -13,6 +13,7 @@ import { ABILITY_ORDER } from "./logic/gunboat";
 import type { HeroInput } from "./logic/raid";
 import { clampLength, length, normalize, sub, type Vec2, vec } from "./logic/vec";
 import type { CameraRig } from "./render/cameraRig";
+import { type ControlLayout, DEFAULT_CONTROLS } from "./save";
 import { iconSvg } from "./ui/kit/icons";
 
 export type ControlMode = "off" | "hero" | "boat";
@@ -51,16 +52,12 @@ function stickElements(
   const knob = document.createElement("div");
   knob.className = "stick-knob";
   if (kind === "move") {
-    // Four little arrows round the ring, a "MOVE" label and a curved hint arrow.
+    // Four little arrows round the ring.
     for (const dir of ["up", "right", "down", "left"]) {
       const arrow = document.createElement("span");
       arrow.className = `stick-arrow stick-arrow-${dir}`;
       base.append(arrow);
     }
-    const label = document.createElement("div");
-    label.className = "stick-label";
-    label.innerHTML = `<span>MOVE</span><svg viewBox="0 0 60 40" aria-hidden="true"><path d="M4 8c22-6 42 2 50 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="M46 30l9 4 2-10" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    base.append(label);
     knob.innerHTML = iconSvg("anchorGold");
   } else {
     knob.innerHTML = iconSvg("bullet");
@@ -78,6 +75,7 @@ export class Controls {
   selectedAbility: Ability = "artillery";
   /** The UI size setting; sticks are drawn this much bigger or smaller. */
   uiScale = 1;
+  private layout: ControlLayout = DEFAULT_CONTROLS;
   private mode: ControlMode = "off";
   private left: Stick | null = null;
   private right: Stick | null = null;
@@ -120,6 +118,18 @@ export class Controls {
     this.rightVisual.base.style.display = visible;
   }
 
+  /** Moves and sizes the sticks from the settings. */
+  setLayout(layout: ControlLayout): void {
+    this.layout = layout;
+    const place = (visual: { base: HTMLElement }, spot: ControlLayout["move"]) => {
+      visual.base.style.setProperty("--home-x", `${spot.x * 100}%`);
+      visual.base.style.setProperty("--home-y", `${spot.y * 100}%`);
+      visual.base.style.setProperty("--size", String(spot.size));
+    };
+    place(this.leftVisual, layout.move);
+    place(this.rightVisual, layout.aim);
+  }
+
   pressSuper(): void {
     this.pendingSuper = true;
   }
@@ -135,7 +145,7 @@ export class Controls {
   /** Where the player is aiming right now (dragging), as a stick vector; null if not. */
   aimPreview(): Vec2 | null {
     if (this.mode !== "hero") return null;
-    const radius = this.stickRadius();
+    const radius = this.stickRadius(this.layout.aim.size);
     if (this.right && Math.hypot(this.right.dx, this.right.dy) > AIM_DEADZONE)
       return clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1);
     if (this.mouse.down && this.lastHero) return this.mouseAim(this.lastHero);
@@ -161,7 +171,7 @@ export class Controls {
   read(heroPos: Vec2 | null): HeroInput {
     this.lastHero = heroPos;
     let move = vec(0, 0);
-    const radius = this.stickRadius();
+    const radius = this.stickRadius(this.layout.move.size);
     if (this.left) move = clampLength(vec(this.left.dx / radius, this.left.dy / radius), 1);
     else move = this.keyboardMove();
 
@@ -184,8 +194,8 @@ export class Controls {
   }
 
   /** How far the thumb travels for a full push, in screen pixels. */
-  private stickRadius(): number {
-    return BASE_STICK_RADIUS * this.uiScale;
+  private stickRadius(size: number): number {
+    return BASE_STICK_RADIUS * this.uiScale * size;
   }
 
   private keyboardMove(): Vec2 {
@@ -239,9 +249,12 @@ export class Controls {
       };
       return;
     }
-    const leftSide = e.clientX < window.innerWidth * 0.5;
-    if (leftSide && !this.left) this.left = this.startStick(e, this.leftVisual);
-    else if (!leftSide && !this.right) this.right = this.startStick(e, this.rightVisual);
+    // Each thumb takes the stick whose resting spot is nearer, wherever they've been moved to.
+    const rect = this.surface.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const toMove = Math.abs(x - this.layout.move.x) <= Math.abs(x - this.layout.aim.x);
+    if (toMove && !this.left) this.left = this.startStick(e, this.leftVisual);
+    else if (!toMove && !this.right) this.right = this.startStick(e, this.rightVisual);
   }
 
   private startStick(e: PointerEvent, visual: { base: HTMLElement; knob: HTMLElement }): Stick {
@@ -276,14 +289,15 @@ export class Controls {
     }
     for (const stick of [this.left, this.right]) {
       if (!stick || stick.pointerId !== e.pointerId) continue;
+      const size = stick === this.left ? this.layout.move.size : this.layout.aim.size;
       const d = clampLength(
         vec(e.clientX - stick.originX, e.clientY - stick.originY),
-        this.stickRadius(),
+        this.stickRadius(size),
       );
       stick.dx = d.x;
       stick.dy = d.y;
       // The knob moves inside the scaled stick, so undo the scale for its offset.
-      const k = 1 / this.uiScale;
+      const k = 1 / (this.uiScale * size);
       stick.knob.style.transform = `translate(calc(-50% + ${d.x * k}px), calc(-50% + ${d.y * k}px))`;
     }
   }
@@ -320,7 +334,7 @@ export class Controls {
     if (this.right?.pointerId === e.pointerId) {
       const quick = performance.now() - this.right.startTime < TAP_MS;
       const dragged = Math.hypot(this.right.dx, this.right.dy);
-      const radius = this.stickRadius();
+      const radius = this.stickRadius(this.layout.aim.size);
       if (!cancelled && dragged > AIM_DEADZONE)
         this.pendingLock = clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1);
       else if (!cancelled && quick && dragged < TAP_DISTANCE) this.pendingAutoAim = true;

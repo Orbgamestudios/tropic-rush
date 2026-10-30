@@ -1,10 +1,9 @@
-// The crew's home island: one big flat grass plateau where buildings go, with organic hills and
-// slopes around it and a single sandy beach on the south-west side. A new island is overgrown:
-// only a clearing round the headquarters is open, and the rest is thickets, palm groves, rocks,
-// dense jungle and boulders that the crew clears to make room. Each needs a tool, and better
-// tools come with headquarters levels. Buildings snap to 2 m tiles, and only tiles well inside
-// the plateau's flowing outline can be built on. Enemy islands will start from this same design.
-// (The plateau is still split into four "zones" internally, for the grid overlay.)
+// The crew's home island. It's the same island as every raid island (island.ts): one coast, one
+// landing beach, one set of hills. All the grass can be built on, right down to the top of the
+// beach. A new island is overgrown: only a clearing round the headquarters and the trail from
+// the beach are open, and the rest is thickets, palm groves, rocks, dense jungle and boulders that
+// the crew clears to make room. Each needs a tool, and better tools come with headquarters levels.
+// Buildings snap to 2 m tiles.
 // Plain rules with no engine imports, shared by the phone and the crew server, which checks
 // every change with the same functions before accepting it.
 
@@ -25,6 +24,7 @@ import {
   spend,
   storageCapacity,
 } from "./economy";
+import { isOnGrass, landingPoints, trailPoints } from "./island";
 import { createRng } from "./rng";
 import type { Vec2 } from "./vec";
 
@@ -32,83 +32,22 @@ import type { Vec2 } from "./vec";
 export const TILE = 2;
 /** World position (meters; x east, y south) of tile (0, 0)'s north-west corner. */
 export const GRID_ORIGIN: Vec2 = { x: -80, y: -64 };
-/** Height of the flat build plateau, in meters. */
-export const PLATEAU_HEIGHT = 2.4;
+/** Where a new crew's headquarters goes, and the middle of its first clearing. */
+export const HOME_START: Vec2 = { x: -12, y: 16 };
 
-/** The plateau's outline: a rough oval with lumps ([amount, phase] for 3, 5 and 7 bumps). */
-export const PLATEAU = {
-  cx: -4,
-  cy: 2,
-  rx: 60,
-  ry: 44,
-  lumps: [0.07, 0.6, 0.05, 2.4, 0.03, 4.1],
-} as const;
+/** How far the grid reaches from the middle of the island, in meters. */
+const GRID_REACH = { x: 104, y: 88 };
 
-/** How far inside the plateau's organic outline a point is, in meters (negative outside). */
-export function plateauInside(x: number, y: number): number {
-  const dx = (x - PLATEAU.cx) / PLATEAU.rx;
-  const dy = (y - PLATEAU.cy) / PLATEAU.ry;
-  const angle = Math.atan2(dy, dx);
-  const [a3, p3, a5, p5, a7, p7] = PLATEAU.lumps;
-  const edge =
-    1 +
-    a3 * Math.sin(3 * angle + p3) +
-    a5 * Math.sin(5 * angle + p5) +
-    a7 * Math.sin(7 * angle + p7);
-  return (edge - Math.hypot(dx, dy)) * Math.min(PLATEAU.rx, PLATEAU.ry);
-}
+let tileSet: Set<string> | null = null;
+let tileList: { x: number; y: number }[] = [];
 
-export interface Zone {
-  /** 1 to 4, in unlock order. */
-  id: number;
-  name: string;
-  /** The zone's heart: each plateau tile belongs to the zone whose heart is nearest. */
-  cx: number;
-  cy: number;
-  /** Ground height in meters (the same for every zone: the plateau is flat). */
-  height: number;
-}
-
-export const ZONES: readonly Zone[] = [
-  { id: 1, name: "Landing", cx: -14, cy: 20, height: PLATEAU_HEIGHT },
-  { id: 2, name: "West field", cx: -46, cy: -6, height: PLATEAU_HEIGHT },
-  { id: 3, name: "East field", cx: 32, cy: 12, height: PLATEAU_HEIGHT },
-  { id: 4, name: "North field", cx: 0, cy: -28, height: PLATEAU_HEIGHT },
-];
-
-/** A gentle wobble added to distances, so the borders between zones curve instead of running straight. */
-function borderWobble(x: number, y: number): number {
-  return 3 * Math.sin(x * 0.13 + y * 0.07) + 2 * Math.sin(y * 0.17 - x * 0.05);
-}
-
-/** The zone a world point belongs to, if it's on the plateau. */
-export function zoneAt(x: number, y: number): Zone | undefined {
-  if (plateauInside(x, y) < 0) return undefined;
-  let best: Zone | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const z of ZONES) {
-    const d = Math.hypot(x - z.cx, y - z.cy) + borderWobble(x, y) * (z.id % 2 ? 1 : -1);
-    if (d < bestDistance) {
-      best = z;
-      bestDistance = d;
-    }
-  }
-  return best;
-}
-
-/** A tile is buildable when all its corners sit at least this far inside the plateau. */
-const EDGE_MARGIN = 1;
-
-let tileZones: Map<string, number> | null = null;
-const tileLists = new Map<number, { x: number; y: number }[]>();
-
-function buildTileMap(): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const z of ZONES) tileLists.set(z.id, []);
-  const x0 = Math.floor((PLATEAU.cx - PLATEAU.rx * 1.2 - GRID_ORIGIN.x) / TILE);
-  const x1 = Math.ceil((PLATEAU.cx + PLATEAU.rx * 1.2 - GRID_ORIGIN.x) / TILE);
-  const y0 = Math.floor((PLATEAU.cy - PLATEAU.ry * 1.2 - GRID_ORIGIN.y) / TILE);
-  const y1 = Math.ceil((PLATEAU.cy + PLATEAU.ry * 1.2 - GRID_ORIGIN.y) / TILE);
+function buildTiles(): Set<string> {
+  const set = new Set<string>();
+  tileList = [];
+  const x0 = Math.floor((-GRID_REACH.x - GRID_ORIGIN.x) / TILE);
+  const x1 = Math.ceil((GRID_REACH.x - GRID_ORIGIN.x) / TILE);
+  const y0 = Math.floor((-GRID_REACH.y - GRID_ORIGIN.y) / TILE);
+  const y1 = Math.ceil((GRID_REACH.y - GRID_ORIGIN.y) / TILE);
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const x = GRID_ORIGIN.x + tx * TILE;
@@ -119,26 +58,24 @@ function buildTileMap(): Map<string, number> {
         [x, y + TILE],
         [x + TILE, y + TILE],
       ] as const;
-      if (!corners.every(([cx, cy]) => plateauInside(cx, cy) >= EDGE_MARGIN)) continue;
-      const zone = zoneAt(x + TILE / 2, y + TILE / 2);
-      if (!zone) continue;
-      map.set(`${tx},${ty}`, zone.id);
-      tileLists.get(zone.id)?.push({ x: tx, y: ty });
+      if (!corners.every(([cx, cy]) => isOnGrass(cx, cy))) continue;
+      set.add(`${tx},${ty}`);
+      tileList.push({ x: tx, y: ty });
     }
   }
-  return map;
+  return set;
 }
 
-/** The zone a tile belongs to, if it's buildable. */
-export function zoneIdOfTile(tx: number, ty: number): number | undefined {
-  tileZones ??= buildTileMap();
-  return tileZones.get(`${tx},${ty}`);
+/** True if a tile can be built on: it's on the island's grass. */
+export function isBuildableTile(tx: number, ty: number): boolean {
+  tileSet ??= buildTiles();
+  return tileSet.has(`${tx},${ty}`);
 }
 
-/** Every buildable tile in a zone. */
-export function zoneTiles(zoneId: number): readonly { x: number; y: number }[] {
-  tileZones ??= buildTileMap();
-  return tileLists.get(zoneId) ?? [];
+/** Every buildable tile, row by row from the north. */
+export function buildableTiles(): readonly { x: number; y: number }[] {
+  tileSet ??= buildTiles();
+  return tileList;
 }
 
 /** Footprint in tiles (width east-west, depth north-south) before rotating. */
@@ -195,31 +132,16 @@ export function footprint(type: BuildingType, rotated: boolean): { w: number; h:
   return rotated ? { w: f.h, h: f.w } : f;
 }
 
-/** The zone that holds every tile of a rectangle, if one does. */
-export function zoneForRect(x: number, y: number, w: number, h: number): Zone | undefined {
-  const id = zoneIdOfTile(x, y);
-  if (id === undefined) return undefined;
+/** True if every tile of a rectangle can be built on. */
+function onGrass(x: number, y: number, w: number, h: number): boolean {
   for (let ty = y; ty < y + h; ty++) {
-    for (let tx = x; tx < x + w; tx++) if (zoneIdOfTile(tx, ty) !== id) return undefined;
-  }
-  return ZONES[id - 1];
-}
-
-export function zoneOf(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rotated">): Zone | undefined {
-  const { w, h } = footprint(b.type, b.rotated);
-  return zoneForRect(b.x, b.y, w, h);
-}
-
-/** True if every tile of a rectangle is buildable plateau. */
-function onPlateau(x: number, y: number, w: number, h: number): boolean {
-  for (let ty = y; ty < y + h; ty++) {
-    for (let tx = x; tx < x + w; tx++) if (zoneIdOfTile(tx, ty) === undefined) return false;
+    for (let tx = x; tx < x + w; tx++) if (!isBuildableTile(tx, ty)) return false;
   }
   return true;
 }
 
 /**
- * True if a building sits wholly on the plateau, on cleared ground, without overlapping other
+ * True if a building sits wholly on the grass, on cleared ground, without overlapping other
  * buildings.
  */
 export function fits(
@@ -228,7 +150,7 @@ export function fits(
   ignoreId = candidate.id,
 ): boolean {
   const { w, h } = footprint(candidate.type, candidate.rotated);
-  if (!onPlateau(candidate.x, candidate.y, w, h)) return false;
+  if (!onGrass(candidate.x, candidate.y, w, h)) return false;
   const cleared = new Set(layout.cleared);
   for (const o of obstacles()) {
     if (cleared.has(o.id)) continue;
@@ -325,67 +247,87 @@ export interface Obstacle {
 
 /** The open clearing round the headquarters on a new island, in meters. */
 const START_CLEARING = 18;
+/** The trail from the landing beach stays open this far either side of its middle. */
+const TRAIL_CLEARING = 3.4;
+
+function segmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const k = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1);
+  const t = Math.max(0, Math.min(1, k));
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+}
 
 let obstacleList: Obstacle[] | null = null;
 
 /**
- * Every obstacle on the plateau. The same on every island and every phone (fixed seed), so the
+ * Every obstacle on the island: together they cover all the grass out to the shore, apart from
+ * the start clearing and the trail. The same on every island and every phone (fixed seed), so the
  * server only needs to store which are cleared. Easy ones grow near the start, harder ones
  * further out.
  */
 export function obstacles(): readonly Obstacle[] {
   if (obstacleList) return obstacleList;
   const list: Obstacle[] = [];
-  const start = zoneCenter(ZONES[0] as Zone);
   const rng = createRng(0x7a11e);
-  const tiles: { x: number; y: number }[] = [];
-  for (const z of ZONES) tiles.push(...zoneTiles(z.id));
-  // Row by row, so the patches pack tightly and every tile outside the clearing is covered.
-  tiles.sort((a, b) => a.y - b.y || a.x - b.x);
+  const trail = trailPoints(landingPoints().spawn, HOME_START);
   const taken = new Set<string>();
-  const metersFromStart = (t: { x: number; y: number }) =>
-    Math.hypot(
-      GRID_ORIGIN.x + (t.x + 0.5) * TILE - start.x,
-      GRID_ORIGIN.y + (t.y + 0.5) * TILE - start.y,
-    );
+  const center = (t: { x: number; y: number }): Vec2 => ({
+    x: GRID_ORIGIN.x + (t.x + 0.5) * TILE,
+    y: GRID_ORIGIN.y + (t.y + 0.5) * TILE,
+  });
+  const fromStart = (t: { x: number; y: number }) => {
+    const c = center(t);
+    return Math.hypot(c.x - HOME_START.x, c.y - HOME_START.y);
+  };
+  const open = (t: { x: number; y: number }) => {
+    if (fromStart(t) < START_CLEARING) return true;
+    const c = center(t);
+    for (let i = 0; i + 1 < trail.length; i++) {
+      const a = trail[i];
+      const b = trail[i + 1];
+      if (a && b && segmentDistance(c, a, b) < TRAIL_CLEARING) return true;
+    }
+    return false;
+  };
   const free = (x: number, y: number, w: number, h: number) => {
-    if (!onPlateau(x, y, w, h)) return false;
+    if (!onGrass(x, y, w, h)) return false;
     for (let ty = y; ty < y + h; ty++)
       for (let tx = x; tx < x + w; tx++) {
-        if (taken.has(`${tx},${ty}`)) return false;
-        if (metersFromStart({ x: tx, y: ty }) < START_CLEARING) return false;
+        if (taken.has(`${tx},${ty}`) || open({ x: tx, y: ty })) return false;
       }
     return true;
   };
-  for (const t of tiles) {
-    if (taken.has(`${t.x},${t.y}`) || metersFromStart(t) < START_CLEARING) continue;
-    const d = metersFromStart(t);
+  // Row by row, so the patches pack tightly and every tile outside the clearing is covered.
+  for (const t of buildableTiles()) {
+    if (taken.has(`${t.x},${t.y}`) || open(t)) continue;
+    const d = fromStart(t);
     const roll = rng();
-    // Easy growth near the start, harder further out.
+    // Easy growth near the start, mostly jungle further out, boulders towards the far shores.
     const wanted: ObstacleKind =
-      d < 28
+      d < 30
         ? roll < 0.5
           ? "thicket"
           : "grove"
-        : d < 40
-          ? roll < 0.45
+        : d < 46
+          ? roll < 0.3
             ? "rocks"
-            : roll < 0.75
+            : roll < 0.65
               ? "grove"
-              : "thicket"
-          : d < 52
-            ? roll < 0.55
+              : "jungle"
+          : d < 70
+            ? roll < 0.65
               ? "jungle"
-              : roll < 0.8
-                ? "rocks"
-                : "grove"
-            : roll < 0.45
-              ? "boulder"
               : roll < 0.85
+                ? "grove"
+                : "rocks"
+            : roll < 0.2
+              ? "boulder"
+              : roll < 0.8
                 ? "jungle"
                 : "rocks";
     // Fall back to smaller patches where the wanted one doesn't fit.
-    const tries: ObstacleKind[] = [wanted, d < 40 ? "thicket" : "rocks", "brush"];
+    const tries: ObstacleKind[] = [wanted, "grove", "thicket", "brush"];
     for (const kind of tries) {
       const { w, h } = OBSTACLE_KINDS[kind];
       if (!free(t.x, t.y, w, h)) continue;
@@ -395,7 +337,7 @@ export function obstacles(): readonly Obstacle[] {
       break;
     }
   }
-  // Ids by position, so they stay the same as long as the plateau does.
+  // Ids by position, so they stay the same as long as the island does.
   for (const o of list) o.id = `${o.x}.${o.y}`;
   obstacleList = list;
   return list;
@@ -419,7 +361,7 @@ export function clearBlocker(layout: CrewLayout, o: Obstacle): string | null {
   return null;
 }
 
-/** How much of the plateau's overgrowth is cleared, 0 to 1. */
+/** How much of the island's overgrowth is cleared, 0 to 1. */
 export function clearedShare(layout: Pick<CrewLayout, "cleared">): number {
   const all = obstacles();
   return all.length ? Math.min(1, layout.cleared.length / all.length) : 1;
@@ -621,26 +563,9 @@ export function nearestFit(
   return null;
 }
 
-/** World point of a zone's middle: the average of its tiles. */
-export function zoneCenter(z: Zone): Vec2 {
-  const tiles = zoneTiles(z.id);
-  if (tiles.length === 0) return { x: z.cx, y: z.cy };
-  let x = 0;
-  let y = 0;
-  for (const t of tiles) {
-    x += t.x;
-    y += t.y;
-  }
-  return {
-    x: GRID_ORIGIN.x + (x / tiles.length + 0.5) * TILE,
-    y: GRID_ORIGIN.y + (y / tiles.length + 0.5) * TILE,
-  };
-}
-
 /** A new crew starts with a clearing in the overgrowth, just its headquarters in the middle of
  * it, and a little of each resource. */
 export function starterLayout(now = Date.now()): CrewLayout {
-  const first = ZONES[0] as Zone;
   const hq: PlacedBuilding = {
     id: "hq",
     type: "headquarters",
@@ -649,7 +574,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     rotated: false,
     level: 1,
   };
-  const start = cornerFor("headquarters", false, zoneCenter(first));
+  const start = cornerFor("headquarters", false, HOME_START);
   const spot = nearestFit({ buildings: [], cleared: [] }, hq, start) ?? { ...hq, ...start };
   return { cleared: [], buildings: [spot], resources: { ...START_RESOURCES }, stamp: now };
 }
@@ -660,7 +585,7 @@ export function buildingCenter(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rot
   return { x: GRID_ORIGIN.x + (b.x + w / 2) * TILE, y: GRID_ORIGIN.y + (b.y + h / 2) * TILE };
 }
 
-/** The tile under a world point (may be outside every zone). */
+/** The tile under a world point (may be off the grass). */
 export function tileAt(p: Vec2): { x: number; y: number } {
   return {
     x: Math.floor((p.x - GRID_ORIGIN.x) / TILE),
@@ -701,7 +626,8 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   } | null;
   const raw = data?.buildings;
   if (!Array.isArray(raw)) return starterLayout(now);
-  const known = new Set(obstacles().map((o) => o.id));
+  const allIds = obstacles().map((o) => o.id);
+  const known = new Set(allIds);
   const rawCleared = Array.isArray(data?.cleared) ? data.cleared : [];
   const cleared = [
     ...new Set(rawCleared.filter((id): id is string => typeof id === "string" && known.has(id))),
@@ -732,12 +658,17 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     const have = buildings.filter((o) => o.type === b.type).length;
     if (have >= allowedCount(b.type, hq)) continue;
     const building = { ...b, level: Math.min(b.level, Math.max(1, levelCap(b.type, hq))) };
-    // Islands from before the clearing rules: ground under existing buildings counts as cleared.
+    // Older islands: a building that's off the grass moves to the nearest spot, and the ground
+    // under existing buildings counts as cleared.
     const { w, h } = footprint(building.type, building.rotated);
+    const open = { buildings, cleared: allIds };
+    const spot = onGrass(building.x, building.y, w, h)
+      ? building
+      : nearestFit(open, building, { x: building.x, y: building.y }, 16);
+    if (!spot || !fits(open, spot)) continue;
     for (const o of obstacles())
-      if (!cleared.includes(o.id) && overlaps(building.x, building.y, w, h, o)) cleared.push(o.id);
-    if (!fits({ buildings, cleared }, building)) continue;
-    buildings.push(building);
+      if (!cleared.includes(o.id) && overlaps(spot.x, spot.y, w, h, o)) cleared.push(o.id);
+    buildings.push(spot);
     ids.add(b.id);
   }
   if (!buildings.some((b) => b.type === "headquarters")) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadSave, type SaveData, writeSave } from "./save";
+import { DEFAULT_CONTROLS, DEFAULT_SETTINGS, loadSave, type SaveData, writeSave } from "./save";
 
 function memoryStorage() {
   const items = new Map<string, string>();
@@ -33,7 +33,7 @@ const DEFAULTS: SaveData = {
   heroLevels: LEVELS,
   unlocked: ["rifleman", "medic", "heavy"],
   squad: ["medic", "heavy"],
-  settings: { tilt: 0.5, zoom: 0.37, uiScale: 1, muted: false },
+  settings: DEFAULT_SETTINGS,
 };
 
 describe("save", () => {
@@ -52,7 +52,18 @@ describe("save", () => {
       heroLevels: { ...LEVELS, grenadier: 4 },
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
       squad: ["medic", "grenadier"],
-      settings: { tilt: 0.2, zoom: 0.9, uiScale: 1.1, muted: true },
+      settings: {
+        tilt: -0.2,
+        zoom: 0.9,
+        uiScale: 1.1,
+        muted: true,
+        controls: {
+          move: { x: 0.2, y: 0.8, size: 1.3 },
+          aim: { x: 0.85, y: 0.7, size: 0.9 },
+          super: { x: 0.6, y: 0.5, size: 1.5 },
+        },
+        rev: DEFAULT_SETTINGS.rev,
+      },
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
@@ -69,9 +80,33 @@ describe("save", () => {
     const storage = memoryStorage();
     storage.items.set(
       "tropic-rush:save:v1",
-      JSON.stringify({ settings: { tilt: 4, zoom: -1, uiScale: 9, muted: "yes" } }),
+      JSON.stringify({
+        settings: {
+          tilt: 4,
+          zoom: -1,
+          uiScale: 9,
+          muted: "yes",
+          rev: DEFAULT_SETTINGS.rev,
+          controls: { super: { x: 5, y: -2, size: 30 } },
+        },
+      }),
     );
-    expect(loadSave(storage).settings).toEqual({ tilt: 1, zoom: 0, uiScale: 1.25, muted: false });
+    expect(loadSave(storage).settings).toEqual({
+      ...DEFAULT_SETTINGS,
+      tilt: 1,
+      zoom: 0,
+      uiScale: 1.25,
+      controls: { ...DEFAULT_CONTROLS, super: { x: 1, y: 0, size: 2 } },
+    });
+  });
+
+  it("moves older saves onto the new default tilt and UI size", () => {
+    const storage = memoryStorage();
+    storage.items.set(
+      "tropic-rush:save:v1",
+      JSON.stringify({ settings: { tilt: 0.5, zoom: 0.8, uiScale: 1, muted: true } }),
+    );
+    expect(loadSave(storage).settings).toEqual({ ...DEFAULT_SETTINGS, zoom: 0.8, muted: true });
   });
 
   it("keeps only unlocked heroes in the squad", () => {

@@ -26,7 +26,8 @@ import { RaidView } from "./render/raidView";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
 import { heroPortrait } from "./render/thumbnails";
-import { loadSave, type SaveData, writeSave } from "./save";
+import { loadSave, type SaveData, type Settings, writeSave } from "./save";
+import { ControlsEditor } from "./ui/controlsEditor";
 import { HeroSelect } from "./ui/heroSelect";
 import { Hud } from "./ui/hud";
 import { sfx } from "./ui/kit/fx";
@@ -48,6 +49,7 @@ export class Game {
   private readonly rig: CameraRig;
   private readonly labels: WorldLabels;
   private readonly controls: Controls;
+  private readonly controlsEditor: ControlsEditor;
   private readonly hud: Hud;
   private readonly heroes: HeroSelect;
   private readonly results: ResultsScreen;
@@ -113,10 +115,16 @@ export class Game {
         this.retreat();
       },
       settings: () => this.save.settings,
-      onSettings: (settings) => {
-        this.updateSave({ settings });
-        this.applySettings();
+      onSettings: (settings) => this.setSettings(settings),
+      onEditControls: () => {
+        this.pause.show(false, this.phase !== "crew");
+        this.controlsEditor.show(true);
       },
+    });
+    this.controlsEditor = new ControlsEditor(container, {
+      settings: () => this.save.settings,
+      onSettings: (settings) => this.setSettings(settings),
+      onClose: () => this.pause.showSettings(),
     });
     const rotate = layer(container, "rotate");
     rotate.textContent = "Turn your phone sideways to play";
@@ -170,7 +178,14 @@ export class Game {
     this.rig.zoom = s.zoom;
     this.container.style.setProperty("--ui-scale", String(s.uiScale));
     this.controls.uiScale = s.uiScale;
+    this.controls.setLayout(s.controls);
+    this.hud.setSuperSpot(s.controls.super);
     sfx.setMuted(s.muted);
+  }
+
+  private setSettings(settings: Settings): void {
+    this.updateSave({ settings });
+    this.applySettings();
   }
 
   private updateSave(changes: Partial<SaveData>): void {

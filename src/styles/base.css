@@ -146,7 +146,7 @@ img {
 }
 
 .stick {
-  scale: var(--ui-scale, 1);
+  scale: calc(var(--ui-scale, 1) * var(--size, 1));
 }
 
 .hud,

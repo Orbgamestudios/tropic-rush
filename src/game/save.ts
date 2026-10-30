@@ -29,33 +29,80 @@ export interface SaveData {
   settings: Settings;
 }
 
-/** Player settings from the pause menu. Each slider is 0 to 1 except uiScale. */
+/** Where a control rests: its middle as a share of the screen (0 to 1), and its size. */
+export interface ControlSpot {
+  x: number;
+  y: number;
+  size: number;
+}
+
+export type ControlName = "move" | "aim" | "super";
+export type ControlLayout = Record<ControlName, ControlSpot>;
+
+/** Player settings from the pause menu. */
 export interface Settings {
-  /** Raid camera tilt: 0 looks out low (see further), 1 looks straight down. */
+  /** Raid camera tilt: 0 is the default, lower looks out further, higher looks down. */
   tilt: number;
   /** Raid camera distance: 0 close to the hero, 1 far back. */
   zoom: number;
-  /** Size of every menu, button and the HUD (0.8 to 1.25). */
+  /** Size of every menu, button and the HUD. */
   uiScale: number;
   muted: boolean;
+  /** Where the sticks and the Super button sit, and how big they are. */
+  controls: ControlLayout;
+  /** Bumped when the defaults change, so older saves pick up the new tilt and UI size. */
+  rev: number;
 }
 
-export const DEFAULT_SETTINGS: Settings = { tilt: 0.5, zoom: 0.37, uiScale: 1, muted: false };
-export const UI_SCALE_RANGE = [0.8, 1.25] as const;
+const SETTINGS_REV = 2;
+export const TILT_RANGE = [-0.6, 1] as const;
+export const UI_SCALE_RANGE = [0.4, 1.25] as const;
+export const CONTROL_SIZE_RANGE = [0.5, 2] as const;
+
+export const DEFAULT_CONTROLS: ControlLayout = {
+  move: { x: 0.12, y: 0.76, size: 1 },
+  aim: { x: 0.9, y: 0.76, size: 1 },
+  super: { x: 0.74, y: 0.66, size: 1 },
+};
+
+export const DEFAULT_SETTINGS: Settings = {
+  tilt: 0,
+  zoom: 0.37,
+  uiScale: 0.7,
+  muted: false,
+  controls: DEFAULT_CONTROLS,
+  rev: SETTINGS_REV,
+};
+
+function ranged(x: unknown, min: number, max: number, fallback: number): number {
+  return typeof x === "number" && Number.isFinite(x) ? Math.min(max, Math.max(min, x)) : fallback;
+}
+
+function readControls(value: unknown): ControlLayout {
+  const raw = (value ?? {}) as Partial<Record<ControlName, Partial<ControlSpot>>>;
+  const spot = (name: ControlName): ControlSpot => {
+    const d = DEFAULT_CONTROLS[name];
+    return {
+      x: ranged(raw[name]?.x, 0, 1, d.x),
+      y: ranged(raw[name]?.y, 0, 1, d.y),
+      size: ranged(raw[name]?.size, CONTROL_SIZE_RANGE[0], CONTROL_SIZE_RANGE[1], d.size),
+    };
+  };
+  return { move: spot("move"), aim: spot("aim"), super: spot("super") };
+}
 
 function readSettings(value: unknown): Settings {
   const v = (value ?? {}) as Partial<Record<keyof Settings, unknown>>;
-  const unit = (x: unknown, fallback: number) =>
-    typeof x === "number" && Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : fallback;
-  const ui =
-    typeof v.uiScale === "number" && Number.isFinite(v.uiScale)
-      ? Math.min(UI_SCALE_RANGE[1], Math.max(UI_SCALE_RANGE[0], v.uiScale))
-      : DEFAULT_SETTINGS.uiScale;
+  const current = v.rev === SETTINGS_REV;
   return {
-    tilt: unit(v.tilt, DEFAULT_SETTINGS.tilt),
-    zoom: unit(v.zoom, DEFAULT_SETTINGS.zoom),
-    uiScale: ui,
+    tilt: current ? ranged(v.tilt, TILT_RANGE[0], TILT_RANGE[1], DEFAULT_SETTINGS.tilt) : 0,
+    zoom: ranged(v.zoom, 0, 1, DEFAULT_SETTINGS.zoom),
+    uiScale: current
+      ? ranged(v.uiScale, UI_SCALE_RANGE[0], UI_SCALE_RANGE[1], DEFAULT_SETTINGS.uiScale)
+      : DEFAULT_SETTINGS.uiScale,
     muted: v.muted === true,
+    controls: readControls(v.controls),
+    rev: SETTINGS_REV,
   };
 }
 
@@ -88,7 +135,7 @@ const fresh = (): SaveData => ({
   heroLevels: startLevels(),
   unlocked: starters(),
   squad: [...DEFAULT_SAVE.squad],
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...DEFAULT_SETTINGS, controls: readControls(null) },
 });
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;

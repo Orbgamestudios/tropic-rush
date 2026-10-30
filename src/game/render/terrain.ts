@@ -1,4 +1,5 @@
-// Ground and sea for the raid island. The ground is one vertex-colored mesh: wet sand at the
+// Ground and sea, shared by raid islands and the crew's home island. The ground is one
+// vertex-colored mesh: wet sand at the
 // water's edge, the beach, grass in two shades that drift in soft patches, a darker jungle floor,
 // bare rock on steep slopes and a dirt trail from the landing beach up to the headquarters. The
 // sea is a shader: see-through turquoise shallows over the sand, deeper blue further out, drifting
@@ -16,6 +17,18 @@ const SEA_MARGIN = 26;
 /** The shore-distance texture covers this square around the middle (meters each way). */
 const MAP_HALF = 150;
 const MAP_SIZE = 256;
+/** The shade texture (see TerrainOptions) covers this square around the middle, in meters. */
+export const SHADE_HALF = 128;
+
+export interface TerrainOptions {
+  /** Ground height in meters; raid islands use terrainHeight. */
+  height?: (x: number, y: number) => number;
+  /**
+   * Optional soft overlay on the grass: red darkens it to jungle floor, green turns it to stony
+   * ground. The home island draws what's uncleared into it, so clearing lifts the shade.
+   */
+  shade?: THREE.Texture;
+}
 
 const SAND = new THREE.Color(COLORS.sand);
 const WET_SAND = new THREE.Color(COLORS.wetSand);
@@ -38,7 +51,13 @@ function noise(x: number, y: number): number {
   );
 }
 
-function groundColor(map: SceneryMap, x: number, y: number, out: THREE.Color): THREE.Color {
+function groundColor(
+  map: SceneryMap,
+  height: (x: number, y: number) => number,
+  x: number,
+  y: number,
+  out: THREE.Color,
+): THREE.Color {
   const sd = shoreDistance(x, y);
   if (sd < 0) {
     return out
@@ -60,11 +79,7 @@ function groundColor(map: SceneryMap, x: number, y: number, out: THREE.Color): T
   // Bare rock where the hills get steep.
   const e = 0.8;
   const slope =
-    Math.hypot(
-      terrainHeight(x + e, y) - terrainHeight(x - e, y),
-      terrainHeight(x, y + e) - terrainHeight(x, y - e),
-    ) /
-    (2 * e);
+    Math.hypot(height(x + e, y) - height(x - e, y), height(x, y + e) - height(x, y - e)) / (2 * e);
   lawn.lerp(ROCK, smoothstep(0.42, 0.75, slope) * 0.85);
 
   // The trail, worn darker down the middle.
@@ -76,7 +91,8 @@ function groundColor(map: SceneryMap, x: number, y: number, out: THREE.Color): T
   return out.lerp(lawn, grass);
 }
 
-function buildGround(map: SceneryMap): THREE.Mesh {
+function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
+  const height = options.height ?? terrainHeight;
   const positions: number[] = [];
   const colors: number[] = [];
   const color = new THREE.Color();
@@ -88,8 +104,8 @@ function buildGround(map: SceneryMap): THREE.Mesh {
       const r = t * (shoreRadius(angle) + SEA_MARGIN);
       const x = Math.cos(angle) * r;
       const y = Math.sin(angle) * r;
-      positions.push(x, terrainHeight(x, y), y);
-      groundColor(map, x, y, color);
+      positions.push(x, height(x, y), y);
+      groundColor(map, height, x, y, color);
       colors.push(color.r, color.g, color.b);
     }
   }
@@ -107,10 +123,32 @@ function buildGround(map: SceneryMap): THREE.Mesh {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  const ground = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }),
-  );
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  const { shade } = options;
+  if (shade) {
+    material.onBeforeCompile = (program) => {
+      program.uniforms.uShade = { value: shade };
+      program.vertexShader = program.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec2 vShadeUv;")
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>\nvShadeUv = position.xz / ${(SHADE_HALF * 2).toFixed(1)} + 0.5;`,
+        );
+      program.fragmentShader = program.fragmentShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nuniform sampler2D uShade;\nvarying vec2 vShadeUv;",
+        )
+        .replace(
+          "#include <color_fragment>",
+          /* glsl */ `#include <color_fragment>
+          vec4 shade = texture2D(uShade, vShadeUv);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.25, 0.04), shade.r * 0.8);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.23), shade.g * 0.7);`,
+        );
+    };
+  }
+  const ground = new THREE.Mesh(geometry, material);
   ground.receiveShadow = true;
   return ground;
 }
@@ -220,9 +258,9 @@ export interface TerrainView {
   dispose(): void;
 }
 
-export function buildTerrain(map: SceneryMap): TerrainView {
+export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): TerrainView {
   const root = new THREE.Group();
-  root.add(buildGround(map));
+  root.add(buildGround(map, options));
 
   const shore = shoreTexture();
   const material = new THREE.ShaderMaterial({

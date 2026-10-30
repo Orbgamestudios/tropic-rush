@@ -631,8 +631,9 @@
 }
 
 .hud-super {
-  right: 184px;
-  bottom: 118px;
+  /* Placed from the settings: left and top are set in hud.ts, around its middle. */
+  margin: -32px 0 0 -32px;
+  scale: var(--size, 1);
   width: 64px;
   height: 64px;
   background: radial-gradient(circle at 40% 30%, var(--navy-400), var(--navy-800));
@@ -679,7 +680,7 @@
 }
 
 .hud-boat {
-  right: 186px;
+  right: 205px;
   bottom: 28px;
   width: 58px;
   height: 58px;
@@ -787,17 +788,9 @@
     0 6px 14px rgb(0 0 0 / 0.3);
 }
 
-.stick-move.home {
-  left: 150px;
-  top: calc(100% - 100px);
-}
-
-.stick-aim.home {
-  left: calc(100% - 104px);
-  top: calc(100% - 100px);
-}
-
 .stick.home {
+  left: var(--home-x);
+  top: var(--home-y);
   opacity: 0.85;
 }
 
@@ -878,28 +871,12 @@
   transform: rotate(270deg) translateY(-50px);
 }
 
-.stick-label {
+.stick-label-aim {
   position: absolute;
-  left: -2px;
-  top: -40px;
-  display: flex;
-  align-items: flex-start;
-  gap: 2px;
   font-family: var(--display);
-  font-size: 17px;
   letter-spacing: 1px;
   color: var(--cream);
   text-shadow: var(--outline-thin);
-}
-
-.stick-label svg {
-  width: 46px;
-  height: 32px;
-  margin-top: 6px;
-  filter: drop-shadow(0 2px 0 rgb(26 34 50 / 0.8));
-}
-
-.stick-label-aim {
   left: 50%;
   top: auto;
   bottom: -18px;

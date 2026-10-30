@@ -9,6 +9,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { beachWidth, type IslandLayout, shoreDistance, terrainHeight } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
+import type { Vec2 } from "../logic/vec";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
 import { merge, painted, vertexColored } from "./shapes";
@@ -218,7 +219,7 @@ export function fernGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function flowerGeometry(petal: number, heart: number): THREE.BufferGeometry {
+export function flowerGeometry(petal: number, heart: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 4; i++) {
     const leaf = blade(0.34, 0.12, 0x5bb04a);
@@ -249,7 +250,7 @@ function flowerGeometry(petal: number, heart: number): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function tuftGeometry(): THREE.BufferGeometry {
+export function tuftGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 7; i++) {
     const tall = 0.35 + (i % 3) * 0.12;
@@ -424,11 +425,12 @@ const ISLAND_EXTENT = 112;
 const CHUNK = 40;
 
 /** Like instanced(), but one mesh per chunk of the island, each culled on its own. */
-function chunked(
+export function chunked(
   geometry: THREE.BufferGeometry,
   items: readonly PropInstance[],
   castShadow: boolean,
   material: THREE.Material,
+  ground: (x: number, y: number) => number = terrainHeight,
 ): THREE.Group {
   const cells = new Map<string, PropInstance[]>();
   for (const it of items) {
@@ -438,7 +440,7 @@ function chunked(
     cells.set(key, list);
   }
   const g = new THREE.Group();
-  for (const list of cells.values()) g.add(instanced(geometry, list, castShadow, material));
+  for (const list of cells.values()) g.add(instanced(geometry, list, castShadow, material, ground));
   return g;
 }
 
@@ -502,14 +504,6 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     else if (roll < j * 0.8) pebbles.push(item(rng, x, y, 0.7 + rng() * 0.9));
   });
 
-  // Palms along the top of the beach.
-  sample(rng, 4, (x, y) => {
-    const sd = shoreDistance(x, y);
-    const top = beachWidth(x, y);
-    if (sd < top - 3 || sd > top + 5 || map.room(x, y) < 2 || map.trail(x, y) < 4) return;
-    if (rng() < 0.16) palms.push(item(rng, x, y, 0.85 + rng() * 0.4));
-  });
-
   // Low plants on the open grass: ferns, flowers and tufts, kept off the trail and buildings.
   const ferns: PropInstance[] = [];
   const flowers: PropInstance[][] = [[], [], []];
@@ -529,22 +523,6 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     if (rng() < 0.3 + 0.2 * (1 - g)) tufts.push(item(rng, x, y, 0.7 + rng() * 0.8));
   });
 
-  // The beach: driftwood up the sand, starfish and shells near the water.
-  const driftwood: PropInstance[] = [];
-  const stars: PropInstance[][] = [[], []];
-  const shells: PropInstance[] = [];
-  sample(rng, 3, (x, y) => {
-    const sd = shoreDistance(x, y);
-    if (sd < 0.6 || sd > beachWidth(x, y) - 1 || map.room(x, y) < 2) return;
-    if (Math.hypot(x - layout.spawn.x, y - layout.spawn.y) < 7) return;
-    const roll = rng();
-    if (sd > 4 && roll < 0.018)
-      driftwood.push({ ...item(rng, x, y, 0.8 + rng() * 0.5), sink: -0.05 });
-    else if (sd < 4.5 && roll < 0.07)
-      stars[rng() < 0.6 ? 0 : 1]?.push({ ...item(rng, x, y, 0.9 + rng() * 0.6), sink: 0.01 });
-    else if (roll < 0.12) shells.push({ ...item(rng, x, y, 0.8 + rng() * 0.8), sink: 0.01 });
-  });
-
   const sway = swaying();
   root.add(
     chunked(palmGeometry(), palms, true, sway),
@@ -559,10 +537,54 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, sway),
     chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, sway),
     chunked(tuftGeometry(), tufts, false, sway),
-    instanced(driftwoodGeometry(), driftwood),
-    instanced(starfishGeometry(0xff7a45), stars[0] ?? [], false),
-    instanced(starfishGeometry(0xe85a9a), stars[1] ?? [], false),
-    instanced(shellGeometry(), shells, false),
+    buildShore(layout.seed, map, layout.spawn),
+  );
+  return root;
+}
+
+/**
+ * The shore every island shares: palms along the top of the sand, driftwood up the beach, starfish
+ * and shells near the water. `inland` is how far past the top of the sand the palms may grow.
+ */
+export function buildShore(
+  seed: number,
+  map: SceneryMap,
+  landing: Vec2,
+  ground: (x: number, y: number) => number = terrainHeight,
+  inland = 5,
+): THREE.Group {
+  const rng = createRng(seed + 29);
+  const palms: PropInstance[] = [];
+  sample(rng, 4, (x, y) => {
+    const sd = shoreDistance(x, y);
+    const top = beachWidth(x, y);
+    if (sd < top - 3 || sd > top + inland || map.room(x, y) < 2 || map.trail(x, y) < 4) return;
+    if (rng() < 0.16) palms.push(item(rng, x, y, 0.85 + rng() * 0.4));
+  });
+
+  const driftwood: PropInstance[] = [];
+  const stars: PropInstance[][] = [[], []];
+  const shells: PropInstance[] = [];
+  sample(rng, 3, (x, y) => {
+    const sd = shoreDistance(x, y);
+    if (sd < 0.6 || sd > beachWidth(x, y) - 1 || map.room(x, y) < 2) return;
+    if (Math.hypot(x - landing.x, y - landing.y) < 7) return;
+    const roll = rng();
+    if (sd > 4 && roll < 0.018)
+      driftwood.push({ ...item(rng, x, y, 0.8 + rng() * 0.5), sink: -0.05 });
+    else if (sd < 4.5 && roll < 0.07)
+      stars[rng() < 0.6 ? 0 : 1]?.push({ ...item(rng, x, y, 0.9 + rng() * 0.6), sink: 0.01 });
+    else if (roll < 0.12) shells.push({ ...item(rng, x, y, 0.8 + rng() * 0.8), sink: 0.01 });
+  });
+
+  const root = new THREE.Group();
+  const still = vertexColored();
+  root.add(
+    chunked(palmGeometry(), palms, true, swaying(), ground),
+    instanced(driftwoodGeometry(), driftwood, true, still, ground),
+    instanced(starfishGeometry(0xff7a45), stars[0] ?? [], false, still, ground),
+    instanced(starfishGeometry(0xe85a9a), stars[1] ?? [], false, still, ground),
+    instanced(shellGeometry(), shells, false, still, ground),
   );
   return root;
 }
