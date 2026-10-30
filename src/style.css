@@ -609,6 +609,163 @@ button {
   z-index: 20;
 }
 
+/* ---------- Keys: raised game buttons with an icon and a word ---------- */
+
+.key {
+  --face-hi: #a9c9f2;
+  --face-lo: #5f88bf;
+  --panel-hi: #80a7d8;
+  --panel-lo: #5880b6;
+  --base: #1d3768;
+  --ring: rgb(255 255 255 / 0.32);
+  --text: white;
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  border-radius: 14px;
+  min-width: 64px;
+  padding: 9px 12px 8px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: linear-gradient(160deg, var(--face-hi), var(--face-lo));
+  color: var(--text);
+  font-family: var(--font);
+  text-shadow: 0 1px 2px rgb(10 25 50 / 0.55);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.55),
+    inset 0 0 0 2px var(--ring),
+    0 6px 0 var(--base),
+    0 9px 14px rgb(5 15 35 / 0.38);
+  transition:
+    transform 0.06s,
+    box-shadow 0.06s,
+    filter 0.06s;
+}
+
+/* The inset panel in the middle of the face, with its thin highlight line. */
+.key::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  z-index: -1;
+  border-radius: 10px;
+  background: linear-gradient(160deg, var(--panel-hi), var(--panel-lo));
+  box-shadow:
+    inset 0 0 0 1.5px rgb(255 255 255 / 0.38),
+    inset 0 2px 5px rgb(10 25 50 / 0.22);
+}
+
+.key:active,
+.key.active {
+  transform: translateY(5px);
+  filter: brightness(0.86);
+  box-shadow:
+    inset 0 2px 6px rgb(10 25 50 / 0.35),
+    inset 0 0 0 2px rgb(255 255 255 / 0.16),
+    0 1px 0 var(--base),
+    0 0 0 3px rgb(12 24 46 / 0.55);
+}
+
+.key:disabled {
+  filter: grayscale(0.7) brightness(0.9);
+  opacity: 0.55;
+}
+
+.key-gold {
+  --face-hi: #ffe794;
+  --face-lo: #e9a91d;
+  --panel-hi: #ffd85a;
+  --panel-lo: #e9a21a;
+  --base: #8a5606;
+  --text: #3a2400;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.45);
+}
+
+.key-red {
+  --face-hi: #f6a48f;
+  --face-lo: #c4482f;
+  --panel-hi: #e7775c;
+  --panel-lo: #bf432b;
+  --base: #6b1b10;
+}
+
+.key-icon {
+  font-size: 22px;
+  line-height: 1;
+  text-shadow: none;
+}
+
+.key-label {
+  font-weight: 800;
+  font-size: 11px;
+  line-height: 1.1;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.key-round {
+  border-radius: 50%;
+  width: 54px;
+  height: 54px;
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+}
+
+.key-round::before {
+  border-radius: 50%;
+}
+
+.key-round .key-icon {
+  font-size: 18px;
+}
+
+.key-round .key-label {
+  font-size: 9px;
+}
+
+.key-inline {
+  flex-direction: row;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 12px 7px 10px;
+  border-radius: 12px;
+}
+
+.key-inline::before {
+  inset: 4px;
+  border-radius: 8px;
+}
+
+.key-inline .key-icon {
+  font-size: 16px;
+}
+
+.key-inline .key-label {
+  font-size: 13px;
+}
+
+.key-big {
+  padding: 12px 34px 11px;
+  border-radius: 18px;
+}
+
+.key-big::before {
+  border-radius: 13px;
+  inset: 6px;
+}
+
+.key-big .key-icon {
+  font-size: 30px;
+}
+
+.key-big .key-label {
+  font-size: 19px;
+}
+
 /* ---------- Crew island ---------- */
 
 .crew-surface,
@@ -631,8 +788,8 @@ button {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  --glass: rgb(255 255 255 / 0.9);
-  --shadow: 0 4px 14px rgb(14 40 60 / 0.22);
+  --slate: rgb(32 42 58 / 0.78);
+  --shadow: 0 6px 16px rgb(5 15 35 / 0.3);
 }
 
 .crew-ui > * {
@@ -647,7 +804,7 @@ button {
   right: 10px;
   top: 8px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   pointer-events: none;
 }
@@ -656,42 +813,13 @@ button {
   pointer-events: auto;
 }
 
-.crew-round {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--glass);
-  color: var(--ink);
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1;
-  box-shadow: var(--shadow);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.crew-round:disabled {
-  opacity: 0.35;
-}
-
-.crew-round-primary {
-  background: var(--gold);
-}
-
-.crew-round-danger {
-  color: #c4402c;
-}
-
 .crew-card {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--glass);
-  border-radius: 999px;
-  padding: 4px 6px 4px 6px;
+  background: var(--slate);
+  border-radius: 16px;
+  padding: 6px 10px 9px 8px;
   box-shadow: var(--shadow);
 }
 
@@ -710,7 +838,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2.5px solid white;
+  border: 2.5px solid #c9d6e6;
   opacity: 0.55;
 }
 
@@ -723,23 +851,14 @@ button {
   border-color: #5fd67f;
 }
 
-.crew-code {
-  border: 0;
-  border-radius: 999px;
-  padding: 7px 12px;
-  background: var(--crew);
-  color: white;
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 1px;
-  white-space: pre;
+.crew-code .key-label {
+  letter-spacing: 1.5px;
 }
 
 .crew-status {
   font-size: 12px;
   font-weight: 800;
-  color: #2f9a52;
-  padding-right: 8px;
+  color: #6fe08f;
 }
 
 .crew-status::before {
@@ -750,21 +869,82 @@ button {
 .crew-status[data-status="solo"],
 .crew-status[data-status="full"],
 .crew-status[data-status="connecting"] {
-  color: #b7860b;
+  color: #ffd25e;
+}
+
+.crew-top-right {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.crew-resources {
+  display: flex;
+  gap: 4px;
+  background: var(--slate);
+  border-radius: 14px;
+  padding: 5px 7px;
+  box-shadow: var(--shadow);
+}
+
+.crew-resource {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 3px;
+  row-gap: 2px;
+  min-width: 56px;
+  padding: 0 3px;
+  color: white;
+}
+
+.crew-resource-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.crew-resource-amount {
+  font-weight: 800;
+  font-size: 12px;
+  text-align: right;
+}
+
+.crew-resource-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.18);
+  overflow: hidden;
+}
+
+.crew-resource-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #8fd36a, #5fbf4a);
+}
+
+.crew-resource.full .crew-resource-fill {
+  background: linear-gradient(90deg, #ffd25e, #f0a01f);
+}
+
+.crew-resource.full .crew-resource-amount {
+  color: #ffd25e;
 }
 
 .crew-progress {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--glass);
-  border-radius: 999px;
-  padding: 6px 12px;
+  background: var(--slate);
+  border-radius: 16px;
+  padding: 8px 12px;
   box-shadow: var(--shadow);
   font-weight: 800;
   font-size: 13px;
-  color: var(--ink);
+  color: white;
 }
 
 .crew-progress-segments {
@@ -777,12 +957,14 @@ button {
   height: 12px;
   border: 0;
   border-radius: 6px;
-  background: #d8dee3;
+  background: rgb(255 255 255 / 0.22);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.4);
   padding: 0;
 }
 
 .crew-progress-segment.open {
   background: linear-gradient(#ffe27a, #f0b41f);
+  box-shadow: 0 2px 0 #8a5606;
 }
 
 /* Build drawer */
@@ -794,10 +976,10 @@ button {
   bottom: 8px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  background: var(--glass);
-  border-radius: 16px;
-  padding: 5px 8px 7px;
+  gap: 8px;
+  background: var(--slate);
+  border-radius: 18px;
+  padding: 7px 8px 13px;
   box-shadow: var(--shadow);
 }
 
@@ -807,73 +989,61 @@ button {
 
 .crew-tabs {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+  padding-bottom: 4px;
 }
 
-.crew-tab,
-.crew-drawer-toggle {
-  border: 0;
-  border-radius: 999px;
-  padding: 4px 12px;
-  background: transparent;
-  color: var(--ink);
-  font-weight: 800;
-  font-size: 13px;
-  opacity: 0.6;
+.crew-tabs .key-inline {
+  padding: 5px 10px 5px 8px;
 }
 
-.crew-tab.active {
-  background: var(--crew);
-  color: white;
-  opacity: 1;
+.crew-tabs .key-inline .key-label {
+  font-size: 12px;
 }
 
 .crew-drawer-toggle {
   margin-left: auto;
-  opacity: 1;
-  background: #eef2f5;
 }
 
 .crew-cards {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   overflow-x: auto;
   scrollbar-width: none;
+  padding: 2px 2px 8px;
 }
 
 .crew-chip {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 2px solid #e6ebef;
-  border-radius: 12px;
-  padding: 4px 10px 4px 6px;
-  background: white;
-  color: var(--ink);
+  min-width: 82px;
+  padding: 8px 10px 7px;
   touch-action: pan-x;
 }
 
-.crew-chip:active {
-  border-color: var(--gold);
-  transform: scale(0.97);
-}
-
-.crew-chip-icon {
-  font-size: 20px;
-  line-height: 1;
-}
-
-.crew-chip-name {
+.crew-chip-count {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  font-size: 9px;
   font-weight: 800;
-  font-size: 12px;
-  white-space: nowrap;
+  opacity: 0.85;
 }
 
-.crew-chip-size {
-  font-size: 10px;
-  opacity: 0.5;
+.crew-chip-cost {
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+  opacity: 0.95;
+}
+
+.crew-chip.locked,
+.crew-chip.blocked {
+  filter: grayscale(0.75) brightness(0.85);
+}
+
+.crew-chip.locked .key-icon {
+  opacity: 0.6;
 }
 
 /* Selected building */
@@ -881,26 +1051,26 @@ button {
 .crew-selection {
   position: absolute;
   left: 50%;
-  bottom: 10px;
+  bottom: 12px;
   transform: translateX(-50%);
   display: none;
   align-items: center;
-  gap: 8px;
-  background: var(--glass);
-  border-radius: 999px;
-  padding: 6px 8px 6px 14px;
+  gap: 10px;
+  background: var(--slate);
+  border-radius: 20px;
+  padding: 8px 12px 14px 16px;
   box-shadow: var(--shadow);
 }
 
 .crew-selection-icon {
-  font-size: 26px;
+  font-size: 28px;
 }
 
 .crew-selection-text {
   display: flex;
   flex-direction: column;
   margin-right: 6px;
-  color: var(--ink);
+  color: white;
 }
 
 .crew-selection-label {
@@ -910,7 +1080,13 @@ button {
 
 .crew-selection-detail {
   font-size: 12px;
-  opacity: 0.65;
+  opacity: 0.75;
+}
+
+.crew-selection-upgrade {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffd25e;
 }
 
 /* Zone labels and the Unlock button */
@@ -929,11 +1105,11 @@ button {
   display: none;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .crew-zone-name {
-  background: rgb(20 32 44 / 0.45);
+  background: rgb(20 32 44 / 0.5);
   color: white;
   font-weight: 800;
   font-size: 12px;
@@ -943,22 +1119,11 @@ button {
 }
 
 .crew-zone-label.open .crew-zone-name {
-  background: rgb(20 32 44 / 0.22);
+  background: rgb(20 32 44 / 0.25);
 }
 
 .crew-unlock {
   pointer-events: auto;
-  border: 0;
-  border-radius: 999px;
-  padding: 10px 18px;
-  background: linear-gradient(#ffe27a, #f0b41f);
-  color: var(--ink);
-  font-weight: 800;
-  font-size: 14px;
-  box-shadow:
-    0 4px 0 #c99a10,
-    var(--shadow);
-  white-space: nowrap;
 }
 
 /* Toast */
@@ -966,9 +1131,9 @@ button {
 .crew-toast {
   position: absolute;
   left: 50%;
-  top: 62px;
+  top: 70px;
   transform: translateX(-50%);
-  background: rgb(20 32 44 / 0.82);
+  background: rgb(20 32 44 / 0.86);
   color: white;
   border-radius: 999px;
   padding: 8px 16px;
@@ -987,21 +1152,23 @@ button {
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgb(14 40 60 / 0.4);
+  background: rgb(14 30 50 / 0.45);
 }
 
 .crew-join-card {
-  background: white;
+  background: linear-gradient(170deg, #3a4a63, #262f40);
   border-radius: 22px;
-  padding: 14px 22px 16px;
+  padding: 14px 22px 18px;
   width: min(360px, 90vw);
   max-height: 92%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  color: var(--ink);
-  box-shadow: 0 12px 34px rgb(0 0 0 / 0.28);
+  gap: 10px;
+  color: white;
+  box-shadow:
+    inset 0 0 0 2px rgb(255 255 255 / 0.08),
+    0 12px 34px rgb(0 0 0 / 0.4);
 }
 
 .crew-join-badge {
@@ -1019,7 +1186,7 @@ button {
 .crew-join-or {
   margin: 0;
   font-size: 13px;
-  opacity: 0.7;
+  opacity: 0.75;
   text-align: center;
 }
 
@@ -1027,10 +1194,17 @@ button {
   font: inherit;
   font-size: 16px;
   padding: 10px 12px;
-  border: 2px solid #d5dde3;
+  border: 2px solid rgb(255 255 255 / 0.12);
   border-radius: 12px;
+  background: rgb(10 18 30 / 0.55);
+  color: white;
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.35);
   -webkit-user-select: text;
   user-select: text;
+}
+
+.crew-input::placeholder {
+  color: rgb(255 255 255 / 0.45);
 }
 
 .crew-code-input {
@@ -1042,11 +1216,16 @@ button {
 
 .crew-join-row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  align-items: center;
+}
+
+.crew-join-card > .key {
+  margin-bottom: 6px;
 }
 
 .crew-join-error {
-  color: #c4402c;
+  color: #ff8a73;
   font-size: 13px;
   font-weight: 700;
   min-height: 1em;
@@ -1056,7 +1235,7 @@ button {
 .crew-link {
   border: 0;
   background: none;
-  color: var(--crew-dark);
+  color: #a9c9f2;
   font-weight: 700;
   text-decoration: underline;
 }

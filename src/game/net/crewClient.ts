@@ -7,7 +7,13 @@ import type { ClientMessage, Hold, Member, ServerMessage } from "./protocol";
 export type ConnectionStatus = "connecting" | "online" | "offline" | "full";
 
 export interface CrewClientEvents {
-  onState(layout: CrewLayout, members: Member[], holds: Hold[], by: string | null): void;
+  onState(
+    layout: CrewLayout,
+    members: Member[],
+    holds: Hold[],
+    by: string | null,
+    serverNow: number,
+  ): void;
   onReject(reason: string): void;
   onStatus(status: ConnectionStatus): void;
 }
@@ -70,7 +76,13 @@ export class CrewClient {
       }
       if (message.t === "state") {
         if (this.status !== "online") this.setStatus("online");
-        this.events.onState(message.layout, message.members, message.holds, message.by);
+        this.events.onState(
+          message.layout,
+          message.members,
+          message.holds,
+          message.by,
+          typeof message.now === "number" ? message.now : Date.now(),
+        );
       } else if (message.t === "reject") {
         this.events.onReject(message.reason);
       } else if (message.t === "full") {

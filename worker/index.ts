@@ -7,10 +7,10 @@
 
 import { DurableObject } from "cloudflare:workers";
 import {
-  applyOp,
   type CrewLayout,
   sanitizeLayout,
   starterLayout,
+  tryOp,
 } from "../src/game/logic/crewIsland";
 import {
   type ClientMessage,
@@ -66,7 +66,10 @@ export class CrewIsland extends DurableObject<Env> {
   private roster: RosterEntry[] | null = null;
 
   private async load(): Promise<{ layout: CrewLayout; roster: RosterEntry[] }> {
-    this.layout ??= sanitizeLayout((await this.ctx.storage.get("layout")) ?? starterLayout());
+    this.layout ??= sanitizeLayout(
+      (await this.ctx.storage.get("layout")) ?? starterLayout(Date.now()),
+      Date.now(),
+    );
     this.roster ??= (await this.ctx.storage.get<RosterEntry[]>("roster")) ?? [];
     return { layout: this.layout, roster: this.roster };
   }
@@ -125,12 +128,13 @@ export class CrewIsland extends DurableObject<Env> {
         this.sendState(ws, null);
         return;
       }
-      const next = applyOp(layout, op);
-      if (!next) {
-        send(ws, { t: "reject", opId: message.opId, reason: "That doesn't fit there" });
+      const result = tryOp(layout, op, Date.now());
+      if ("error" in result) {
+        send(ws, { t: "reject", opId: message.opId, reason: result.error });
         this.sendState(ws, null);
         return;
       }
+      const next = result.layout;
       this.layout = next;
       await this.ctx.storage.put("layout", next);
       this.broadcast(me.name);
@@ -172,7 +176,14 @@ export class CrewIsland extends DurableObject<Env> {
 
   private sendState(ws: WebSocket, by: string | null): void {
     const { members, holds } = this.snapshot();
-    send(ws, { t: "state", layout: this.layout ?? starterLayout(), members, holds, by });
+    send(ws, {
+      t: "state",
+      layout: this.layout ?? starterLayout(),
+      members,
+      holds,
+      by,
+      now: Date.now(),
+    });
   }
 
   private broadcast(by: string | null, excluding?: WebSocket): void {
@@ -183,6 +194,7 @@ export class CrewIsland extends DurableObject<Env> {
       members,
       holds,
       by,
+      now: Date.now(),
     };
     for (const ws of this.ctx.getWebSockets()) {
       if (ws !== excluding && ws.deserializeAttachment()) send(ws, message);

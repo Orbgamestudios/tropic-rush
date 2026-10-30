@@ -3,9 +3,11 @@
 // zone (with the Unlock button), and the first-visit join panel.
 
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
-import { FOOTPRINTS, ZONES } from "../logic/crewIsland";
+import { ZONES } from "../logic/crewIsland";
+import { formatAmount, type Purse, RESOURCE_ICONS, RESOURCES } from "../logic/economy";
 import type { ConnectionStatus } from "../net/crewClient";
 import type { Member } from "../net/protocol";
+import { key, setKeyLabel } from "./keys";
 
 export interface CrewUiHandlers {
   onBack(): void;
@@ -15,21 +17,40 @@ export interface CrewUiHandlers {
   onChipDown(type: BuildingType, event: PointerEvent): void;
   onRotate(): void;
   onRemove(): void;
+  onUpgrade(): void;
   onDone(): void;
   onUnlock(zone: number): void;
   onZoneFocus(zone: number): void;
 }
 
-type Category = "defenses" | "resources";
+type Category = "defenses" | "resources" | "storage";
 
-const CATEGORIES: Record<Category, { label: string; types: BuildingType[] }> = {
+/** What a build button shows: how many there are of how many allowed, the cost, and whether
+ * it's locked behind a headquarters level or can't be built right now. */
+export interface ChipState {
+  have: number;
+  allowed: number;
+  cost: string;
+  /** e.g. "HQ 3" while the headquarters is too low to build any. */
+  locked: string | null;
+  blocked: boolean;
+}
+
+const CATEGORIES: Record<Category, { label: string; icon: string; types: BuildingType[] }> = {
   defenses: {
     label: "Defenses",
+    icon: "🛡️",
     types: ["gunTurret", "mortar", "harpoon", "flamethrower", "watchtower"],
   },
   resources: {
     label: "Resources",
-    types: ["goldMine", "lumberCamp", "quarry", "scrapYard", "storehouse", "refinery"],
+    icon: "💰",
+    types: ["goldMine", "lumberCamp", "quarry", "scrapYard", "refinery"],
+  },
+  storage: {
+    label: "Storage",
+    icon: "📦",
+    types: ["goldVault", "timberShed", "stoneYard", "scrapBin"],
   },
 };
 
@@ -41,11 +62,15 @@ export const BUILDING_ICONS: Record<BuildingType, string> = {
   harpoon: "🔱",
   flamethrower: "🔥",
   watchtower: "🗼",
-  goldMine: "🪙",
-  lumberCamp: "🪵",
-  quarry: "🪨",
-  scrapYard: "🔩",
+  goldMine: "⛏️",
+  lumberCamp: "🪓",
+  quarry: "⚒️",
+  scrapYard: "🧲",
   storehouse: "📦",
+  goldVault: "💰",
+  timberShed: "🛖",
+  stoneYard: "🧱",
+  scrapBin: "🛢️",
   refinery: "🏭",
 };
 
@@ -81,8 +106,11 @@ export class CrewUi {
   private readonly drawer = el("div", "crew-drawer");
   private readonly cards = el("div", "crew-cards");
   private readonly tabs = new Map<Category, HTMLButtonElement>();
-  private readonly drawerToggle = el("button", "crew-drawer-toggle", "Hide");
-  private readonly code = el("button", "crew-code");
+  private readonly drawerToggle = key("Hide", "▾", {
+    inline: true,
+    className: "crew-drawer-toggle",
+  });
+  private readonly code = key("No crew", "🔗", { inline: true, className: "crew-code" });
   private readonly avatars = el("div", "crew-avatars");
   private readonly status = el("span", "crew-status");
   private readonly progress = el("div", "crew-progress");
@@ -92,7 +120,19 @@ export class CrewUi {
   private readonly selectionIcon = el("span", "crew-selection-icon");
   private readonly selectionLabel = el("div", "crew-selection-label");
   private readonly selectionDetail = el("div", "crew-selection-detail");
-  private readonly removeButton = el("button", "crew-round crew-round-danger", "🗑");
+  private readonly removeButton = key("Remove", "🗑️", { round: true, variant: "red" });
+  private readonly upgradeButton = key("Upgrade", "⬆️", { round: true, variant: "gold" });
+  private readonly upgradeText = el("div", "crew-selection-upgrade");
+  private readonly resourceBar = el("div", "crew-resources");
+  private readonly resourceItems = new Map<
+    string,
+    { amount: HTMLSpanElement; fill: HTMLSpanElement; root: HTMLDivElement }
+  >();
+  private readonly chips = new Map<
+    BuildingType,
+    { chip: HTMLButtonElement; count: HTMLSpanElement; cost: HTMLSpanElement }
+  >();
+  private chipState: ((type: BuildingType) => ChipState) | null = null;
   private readonly zoneLabels = new Map<
     number,
     { root: HTMLDivElement; button: HTMLButtonElement; name: HTMLSpanElement }
@@ -113,8 +153,7 @@ export class CrewUi {
   ) {
     // Top bar: back, crew card, island progress.
     const top = el("div", "crew-top");
-    const back = el("button", "crew-round", "‹");
-    back.setAttribute("aria-label", "Back");
+    const back = key("Back", "◀", { round: true });
     back.addEventListener("click", () => handlers.onBack());
     const card = el("div", "crew-card");
     this.code.addEventListener("click", () => this.shareCode());
@@ -129,17 +168,29 @@ export class CrewUi {
     const segments = el("div", "crew-progress-segments");
     segments.append(...this.progressSegments);
     this.progress.append(this.progressLabel, segments);
-    top.append(back, card, this.progress);
+    for (const r of RESOURCES) {
+      const item = el("div", "crew-resource");
+      const amount = el("span", "crew-resource-amount", "0");
+      const bar = el("span", "crew-resource-bar");
+      const fill = el("span", "crew-resource-fill");
+      bar.append(fill);
+      item.append(el("span", "crew-resource-icon", RESOURCE_ICONS[r]), amount, bar);
+      this.resourceBar.append(item);
+      this.resourceItems.set(r, { amount, fill, root: item });
+    }
+    const right = el("div", "crew-top-right");
+    right.append(this.progress, this.resourceBar);
+    top.append(back, card, right);
 
     // Build drawer with category tabs.
     const tabRow = el("div", "crew-tabs");
-    for (const [key, category] of Object.entries(CATEGORIES) as [
+    for (const [name, category] of Object.entries(CATEGORIES) as [
       Category,
       (typeof CATEGORIES)[Category],
     ][]) {
-      const tab = el("button", "crew-tab", category.label);
-      tab.addEventListener("click", () => this.showCategory(key));
-      this.tabs.set(key, tab);
+      const tab = key(category.label, category.icon, { inline: true, className: "crew-tab" });
+      tab.addEventListener("click", () => this.showCategory(name));
+      this.tabs.set(name, tab);
       tabRow.append(tab);
     }
     this.drawerToggle.addEventListener("click", () => this.setDrawer(!this.drawerOpen));
@@ -148,24 +199,33 @@ export class CrewUi {
     this.showCategory("defenses");
 
     // Selected building: icon, name, round action buttons.
-    const rotate = el("button", "crew-round", "↻");
-    rotate.setAttribute("aria-label", "Rotate");
+    const rotate = key("Rotate", "↻", { round: true });
     rotate.addEventListener("click", () => handlers.onRotate());
-    this.removeButton.setAttribute("aria-label", "Remove");
     this.removeButton.addEventListener("click", () => handlers.onRemove());
-    const done = el("button", "crew-round crew-round-primary", "✓");
-    done.setAttribute("aria-label", "Done");
+    const done = key("Done", "✓", { round: true, variant: "gold" });
     done.addEventListener("click", () => handlers.onDone());
+    this.upgradeButton.addEventListener("click", () => handlers.onUpgrade());
     const text = el("div", "crew-selection-text");
-    text.append(this.selectionLabel, this.selectionDetail);
-    this.selection.append(this.selectionIcon, text, rotate, this.removeButton, done);
+    text.append(this.selectionLabel, this.selectionDetail, this.upgradeText);
+    this.selection.append(
+      this.selectionIcon,
+      text,
+      this.upgradeButton,
+      rotate,
+      this.removeButton,
+      done,
+    );
 
     // Labels over each zone; the next locked one carries the Unlock button.
     const labelLayer = el("div", "crew-zone-layer");
     for (const zone of ZONES) {
       const root = el("div", "crew-zone-label");
       const name = el("span", "crew-zone-name", zone.name);
-      const button = el("button", "crew-unlock", `Unlock ${zone.name}`);
+      const button = key(`Unlock ${zone.name}`, "🔓", {
+        inline: true,
+        variant: "gold",
+        className: "crew-unlock",
+      });
       button.addEventListener("click", () => handlers.onUnlock(zone.id));
       button.addEventListener("pointerdown", (e) => e.stopPropagation());
       root.append(name, button);
@@ -179,9 +239,9 @@ export class CrewUi {
     this.codeInput.placeholder = "Crew code";
     this.codeInput.maxLength = 6;
     this.codeInput.autocapitalize = "characters";
-    const create = el("button", "btn btn-primary", "Start a new crew");
+    const create = key("Start a new crew", "⚓", { inline: true, variant: "gold" });
     create.addEventListener("click", () => handlers.onCreate(this.nameInput.value));
-    const joinButton = el("button", "btn", "Join");
+    const joinButton = key("Join", "🤝", { inline: true });
     joinButton.addEventListener("click", () =>
       handlers.onJoin(this.nameInput.value, this.codeInput.value),
     );
@@ -212,16 +272,15 @@ export class CrewUi {
   }
 
   private showCategory(category: Category): void {
-    for (const [key, tab] of this.tabs) tab.classList.toggle("active", key === category);
+    for (const [name, tab] of this.tabs) tab.classList.toggle("active", name === category);
+    this.chips.clear();
     this.cards.replaceChildren(
       ...CATEGORIES[category].types.map((type) => {
-        const chip = el("button", "crew-chip");
-        const { w, h } = FOOTPRINTS[type];
-        chip.append(
-          el("span", "crew-chip-icon", BUILDING_ICONS[type]),
-          el("span", "crew-chip-name", BUILDINGS[type].label),
-          el("span", "crew-chip-size", `${w}×${h}`),
-        );
+        const chip = key(BUILDINGS[type].label, BUILDING_ICONS[type], { className: "crew-chip" });
+        const count = el("span", "crew-chip-count");
+        const cost = el("span", "crew-chip-cost");
+        chip.append(count, cost);
+        this.chips.set(type, { chip, count, cost });
         chip.addEventListener("pointerdown", (event) => {
           event.preventDefault();
           this.handlers.onChipDown(type, event);
@@ -230,12 +289,43 @@ export class CrewUi {
       }),
     );
     if (!this.drawerOpen) this.setDrawer(true);
+    this.refreshChips();
+  }
+
+  /** Sets how each build button looks (count, cost, locked); called every few frames. */
+  setChips(state: (type: BuildingType) => ChipState): void {
+    this.chipState = state;
+    this.refreshChips();
+  }
+
+  private refreshChips(): void {
+    const state = this.chipState;
+    if (!state) return;
+    for (const [type, { chip, count, cost }] of this.chips) {
+      const s = state(type);
+      count.textContent = s.locked ? "🔒" : `${s.have}/${s.allowed}`;
+      cost.textContent = s.locked ? s.locked : s.have >= s.allowed ? "Max built" : s.cost;
+      chip.classList.toggle("locked", s.locked !== null);
+      chip.classList.toggle("blocked", s.blocked);
+    }
+  }
+
+  /** The resource bar: each resource's amount and how full its storage is. */
+  setResources(amounts: Purse, capacity: Purse, perHour: Purse): void {
+    for (const r of RESOURCES) {
+      const item = this.resourceItems.get(r);
+      if (!item) continue;
+      item.amount.textContent = formatAmount(amounts[r]);
+      item.fill.style.width = `${Math.min(100, (amounts[r] / capacity[r]) * 100).toFixed(1)}%`;
+      item.root.classList.toggle("full", amounts[r] >= capacity[r] - 0.5);
+      item.root.title = `${formatAmount(amounts[r])} / ${formatAmount(capacity[r])} · +${formatAmount(perHour[r])}/h`;
+    }
   }
 
   private setDrawer(open: boolean): void {
     this.drawerOpen = open;
     this.drawer.classList.toggle("closed", !open);
-    this.drawerToggle.textContent = open ? "Hide" : "Build";
+    setKeyLabel(this.drawerToggle, open ? "Hide" : "Build", open ? "▾" : "🔨");
   }
 
   show(visible: boolean): void {
@@ -254,7 +344,7 @@ export class CrewUi {
 
   setCrew(code: string, members: readonly Member[], status: ConnectionStatus | "solo"): void {
     this.crewCode = code;
-    this.code.textContent = code ? `${code}  ⤴` : "No crew";
+    setKeyLabel(this.code, code || "No crew", code ? "📤" : "🔗");
     this.code.disabled = !code;
     this.avatars.replaceChildren(
       ...members.map((m) => {
@@ -280,7 +370,14 @@ export class CrewUi {
   }
 
   setSelection(
-    info: { type: BuildingType; label: string; detail: string } | null,
+    info: {
+      type: BuildingType;
+      label: string;
+      level: number;
+      detail: string;
+      upgrade: string;
+      canUpgrade: boolean;
+    } | null,
     canRemove: boolean,
   ): void {
     this.selecting = info !== null;
@@ -290,6 +387,8 @@ export class CrewUi {
       this.selectionIcon.textContent = BUILDING_ICONS[info.type];
       this.selectionLabel.textContent = info.label;
       this.selectionDetail.textContent = info.detail;
+      this.upgradeText.textContent = info.upgrade;
+      this.upgradeButton.disabled = !info.canUpgrade;
     }
     this.removeButton.disabled = !canRemove;
   }

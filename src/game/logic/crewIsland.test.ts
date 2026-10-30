@@ -1,31 +1,86 @@
 import { describe, expect, it } from "vitest";
+import type { BuildingType } from "./buildings";
 import {
   applyOp,
+  buildBlocker,
   buildingAtTile,
   buildingCenter,
   type CrewLayout,
+  capacity,
   cornerFor,
   fits,
+  footprint,
+  GRID_ORIGIN,
+  hqLevel,
   type PlacedBuilding,
+  plateauInside,
   sanitizeLayout,
+  settle,
   starterLayout,
+  TILE,
   tileAt,
+  tryOp,
   ZONES,
+  zoneCenter,
+  zoneIdOfTile,
   zoneOf,
+  zoneTiles,
 } from "./crewIsland";
+import { costFor, START_RESOURCES } from "./economy";
 
-const turret = (id: string, x: number, y: number, rotated = false): PlacedBuilding => ({
-  id,
-  type: "gunTurret",
-  x,
-  y,
-  rotated,
-});
+const NOW = 1_000_000_000;
+const HOUR = 3_600_000;
 
-const empty = (unlocked = 1): CrewLayout => ({ buildings: [], unlocked });
+const building = (
+  id: string,
+  type: BuildingType,
+  p: { x: number; y: number },
+  rotated = false,
+): PlacedBuilding => ({ id, type, x: p.x, y: p.y, rotated, level: 1 });
+
+const turret = (id: string, x: number, y: number, rotated = false) =>
+  building(id, "gunTurret", { x, y }, rotated);
+
+/** A crew's island with its headquarters at a given level and plenty of every resource. */
+function island(hq = 20, unlocked = 1): CrewLayout {
+  const start = starterLayout(NOW);
+  return {
+    ...start,
+    unlocked,
+    buildings: start.buildings.map((b) => ({ ...b, level: hq })),
+    resources: { gold: 1e9, timber: 1e9, stone: 1e9, scrap: 1e9 },
+  };
+}
+
+/** A tile in zone 1 with an 8 x 6 block of open plateau, clear of the headquarters. */
+const O = (() => {
+  const hq = starterLayout(NOW).buildings[0] as PlacedBuilding;
+  const free = (x: number, y: number) =>
+    zoneIdOfTile(x, y) === 1 && !buildingAtTile({ buildings: [hq] } as CrewLayout, { x, y });
+  for (const t of zoneTiles(1)) {
+    let ok = true;
+    for (let dy = 0; dy < 6 && ok; dy++)
+      for (let dx = 0; dx < 8 && ok; dx++) ok = free(t.x + dx, t.y + dy);
+    if (ok) return t;
+  }
+  throw new Error("no open spot in zone 1");
+})();
+const at = (dx: number, dy: number) => ({ x: O.x + dx, y: O.y + dy });
+
+/** The first tile in a zone with room for a 2x2 building. */
+function spotIn(zoneId: number): { x: number; y: number } {
+  const spot = zoneTiles(zoneId).find(
+    (t) =>
+      zoneIdOfTile(t.x + 1, t.y) === zoneId &&
+      zoneIdOfTile(t.x, t.y + 1) === zoneId &&
+      zoneIdOfTile(t.x + 1, t.y + 1) === zoneId,
+  );
+  if (!spot) throw new Error(`no room in zone ${zoneId}`);
+  return spot;
+}
 
 function place(layout: CrewLayout, b: PlacedBuilding): CrewLayout {
-  const next = applyOp(layout, { kind: "place", building: b });
+  const next = applyOp(layout, { kind: "place", building: b }, NOW);
   if (!next) throw new Error(`could not place ${b.id}`);
   return next;
 }
@@ -37,109 +92,257 @@ const zone = (id: number) => {
 };
 
 describe("crew island zones", () => {
-  it("climbs in a zigzag: each zone higher and further back, alternating sides", () => {
-    for (let i = 1; i < ZONES.length; i++) {
-      const prev = zone(i);
-      const next = zone(i + 1);
-      expect(next.height).toBeGreaterThan(prev.height);
-      expect(next.y).toBeLessThan(prev.y);
+  it("splits one flat plateau into four sizable zones, landing first", () => {
+    for (const z of ZONES) {
+      expect(z.height).toBe(zone(1).height);
+      expect(zoneTiles(z.id).length).toBeGreaterThan(250);
     }
-    const centerX = (id: number) => zone(id).x + zone(id).w / 2;
-    expect(centerX(2)).toBeLessThan(centerX(3));
-    expect(centerX(4)).toBeLessThan(centerX(3));
+    // Zone 1 is by the beach (south-west), then west, east and north.
+    const c = (id: number) => zoneCenter(zone(id));
+    expect(c(1).y).toBeGreaterThan(c(4).y);
+    expect(c(2).x).toBeLessThan(c(1).x);
+    expect(c(3).x).toBeGreaterThan(c(1).x);
+  });
+
+  it("has an organic outline, not a rectangle", () => {
+    const rows = new Map<number, number>();
+    for (const z of ZONES) for (const t of zoneTiles(z.id)) rows.set(t.y, (rows.get(t.y) ?? 0) + 1);
+    expect(new Set(rows.values()).size).toBeGreaterThan(8);
+    for (const z of ZONES) {
+      for (const t of zoneTiles(z.id)) {
+        expect(
+          plateauInside(GRID_ORIGIN.x + (t.x + 0.5) * TILE, GRID_ORIGIN.y + (t.y + 0.5) * TILE),
+        ).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it("gives every buildable tile exactly one zone", () => {
+    const seen = new Set<string>();
+    for (const z of ZONES) {
+      for (const t of zoneTiles(z.id)) {
+        const key = `${t.x},${t.y}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+        expect(zoneIdOfTile(t.x, t.y)).toBe(z.id);
+      }
+    }
   });
 
   it("starts with zone 1 open and its headquarters inside it", () => {
-    const layout = starterLayout();
+    const layout = starterLayout(NOW);
     expect(layout.unlocked).toBe(1);
     expect(layout.buildings).toHaveLength(1);
     expect(zoneOf(layout.buildings[0] as PlacedBuilding)?.id).toBe(1);
   });
 
   it("only allows building in unlocked zones, unlocked one at a time", () => {
-    const inZone2 = turret("t", zone(2).x, zone(2).y);
-    expect(applyOp(empty(), { kind: "place", building: inZone2 })).toBeNull();
-    expect(applyOp(empty(), { kind: "unlock", zone: 3 })).toBeNull();
-    const opened = applyOp(empty(), { kind: "unlock", zone: 2 });
+    const spot = spotIn(2);
+    const inZone2 = turret("t", spot.x, spot.y);
+    expect(applyOp(island(), { kind: "place", building: inZone2 }, NOW)).toBeNull();
+    expect(applyOp(island(), { kind: "unlock", zone: 3 }, NOW)).toBeNull();
+    const opened = applyOp(island(), { kind: "unlock", zone: 2 }, NOW);
     expect(opened?.unlocked).toBe(2);
-    expect(opened && applyOp(opened, { kind: "place", building: inZone2 })).not.toBeNull();
+    expect(opened && applyOp(opened, { kind: "place", building: inZone2 }, NOW)).not.toBeNull();
     expect(
-      applyOp({ ...empty(), unlocked: ZONES.length }, { kind: "unlock", zone: ZONES.length + 1 }),
+      applyOp(island(20, ZONES.length), { kind: "unlock", zone: ZONES.length + 1 }, NOW),
     ).toBeNull();
   });
 
   it("refuses buildings that straddle a zone edge or sit outside every zone", () => {
-    const open = { ...empty(), unlocked: ZONES.length };
-    expect(applyOp(open, { kind: "place", building: turret("a", zone(1).w - 1, 0) })).toBeNull();
-    expect(applyOp(open, { kind: "place", building: turret("a", 0, zone(1).h - 1) })).toBeNull();
-    expect(applyOp(open, { kind: "place", building: turret("a", -1, 4) })).toBeNull();
+    const open = island(20, ZONES.length);
+    // The east-most tile of a row: a 2x2 building there pokes off the plateau.
+    const edge = zoneTiles(1).reduce((a, b) => (b.y === O.y && b.x > a.x ? b : a), O);
+    expect(applyOp(open, { kind: "place", building: turret("a", edge.x, edge.y) }, NOW)).toBeNull();
+    const far = tileAt({ x: 90, y: -50 }); // the hills north-east of the plateau
+    expect(zoneIdOfTile(far.x, far.y)).toBeUndefined();
+    expect(applyOp(open, { kind: "place", building: turret("a", far.x, far.y) }, NOW)).toBeNull();
   });
 });
 
 describe("crew island layout", () => {
   it("places buildings on free tiles and refuses overlaps", () => {
-    let layout = place(empty(), turret("a", 0, 0));
-    expect(applyOp(layout, { kind: "place", building: turret("b", 1, 1) })).toBeNull();
-    layout = place(layout, turret("b", 2, 0));
-    expect(layout.buildings).toHaveLength(2);
+    let layout = place(island(), turret("a", at(0, 0).x, at(0, 0).y));
+    expect(
+      applyOp(layout, { kind: "place", building: turret("b", at(1, 1).x, at(1, 1).y) }, NOW),
+    ).toBeNull();
+    layout = place(layout, turret("b", at(2, 0).x, at(2, 0).y));
+    expect(layout.buildings).toHaveLength(3);
   });
 
   it("refuses duplicate ids and a second headquarters", () => {
-    const layout = starterLayout();
-    expect(applyOp(layout, { kind: "place", building: { ...turret("hq", 0, 0) } })).toBeNull();
+    const layout = island();
     expect(
-      applyOp(layout, {
-        kind: "place",
-        building: { id: "hq2", type: "headquarters", x: 0, y: 0, rotated: false },
-      }),
+      applyOp(layout, { kind: "place", building: turret("hq", at(0, 0).x, at(0, 0).y) }, NOW),
+    ).toBeNull();
+    expect(
+      applyOp(layout, { kind: "place", building: building("hq2", "headquarters", at(0, 0)) }, NOW),
     ).toBeNull();
   });
 
   it("moves and rotates a building if the new spot is free", () => {
-    let layout = place(empty(), { id: "s", type: "storehouse", x: 0, y: 0, rotated: false });
-    layout = place(layout, turret("t", 4, 0));
-    // Rotating swaps the storehouse's 3x2 footprint to 2x3.
-    const rotated = applyOp(layout, { kind: "move", id: "s", x: 0, y: 0, rotated: true });
+    let layout = place(island(), building("s", "goldVault", at(0, 0)));
+    layout = place(layout, turret("t", at(4, 0).x, at(4, 0).y));
+    // Rotating swaps the vault's 3x2 footprint to 2x3.
+    const rotated = applyOp(layout, { kind: "move", id: "s", ...at(0, 0), rotated: true }, NOW);
     expect(rotated?.buildings.find((b) => b.id === "s")?.rotated).toBe(true);
-    expect(applyOp(layout, { kind: "move", id: "s", x: 3, y: 0, rotated: false })).toBeNull();
-    expect(applyOp(layout, { kind: "move", id: "s", x: 0, y: 3, rotated: false })).not.toBeNull();
-    expect(applyOp(layout, { kind: "move", id: "missing", x: 0, y: 3, rotated: false })).toBeNull();
+    expect(applyOp(layout, { kind: "move", id: "s", ...at(3, 0), rotated: false }, NOW)).toBeNull();
+    expect(
+      applyOp(layout, { kind: "move", id: "s", ...at(0, 3), rotated: false }, NOW),
+    ).not.toBeNull();
+    expect(
+      applyOp(layout, { kind: "move", id: "missing", ...at(0, 3), rotated: false }, NOW),
+    ).toBeNull();
   });
 
   it("removes buildings but never the headquarters", () => {
-    let layout = place(starterLayout(), turret("t", 0, 0));
-    layout = applyOp(layout, { kind: "remove", id: "t" }) ?? layout;
+    let layout = place(island(), turret("t", at(0, 0).x, at(0, 0).y));
+    layout = applyOp(layout, { kind: "remove", id: "t" }, NOW) ?? layout;
     expect(layout.buildings.map((b) => b.id)).toEqual(["hq"]);
-    expect(applyOp(layout, { kind: "remove", id: "hq" })).toBeNull();
+    expect(applyOp(layout, { kind: "remove", id: "hq" }, NOW)).toBeNull();
   });
 
   it("converts between tiles and world positions", () => {
-    const b = turret("t", 5, 3);
+    const b = turret("t", at(5, 3).x, at(5, 3).y);
     const center = buildingCenter(b);
-    expect(tileAt(center)).toEqual({ x: 6, y: 4 });
-    expect(cornerFor("gunTurret", false, center)).toEqual({ x: 5, y: 3 });
-    const layout = place(empty(), b);
-    expect(buildingAtTile(layout, { x: 6, y: 4 })?.id).toBe("t");
-    expect(buildingAtTile(layout, { x: 7, y: 4 })).toBeUndefined();
-    expect(fits(layout, turret("u", 7, 3))).toBe(true);
+    expect(tileAt(center)).toEqual(at(6, 4));
+    expect(cornerFor("gunTurret", false, center)).toEqual(at(5, 3));
+    const layout = place(island(), b);
+    expect(buildingAtTile(layout, at(6, 4))?.id).toBe("t");
+    expect(buildingAtTile(layout, at(7, 4))).toBeUndefined();
+    expect(fits(layout, turret("u", at(7, 3).x, at(7, 3).y))).toBe(true);
+    expect(footprint("goldVault", true)).toEqual({ w: 2, h: 3 });
+  });
+});
+
+describe("crew island progression", () => {
+  it("starts a new island with only its headquarters at level 1 and some resources", () => {
+    const layout = starterLayout(NOW);
+    expect(layout.buildings.map((b) => [b.type, b.level])).toEqual([["headquarters", 1]]);
+    expect(layout.resources).toEqual(START_RESOURCES);
   });
 
-  it("cleans up untrusted layout data, keeping unlocked zones", () => {
-    expect(sanitizeLayout(null)).toEqual(starterLayout());
+  it("allows one of each producer and one gun turret and mortar at HQ 1, but no storage", () => {
+    let layout = { ...island(1) };
+    const types: BuildingType[] = ["goldMine", "lumberCamp", "quarry", "gunTurret", "mortar"];
+    for (const type of types) expect(buildBlocker(layout, type)).toBeNull();
+    expect(buildBlocker(layout, "scrapYard")).toMatch(/level 2/);
+    expect(buildBlocker(layout, "goldVault")).toMatch(/level 3/);
+    expect(buildBlocker(layout, "harpoon")).toMatch(/level 4/);
+    layout = place(layout, building("m", "goldMine", at(0, 0)));
+    expect(buildBlocker(layout, "goldMine")).not.toBeNull();
+    layout = place(layout, turret("t", at(4, 0).x, at(4, 0).y));
+    expect(buildBlocker(layout, "gunTurret")).toMatch(/headquarters to 3/);
+  });
+
+  it("allows 1, 2 and then 3 of each storage at HQ 3, 7 and 20", () => {
+    for (const [hq, count] of [
+      [2, 0],
+      [3, 1],
+      [6, 1],
+      [7, 2],
+      [19, 2],
+      [20, 3],
+    ] as const) {
+      let layout = island(hq, ZONES.length);
+      let placed = 0;
+      for (const t of zoneTiles(1)) {
+        const vault = building(`v${placed}`, "goldVault", t);
+        if (!buildBlocker(layout, "goldVault") && fits(layout, vault)) {
+          layout = place(layout, vault);
+          placed++;
+        }
+      }
+      expect(placed).toBe(count);
+    }
+  });
+
+  it("caps upgrades by the headquarters' level, and storages at level 8", () => {
+    let layout = place(island(3), building("v", "goldVault", at(0, 0)));
+    const upgrade = (l: CrewLayout) => tryOp(l, { kind: "upgrade", id: "v" }, NOW);
+    expect(upgrade(layout)).toEqual({ error: "Upgrade the headquarters first" });
+    layout = {
+      ...layout,
+      buildings: layout.buildings.map((b) => (b.type === "headquarters" ? { ...b, level: 20 } : b)),
+    };
+    for (let level = 2; level <= 8; level++) {
+      const result = upgrade(layout);
+      if (!("layout" in result)) throw new Error(result.error);
+      layout = result.layout;
+    }
+    expect(layout.buildings.find((b) => b.id === "v")?.level).toBe(8);
+    expect(upgrade(layout)).toEqual({ error: "Already at its highest level" });
+  });
+
+  it("upgrades the headquarters up to level 20", () => {
+    let layout = island(19);
+    const result = tryOp(layout, { kind: "upgrade", id: "hq" }, NOW);
+    if (!("layout" in result)) throw new Error(result.error);
+    layout = result.layout;
+    expect(hqLevel(layout)).toBe(20);
+    expect(tryOp(layout, { kind: "upgrade", id: "hq" }, NOW)).toEqual({
+      error: "Already at its highest level",
+    });
+  });
+
+  it("charges for building and upgrading, and refuses what the crew can't afford", () => {
+    const start = starterLayout(NOW);
+    const built = place(start, turret("t", at(0, 0).x, at(0, 0).y));
+    const cost = costFor("gunTurret", 1);
+    expect(built.resources.gold).toBe(START_RESOURCES.gold - (cost.gold ?? 0));
+    const broke = { ...start, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 } };
+    expect(
+      tryOp(broke, { kind: "place", building: turret("t", at(0, 0).x, at(0, 0).y) }, NOW),
+    ).toEqual({
+      error: "Not enough resources",
+    });
+    expect(tryOp(broke, { kind: "upgrade", id: "hq" }, NOW)).toEqual({
+      error: "Not enough resources",
+    });
+  });
+
+  it("fills the stock from producers over time, up to what storage holds", () => {
+    let layout = place(island(3), building("m", "goldMine", at(0, 0)));
+    layout = { ...layout, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 } };
+    const later = settle(layout, NOW + HOUR);
+    expect(later.resources.gold).toBeCloseTo(900);
+    expect(later.resources.timber).toBe(0);
+    const muchLater = settle(layout, NOW + 1000 * HOUR);
+    expect(muchLater.resources.gold).toBe(capacity(layout).gold);
+    const rich = { ...layout, resources: island().resources };
+    const withVault = place(rich, building("v", "goldVault", at(4, 0)));
+    expect(capacity(withVault).gold).toBeGreaterThan(capacity(layout).gold);
+  });
+
+  it("cleans up untrusted layout data, dropping what the headquarters doesn't allow", () => {
+    expect(sanitizeLayout(null, NOW)).toEqual(starterLayout(NOW));
+    const hq = starterLayout(NOW).buildings[0] as PlacedBuilding;
     const messy = {
       unlocked: 2,
+      resources: { gold: 1e9, timber: -5, stone: "x" },
+      stamp: NOW - HOUR,
       buildings: [
-        ...starterLayout().buildings,
-        turret("ok", 0, 0),
-        turret("west", zone(2).x, zone(2).y),
-        turret("overlap", 1, 1),
-        { id: "bad", type: "spaceship", x: 0, y: 8 },
-        { id: "half", type: "gunTurret", x: 1.5, y: 8 },
+        { ...hq, level: 2 },
+        { ...turret("ok", at(0, 0).x, at(0, 0).y), level: 9 },
+        turret("second", spotIn(2).x, spotIn(2).y), // HQ 2 allows only one gun turret
+        { ...building("m", "goldMine", at(4, 0)), level: undefined },
+        turret("overlap", at(1, 1).x, at(1, 1).y),
+        building("vault", "goldVault", at(0, 3)), // needs HQ 3
+        { id: "bad", type: "spaceship", ...at(0, 4) },
+        { id: "half", type: "mortar", x: O.x + 0.5, y: O.y + 4 },
       ],
     };
-    const clean = sanitizeLayout(messy);
+    const clean = sanitizeLayout(messy, NOW);
     expect(clean.unlocked).toBe(2);
-    expect(clean.buildings.map((b) => b.id)).toEqual(["hq", "ok", "west"]);
-    expect(sanitizeLayout({ unlocked: 99, buildings: [] }).unlocked).toBe(ZONES.length);
+    expect(clean.buildings.map((b) => [b.id, b.level])).toEqual([
+      ["hq", 2],
+      ["ok", 2],
+      ["m", 1],
+    ]);
+    expect(clean.resources.gold).toBe(capacity(clean).gold);
+    expect(clean.resources.timber).toBe(0);
+    expect(clean.resources.stone).toBe(0);
+    expect(clean.stamp).toBe(NOW - HOUR);
+    expect(sanitizeLayout({ unlocked: 99, buildings: [] }, NOW).unlocked).toBe(ZONES.length);
   });
 });

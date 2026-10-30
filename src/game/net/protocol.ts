@@ -44,6 +44,14 @@ export type ClientMessage =
   | { t: "hold"; buildingId: string | null };
 
 export type ServerMessage =
-  | { t: "state"; layout: CrewLayout; members: Member[]; holds: Hold[]; by: string | null }
+  | {
+      t: "state";
+      layout: CrewLayout;
+      members: Member[];
+      holds: Hold[];
+      by: string | null;
+      /** The server's clock (milliseconds), so phones can work out the resources right now. */
+      now: number;
+    }
   | { t: "reject"; opId: number; reason: string }
   | { t: "full" };

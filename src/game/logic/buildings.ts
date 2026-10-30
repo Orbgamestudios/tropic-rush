@@ -13,6 +13,10 @@ export type BuildingType =
   | "quarry"
   | "scrapYard"
   | "storehouse"
+  | "goldVault"
+  | "timberShed"
+  | "stoneYard"
+  | "scrapBin"
   | "refinery";
 
 export type DefenseAttack =
@@ -94,10 +98,14 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
   },
   watchtower: { label: "Watchtower", radius: 1.8, height: 9, hp: 700, energy: 3 },
   goldMine: { label: "Gold mine", radius: 3, height: 3.5, hp: 900, energy: 3 },
-  lumberCamp: { label: "Lumber camp", radius: 3.1, height: 3.2, hp: 900, energy: 3 },
+  lumberCamp: { label: "Lumber mill", radius: 3.1, height: 3.2, hp: 900, energy: 3 },
   quarry: { label: "Stone quarry", radius: 3, height: 3, hp: 900, energy: 3 },
   scrapYard: { label: "Scrap yard", radius: 3, height: 3, hp: 800, energy: 3 },
   storehouse: { label: "Storehouse", radius: 2.6, height: 3.6, hp: 1200, energy: 3 },
+  goldVault: { label: "Gold vault", radius: 2.6, height: 3.2, hp: 1200, energy: 3 },
+  timberShed: { label: "Timber shed", radius: 2.6, height: 3.4, hp: 1100, energy: 3 },
+  stoneYard: { label: "Stone yard", radius: 2.6, height: 2.6, hp: 1300, energy: 3 },
+  scrapBin: { label: "Scrap bin", radius: 2.6, height: 3, hp: 1100, energy: 3 },
   refinery: { label: "Refinery", radius: 3, height: 6.5, hp: 1300, energy: 4 },
 };
 

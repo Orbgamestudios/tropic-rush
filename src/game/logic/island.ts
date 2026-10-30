@@ -168,6 +168,10 @@ export function generateIsland(seed: number, level: number): IslandLayout {
     quarry: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
     scrapYard: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
     storehouse: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
+    goldVault: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
+    timberShed: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
+    stoneYard: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
+    scrapBin: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
     refinery: around(BASE_CENTER, 0.8 * Math.PI, 2.2 * Math.PI, 10, 30),
   };
   // Defenses first so they get the front line, then everything else.

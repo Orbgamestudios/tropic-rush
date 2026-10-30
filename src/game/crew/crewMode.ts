@@ -6,18 +6,27 @@ import type { BuildingType } from "../logic/buildings";
 import { BUILDINGS } from "../logic/buildings";
 import {
   applyOp,
+  buildBlocker,
   buildingAtTile,
   type CrewLayout,
+  capacity,
   cornerFor,
+  firstHqAllowing,
   fits,
+  hqLevel,
   type LayoutOp,
   type PlacedBuilding,
+  production,
   sanitizeLayout,
+  settle,
   tileAt,
+  tryOp,
+  upgradeBlocker,
   ZONES,
-  zoneBounds,
+  zoneCenter,
   zoneOf,
 } from "../logic/crewIsland";
+import { allowedCount, costFor, costText, levelCap, PROGRESSION } from "../logic/economy";
 import { distance, vec } from "../logic/vec";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
 import {
@@ -73,6 +82,10 @@ export class CrewMode {
   private gesture: Gesture | null = null;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private readonly ui: CrewUi;
+  /** Server clock minus this phone's clock (milliseconds), from the last state message. */
+  private clockOffset = 0;
+  /** Seconds until the resource readouts refresh. */
+  private refreshIn = 0;
 
   constructor(
     private readonly stage: Stage,
@@ -89,6 +102,7 @@ export class CrewMode {
       onChipDown: (type, event) => this.startPlacing(type, event),
       onRotate: () => this.rotateSelected(),
       onRemove: () => this.removeSelected(),
+      onUpgrade: () => this.upgradeSelected(),
       onDone: () => this.select(null),
       onUnlock: (zone) => this.unlock(zone),
       onZoneFocus: (zone) => this.focusZone(zone),
@@ -172,6 +186,36 @@ export class CrewMode {
     this.view.setUnlocked(this.layout.unlocked);
     this.view.update(dt, time);
     this.ui.placeZoneLabels(this.view.zoneScreenPositions(), this.layout.unlocked);
+    this.refreshIn -= dt;
+    if (this.refreshIn <= 0) {
+      this.refreshIn = 0.25;
+      this.refreshEconomy();
+    }
+  }
+
+  /** The server's clock right now, as best this phone knows it (milliseconds). */
+  private now(): number {
+    return Date.now() + this.clockOffset;
+  }
+
+  /** Updates the resource bar, the build buttons' costs and limits, and the upgrade button. */
+  private refreshEconomy(): void {
+    const current = settle(this.layout, this.now());
+    this.ui.setResources(current.resources, capacity(current), production(current));
+    const hq = hqLevel(current);
+    this.ui.setChips((type) => {
+      const have = current.buildings.filter((b) => b.type === type).length;
+      const allowed = allowedCount(type, hq);
+      const unlockAt = firstHqAllowing(type);
+      return {
+        have,
+        allowed,
+        cost: costText(costFor(type, 1)),
+        locked: allowed === 0 ? `HQ ${unlockAt ?? "–"}` : null,
+        blocked: buildBlocker(current, type) !== null,
+      };
+    });
+    this.refreshSelection(current);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -234,8 +278,9 @@ export class CrewMode {
     this.client?.close();
     this.status = "connecting";
     this.client = new CrewClient(save.crewCode, save.memberId, save.nickname, {
-      onState: (layout, members, holds, by) => {
-        this.layout = sanitizeLayout(layout);
+      onState: (layout, members, holds, by, serverNow) => {
+        this.clockOffset = serverNow - Date.now();
+        this.layout = sanitizeLayout(layout, this.now());
         writeLocalLayout(this.layout);
         this.members = members;
         this.holds = holds;
@@ -273,7 +318,7 @@ export class CrewMode {
   // Changes
 
   private commit(op: LayoutOp): boolean {
-    const next = applyOp(this.layout, op);
+    const next = applyOp(this.layout, op, this.now());
     if (!next) return false;
     this.layout = next;
     writeLocalLayout(next);
@@ -296,19 +341,52 @@ export class CrewMode {
     this.refreshSelection();
   }
 
-  private refreshSelection(): void {
-    const b = this.selected();
+  private refreshSelection(current = settle(this.layout, this.now())): void {
+    const b = current.buildings.find((o) => o.id === this.selectedId);
     if (!b) {
       this.ui.setSelection(null, false);
       return;
     }
     const holder = this.heldByOther(b.id);
     const zone = zoneOf(b);
-    const detail = holder ? `${holder.name} is moving it` : `${zone?.name ?? ""} · drag to move`;
+    const cap = levelCap(b.type, hqLevel(current));
+    const max = PROGRESSION[b.type].maxLevel;
+    const blocker = upgradeBlocker(current, b);
+    const detail = holder
+      ? `${holder.name} is moving it`
+      : b.type === "headquarters"
+        ? `Level ${b.level} of ${max} · ${zone?.name ?? ""}`
+        : `Level ${b.level} (max ${cap} at this HQ) · ${zone?.name ?? ""}`;
+    const upgrade =
+      b.level >= max
+        ? "Fully upgraded"
+        : blocker === "Upgrade the headquarters first"
+          ? "Upgrade the HQ first"
+          : `Next: ${costText(costFor(b.type, b.level + 1))}`;
     this.ui.setSelection(
-      { type: b.type, label: BUILDINGS[b.type].label, detail },
+      {
+        type: b.type,
+        label: `${BUILDINGS[b.type].label}`,
+        level: b.level,
+        detail,
+        upgrade,
+        canUpgrade: blocker === null,
+      },
       b.type !== "headquarters",
     );
+  }
+
+  private upgradeSelected(): void {
+    const b = this.selected();
+    if (!b) return;
+    const result = tryOp(this.layout, { kind: "upgrade", id: b.id }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      return;
+    }
+    this.commit({ kind: "upgrade", id: b.id });
+    this.ui.flash(`${BUILDINGS[b.type].label} upgraded to level ${b.level + 1}`);
+    this.refreshEconomy();
   }
 
   private unlock(zone: number): void {
@@ -322,8 +400,8 @@ export class CrewMode {
   private focusZone(id: number): void {
     const zone = ZONES[id - 1];
     if (!zone || !this.view) return;
-    const b = zoneBounds(zone);
-    this.view.camera.lookAt(b.x + b.w / 2, b.y + b.h / 2);
+    const center = zoneCenter(zone);
+    this.view.camera.lookAt(center.x, center.y);
   }
 
   private rotateSelected(): void {
@@ -354,9 +432,14 @@ export class CrewMode {
   private startPlacing(type: BuildingType, event: PointerEvent): void {
     if (!this.view) return;
     this.select(null);
+    const blocker = buildBlocker(settle(this.layout, this.now()), type);
+    if (blocker) {
+      this.ui.flash(blocker);
+      return;
+    }
     this.drag = {
       kind: "place",
-      building: { id: newId(), type, x: 0, y: 0, rotated: false },
+      building: { id: newId(), type, x: 0, y: 0, rotated: false, level: 1 },
       pointerId: event.pointerId,
       valid: false,
       overIsland: false,
@@ -386,7 +469,7 @@ export class CrewMode {
     drag.building = { ...drag.building, x: corner.x, y: corner.y };
     drag.valid =
       drag.kind === "place"
-        ? applyOp(this.layout, { kind: "place", building: drag.building }) !== null
+        ? applyOp(this.layout, { kind: "place", building: drag.building }, this.now()) !== null
         : fits(this.layout, drag.building);
     this.view.showPreview({ building: drag.building, valid: drag.valid });
   }
@@ -432,7 +515,7 @@ export class CrewMode {
         for (let dx = -radius; dx <= radius; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
           const candidate = { ...building, x: start.x + dx, y: start.y + dy };
-          if (this.commit({ kind: "place", building: candidate })) {
+          if (fits(this.layout, candidate) && this.commit({ kind: "place", building: candidate })) {
             this.select(candidate.id);
             return;
           }
