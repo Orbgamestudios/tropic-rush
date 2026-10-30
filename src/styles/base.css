@@ -14,7 +14,33 @@
 }
 
 :root {
-  --ink: #1a2232;
+  --ink: #0a1222;
+  /* The navy theme: deep navy steel, brass trim, gold lettering. */
+  --navy-950: #070e1b;
+  --navy-900: #0d182b;
+  --navy-800: #13223b;
+  --navy-700: #1b2f50;
+  --navy-600: #243f69;
+  --navy-500: #2d548f;
+  --navy-400: #3f6db0;
+  --steel-edge: #4a6187;
+  --brass-hi: #fff0b8;
+  --brass: #dcae5a;
+  --brass-mid: #b8873a;
+  --brass-lo: #6f4c1d;
+  --brass-grad: linear-gradient(180deg, #fff0b8 0%, #e3b55e 38%, #b8873a 70%, #6f4c1d 100%);
+  --gold-text: #ffd56a;
+  --cream: #f4ead2;
+  --chamfer: polygon(
+    var(--cut, 9px) 0,
+    calc(100% - var(--cut, 9px)) 0,
+    100% var(--cut, 9px),
+    100% calc(100% - var(--cut, 9px)),
+    calc(100% - var(--cut, 9px)) 100%,
+    var(--cut, 9px) 100%,
+    0 calc(100% - var(--cut, 9px)),
+    0 var(--cut, 9px)
+  );
   --display: "Lilita One", "Trebuchet MS", system-ui, sans-serif;
   --body: "Nunito", "Trebuchet MS", system-ui, -apple-system, sans-serif;
   --slate: #2a3446;
@@ -50,7 +76,7 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #121a26;
+  background: var(--navy-950);
   font-family: var(--body);
   color: white;
   /* Stop iOS rubber-band scrolling, text selection, long-press callouts and tap flashes. */
@@ -106,9 +132,31 @@ img {
   overflow: hidden;
 }
 
+/* The UI size setting: these layers are drawn at --ui-scale and stretched back to fill. */
+.hud,
+.screens,
+.crew-layer {
+  inset: auto;
+  left: 0;
+  top: 0;
+  width: calc(100% / var(--ui-scale, 1));
+  height: calc(100% / var(--ui-scale, 1));
+  transform: scale(var(--ui-scale, 1));
+  transform-origin: 0 0;
+}
+
+.stick {
+  scale: var(--ui-scale, 1);
+}
+
 .hud,
 .screens {
   pointer-events: none;
+}
+
+/* Menus (pause, hero select, results) sit above the crew island's own UI. */
+.screens {
+  z-index: 10;
 }
 
 .hud > *,

@@ -77,6 +77,65 @@ describe("raid movement", () => {
   });
 });
 
+describe("aiming and locking on", () => {
+  it("doesn't fire while aiming, then locks on and keeps firing after letting go", () => {
+    const state = raid([
+      { type: "storehouse", pos: vec(0, -10) },
+      { type: "headquarters", pos: vec(30, -40) },
+    ]);
+    const store = building(state, 0);
+    run(state, 1, [input({ aimPreview: vec(0, -1) })]);
+    expect(store.hp).toBe(store.maxHp);
+    stepRaid(state, [input({ lockAt: vec(0.1, -1) })], DT);
+    expect(hero(state).targetId).toBe(store.id);
+    run(state, 2);
+    expect(store.hp).toBeLessThan(store.maxHp);
+    run(state, 20);
+    expect(store.destroyed).toBe(true);
+    expect(hero(state).targetId).toBeNull();
+  });
+
+  it("stops firing when the hero walks out of range", () => {
+    const state = raid([{ type: "storehouse", pos: vec(0, -12) }]);
+    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
+    expect(hero(state).targetId).not.toBeNull();
+    run(state, 4, [input({ move: vec(0, 1) })]);
+    expect(hero(state).targetId).toBeNull();
+    expect(hero(state).firing).toBe(false);
+  });
+
+  it("taps lock onto the nearest tower, and a second tap stops", () => {
+    const state = raid([
+      { type: "storehouse", pos: vec(0, -5) },
+      { type: "gunTurret", pos: vec(0, 11) },
+    ]);
+    stepRaid(state, [input({ autoAim: true })], DT);
+    // The tower wins over the nearer storehouse.
+    expect(hero(state).targetId).toBe(building(state, 1).id);
+    stepRaid(state, [input({ autoAim: true })], DT);
+    expect(hero(state).targetId).toBeNull();
+  });
+
+  it("retargets when the player aims at another building", () => {
+    const state = raid([
+      { type: "storehouse", pos: vec(-8, -8) },
+      { type: "storehouse", pos: vec(8, -8) },
+    ]);
+    stepRaid(state, [input({ lockAt: vec(-1, -1) })], DT);
+    expect(hero(state).targetId).toBe(building(state, 0).id);
+    stepRaid(state, [input({ lockAt: vec(1, -1) })], DT);
+    expect(hero(state).targetId).toBe(building(state, 1).id);
+  });
+
+  it("slows heroes while they aim", () => {
+    const free = raid([]);
+    const aiming = raid([]);
+    run(free, 1, [input({ move: vec(1, 0) })]);
+    run(aiming, 1, [input({ move: vec(1, 0), aimPreview: vec(0, -1) })]);
+    expect(hero(aiming).pos.x).toBeLessThan(hero(free).pos.x * 0.7);
+  });
+});
+
 describe("raid combat", () => {
   it("lets heroes destroy buildings for energy, and wins when the HQ falls", () => {
     const state = raid([

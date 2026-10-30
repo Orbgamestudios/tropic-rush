@@ -68,6 +68,26 @@ export type HeroAttack =
       coneHalfAngle: number;
     };
 
+/**
+ * Half-width of a hero's shot spread in radians: how far shots stray either side of the aim.
+ * The aim cone on screen is drawn this wide.
+ */
+export function shotSpread(kind: HeroKind): number {
+  const atk = HEROES[kind].attack;
+  switch (atk.kind) {
+    case "minigun":
+      return atk.spread;
+    case "spray":
+      return atk.coneHalfAngle;
+    case "burst":
+      return 0.05;
+    case "shell":
+      return 0.03;
+    case "lob":
+      return 0.06;
+  }
+}
+
 export type SuperKind = "sprint" | "sandbags" | "ram" | "volley" | "smoke" | "healZone" | "turret";
 
 export interface HeroSpec {

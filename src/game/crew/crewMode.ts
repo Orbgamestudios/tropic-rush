@@ -1,6 +1,7 @@
 // The crew island screen: touch and mouse handling, placing and moving buildings, and keeping
 // this phone's layout in step with the crew server.
-// Drag empty sand to pan, pinch or scroll to zoom, tap a building to select it, then drag it.
+// Drag empty ground to pan, pinch or scroll to zoom, tap a building to select it, then drag it.
+// Tap a thicket, rock or boulder to see what clearing it takes.
 
 import type { BuildingType } from "../logic/buildings";
 import { BUILDINGS } from "../logic/buildings";
@@ -10,21 +11,25 @@ import {
   buildingAtTile,
   type CrewLayout,
   capacity,
+  clearBlocker,
+  clearedShare,
   cornerFor,
   firstHqAllowing,
   fits,
   hqLevel,
   type LayoutOp,
+  OBSTACLE_KINDS,
+  obstacleAtTile,
+  obstacles,
   type PlacedBuilding,
   production,
   sanitizeLayout,
   settle,
+  TOOL_ORDER,
+  TOOLS,
   tileAt,
   tryOp,
   upgradeBlocker,
-  ZONES,
-  zoneCenter,
-  zoneOf,
 } from "../logic/crewIsland";
 import { allowedCount, costFor, costText, levelCap, PROGRESSION } from "../logic/economy";
 import { distance, vec } from "../logic/vec";
@@ -52,7 +57,13 @@ interface Drag {
 }
 
 type Gesture =
-  | { kind: "pending"; startX: number; startY: number; hitId: string | null }
+  | {
+      kind: "pending";
+      startX: number;
+      startY: number;
+      hitId: string | null;
+      obstacleId: string | null;
+    }
   | { kind: "pan" }
   | { kind: "pinch"; distance: number; midX: number; midY: number };
 
@@ -67,7 +78,8 @@ function newId(): string {
 export interface CrewModeHost {
   save(): SaveData;
   updateSave(changes: Partial<SaveData>): void;
-  onBack(): void;
+  onMenu(): void;
+  onRaid(): void;
 }
 
 export class CrewMode {
@@ -78,6 +90,8 @@ export class CrewMode {
   private members: Member[] = [];
   private holds: Hold[] = [];
   private selectedId: string | null = null;
+  /** The obstacle whose clearing panel is open. */
+  private clearingId: string | null = null;
   private drag: Drag | null = null;
   private gesture: Gesture | null = null;
   private readonly pointers = new Map<number, { x: number; y: number }>();
@@ -95,7 +109,8 @@ export class CrewMode {
     private readonly host: CrewModeHost,
   ) {
     this.ui = new CrewUi(uiLayer, {
-      onBack: () => host.onBack(),
+      onMenu: () => host.onMenu(),
+      onRaid: () => host.onRaid(),
       onCreate: (name) => void this.createCrew(name),
       onJoin: (name, code) => this.joinCrew(name, code),
       onOffline: (name) => this.goOffline(name),
@@ -104,8 +119,8 @@ export class CrewMode {
       onRemove: () => this.removeSelected(),
       onUpgrade: () => this.upgradeSelected(),
       onDone: () => this.select(null),
-      onUnlock: (zone) => this.unlock(zone),
-      onZoneFocus: (zone) => this.focusZone(zone),
+      onClear: () => this.clearSelected(),
+      onClearCancel: () => this.showClearing(null),
     });
     surface.addEventListener("pointerdown", (e) => this.onDown(e));
     surface.addEventListener("pointermove", (e) => this.onMove(e));
@@ -153,9 +168,10 @@ export class CrewMode {
     this.layout = sanitizeLayout(loadLocalLayout());
     this.select(null);
     const save = this.host.save();
+    // Home is always open: with a crew it syncs, otherwise it's this phone's own island until
+    // the player starts or joins a crew from the crew button.
     if (save.crewCode && save.nickname) this.connect();
-    else if (save.nickname && save.crewCode === "" && this.hasLocalIsland()) this.refreshTop();
-    else this.ui.showJoin(save.nickname);
+    else this.status = "solo";
     this.refreshTop();
   }
 
@@ -183,9 +199,7 @@ export class CrewMode {
     this.view.sync(this.layout, hidden, others);
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
-    this.view.setUnlocked(this.layout.unlocked);
     this.view.update(dt, time);
-    this.ui.placeZoneLabels(this.view.zoneScreenPositions(), this.layout.unlocked);
     this.refreshIn -= dt;
     if (this.refreshIn <= 0) {
       this.refreshIn = 0.25;
@@ -216,14 +230,11 @@ export class CrewMode {
       };
     });
     this.refreshSelection(current);
+    this.refreshClearing(current);
   }
 
   // -------------------------------------------------------------------------------------------
   // Crew membership
-
-  private hasLocalIsland(): boolean {
-    return loadLocalLayout() !== null;
-  }
 
   private ensureMember(name: string): string | null {
     const clean = cleanName(name);
@@ -311,7 +322,7 @@ export class CrewMode {
           ? [{ id: save.memberId, name: save.nickname, online: true }]
           : [];
     this.ui.setCrew(save.crewCode, members, save.crewCode ? this.status : "solo");
-    this.ui.setProgress(this.layout.unlocked);
+    this.ui.setProgress(clearedShare(this.layout));
   }
 
   // -------------------------------------------------------------------------------------------
@@ -323,7 +334,7 @@ export class CrewMode {
     this.layout = next;
     writeLocalLayout(next);
     this.client?.sendOp(op);
-    this.ui.setProgress(next.unlocked);
+    this.ui.setProgress(clearedShare(next));
     return true;
   }
 
@@ -337,8 +348,59 @@ export class CrewMode {
   }
 
   private select(id: string | null): void {
+    if (id) this.showClearing(null);
     this.selectedId = id;
     this.refreshSelection();
+  }
+
+  private showClearing(id: string | null): void {
+    if (id) this.select(null);
+    this.clearingId = id;
+    this.view?.highlightObstacle(id);
+    this.refreshClearing();
+  }
+
+  private refreshClearing(current = settle(this.layout, this.now())): void {
+    const o = obstacles().find((x) => x.id === this.clearingId);
+    if (!o || current.cleared.includes(o.id)) {
+      if (this.clearingId) {
+        this.clearingId = null;
+        this.view?.highlightObstacle(null);
+      }
+      this.ui.setClearing(null);
+      return;
+    }
+    const spec = OBSTACLE_KINDS[o.kind];
+    const hq = hqLevel(current);
+    this.ui.setClearing({
+      label: spec.label,
+      tool: TOOLS[spec.tool].label,
+      cost: costText(spec.cost),
+      gives: costText(spec.gives),
+      blocker: clearBlocker(current, o),
+      tools: TOOL_ORDER.map((t) => ({
+        label: TOOLS[t].label,
+        hq: TOOLS[t].hq,
+        have: hq >= TOOLS[t].hq,
+      })),
+    });
+  }
+
+  private clearSelected(): void {
+    const o = obstacles().find((x) => x.id === this.clearingId);
+    if (!o) return;
+    const result = tryOp(this.layout, { kind: "clear", id: o.id }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      return;
+    }
+    this.commit({ kind: "clear", id: o.id });
+    const spec = OBSTACLE_KINDS[o.kind];
+    this.ui.flash(`${spec.label} cleared! +${costText(spec.gives)}`);
+    this.ui.celebrate();
+    this.view?.burst(o);
+    this.showClearing(null);
+    this.refreshEconomy();
   }
 
   private refreshSelection(current = settle(this.layout, this.now())): void {
@@ -348,15 +410,14 @@ export class CrewMode {
       return;
     }
     const holder = this.heldByOther(b.id);
-    const zone = zoneOf(b);
     const cap = levelCap(b.type, hqLevel(current));
     const max = PROGRESSION[b.type].maxLevel;
     const blocker = upgradeBlocker(current, b);
     const detail = holder
       ? `${holder.name} is moving it`
       : b.type === "headquarters"
-        ? `Level ${b.level} of ${max} · ${zone?.name ?? ""}`
-        : `Level ${b.level} (max ${cap} at this HQ) · ${zone?.name ?? ""}`;
+        ? `Level ${b.level} of ${max}`
+        : `Level ${b.level} (max ${cap} at this HQ)`;
     const upgrade =
       b.level >= max
         ? "Fully upgraded"
@@ -387,21 +448,6 @@ export class CrewMode {
     this.commit({ kind: "upgrade", id: b.id });
     this.ui.flash(`${BUILDINGS[b.type].label} upgraded to level ${b.level + 1}`);
     this.refreshEconomy();
-  }
-
-  private unlock(zone: number): void {
-    if (this.commit({ kind: "unlock", zone })) {
-      const name = ZONES[zone - 1]?.name ?? "";
-      this.ui.flash(`${name} unlocked!`);
-      this.focusZone(zone);
-    }
-  }
-
-  private focusZone(id: number): void {
-    const zone = ZONES[id - 1];
-    if (!zone || !this.view) return;
-    const center = zoneCenter(zone);
-    this.view.camera.lookAt(center.x, center.y);
   }
 
   private rotateSelected(): void {
@@ -561,11 +607,13 @@ export class CrewMode {
       this.view.showPreview({ building: hit, valid: true });
       return;
     }
+    const obstacle = ground && !hit ? obstacleAtTile(this.layout, tileAt(ground)) : undefined;
     this.gesture = {
       kind: "pending",
       startX: e.clientX,
       startY: e.clientY,
       hitId: hit?.id ?? null,
+      obstacleId: obstacle?.id ?? null,
     };
   }
 
@@ -606,7 +654,11 @@ export class CrewMode {
     }
     const gesture = this.gesture;
     if (gesture?.kind === "pending" && this.pointers.size === 1 && e.type === "pointerup") {
-      this.select(gesture.hitId);
+      if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
+      else {
+        this.showClearing(null);
+        this.select(gesture.hitId);
+      }
     }
     this.pointers.delete(e.pointerId);
     this.gesture =

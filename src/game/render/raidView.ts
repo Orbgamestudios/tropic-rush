@@ -8,6 +8,9 @@ import { type IslandLayout, terrainHeight } from "../logic/island";
 import type { Projectile, ProjectileKind, RaidEvent, RaidState, Team } from "../logic/raid";
 import { angleDiff, angleOf, distance, normalize, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
+import { AimView } from "./aimCone";
+import { buildCamp } from "./camp";
+import { buildClouds, type CloudView } from "./clouds";
 import { Effects } from "./effects";
 import {
   type BuildingModel,
@@ -125,8 +128,12 @@ export class RaidView {
   readonly effects = new Effects();
   /** Turned off once the raid is over, so bars don't float over the results screen. */
   showBars = true;
+  /** Where the player is dragging the aim stick (null when not), for the aim cone. */
+  aim: Vec2 | null = null;
+  private readonly aimView = new AimView();
   private readonly terrain: TerrainView;
   private readonly props: THREE.Group;
+  private readonly clouds: CloudView;
   private readonly buildings = new Map<number, BuildingView>();
   private readonly heroes = new Map<number, HeroView>();
   private readonly projectiles = new Map<number, THREE.Object3D>();
@@ -140,6 +147,7 @@ export class RaidView {
   private readonly boatHeading: number;
   private cannonAim: number;
   private ringPulse = 0;
+  private readonly focus = new THREE.Vector3();
   private readonly sandbagGeometry = sandbagPileGeometry();
 
   constructor(
@@ -150,6 +158,9 @@ export class RaidView {
     const scenery = sceneryMap(layout);
     this.terrain = buildTerrain(scenery);
     this.props = buildProps(layout, scenery);
+    this.props.add(buildCamp(layout, scenery));
+    this.clouds = buildClouds(layout.seed);
+    this.root.add(this.clouds.root, this.aimView.root);
     this.root.add(this.terrain.root, this.props, this.effects.root);
 
     for (const b of state.buildings) {
@@ -254,8 +265,18 @@ export class RaidView {
     height: number,
   ): void {
     this.terrain.update(time);
-    updateWind(time);
+    this.clouds.update(time);
+    // Plants between the camera and the followed hero dissolve so the hero never disappears.
+    const leader = state.heroes[0];
+    const watched = leader?.alive ? leader : state.heroes.find((h) => h.alive);
+    this.focus.set(
+      watched?.pos.x ?? 0,
+      watched ? ground(watched.pos.x, watched.pos.y) + 1 : 0,
+      watched?.pos.y ?? 0,
+    );
+    updateWind(time, watched && !watched.inBoat && this.showBars ? this.focus : null);
     this.effects.update(dt);
+    this.aimView.update(state, this.showBars ? leader : undefined, this.aim, ground, time);
     this.updateBuildings(state);
     this.updateHeroes(state, dt);
     this.updateProjectiles(state);
@@ -619,6 +640,8 @@ export class RaidView {
   }
 
   dispose(): void {
+    this.clouds.dispose();
+    this.aimView.dispose();
     for (const { ring } of this.heroes.values()) {
       const m = ring.material as THREE.MeshBasicMaterial;
       m.map?.dispose();

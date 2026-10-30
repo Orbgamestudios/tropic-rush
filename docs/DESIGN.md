@@ -38,6 +38,12 @@ Raids are what matter most. If a co-op raid is fun, everything else builds on it
 1. The crew picks an enemy island and lands together at its beach. **Decided**
 2. Each player controls one hero. Left thumb moves, right thumb aims and shoots, and dealing damage
    charges a super ability. **Proposed**
+   - **Aiming (Decided 2026-10-30):** dragging the aim stick shows a single cone as wide as the
+     hero's shot spread and as long as their range, with a crosshair on the tower it will lock
+     onto. It doesn't fire yet. Letting go locks on, and the hero keeps firing at that tower
+     until it's destroyed or the hero walks out of range. Dragging to another tower retargets.
+     A quick tap locks onto the nearest tower in range; tapping again stops. Heroes move at 60%
+     speed while aiming or shooting.
 3. **Gunboat.** **Decided:**
    - It pulls up next to the beach where the crew landed.
    - It has one seat, so only one player can use it at a time.
@@ -212,9 +218,17 @@ Starting size ratios, in hero heights:
   outline. Grass hills rise around it, tallest to the north and east, and drop as sandy cliffs
   into the sea. A long beach on the south-west slopes gently into shallow water. The water is
   animated, with a wider band of shallows off the beach.
-- **Zones:** the plateau is split into 4 sections of about 270+ tiles each (2 m tiles), with
-  wavy borders. Zone 1 is the Landing, by the beach; then the West, East and North fields. The
-  next one shows an Unlock button. Locked zones show a striped haze.
+- **Clearing (Decided 2026-10-30, replacing the 4 unlockable zones):** a new island is
+  overgrown. Only an 18 m clearing round the HQ is open; the rest of the plateau is covered in
+  patches the crew clears to make room, and better tools come with HQ levels:
+  - Brush and thickets (Axe, HQ 1), palm groves (Axe), rocks (Pickaxe, HQ 2), dense jungle
+    (Chainsaw, HQ 3) and boulders (Dynamite, HQ 5). Easy ones grow near the HQ, harder ones
+    further out.
+  - Tap a patch to see its tool, cost and what it gives back (timber or stone). Clearing costs
+    gold (plus stone or scrap for the big ones). Loose brush touching a cleared patch goes with it.
+  - The layout is the same on every island (fixed seed); the server stores which patches are
+    cleared and checks every clearing with the same rules. Islands from before this change keep
+    their buildings: the ground under them counts as cleared.
 - **Progression** (`src/game/logic/economy.ts`):
   - Resources are Gold, Timber, Stone and Scrap.
   - Producers: Gold mine, Lumber mill and Stone quarry from HQ 1, and the Scrap yard from HQ 2.
@@ -235,7 +249,8 @@ Starting size ratios, in hero heights:
 - Joining uses a nickname and a 6-character crew code, with no accounts or passwords. On iPhone,
   Safari and the Home Screen app keep separate storage, so they count as two players.
 - Crewmates show only as name tags on the buildings they're moving, not as walking characters.
-- Unlocking zones is free for now, in order. It could be tied to HQ level.
+- Clearing costs and rewards are a first draft: brush 15 gold, thicket 40, grove 90, rocks 150,
+  jungle 400 + 100 stone, boulder 700 + 60 scrap.
 - The progression numbers (costs, production, capacity, which HQ level unlocks what) are a first
   draft, not balanced.
   - Starting stock: 600 gold, 600 timber, 300 stone, 100 scrap.
@@ -284,19 +299,36 @@ mockups. The aim is to be better than them, not an exact copy:
 - [concept/ui-raid-jungle.jpg](concept/ui-raid-jungle.jpg)
 - [concept/ui-raid-beach.jpg](concept/ui-raid-beach.jpg)
 
-The look:
+The look (**Decided 2026-10-30**, the navy theme from the owner's second set of mockups:
+[ui-navy-kit](concept/ui-navy-kit.jpg), [ui-navy-crew](concept/ui-navy-crew.jpg),
+[ui-navy-raid](concept/ui-navy-raid.jpg), [ui-navy-heroes](concept/ui-navy-heroes.jpg); "navy
+like theme but polished and simple"):
 
-- **Frames and panels:** chunky beveled steel frames, steel name plates over dark panels, and tan
-  cards for stats.
-- **Buttons:** glossy blue, steel, gold, green and red buttons that sink when pressed. Each has an
-  icon and a word.
-- **Text:** bold outlined lettering.
-- **Currency:** pills with a big icon on the end.
+- **Frames and panels:** deep navy steel panels in a steel-blue frame, brass L-brackets on the
+  corners and rivets; name plates are navy in a brass frame with cut corners.
+- **Buttons:** navy faces in a brass frame with cut corners and gold lettering, sinking when
+  pressed; dark navy for secondary, brass for gold, green and red for go and danger. Round
+  buttons and the sticks are navy discs in a thick brass ring (anchor knob to move, a bullet
+  sight to fire).
+- **Insignia:** brass rank chevrons, anchors and shield-shaped rank badges for levels.
+- **Bars:** segmented gauges (HP orange, attack green, speed yellow, range blue on hero select).
+- **Hero select:** "Personnel" roster, a radar sweeping behind the hero on a navy steel pedestal
+  with a grated top, "Technical specs" on cream paper, the super in a hazard-striped plate, and
+  SELECT.
+- **Raid HUD:** a navy hero card, the squad in a column down the left, a PAUSE plate and a
+  brass-rimmed minimap.
+- **Text:** bold outlined lettering, gold or cream.
+- **Currency:** navy wells in a brass rim with a big icon on the end.
 
 **Built:**
 
-- **Title:** the logo on rotating sun rays over the orbiting home island, a RAID button and a
-  CREW ISLAND button.
+- **Home (Decided 2026-10-30):** there's no title screen. The game opens on the crew island,
+  with a pause button (top-left) for the menu and settings, a round Build button (bottom-left)
+  that opens the build drawer, and a big RAID button (bottom-right). Starting or joining a crew
+  is from the crew button; until then the island is the phone's own.
+- **Settings** (pause menu, on the island and in raids): raid camera tilt and zoom, UI size and
+  sound, saved on the phone. Each slider shows its exact value, with all three on one line, so
+  the owner can send preferred values to become the defaults (now tilt 0.50, zoom 0.37, UI 1.00).
 - **Hero select:**
   - a roster of 3D-rendered portraits with gear-shaped level badges and medal locks
   - the hero on a stone-and-steel pedestal: drag to spin it, and it drops in when chosen

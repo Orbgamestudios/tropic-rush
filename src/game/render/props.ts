@@ -6,6 +6,7 @@
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { beachWidth, type IslandLayout, shoreDistance, terrainHeight } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
 import { COLORS } from "./palette";
@@ -16,16 +17,22 @@ import { merge, painted, vertexColored } from "./shapes";
 // Wind
 
 const wind = { value: 0 };
+/** The hero the camera follows; plants between them and the camera dissolve. */
+const focus = { value: new THREE.Vector3(0, -100, 0) };
 let swayMaterial: THREE.MeshStandardMaterial | null = null;
 
 /** Like vertexColored(), but the higher a vertex sits, the more it sways in the wind. */
-function swaying(): THREE.MeshStandardMaterial {
+export function swaying(): THREE.MeshStandardMaterial {
   if (swayMaterial) return swayMaterial;
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uWind = wind;
+    shader.uniforms.uFocus = focus;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform float uWind;")
+      .replace(
+        "#include <common>",
+        "#include <common>\nuniform float uWind;\nvarying vec3 vSwayWorld;",
+      )
       .replace(
         "#include <begin_vertex>",
         /* glsl */ `#include <begin_vertex>
@@ -41,7 +48,28 @@ function swaying(): THREE.MeshStandardMaterial {
         transformed.x += sin(phase) * bend;
         transformed.z += cos(phase * 0.8 + 1.3) * bend * 0.7;
         // Leaves flutter a little on top of the sway.
-        transformed.y += sin(phase * 3.1 + position.x * 4.0 + position.z * 3.0) * 0.015 * lift;`,
+        transformed.y += sin(phase * 3.1 + position.x * 4.0 + position.z * 3.0) * 0.015 * lift;
+        vec4 swayWorld = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          swayWorld = instanceMatrix * swayWorld;
+        #endif
+        vSwayWorld = (modelMatrix * swayWorld).xyz;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nuniform vec3 uFocus;\nvarying vec3 vSwayWorld;",
+      )
+      .replace(
+        "#include <clipping_planes_fragment>",
+        /* glsl */ `#include <clipping_planes_fragment>
+        // Dissolve anything between the camera and the hero, in a soft dithered tube.
+        vec3 toHero = uFocus - cameraPosition;
+        float along = clamp(dot(vSwayWorld - cameraPosition, toHero) / dot(toHero, toHero), 0.0, 1.0);
+        float gap = length(vSwayWorld - (cameraPosition + toHero * along));
+        float cut = smoothstep(5.5, 2.5, gap) * smoothstep(0.98, 0.9, along);
+        float noiseCut = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715))));
+        if (noiseCut < cut * 0.85) discard;`,
       );
   };
   m.customProgramCacheKey = () => "tropic-sway";
@@ -49,9 +77,11 @@ function swaying(): THREE.MeshStandardMaterial {
   return m;
 }
 
-/** Advances the wind; call once a frame. */
-export function updateWind(time: number): void {
+/** Advances the wind and tells the plants where the followed hero is; call once a frame. */
+export function updateWind(time: number, hero: THREE.Vector3 | null): void {
   wind.value = time;
+  if (hero) focus.value.copy(hero);
+  else focus.value.set(0, -100, 0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -59,7 +89,11 @@ export function updateWind(time: number): void {
 
 /** A lumpy blob: an icosahedron pushed in and out by a few sine waves. */
 function lump(radius: number, detail: number, seed: number, color: number): THREE.BufferGeometry {
-  const g = new THREE.IcosahedronGeometry(radius, detail);
+  // Welded so the normals come out smooth instead of faceted.
+  const raw = new THREE.IcosahedronGeometry(radius, detail);
+  raw.deleteAttribute("normal");
+  raw.deleteAttribute("uv");
+  const g = mergeVertices(raw);
   const pos = g.getAttribute("position");
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -81,7 +115,7 @@ function blade(length: number, width: number, color: number): THREE.BufferGeomet
   return painted(g, color);
 }
 
-function palmGeometry(): THREE.BufferGeometry {
+export function palmGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   // A gently curved, ringed trunk out of tapered segments.
   let x = 0;
@@ -122,7 +156,7 @@ function palmGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function jungleTreeGeometry(): THREE.BufferGeometry {
+export function jungleTreeGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const trunk = new THREE.CylinderGeometry(0.22, 0.42, 4.2, 8);
   trunk.translate(0, 2.1, 0);
@@ -150,7 +184,7 @@ function jungleTreeGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function elephantEarGeometry(): THREE.BufferGeometry {
+export function elephantEarGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 6; i++) {
     const angle = (i / 6) * Math.PI * 2 + (i % 2) * 0.3;
@@ -172,7 +206,7 @@ function elephantEarGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function fernGeometry(): THREE.BufferGeometry {
+export function fernGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 8; i++) {
     const angle = (i / 8) * Math.PI * 2 + (i % 2) * 0.25;
@@ -228,7 +262,7 @@ function tuftGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function bushGeometry(): THREE.BufferGeometry {
+export function bushGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const blobs = [
     [0, 0.45, 0, 0.6],
@@ -251,7 +285,7 @@ function bushGeometry(): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function rockGeometry(): THREE.BufferGeometry {
+export function rockGeometry(): THREE.BufferGeometry {
   const geometry = new THREE.IcosahedronGeometry(1, 2);
   const pos = geometry.getAttribute("position");
   const v = new THREE.Vector3();
@@ -277,7 +311,7 @@ function rockGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
-function pebblesGeometry(): THREE.BufferGeometry {
+export function pebblesGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const stones = [
     [0, 0, 0.32],
@@ -364,6 +398,7 @@ export function instanced(
   items: readonly PropInstance[],
   castShadow = true,
   material: THREE.Material = vertexColored(),
+  ground: (x: number, y: number) => number = terrainHeight,
 ): THREE.InstancedMesh {
   const meshes = new THREE.InstancedMesh(geometry, material, Math.max(1, items.length));
   meshes.count = items.length;
@@ -373,7 +408,7 @@ export function instanced(
   const at = new THREE.Vector3();
   items.forEach((item, i) => {
     quat.setFromAxisAngle(up, item.rotation);
-    at.set(item.x, Math.max(-0.4, terrainHeight(item.x, item.y)) + (item.sink ?? 0), item.y);
+    at.set(item.x, Math.max(-0.4, ground(item.x, item.y)) + (item.sink ?? 0), item.y);
     matrix.compose(at, quat, item.scale);
     meshes.setMatrixAt(i, matrix);
   });

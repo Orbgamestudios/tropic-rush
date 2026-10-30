@@ -9,9 +9,12 @@ import type { Stage } from "./stage";
 
 export type RigMode = "follow" | "boat" | "orbit";
 
-const FOLLOW_PITCH = 0.87; // about 50 degrees
+/** Follow camera pitch range for the tilt setting: low and far-seeing to nearly top-down. */
+const FOLLOW_PITCH = [0.6, 1.14] as const;
 const FOLLOW_NEAR = 28;
 const FOLLOW_FAR = 34;
+/** The zoom setting scales the follow distance across this range. */
+const FOLLOW_ZOOM = [0.62, 1.6] as const;
 const BOAT_PITCH = 1.12;
 const BOAT_DISTANCE = 60;
 const ORBIT_PITCH = 0.6;
@@ -22,6 +25,9 @@ export class CameraRig {
   mode: RigMode = "orbit";
   /** 0 = close (exploring), 1 = pulled back (in a fight). */
   zoomOut = 0;
+  /** Player settings, 0 to 1: tilt (0 low, 1 top-down) and zoom (0 close, 1 far). */
+  tilt = 0.5;
+  zoom = 0.37;
   readonly boatFocus = new THREE.Vector3(0, 0, -10);
 
   private readonly target = new THREE.Vector3(0, 0, -8);
@@ -47,8 +53,10 @@ export class CameraRig {
       case "follow": {
         const f = focus ?? vec(0, 0);
         desired.set(f.x + lead.x, terrainHeight(f.x, f.y) + 0.8, f.y + lead.y);
-        distance = lerp(FOLLOW_NEAR, FOLLOW_FAR, this.zoomOut);
-        pitch = FOLLOW_PITCH;
+        distance =
+          lerp(FOLLOW_NEAR, FOLLOW_FAR, this.zoomOut) *
+          lerp(FOLLOW_ZOOM[0], FOLLOW_ZOOM[1], this.zoom);
+        pitch = lerp(FOLLOW_PITCH[0], FOLLOW_PITCH[1], this.tilt);
         break;
       }
       case "boat":

@@ -8,19 +8,19 @@ import {
   buildingCenter,
   type CrewLayout,
   footprint,
-  GRID_ORIGIN,
+  type Obstacle,
   type PlacedBuilding,
   TILE,
   ZONES,
-  zoneCenter,
   zoneOf,
-  zoneTiles,
 } from "../logic/crewIsland";
 import { clamp, lerp, type Vec2, vec } from "../logic/vec";
 import { visibleBox } from "./heroAssets";
 import { buildHomeIsland, type HomeIslandView, homeHeight, PLATEAU } from "./homeIsland";
 import { buildingModel } from "./models";
+import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
+import { updateWind } from "./props";
 import { rbox } from "./shapes";
 import type { Stage } from "./stage";
 
@@ -81,16 +81,6 @@ function groundFor(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rotated">): num
   if (zone) return zone.height;
   const c = buildingCenter(b);
   return Math.max(0, homeHeight(c.x, c.y));
-}
-
-/** The middle of a zone's southern (front) edge, where its name sits out of the buildings' way. */
-function zoneFront(zone: (typeof ZONES)[number]): Vec2 {
-  const center = zoneCenter(zone);
-  const column = Math.floor((center.x - GRID_ORIGIN.x) / TILE);
-  let row = Number.NEGATIVE_INFINITY;
-  for (const t of zoneTiles(zone.id)) if (t.x === column) row = Math.max(row, t.y);
-  if (!Number.isFinite(row)) return center;
-  return vec(center.x, GRID_ORIGIN.y + (row + 0.5) * TILE);
 }
 
 const MIN_DISTANCE = 22;
@@ -202,6 +192,7 @@ export class CrewIslandView {
   private readonly tiles: THREE.Mesh;
   private readonly selection: THREE.Mesh;
   private readonly tags = new Map<string, HTMLDivElement>();
+  private readonly overgrowth = new OvergrowthView();
 
   constructor(
     private readonly stage: Stage,
@@ -209,7 +200,9 @@ export class CrewIslandView {
   ) {
     this.camera = new HomeCamera(stage);
     this.island = buildHomeIsland();
-    this.root.add(this.island.root, this.previewGroup);
+    // The whole plateau shows its grid; the overgrowth marks what isn't buildable yet.
+    this.island.setUnlocked(ZONES.length);
+    this.root.add(this.island.root, this.previewGroup, this.overgrowth.root);
 
     const tileGeometry = new THREE.PlaneGeometry(1, 1);
     tileGeometry.rotateX(-Math.PI / 2);
@@ -236,6 +229,7 @@ export class CrewIslandView {
 
   /** Mirrors the layout: adds, moves and removes building blocks. */
   sync(layout: CrewLayout, hiddenId: string | null, holders: readonly Holder[]): void {
+    this.overgrowth.sync(layout.cleared);
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
@@ -343,34 +337,25 @@ export class CrewIslandView {
     }
   }
 
+  /** Outlines the obstacle whose clearing panel is open (null hides it). */
+  highlightObstacle(id: string | null): void {
+    this.overgrowth.highlight(id);
+  }
+
+  /** Leaves or stone chips flying off a cleared obstacle. */
+  burst(o: Obstacle): void {
+    this.overgrowth.burst(o);
+  }
+
   update(dt: number, time: number): void {
     this.camera.update(dt);
+    this.overgrowth.update(dt);
+    updateWind(time, null);
     this.island.update(
       time,
       this.stage.fog,
       this.stage.sun.position.clone().sub(this.stage.sun.target.position).normalize(),
     );
-  }
-
-  setUnlocked(count: number): void {
-    this.unlocked = count;
-    this.island.setUnlocked(count);
-  }
-
-  private unlocked = 1;
-
-  /** Where each zone's center appears on screen (CSS pixels), for the lock and unlock labels. */
-  zoneScreenPositions(): { id: number; x: number; y: number; visible: boolean }[] {
-    return ZONES.map((zone) => {
-      // Open zones get their name at the front edge, out of the buildings' way; locked ones in
-      // the middle, where the Unlock button goes.
-      const anchor = zone.id <= this.unlocked ? zoneFront(zone) : zoneCenter(zone);
-      const p = new THREE.Vector3(anchor.x, zone.height + 1, anchor.y).project(this.stage.camera);
-      const x = ((p.x + 1) / 2) * this.stage.width;
-      const y = ((1 - p.y) / 2) * this.stage.height;
-      const visible = p.z < 1 && x > 0 && x < this.stage.width && y > 0 && y < this.stage.height;
-      return { id: zone.id, x, y, visible };
-    });
   }
 
   /** Building label for menus. */
@@ -379,6 +364,9 @@ export class CrewIslandView {
   }
 
   dispose(): void {
+    // The plants share geometry and materials with other views: dispose them separately.
+    this.root.remove(this.overgrowth.root);
+    this.overgrowth.dispose();
     for (const tag of this.tags.values()) tag.remove();
     this.tags.clear();
     this.island.dispose();

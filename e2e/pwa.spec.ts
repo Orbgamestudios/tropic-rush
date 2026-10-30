@@ -25,8 +25,8 @@ test("picks a hero and starts a raid", async ({ page }) => {
 
   await page.goto("/");
   await page.getByRole("button", { name: "Raid", exact: true }).click();
-  await page.getByRole("button", { name: "Rifleman" }).click();
-  await page.getByRole("button", { name: "Raid!" }).click();
+  await page.getByRole("button", { name: "Rifleman", exact: true }).click();
+  await page.getByRole("button", { name: "Select", exact: true }).click();
 
   const timer = page.locator(".hud-objective-time");
   await expect(timer).toBeVisible();
@@ -61,11 +61,9 @@ test("builds on the crew island offline", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  // The plain preview server has no crew server, so this checks the offline path.
+  // The game opens on the crew island; with no crew yet it's this phone's own island.
   await page.goto("/?testhooks");
-  await page.getByRole("button", { name: "Crew island" }).click();
-  await page.getByPlaceholder("Your nickname").fill("Tester");
-  await page.getByRole("button", { name: "Build offline for now" }).click();
+  await page.getByRole("button", { name: "Build", exact: true }).click();
   await page.getByRole("button", { name: /Gun turret/ }).click();
 
   const count = () =>

@@ -13,7 +13,7 @@ import {
   HEAL,
   START_ENERGY,
 } from "./gunboat";
-import { HEROES, type HeroKind, type SuperKind } from "./heroes";
+import { HEROES, type HeroKind, type SuperKind, shotSpread } from "./heroes";
 import { type IslandLayout, isOnLand, type ObstacleKind } from "./island";
 import { createRng, type Rng } from "./rng";
 import {
@@ -40,6 +40,10 @@ const MINE_SPLASH = 2.6;
 const MINE_DAMAGE = 450;
 
 const SPRINT = { seconds: 3.5, speed: 1.6, damageTaken: 0.6 };
+/** Heroes move this much slower while aiming or shooting. */
+const SHOOTING_SPEED = 0.6;
+/** A released aim locks onto a building this far either side of it at least (radians). */
+const LOCK_TOLERANCE = 0.22;
 const RAM = { seconds: 0.6, speed: 14, damage: 450 };
 const SANDBAGS = { seconds: 12, distance: 2.4, spacing: 1.4, radius: 0.75 };
 const SMOKE = { seconds: 6, radius: 5 };
@@ -87,6 +91,8 @@ export interface RaidHero {
   autoFireTime: number;
   autoDir: Vec2;
   autoDistance: number;
+  /** The building this hero is locked onto and firing at, until it's gone or out of range. */
+  targetId: number | null;
 }
 
 export interface RaidBuilding {
@@ -217,9 +223,13 @@ export interface RaidState {
 export interface HeroInput {
   /** Movement stick, length 0 to 1. */
   move: Vec2;
-  /** Aim stick, length 0 to 1; holding it fires. Null when not aiming. */
+  /** Fire straight away in this direction (length 0 to 1 sets the distance). AI and tests. */
   aim: Vec2 | null;
-  /** A quick tap of the fire button: shoot at the nearest building in range. */
+  /** The player is dragging the aim stick: shows the cone and slows the hero, doesn't fire. */
+  aimPreview: Vec2 | null;
+  /** The player let go of the aim stick: lock onto the building in this direction's cone. */
+  lockAt: Vec2 | null;
+  /** A quick tap of the fire button: lock onto the nearest tower in range (tap again to stop). */
   autoAim: boolean;
   useSuper: boolean;
   /** Board the gunboat, or step off it. */
@@ -230,6 +240,8 @@ export interface HeroInput {
 export const IDLE_INPUT: HeroInput = {
   move: { x: 0, y: 0 },
   aim: null,
+  aimPreview: null,
+  lockAt: null,
   autoAim: false,
   useSuper: false,
   toggleBoat: false,
@@ -272,6 +284,7 @@ export function createRaid(
       autoFireTime: 0,
       autoDir: vec(0, -1),
       autoDistance: 0,
+      targetId: null,
     };
   });
   const buildings = layout.buildings.map((b): RaidBuilding => {
@@ -383,6 +396,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     hero.firing = false;
     hero.burstLeft = 0;
     hero.spin = 0;
+    hero.targetId = null;
     if (input.boatAbility) fireAbility(state, input.boatAbility.ability, input.boatAbility.target);
     return;
   }
@@ -394,31 +408,43 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     updateRam(state, hero, dt);
   } else {
     const move = length(input.move) > 1 ? normalize(input.move) : input.move;
-    const speed = spec.speed * (hero.sprintTime > 0 ? SPRINT.speed : 1);
+    const slowed = hero.firing || input.aimPreview !== null;
+    const speed =
+      spec.speed * (hero.sprintTime > 0 ? SPRINT.speed : 1) * (slowed ? SHOOTING_SPEED : 1);
     hero.moving = length(move) > 0.05;
     if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
   }
 
-  // Aiming: hold the aim stick to fire in that direction, or tap to auto-aim for a moment.
+  // Locking on: let go of a drag to lock onto the building in that direction, or tap to lock
+  // onto the nearest tower (tapping the same one again stops).
+  if (input.lockAt && length(input.lockAt) > 0.05) {
+    const target = lockCandidate(state, hero, input.lockAt);
+    hero.targetId = target?.id ?? null;
+    if (!target) {
+      // Nothing there: a quick volley in that direction.
+      hero.autoDir = normalize(input.lockAt);
+      hero.autoDistance = clamp(length(input.lockAt), 0.3, 1) * spec.attack.range;
+      hero.autoFireTime = AUTO_FIRE_SECONDS;
+    }
+  } else if (input.autoAim) {
+    const target = lockCandidate(state, hero, null);
+    hero.targetId = target && target.id !== hero.targetId ? target.id : null;
+    hero.autoFireTime = 0;
+  }
+
   let dir: Vec2 | null = null;
   let aimDistance = spec.attack.range;
   const aim = input.aim;
+  const locked = hero.targetId === null ? null : lockedBuilding(state, hero);
+  if (hero.targetId !== null && !locked) hero.targetId = null;
   if (aim && length(aim) > 0.15) {
     dir = normalize(aim);
     aimDistance = clamp(length(aim), 0, 1) * spec.attack.range;
     hero.autoFireTime = 0;
-  } else if (input.autoAim) {
-    const target = nearestBuilding(state, hero.pos, spec.attack.range);
-    if (target) {
-      hero.autoDir = normalize(sub(target.pos, hero.pos));
-      hero.autoDistance = distance(target.pos, hero.pos);
-    } else {
-      hero.autoDir = fromAngle(hero.facing);
-      hero.autoDistance = spec.attack.range;
-    }
-    hero.autoFireTime = AUTO_FIRE_SECONDS;
-  }
-  if (!dir && hero.autoFireTime > 0) {
+  } else if (locked) {
+    dir = normalize(sub(locked.pos, hero.pos));
+    aimDistance = distance(locked.pos, hero.pos);
+  } else if (hero.autoFireTime > 0) {
     dir = hero.autoDir;
     aimDistance = hero.autoDistance;
   }
@@ -471,11 +497,12 @@ function updateAttack(
         hero.firing = true;
         hero.burstTimer -= dt;
         if (hero.burstTimer <= 0) {
+          const stray = (state.rng() - 0.5) * 2 * shotSpread(hero.kind);
           spawnDirect(
             state,
             hero,
             "bullet",
-            hero.burstDir,
+            fromAngle(angleOf(hero.burstDir) + stray),
             atk.speed,
             atk.range,
             atk.damage * hero.power,
@@ -934,6 +961,59 @@ function updateCrewTurrets(state: RaidState, dt: number): void {
     state.events.push({ type: "explosion", pos: t.pos, radius: 1.2 });
     return false;
   });
+}
+
+/** The locked target, if it still stands and is in range. */
+function lockedBuilding(state: RaidState, hero: RaidHero): RaidBuilding | null {
+  const b = state.buildings.find((x) => x.id === hero.targetId);
+  if (!b || b.destroyed) return null;
+  const reach = HEROES[hero.kind].attack.range + 0.5;
+  return distance(b.pos, hero.pos) - b.radius <= reach ? b : null;
+}
+
+/**
+ * Which building a hero would lock onto: the one closest to the aim direction inside the cone
+ * and in range, or with no direction the nearest tower in range (any building if no tower is).
+ */
+export function lockCandidate(
+  state: RaidState,
+  hero: RaidHero,
+  dir: Vec2 | null,
+): RaidBuilding | null {
+  const range = HEROES[hero.kind].attack.range;
+  if (!dir) {
+    let best: RaidBuilding | null = null;
+    let bestScore = Infinity;
+    for (const b of state.buildings) {
+      if (b.destroyed) continue;
+      const d = distance(hero.pos, b.pos) - b.radius;
+      if (d > range) continue;
+      const score = d + (BUILDINGS[b.type].attack ? 0 : 1000);
+      if (score < bestScore) {
+        best = b;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+  const aimAngle = angleOf(dir);
+  const tolerance = Math.max(LOCK_TOLERANCE, shotSpread(hero.kind));
+  let best: RaidBuilding | null = null;
+  let bestScore = Infinity;
+  for (const b of state.buildings) {
+    if (b.destroyed) continue;
+    const gap = distance(hero.pos, b.pos);
+    if (gap - b.radius > range) continue;
+    // Wide buildings are easier to hit: their size widens the cone a little.
+    const off = Math.abs(angleDiff(angleOf(sub(b.pos, hero.pos)), aimAngle));
+    if (off > tolerance + Math.atan2(b.radius, Math.max(gap, 0.1))) continue;
+    const score = off * 10 + gap * 0.05;
+    if (score < bestScore) {
+      best = b;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function nearestBuilding(state: RaidState, from: Vec2, range: number): RaidBuilding | null {

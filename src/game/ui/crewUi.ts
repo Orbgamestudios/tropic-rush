@@ -1,21 +1,24 @@
 // HTML for the crew island, in the game's steel-and-glass style:
-// - top bar: back tab, crew card (avatars, share code, status), resources and island progress
-// - build drawer: category plates and building cards (3D icons, cost, count, locks)
+// - top bar: menu button, crew card (avatars, share code, status), resources and island progress
+// - a round Build button that opens the build drawer (category plates and building cards with
+//   3D icons, cost, count, locks), and the big RAID button
 // - selected building: an info panel with its level and the Level up button
-// - plates over each zone with the Unlock button, toasts, and the first-visit join panel
+// - the clearing panel for a tapped thicket, rock or boulder (tool, cost, what it gives), toasts,
+//   and the crew join panel
 
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
-import { ZONES } from "../logic/crewIsland";
 import { formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
 import type { ConnectionStatus } from "../net/crewClient";
 import type { Member } from "../net/protocol";
 import { buildingIcon } from "../render/thumbnails";
-import { backButton, button, el, levelBadge, panel, setLabel } from "./kit/dom";
+import { button, el, levelBadge, panel, setLabel } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
 export interface CrewUiHandlers {
-  onBack(): void;
+  /** The pause menu (settings). */
+  onMenu(): void;
+  onRaid(): void;
   onCreate(name: string): void;
   onJoin(name: string, code: string): void;
   onOffline(name: string): void;
@@ -24,8 +27,20 @@ export interface CrewUiHandlers {
   onRemove(): void;
   onUpgrade(): void;
   onDone(): void;
-  onUnlock(zone: number): void;
-  onZoneFocus(zone: number): void;
+  onClear(): void;
+  onClearCancel(): void;
+}
+
+/** What the clearing panel shows for a tapped obstacle. */
+export interface ClearInfo {
+  label: string;
+  tool: string;
+  cost: string;
+  gives: string;
+  /** Why it can't be cleared yet (wrong tool, not enough resources), or null. */
+  blocker: string | null;
+  /** The tool belt: every tool, and whether the crew has it yet. */
+  tools: { label: string; hq: number; have: boolean }[];
 }
 
 type Category = "defenses" | "resources" | "storage";
@@ -112,12 +127,21 @@ export class CrewUi {
   private readonly drawer = el("div", "crew-drawer");
   private readonly cards = el("div", "crew-cards");
   private readonly tabs = new Map<Category, HTMLButtonElement>();
-  private readonly drawerToggle: HTMLButtonElement;
+  private readonly buildButton: HTMLButtonElement;
+  private readonly buildLabel = el("span", "crew-build-label", "Build");
+  private readonly raidButton: HTMLButtonElement;
   private readonly code: HTMLButtonElement;
   private readonly avatars = el("div", "crew-avatars");
   private readonly status = el("span", "crew-status");
   private readonly progressLabel = el("span", "crew-progress-label");
-  private readonly progressSegments: HTMLButtonElement[] = [];
+  private readonly progressFill = el("span", "crew-progress-fill");
+  private readonly clearing = el("div", "crew-clearing");
+  private readonly clearTitle = el("div", "crew-clearing-title");
+  private readonly clearTool = el("div", "crew-clearing-tool");
+  private readonly clearCost = el("div", "crew-clearing-cost");
+  private readonly clearGives = el("div", "crew-clearing-gives");
+  private readonly clearTools = el("div", "crew-clearing-tools");
+  private readonly clearButton: HTMLButtonElement;
   private readonly resourceItems = new Map<
     Resource,
     { amount: HTMLSpanElement; fill: HTMLSpanElement; root: HTMLDivElement; rate: HTMLSpanElement }
@@ -142,10 +166,6 @@ export class CrewUi {
   private readonly removeButton: HTMLButtonElement;
   private selectedType: BuildingType | null = null;
   private selectedLevel = 0;
-  private readonly zoneLabels = new Map<
-    number,
-    { root: HTMLDivElement; button: HTMLButtonElement; name: HTMLSpanElement }
-  >();
   private readonly toast = el("div", "crew-toast");
   private readonly join = el("div", "crew-join");
   private readonly nameInput = el("input", "crew-input");
@@ -153,7 +173,7 @@ export class CrewUi {
   private readonly joinError = el("div", "crew-join-error");
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private crewCode = "";
-  private drawerOpen = true;
+  private drawerOpen = false;
   private selecting = false;
   private category: Category = "defenses";
 
@@ -171,7 +191,10 @@ export class CrewUi {
       size: "sm",
       className: "crew-code",
     });
-    this.code.addEventListener("click", () => this.shareCode());
+    this.code.addEventListener("click", () => {
+      if (this.crewCode) this.shareCode();
+      else this.showJoin(this.nameInput.value);
+    });
     const who = el("div", "crew-card-text");
     who.append(this.status);
     card.append(icon("crew", "crew-card-icon"), this.avatars, this.code, who);
@@ -192,26 +215,21 @@ export class CrewUi {
       this.resourceItems.set(r, { amount, fill, root: item, rate });
     }
     const progress = el("div", "crew-progress");
-    for (const zone of ZONES) {
-      const segment = el("button", "crew-progress-segment");
-      segment.title = zone.name;
-      segment.setAttribute("aria-label", `Show ${zone.name}`);
-      segment.addEventListener("click", () => {
-        sfx.tick();
-        handlers.onZoneFocus(zone.id);
-      });
-      this.progressSegments.push(segment);
-    }
-    const segments = el("div", "crew-progress-segments");
-    segments.append(...this.progressSegments);
-    progress.append(icon("map", "crew-progress-icon"), this.progressLabel, segments);
+    const track = el("div", "crew-progress-track");
+    track.append(this.progressFill);
+    progress.append(icon("map", "crew-progress-icon"), this.progressLabel, track);
     const right = el("div", "crew-top-right");
     right.append(resources, progress);
-    top.append(
-      backButton(() => handlers.onBack()),
-      card,
-      right,
-    );
+    const menu = button({
+      icon: "pause",
+      aria: "Menu",
+      round: true,
+      variant: "blue",
+      size: "md",
+      className: "crew-menu",
+      onClick: () => handlers.onMenu(),
+    });
+    top.append(menu, card, right);
 
     // Build drawer with category plates.
     const tabRow = el("div", "crew-tabs");
@@ -233,15 +251,29 @@ export class CrewUi {
       this.tabs.set(name, tab);
       tabRow.append(tab);
     }
-    this.drawerToggle = button({
-      label: "Hide",
-      variant: "steel",
-      size: "sm",
-      className: "crew-drawer-toggle",
-    });
-    this.drawerToggle.addEventListener("click", () => this.setDrawer(!this.drawerOpen));
-    tabRow.append(this.drawerToggle);
     this.drawer.append(tabRow, this.cards);
+    // One round button opens and closes the drawer.
+    this.buildButton = button({
+      icon: "hammer",
+      aria: "Build",
+      round: true,
+      variant: "gold",
+      size: "lg",
+      className: "crew-build",
+      onClick: () => {
+        sfx.press();
+        this.setDrawer(!this.drawerOpen);
+      },
+    });
+    this.buildButton.append(this.buildLabel);
+    this.raidButton = button({
+      label: "Raid",
+      icon: "sword2",
+      variant: "blue",
+      size: "lg",
+      className: "crew-raid",
+      onClick: () => handlers.onRaid(),
+    });
     this.showCategory("defenses");
 
     // Selected building: an info panel.
@@ -288,24 +320,31 @@ export class CrewUi {
     info.body.append(pic, words, this.upgradeButton, tools);
     this.selection.append(info.root);
 
-    // Plates over each zone; the next locked one carries the Unlock button.
-    const labelLayer = el("div", "crew-zone-layer");
-    for (const zone of ZONES) {
-      const root = el("div", "crew-zone-label");
-      const name = el("span", "crew-zone-name", zone.name);
-      const unlock = button({
-        label: `Unlock ${zone.name}`,
-        icon: "lock",
-        variant: "gold",
-        size: "sm",
-        className: "crew-unlock",
-        onClick: () => handlers.onUnlock(zone.id),
-      });
-      unlock.addEventListener("pointerdown", (e) => e.stopPropagation());
-      root.append(name, unlock);
-      labelLayer.append(root);
-      this.zoneLabels.set(zone.id, { root, button: unlock, name });
-    }
+    // Clearing: what a tapped thicket, rock or boulder needs and gives.
+    this.clearButton = button({
+      label: "Clear",
+      icon: "hammer",
+      variant: "green",
+      size: "md",
+      className: "crew-clearing-go",
+      onClick: () => handlers.onClear(),
+    });
+    const clearClose = button({
+      icon: "close",
+      aria: "Close",
+      round: true,
+      variant: "steel",
+      size: "sm",
+      onClick: () => handlers.onClearCancel(),
+    });
+    const clearCard = panel(undefined, "crew-clearing-panel");
+    const clearWords = el("div", "crew-clearing-words");
+    const trade = el("div", "crew-clearing-trade");
+    trade.append(this.clearCost, icon("play", "crew-clearing-arrow"), this.clearGives);
+    clearWords.append(this.clearTitle, this.clearTool, trade, this.clearTools);
+    clearCard.body.append(clearWords, this.clearButton, clearClose);
+    this.clearing.append(clearCard.root);
+    this.clearing.style.display = "none";
 
     // First visit: pick a nickname, then start or join a crew.
     this.nameInput.placeholder = "Your nickname";
@@ -343,8 +382,38 @@ export class CrewUi {
     );
     this.join.append(joinCard.root);
 
-    this.root.append(labelLayer, top, this.drawer, this.selection, this.toast, this.join, this.fx);
-    for (const node of [top, this.drawer, this.selection, this.join]) {
+    const closeJoin = button({
+      icon: "close",
+      aria: "Close",
+      round: true,
+      variant: "red",
+      size: "sm",
+      className: "crew-join-close",
+      onClick: () => this.hideJoin(),
+    });
+    joinCard.root.append(closeJoin);
+
+    this.root.append(
+      top,
+      this.drawer,
+      this.buildButton,
+      this.raidButton,
+      this.selection,
+      this.clearing,
+      this.toast,
+      this.join,
+      this.fx,
+    );
+    this.setDrawer(false);
+    for (const node of [
+      top,
+      this.drawer,
+      this.buildButton,
+      this.raidButton,
+      this.selection,
+      this.clearing,
+      this.join,
+    ]) {
       node.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
     this.show(false);
@@ -376,14 +445,16 @@ export class CrewUi {
         return chip;
       }),
     );
-    if (!this.drawerOpen) this.setDrawer(true);
     this.refreshChips();
   }
 
   private setDrawer(open: boolean): void {
     this.drawerOpen = open;
     this.drawer.classList.toggle("closed", !open);
-    setLabel(this.drawerToggle, open ? "Hide" : "Build");
+    this.buildButton.classList.toggle("open", open);
+    this.raidButton.classList.toggle("tucked", open);
+    this.buildLabel.textContent = open ? "Close" : "Build";
+    this.buildButton.setAttribute("aria-label", open ? "Close build menu" : "Build");
   }
 
   /** Sets how each build card looks (count, cost, locked); called every few frames. */
@@ -451,8 +522,7 @@ export class CrewUi {
 
   setCrew(code: string, members: readonly Member[], status: ConnectionStatus | "solo"): void {
     this.crewCode = code;
-    setLabel(this.code, code || "No crew");
-    this.code.disabled = !code;
+    setLabel(this.code, code || "Crew");
     this.avatars.replaceChildren(
       ...members.map((m) => {
         const avatar = el(
@@ -469,11 +539,48 @@ export class CrewUi {
     this.status.dataset.status = status;
   }
 
-  setProgress(unlocked: number): void {
-    this.progressLabel.textContent = `Island ${unlocked}/${ZONES.length}`;
-    this.progressSegments.forEach((segment, i) => {
-      segment.classList.toggle("open", i < unlocked);
+  /** Sparkles and a chime over the middle of the screen. */
+  celebrate(): void {
+    sfx.levelUp();
+    sparkleAt(this.fx, this.clearing.style.display === "none" ? this.root : this.clearing, {
+      count: 28,
+      spread: 140,
     });
+  }
+
+  /** How much of the island's overgrowth is cleared, 0 to 1. */
+  setProgress(share: number): void {
+    this.progressLabel.textContent = `Cleared ${Math.floor(share * 100)}%`;
+    this.progressFill.style.width = `${share * 100}%`;
+  }
+
+  /** Shows the clearing panel for a tapped obstacle, or hides it. */
+  setClearing(info: ClearInfo | null): void {
+    this.clearing.style.display = info ? "flex" : "none";
+    const busy = info !== null || this.selecting;
+    this.drawer.style.display = busy ? "none" : "";
+    this.buildButton.style.display = busy ? "none" : "";
+    this.raidButton.style.display = busy ? "none" : "";
+    if (!info) return;
+    this.clearTitle.textContent = info.label;
+    this.clearTool.replaceChildren(
+      icon("hammer", "crew-clearing-tool-icon"),
+      el("span", "", `Needs: ${info.tool}`),
+    );
+    this.clearCost.replaceChildren(costChips(info.cost));
+    this.clearGives.replaceChildren(costChips(info.gives));
+    this.clearTools.replaceChildren(
+      ...info.tools.map((t) => {
+        const chip = el("span", `crew-tool${t.have ? " have" : ""}`);
+        chip.append(
+          icon(t.have ? "check" : "lock", "crew-tool-icon"),
+          el("span", "", t.have ? t.label : `${t.label} · HQ ${t.hq}`),
+        );
+        return chip;
+      }),
+    );
+    this.clearButton.disabled = info.blocker !== null;
+    setLabel(this.clearButton, info.blocker ?? "Clear");
   }
 
   setSelection(
@@ -489,7 +596,9 @@ export class CrewUi {
   ): void {
     this.selecting = info !== null;
     this.selection.style.display = info ? "flex" : "none";
-    this.drawer.style.display = info ? "none" : "flex";
+    this.drawer.style.display = info ? "none" : "";
+    this.buildButton.style.display = info ? "none" : "";
+    this.raidButton.style.display = info ? "none" : "";
     if (info) {
       if (info.type !== this.selectedType) this.selectionImg.src = buildingIcon(info.type);
       if (info.type === this.selectedType && info.level > this.selectedLevel) {
@@ -512,33 +621,6 @@ export class CrewUi {
     this.removeButton.disabled = !canRemove;
   }
 
-  /** Positions the zone plates over the island; call every frame. */
-  placeZoneLabels(
-    positions: { id: number; x: number; y: number; visible: boolean }[],
-    unlocked: number,
-  ): void {
-    // Keep labels clear of the top bar and the drawer.
-    const top = 96;
-    const bottom =
-      this.drawer.style.display === "none"
-        ? this.root.clientHeight - 90
-        : this.drawer.getBoundingClientRect().top - 30;
-    for (const p of positions) {
-      const label = this.zoneLabels.get(p.id);
-      if (!label) continue;
-      const visible = p.visible && p.y > top && p.y < bottom;
-      label.root.style.display = visible ? "flex" : "none";
-      if (!visible) continue;
-      label.root.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -50%)`;
-      const open = p.id <= unlocked;
-      const next = p.id === unlocked + 1;
-      label.root.classList.toggle("open", open);
-      label.root.classList.toggle("locked", !open);
-      label.name.textContent = ZONES[p.id - 1]?.name ?? "";
-      label.button.style.display = next && !this.selecting ? "flex" : "none";
-    }
-  }
-
   flash(message: string): void {
     this.toast.textContent = message;
     this.toast.classList.add("on");
@@ -549,7 +631,9 @@ export class CrewUi {
   /** True if a screen point is over the build drawer (dropping there cancels a placement). */
   overBar(clientY: number): boolean {
     return (
-      this.drawer.style.display !== "none" && clientY >= this.drawer.getBoundingClientRect().top
+      this.drawer.style.display !== "none" &&
+      this.drawerOpen &&
+      clientY >= this.drawer.getBoundingClientRect().top
     );
   }
 

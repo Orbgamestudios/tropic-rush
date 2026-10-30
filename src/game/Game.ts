@@ -1,13 +1,12 @@
-// Runs the app. Screens: the title over the slowly orbiting home island, hero select with the
-// hero on a pedestal, the raid itself (HUD, pause, results), and the crew island. Each frame it
-// reads the controls, advances the rules in fixed steps, and draws the result.
+// Runs the app. It opens straight onto the crew island (home), which leads to hero select (the
+// hero on a pedestal) and the raid itself (HUD, pause, results), and back home again. Each frame
+// it reads the controls, advances the rules in fixed steps, and draws the result.
 
-import * as THREE from "three";
 import { COMBAT_ZOOM_DISTANCE, MAX_FRAME_SECONDS, RESULTS_DELAY, SIM_STEP } from "./config";
 import { type ControlMode, Controls } from "./controls";
 import { CrewMode } from "./crew/crewMode";
 import { BUILDINGS } from "./logic/buildings";
-import { HEROES, type HeroKind } from "./logic/heroes";
+import type { HeroKind } from "./logic/heroes";
 import { heroPower, raidReward } from "./logic/heroProgress";
 import { BASE_CENTER, generateIsland, randomSeed } from "./logic/island";
 import {
@@ -23,7 +22,6 @@ import {
 import { squadInput } from "./logic/squad";
 import { distance, lerp, vec } from "./logic/vec";
 import { CameraRig } from "./render/cameraRig";
-import { buildHomeIsland, HOME_CENTER, type HomeIslandView } from "./render/homeIsland";
 import { RaidView } from "./render/raidView";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
@@ -35,9 +33,8 @@ import { sfx } from "./ui/kit/fx";
 import { WorldLabels } from "./ui/labels";
 import { PauseMenu } from "./ui/pause";
 import { ResultsScreen } from "./ui/results";
-import { TitleScreen } from "./ui/title";
 
-type Phase = "title" | "heroes" | "raid" | "ended" | "crew";
+type Phase = "heroes" | "raid" | "ended" | "crew";
 
 function layer(parent: HTMLElement, className: string): HTMLDivElement {
   const div = document.createElement("div");
@@ -46,25 +43,20 @@ function layer(parent: HTMLElement, className: string): HTMLDivElement {
   return div;
 }
 
-/** Seconds for one turn of the title screen's camera around the island. */
-const ORBIT_SECONDS = 90;
-
 export class Game {
   private readonly stage: Stage;
   private readonly rig: CameraRig;
   private readonly labels: WorldLabels;
   private readonly controls: Controls;
   private readonly hud: Hud;
-  private readonly title: TitleScreen;
   private readonly heroes: HeroSelect;
   private readonly results: ResultsScreen;
   private readonly pause: PauseMenu;
   private readonly showcase: Showcase;
   private readonly crew: CrewMode;
-  private readonly backdrop: HomeIslandView;
   private readonly wipe: HTMLDivElement;
   private save: SaveData = loadSave();
-  private phase: Phase = "title";
+  private phase: Phase = "crew";
   private paused = false;
   private state: RaidState | null = null;
   private playerDown = false;
@@ -79,7 +71,7 @@ export class Game {
   private resultShown = false;
   private retreated = false;
 
-  constructor(container: HTMLElement) {
+  constructor(private readonly container: HTMLElement) {
     this.stage = new Stage(container);
     this.rig = new CameraRig(this.stage);
     this.labels = new WorldLabels(layer(container, "labels"));
@@ -96,14 +88,10 @@ export class Game {
     });
     const screens = layer(container, "screens");
     this.showcase = new Showcase(this.stage);
-    this.title = new TitleScreen(screens, {
-      onRaid: () => this.go(() => this.showHeroes()),
-      onCrew: () => this.go(() => this.enterCrew()),
-    });
     this.heroes = new HeroSelect(screens, this.showcase, {
       save: () => this.save,
       update: (changes) => this.updateSave(changes),
-      onBack: () => this.go(() => this.showTitle()),
+      onBack: () => this.go(() => this.goHome()),
       onStart: (hero, level, squad) => this.go(() => this.startRaid(hero, level, squad)),
     });
     this.results = new ResultsScreen(screens, {
@@ -116,13 +104,18 @@ export class Game {
           ),
         ),
       onHeroes: () => this.go(() => this.showHeroes()),
-      onHome: () => this.go(() => this.showTitle()),
+      onHome: () => this.go(() => this.goHome()),
     });
     this.pause = new PauseMenu(screens, {
-      onResume: () => this.setPaused(false),
+      onResume: () => (this.phase === "crew" ? this.pause.show(false) : this.setPaused(false)),
       onRetreat: () => {
         this.setPaused(false);
         this.retreat();
+      },
+      settings: () => this.save.settings,
+      onSettings: (settings) => {
+        this.updateSave({ settings });
+        this.applySettings();
       },
     });
     const rotate = layer(container, "rotate");
@@ -135,15 +128,14 @@ export class Game {
       {
         save: () => this.save,
         updateSave: (changes) => this.updateSave(changes),
-        onBack: () => this.go(() => this.leaveCrew()),
+        onMenu: () => this.pause.show(true, false),
+        onRaid: () => this.go(() => this.showHeroes()),
       },
     );
     this.wipe = layer(container, "wipe");
 
-    this.backdrop = buildHomeIsland();
-    this.backdrop.showOverlays(false);
-    this.stage.scene.add(this.backdrop.root);
-    this.showTitle();
+    this.applySettings();
+    this.enterCrew();
     if (new URLSearchParams(location.search).has("testhooks")) this.installTestHooks();
     requestAnimationFrame(this.frame);
   }
@@ -171,6 +163,16 @@ export class Game {
     Object.assign(window, { tropicRush: hooks });
   }
 
+  /** Camera tilt and zoom, UI size and sound, from the save. */
+  private applySettings(): void {
+    const s = this.save.settings;
+    this.rig.tilt = s.tilt;
+    this.rig.zoom = s.zoom;
+    this.container.style.setProperty("--ui-scale", String(s.uiScale));
+    this.controls.uiScale = s.uiScale;
+    sfx.setMuted(s.muted);
+  }
+
   private updateSave(changes: Partial<SaveData>): void {
     this.save = { ...this.save, ...changes };
     writeSave(this.save);
@@ -186,38 +188,29 @@ export class Game {
   }
 
   private hideScreens(): void {
-    this.title.hide();
     this.heroes.hide();
     this.results.hide();
     this.pause.show(false);
   }
 
-  private showTitle(): void {
+  /** Back to the crew island, from hero select or the end of a raid. */
+  private goHome(): void {
     this.endRaidWorld();
-    this.hideScreens();
-    this.phase = "title";
-    this.backdrop.root.visible = true;
-    this.title.show(this.save.gold, this.save.medals);
+    this.enterCrew();
   }
 
   private showHeroes(): void {
+    if (this.crew.active) this.crew.exit();
     this.endRaidWorld();
     this.hideScreens();
     this.phase = "heroes";
-    this.backdrop.root.visible = false;
     this.heroes.show();
   }
 
   private enterCrew(): void {
     this.hideScreens();
     this.phase = "crew";
-    this.backdrop.root.visible = false;
-    this.crew.enter();
-  }
-
-  private leaveCrew(): void {
-    this.crew.exit();
-    this.showTitle();
+    if (!this.crew.active) this.crew.enter();
   }
 
   private endRaidWorld(): void {
@@ -237,7 +230,6 @@ export class Game {
     this.updateSave({ hero, level });
     this.endRaidWorld();
     this.hideScreens();
-    this.backdrop.root.visible = false;
     this.islandLevel = level;
     const layout = generateIsland(randomSeed(), level);
     const kinds = [hero, ...squad.filter((k) => k !== hero && this.save.unlocked.includes(k))];
@@ -306,32 +298,12 @@ export class Game {
     return state.heroes.map((_, i) => (i === 0 ? player : squadInput(state, i)));
   }
 
-  /** The title screen's camera: a slow circle high above the home island. */
-  private orbit(): void {
-    const angle = (this.time / ORBIT_SECONDS) * Math.PI * 2;
-    const cam = this.stage.camera;
-    cam.position.set(
-      HOME_CENTER.x + Math.sin(angle) * 150,
-      95,
-      HOME_CENTER.y + Math.cos(angle) * 150,
-    );
-    cam.lookAt(HOME_CENTER.x, 0, HOME_CENTER.y);
-    this.stage.focusShadows(new THREE.Vector3(HOME_CENTER.x, 0, HOME_CENTER.y), 90);
-    this.stage.setFogRange(200, 460);
-    this.backdrop.update(
-      this.time,
-      this.stage.fog,
-      this.stage.sun.position.clone().sub(this.stage.sun.target.position).normalize(),
-    );
-  }
-
   private readonly frame = (now: number): void => {
     const dt = Math.min(MAX_FRAME_SECONDS, (now - this.last) / 1000);
     this.last = now;
     this.time += dt;
     this.stage.adaptQuality(dt);
     if (this.phase === "crew") this.crew.frame(dt, this.time);
-    else if (this.phase === "title") this.orbit();
     else if (this.phase === "heroes") this.showcase.update(dt, this.time);
     else this.raidFrame(dt, now);
     this.stage.render();
@@ -346,10 +318,7 @@ export class Game {
     if (!this.paused) {
       this.accumulator += dt;
       while (this.accumulator >= SIM_STEP) {
-        const input =
-          this.phase === "raid"
-            ? this.controls.read(hero.pos, HEROES[hero.kind].attack.range)
-            : IDLE_INPUT;
+        const input = this.phase === "raid" ? this.controls.read(hero.pos) : IDLE_INPUT;
         stepRaid(state, this.inputs(input), SIM_STEP);
         view.handleEvents(state.events, state);
         this.accumulator -= SIM_STEP;
@@ -377,6 +346,7 @@ export class Game {
     // Once the player is down, watch whoever is still fighting.
     const watched = hero.alive ? hero : (state.heroes.find((h) => h.alive) ?? hero);
     this.rig.update(dt, watched.pos, vec(0, -3));
+    view.aim = this.phase === "raid" && !this.paused ? this.controls.aimPreview() : null;
     view.update(
       state,
       this.paused ? 0 : dt,

@@ -26,6 +26,37 @@ export interface SaveData {
   unlocked: HeroKind[];
   /** AI squadmates brought along on raids (unlocked heroes, at most MAX_SQUAD). */
   squad: HeroKind[];
+  settings: Settings;
+}
+
+/** Player settings from the pause menu. Each slider is 0 to 1 except uiScale. */
+export interface Settings {
+  /** Raid camera tilt: 0 looks out low (see further), 1 looks straight down. */
+  tilt: number;
+  /** Raid camera distance: 0 close to the hero, 1 far back. */
+  zoom: number;
+  /** Size of every menu, button and the HUD (0.8 to 1.25). */
+  uiScale: number;
+  muted: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = { tilt: 0.5, zoom: 0.37, uiScale: 1, muted: false };
+export const UI_SCALE_RANGE = [0.8, 1.25] as const;
+
+function readSettings(value: unknown): Settings {
+  const v = (value ?? {}) as Partial<Record<keyof Settings, unknown>>;
+  const unit = (x: unknown, fallback: number) =>
+    typeof x === "number" && Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : fallback;
+  const ui =
+    typeof v.uiScale === "number" && Number.isFinite(v.uiScale)
+      ? Math.min(UI_SCALE_RANGE[1], Math.max(UI_SCALE_RANGE[0], v.uiScale))
+      : DEFAULT_SETTINGS.uiScale;
+  return {
+    tilt: unit(v.tilt, DEFAULT_SETTINGS.tilt),
+    zoom: unit(v.zoom, DEFAULT_SETTINGS.zoom),
+    uiScale: ui,
+    muted: v.muted === true,
+  };
 }
 
 /** AI squadmates fill the other crew seats: a crew is up to 5 heroes. */
@@ -49,6 +80,7 @@ const DEFAULT_SAVE: SaveData = {
   heroLevels: startLevels(),
   unlocked: starters(),
   squad: starters().slice(1),
+  settings: DEFAULT_SETTINGS,
 };
 
 const fresh = (): SaveData => ({
@@ -56,6 +88,7 @@ const fresh = (): SaveData => ({
   heroLevels: startLevels(),
   unlocked: starters(),
   squad: [...DEFAULT_SAVE.squad],
+  settings: { ...DEFAULT_SETTINGS },
 });
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
@@ -99,6 +132,7 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       squad: Array.isArray(parsed.squad)
         ? unlocked.filter((k) => (parsed.squad as unknown[]).includes(k)).slice(0, MAX_SQUAD)
         : DEFAULT_SAVE.squad,
+      settings: readSettings(parsed.settings),
     };
   } catch {
     return fresh();

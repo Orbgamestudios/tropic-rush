@@ -28,6 +28,7 @@ const JUNGLE_FLOOR = new THREE.Color(0x3f8a3a);
 const DIRT = new THREE.Color(0xc79a62);
 const DIRT_DARK = new THREE.Color(0xa77a4a);
 const ROCK = new THREE.Color(0x9c9584);
+const PAD = new THREE.Color(0xb39167);
 
 function noise(x: number, y: number): number {
   return (
@@ -70,6 +71,8 @@ function groundColor(map: SceneryMap, x: number, y: number, out: THREE.Color): T
   const t = map.trail(x, y);
   const dirt = DIRT.clone().lerp(DIRT_DARK, smoothstep(1.4, 0, t) * 0.5);
   lawn.lerp(dirt, smoothstep(2.6, 1.4, t + noise(x * 3, y * 3) * 0.4));
+  // Packed dirt where the buildings stand.
+  lawn.lerp(PAD, map.pad(x, y) * 0.8);
   return out.lerp(lawn, grass);
 }
 

@@ -155,7 +155,11 @@ export class StatBar {
   private readonly ghost = el("div", "ui-stat-ghost");
   private readonly value = el("span", "ui-stat-value");
 
-  constructor(iconName: IconName, label: string, color: "green" | "orange" | "blue" | "red") {
+  constructor(
+    iconName: IconName,
+    label: string,
+    color: "green" | "orange" | "yellow" | "blue" | "red",
+  ) {
     const head = el("div", "ui-stat-head");
     head.append(el("span", "ui-stat-label", label), this.value);
     const track = el("div", `ui-stat-track ui-stat-${color}`);

@@ -47,7 +47,9 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/controls.ts`: touch sticks, mouse and keyboard turned into `HeroInput`.
 - `src/game/Game.ts`: wires controls → rules (fixed 60 Hz steps) → view.
 - Crew island (real-time building with up to 5 crewmates):
-  - `src/game/logic/crewIsland.ts`: the tile grid and the place/move/remove rules.
+  - `src/game/logic/crewIsland.ts`: the tile grid, the place/move/remove rules, and the
+    overgrowth (obstacles cleared with tools that come with HQ levels).
+    `render/overgrowth.ts` draws it.
   - `src/game/net/`: the message protocol and the phone's reconnecting client.
   - `worker/index.ts`: the Cloudflare Worker, with one `CrewIsland` Durable Object per crew code.
     It checks every change with the same `crewIsland.ts` rules and sends the whole layout to
@@ -62,8 +64,9 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   - `icons.ts`: the hand-drawn SVG icon set.
   - `fx.ts`: synthesized UI sounds and sparkles.
 
-  The screens are `title.ts`, `heroSelect.ts` (with `render/showcase.ts`, the 3D pedestal),
-  `hud.ts`, `pause.ts`, `results.ts` and `crewUi.ts`. `render/thumbnails.ts` renders hero
+  The game opens on the crew island (no title screen). The screens are `heroSelect.ts` (with
+  `render/showcase.ts`, the 3D pedestal), `hud.ts`, `pause.ts` (with settings), `results.ts` and
+  `crewUi.ts`. `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
   portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero levels,
   unlocks and raid rewards.
 - Real models live in `public/models/` (meshopt-compressed GLB; `render/heroAssets.ts` loads

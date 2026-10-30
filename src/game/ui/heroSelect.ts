@@ -75,10 +75,10 @@ export class HeroSelect {
   private readonly cardBadges = el("div", "stats-badges");
   private readonly cardLevel = el("div", "stats-level");
   private readonly bars = {
-    hp: new StatBar("heart", "HP", "green"),
-    dps: new StatBar("sword", "Attack", "orange"),
-    speed: new StatBar("speed", "Speed", "green"),
-    range: new StatBar("range", "Range", "orange"),
+    hp: new StatBar("heart", "HP", "orange"),
+    dps: new StatBar("sword", "Attack", "green"),
+    speed: new StatBar("speed", "Speed", "yellow"),
+    range: new StatBar("range", "Range", "blue"),
   };
   private readonly superIcon = el("div", "stats-super-icon");
   private readonly superName = el("div", "stats-super-name");
@@ -104,7 +104,7 @@ export class HeroSelect {
     const back = backButton(() => host.onBack());
 
     // Roster.
-    const roster = panel("Heroes", "heroes-roster");
+    const roster = panel("Personnel", "heroes-roster");
     roster.body.append(this.grid);
     for (const kind of HERO_KINDS) {
       const tile = portraitTile(HEROES[kind].name, null);
@@ -136,7 +136,13 @@ export class HeroSelect {
     stageArea.addEventListener("pointerup", stop);
     stageArea.addEventListener("pointercancel", stop);
     const nameplate = el("div", "heroes-nameplate");
-    nameplate.append(this.name, this.role);
+    const nameRow = el("div", "heroes-name-row");
+    nameRow.append(
+      icon("rank", "heroes-name-badge"),
+      this.name,
+      icon("anchorGold", "heroes-name-badge"),
+    );
+    nameplate.append(nameRow, this.role);
     // The squad: AI heroes who fill the other crew seats.
     const squad = el("div", "squad");
     squad.append(el("div", "squad-label", "Squad"), this.squadSlots, this.picker);
@@ -145,7 +151,7 @@ export class HeroSelect {
     stageArea.append(squad, el("div", "heroes-spin-hint", "Drag to spin"), nameplate);
 
     // Stats & info.
-    const info = panel("Stats & info", "heroes-info");
+    const info = panel("Technical specs", "heroes-info");
     const card = el("div", "stats-card");
     const head = el("div", "stats-head");
     head.append(this.cardLevel, this.cardName, this.cardBadges);
@@ -186,8 +192,7 @@ export class HeroSelect {
     });
     this.levelUp.querySelector(".ui-btn-face")?.append(this.levelCost);
     this.start = button({
-      label: "Raid!",
-      icon: "play",
+      label: "Select",
       variant: "blue",
       size: "xl",
       className: "heroes-start",

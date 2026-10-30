@@ -1,20 +1,23 @@
 // Turns touches, mouse and keyboard into HeroInput for the rules.
-// Phone: left thumb moves, right thumb aims and fires (hold to keep firing, quick tap to
-// auto-aim at the nearest building). Both sticks rest in their corners and jump to wherever the
-// thumb lands on that half of the screen, then spring back home. In the gunboat: drag to look
+// Phone: left thumb moves, right thumb aims. Dragging the aim stick shows the aim cone without
+// firing (and slows the hero); letting go locks onto the building in the cone and the hero keeps
+// firing at it until it's gone or out of range. A quick tap locks onto the nearest tower. Both
+// sticks rest in their corners and jump to wherever the thumb lands on that half of the screen,
+// then spring back home. In the gunboat: drag to look
 // around, tap the island to fire the selected ability.
-// Computer: WASD/arrows move, hold the mouse to aim and fire, Space super, E gunboat, 1-3 abilities.
+// Computer: WASD/arrows move, drag the mouse from the hero to aim and release to lock on (click
+// to lock onto the nearest tower), Space super, E gunboat, 1-3 abilities.
 
 import type { Ability } from "./logic/gunboat";
 import { ABILITY_ORDER } from "./logic/gunboat";
 import type { HeroInput } from "./logic/raid";
-import { clampLength, length, normalize, scale, sub, type Vec2, vec } from "./logic/vec";
+import { clampLength, length, normalize, sub, type Vec2, vec } from "./logic/vec";
 import type { CameraRig } from "./render/cameraRig";
 import { iconSvg } from "./ui/kit/icons";
 
 export type ControlMode = "off" | "hero" | "boat";
 
-const STICK_RADIUS = 58;
+const BASE_STICK_RADIUS = 58;
 const TAP_MS = 230;
 const TAP_DISTANCE = 14;
 const AIM_DEADZONE = 10;
@@ -58,8 +61,9 @@ function stickElements(
     label.className = "stick-label";
     label.innerHTML = `<span>MOVE</span><svg viewBox="0 0 60 40" aria-hidden="true"><path d="M4 8c22-6 42 2 50 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="M46 30l9 4 2-10" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     base.append(label);
+    knob.innerHTML = iconSvg("anchorGold");
   } else {
-    knob.innerHTML = iconSvg("crosshair");
+    knob.innerHTML = iconSvg("bullet");
     const label = document.createElement("div");
     label.className = "stick-label stick-label-aim";
     label.textContent = "FIRE";
@@ -72,13 +76,17 @@ function stickElements(
 
 export class Controls {
   selectedAbility: Ability = "artillery";
+  /** The UI size setting; sticks are drawn this much bigger or smaller. */
+  uiScale = 1;
   private mode: ControlMode = "off";
   private left: Stick | null = null;
   private right: Stick | null = null;
   private pan: Pan | null = null;
   private readonly keys = new Set<string>();
-  private mouse: { x: number; y: number; down: boolean } = { x: 0, y: 0, down: false };
+  private mouse = { x: 0, y: 0, down: false, startX: 0, startY: 0, startTime: 0 };
   private pendingAutoAim = false;
+  private pendingLock: Vec2 | null = null;
+  private lastHero: Vec2 | null = null;
   private pendingSuper = false;
   private pendingBoat = false;
   private pendingAbility: { ability: Ability; target: Vec2 } | null = null;
@@ -124,38 +132,60 @@ export class Controls {
     this.selectedAbility = ability;
   }
 
-  /** Builds this frame's input for the hero, then clears one-shot presses. */
-  read(heroPos: Vec2 | null, range: number): HeroInput {
-    let move = vec(0, 0);
-    if (this.left)
-      move = clampLength(vec(this.left.dx / STICK_RADIUS, this.left.dy / STICK_RADIUS), 1);
-    else move = this.keyboardMove();
+  /** Where the player is aiming right now (dragging), as a stick vector; null if not. */
+  aimPreview(): Vec2 | null {
+    if (this.mode !== "hero") return null;
+    const radius = this.stickRadius();
+    if (this.right && Math.hypot(this.right.dx, this.right.dy) > AIM_DEADZONE)
+      return clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1);
+    if (this.mouse.down && this.lastHero) return this.mouseAim(this.lastHero);
+    return null;
+  }
 
-    let aim: Vec2 | null = null;
-    if (this.right && Math.hypot(this.right.dx, this.right.dy) > AIM_DEADZONE) {
-      aim = clampLength(vec(this.right.dx / STICK_RADIUS, this.right.dy / STICK_RADIUS), 1);
-    } else if (this.mouse.down && heroPos && this.mode === "hero") {
-      const target = this.rig.groundPoint(
-        this.mouse.x,
-        this.mouse.y,
-        this.canvas.getBoundingClientRect(),
-      );
-      if (target) aim = clampLength(scale(sub(target, heroPos), 1 / range), 1);
-    }
+  private mouseAim(heroPos: Vec2): Vec2 | null {
+    if (
+      Math.hypot(this.mouse.x - this.mouse.startX, this.mouse.y - this.mouse.startY) < TAP_DISTANCE
+    )
+      return null;
+    const target = this.rig.groundPoint(
+      this.mouse.x,
+      this.mouse.y,
+      this.canvas.getBoundingClientRect(),
+    );
+    if (!target) return null;
+    const d = sub(target, heroPos);
+    return length(d) > 0.01 ? normalize(d) : null;
+  }
+
+  /** Builds this frame's input for the hero, then clears one-shot presses. */
+  read(heroPos: Vec2 | null): HeroInput {
+    this.lastHero = heroPos;
+    let move = vec(0, 0);
+    const radius = this.stickRadius();
+    if (this.left) move = clampLength(vec(this.left.dx / radius, this.left.dy / radius), 1);
+    else move = this.keyboardMove();
 
     const input: HeroInput = {
       move,
-      aim,
+      aim: null,
+      aimPreview: this.aimPreview(),
+      lockAt: this.pendingLock,
       autoAim: this.pendingAutoAim,
       useSuper: this.pendingSuper,
       toggleBoat: this.pendingBoat,
       boatAbility: this.pendingAbility,
     };
     this.pendingAutoAim = false;
+    this.pendingLock = null;
     this.pendingSuper = false;
     this.pendingBoat = false;
     this.pendingAbility = null;
     return input;
+  }
+
+  /** How far the thumb travels for a full push, in screen pixels. */
+  private stickRadius(): number {
+    return BASE_STICK_RADIUS * this.uiScale;
   }
 
   private keyboardMove(): Vec2 {
@@ -199,7 +229,14 @@ export class Controls {
       return;
     }
     if (e.pointerType === "mouse") {
-      this.mouse = { x: e.clientX, y: e.clientY, down: true };
+      this.mouse = {
+        x: e.clientX,
+        y: e.clientY,
+        down: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTime: performance.now(),
+      };
       return;
     }
     const leftSide = e.clientX < window.innerWidth * 0.5;
@@ -241,11 +278,13 @@ export class Controls {
       if (!stick || stick.pointerId !== e.pointerId) continue;
       const d = clampLength(
         vec(e.clientX - stick.originX, e.clientY - stick.originY),
-        STICK_RADIUS,
+        this.stickRadius(),
       );
       stick.dx = d.x;
       stick.dy = d.y;
-      stick.knob.style.transform = `translate(calc(-50% + ${d.x}px), calc(-50% + ${d.y}px))`;
+      // The knob moves inside the scaled stick, so undo the scale for its offset.
+      const k = 1 / this.uiScale;
+      stick.knob.style.transform = `translate(calc(-50% + ${d.x * k}px), calc(-50% + ${d.y * k}px))`;
     }
   }
 
@@ -266,6 +305,11 @@ export class Controls {
       return;
     }
     if (e.pointerType === "mouse") {
+      if (this.mouse.down && !cancelled) {
+        const aim = this.lastHero ? this.mouseAim(this.lastHero) : null;
+        if (aim) this.pendingLock = aim;
+        else if (performance.now() - this.mouse.startTime < TAP_MS * 2) this.pendingAutoAim = true;
+      }
       this.mouse.down = false;
       return;
     }
@@ -275,8 +319,11 @@ export class Controls {
     }
     if (this.right?.pointerId === e.pointerId) {
       const quick = performance.now() - this.right.startTime < TAP_MS;
-      if (!cancelled && quick && Math.hypot(this.right.dx, this.right.dy) < TAP_DISTANCE)
-        this.pendingAutoAim = true;
+      const dragged = Math.hypot(this.right.dx, this.right.dy);
+      const radius = this.stickRadius();
+      if (!cancelled && dragged > AIM_DEADZONE)
+        this.pendingLock = clampLength(vec(this.right.dx / radius, this.right.dy / radius), 1);
+      else if (!cancelled && quick && dragged < TAP_DISTANCE) this.pendingAutoAim = true;
       this.goHome(this.right);
       this.right = null;
     }

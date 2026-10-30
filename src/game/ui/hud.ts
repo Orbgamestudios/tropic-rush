@@ -160,7 +160,7 @@ export class Hud {
       handlers.onSuper();
     });
     this.boatButton.setAttribute("aria-label", "Board gunboat");
-    this.boatButton.append(icon("anchor", "hud-boat-icon"), this.boatLabel);
+    this.boatButton.append(icon("anchorGold", "hud-boat-icon"), this.boatLabel);
     this.boatButton.addEventListener("click", () => {
       sfx.press();
       handlers.onBoat();
@@ -191,7 +191,7 @@ export class Hud {
     const trayBox = el("div", "hud-tray-box");
     trayBox.append(this.trayHint, this.tray);
 
-    this.arrow.append(icon("anchor", "hud-boat-arrow-icon"), el("span", "hud-boat-arrow-tip"));
+    this.arrow.append(icon("anchorGold", "hud-boat-arrow-icon"), el("span", "hud-boat-arrow-tip"));
 
     this.root.append(
       card,

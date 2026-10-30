@@ -1,6 +1,7 @@
-// The hero-select stage: the chosen hero on a stone-and-steel pedestal under a spotlight, with a
-// glowing rim, drifting dust motes and a dark backdrop. The hero breathes, turns slowly, and can
-// be spun with a drag. Swapping heroes plays a quick drop-in.
+// The hero-select stage, in the navy theme: the chosen hero on a navy steel pedestal with a
+// grated top and a brass rim, under a spotlight, in front of riveted navy plating with a radar
+// sweeping behind them. The hero breathes, turns slowly, and can be spun with a drag. Swapping
+// heroes plays a quick drop-in.
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
@@ -9,20 +10,43 @@ import type { Stage } from "./stage";
 
 function backdropTexture(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
+  canvas.width = 1024;
   canvas.height = 512;
   const g = canvas.getContext("2d");
   if (!g) throw new Error("No 2D canvas");
-  const sky = g.createRadialGradient(256, 210, 20, 256, 260, 380);
-  sky.addColorStop(0, "#4a5d7c");
-  sky.addColorStop(0.45, "#2b3850");
-  sky.addColorStop(1, "#141b28");
+  const sky = g.createRadialGradient(512, 230, 30, 512, 260, 620);
+  sky.addColorStop(0, "#22406c");
+  sky.addColorStop(0.5, "#15284a");
+  sky.addColorStop(1, "#08111f");
   g.fillStyle = sky;
-  g.fillRect(0, 0, 512, 512);
-  // Faint diagonal hatching, like the brushed-metal walls in the mockups.
-  g.globalAlpha = 0.05;
+  g.fillRect(0, 0, 1024, 512);
+  // Riveted plates: faint seams with a row of rivets along each.
+  g.strokeStyle = "rgba(0, 0, 0, 0.35)";
+  g.lineWidth = 3;
+  for (const x of [170, 420, 610, 860]) {
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, 512);
+    g.stroke();
+  }
+  for (const y of [150, 380]) {
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(1024, y);
+    g.stroke();
+  }
+  g.fillStyle = "rgba(160, 185, 220, 0.18)";
+  for (const x of [170, 420, 610, 860])
+    for (let y = 14; y < 512; y += 34) {
+      g.beginPath();
+      g.arc(x + 9, y, 2.2, 0, Math.PI * 2);
+      g.fill();
+    }
+  // Brushed-metal hatching.
+  g.globalAlpha = 0.035;
   g.strokeStyle = "#ffffff";
-  for (let i = -512; i < 512; i += 9) {
+  g.lineWidth = 1;
+  for (let i = -1024; i < 1024; i += 8) {
     g.beginPath();
     g.moveTo(i, 0);
     g.lineTo(i + 512, 512);
@@ -33,11 +57,76 @@ function backdropTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-function stoneMaterial(shade: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: shade, roughness: 0.92, flatShading: true });
+/** A radar screen behind the hero: rings, cross hairs and a sweeping beam with a fading trail. */
+function radar(): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv * 2.0 - 1.0;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        float r = length(vUv);
+        if (r > 1.0) discard;
+        float a = atan(vUv.y, vUv.x);
+        float rings = smoothstep(0.012, 0.0, abs(fract(r * 4.0) - 0.5) - 0.48);
+        float cross = smoothstep(0.006, 0.0, min(abs(vUv.x), abs(vUv.y))) * step(0.08, r);
+        float sweep = mod(uTime * 0.9 - a, 6.2831853);
+        float beam = exp(-sweep * 2.2) * smoothstep(1.0, 0.2, r);
+        float edge = smoothstep(0.985, 0.96, r) * smoothstep(0.93, 0.96, r);
+        float glow = rings * 0.22 + cross * 0.18 + beam * 0.35 + edge * 0.4;
+        vec3 color = mix(vec3(0.35, 0.6, 0.95), vec3(0.55, 0.9, 1.0), beam);
+        gl_FragColor = vec4(color, glow * smoothstep(1.0, 0.75, r) + edge * 0.3);
+      }
+    `,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 6.4), material);
+  mesh.position.set(0, 1.9, -2.6);
+  return { mesh, material };
 }
 
-/** A ring of chunky, slightly uneven stone blocks topped with a steel disc and a glowing rim. */
+/** A steel grating texture for the pedestal's top. */
+function gratingTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const g = canvas.getContext("2d");
+  if (!g) throw new Error("No 2D canvas");
+  g.fillStyle = "#8f9db2";
+  g.fillRect(0, 0, 256, 256);
+  g.fillStyle = "#2c3546";
+  for (let y = 0; y < 256; y += 16)
+    for (let x = (y / 16) % 2 ? 8 : 0; x < 256; x += 16) {
+      g.beginPath();
+      g.ellipse(x + 4, y + 8, 3, 5, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(5, 5);
+  return texture;
+}
+
+function stoneMaterial(shade: number): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: shade,
+    roughness: 0.55,
+    metalness: 0.45,
+    flatShading: true,
+  });
+}
+
+/** A ring of navy steel blocks topped with a grated steel disc and a brass rim. */
 function pedestal(): { root: THREE.Group; glow: THREE.Mesh; ring: THREE.Mesh } {
   const root = new THREE.Group();
   const blocks = 18;
@@ -46,7 +135,7 @@ function pedestal(): { root: THREE.Group; glow: THREE.Mesh; ring: THREE.Mesh } {
     const h = 0.42 + ((i * 37) % 7) * 0.012;
     const block = new THREE.Mesh(
       new THREE.BoxGeometry(0.62, h, 0.42, 1, 1, 1),
-      stoneMaterial(i % 3 === 0 ? 0x8d8579 : i % 3 === 1 ? 0x9c9488 : 0x7f786d),
+      stoneMaterial(i % 3 === 0 ? 0x2c4167 : i % 3 === 1 ? 0x34507c : 0x263a5c),
     );
     block.position.set(Math.cos(a) * 1.5, h / 2, Math.sin(a) * 1.5);
     block.rotation.y = -a + Math.PI / 2;
@@ -57,20 +146,25 @@ function pedestal(): { root: THREE.Group; glow: THREE.Mesh; ring: THREE.Mesh } {
   }
   const core = new THREE.Mesh(
     new THREE.CylinderGeometry(1.36, 1.42, 0.4, 40),
-    stoneMaterial(0x6f695f),
+    stoneMaterial(0x1d2c47),
   );
   core.position.y = 0.2;
   root.add(core);
   const steel = new THREE.Mesh(
     new THREE.CylinderGeometry(1.32, 1.36, 0.12, 64),
-    new THREE.MeshStandardMaterial({ color: 0x9fb0c4, metalness: 0.85, roughness: 0.28 }),
+    new THREE.MeshStandardMaterial({ color: 0xdcae5a, metalness: 0.9, roughness: 0.3 }),
   );
   steel.position.y = 0.48;
   steel.receiveShadow = true;
   root.add(steel);
   const inner = new THREE.Mesh(
     new THREE.CylinderGeometry(1.05, 1.05, 0.13, 64),
-    new THREE.MeshStandardMaterial({ color: 0x5f7187, metalness: 0.8, roughness: 0.35 }),
+    new THREE.MeshStandardMaterial({
+      color: 0xb8c4d6,
+      map: gratingTexture(),
+      metalness: 0.75,
+      roughness: 0.4,
+    }),
   );
   inner.position.y = 0.49;
   inner.receiveShadow = true;
@@ -140,19 +234,20 @@ export class Showcase {
   private savedBackground: THREE.Scene["background"] = null;
   private savedFog: THREE.Scene["fog"] = null;
   private readonly background = backdropTexture();
+  private readonly radar = radar();
   private token = 0;
 
   constructor(private readonly stage: Stage) {
     const p = pedestal();
     this.glow = p.glow;
     this.ring = p.ring;
-    this.root.add(p.root, this.turntable);
+    this.root.add(p.root, this.turntable, this.radar.mesh);
     this.turntable.position.y = 0.55;
     this.dust = motes();
     this.root.add(this.dust);
     this.floor = new THREE.Mesh(
       new THREE.CircleGeometry(14, 64),
-      new THREE.MeshStandardMaterial({ color: 0x232c3b, roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({ color: 0x14223a, roughness: 0.85 }),
     );
     this.floor.rotation.x = -Math.PI / 2;
     this.floor.receiveShadow = true;
@@ -232,6 +327,7 @@ export class Showcase {
       const breathe = 1 + Math.sin(time * 2.2) * 0.012;
       this.hero.scale.y = this.hero.scale.x * breathe;
     }
+    (this.radar.material.uniforms.uTime as THREE.IUniform<number>).value = time;
     const pulse = 0.65 + Math.sin(time * 2.4) * 0.25;
     (this.glow.material as THREE.MeshBasicMaterial).opacity = pulse;
     (this.ring.material as THREE.MeshBasicMaterial).opacity = 0.1 + pulse * 0.1;

@@ -266,6 +266,31 @@ const ICONS = {
     <ellipse cx="32" cy="42" rx="20" ry="8" fill="#f2d79b" stroke="${OUTLINE}" stroke-width="3"/>
     <path d="M30 40c0-10 2-18 6-24" stroke="#8a4a1d" stroke-width="4" fill="none" stroke-linecap="round"/>
     <path d="M36 16c-8-6-18-4-22 2 8-2 14 0 22-2zM36 16c6-8 16-8 20-2-8 0-14 0-20 2zM36 16c-2 8-8 12-14 12 4-6 8-10 14-12zM36 16c6 2 10 8 10 14-4-6-8-10-10-14z" fill="url(#${id("b")})" stroke="${OUTLINE}" stroke-width="2.5" stroke-linejoin="round"/>`,
+  // Brass insignia for the navy theme.
+  rank: (id) => `
+    <defs>${lg(id("a"), "#fff1b8", "#e2b45a", "#a8752c")}</defs>
+    <g fill="url(#${id("a")})" stroke="#2a1c08" stroke-width="3" stroke-linejoin="round">
+      <path d="M8 30l24 13 24-13v9L32 52 8 39z"/>
+      <path d="M8 43l24 13 24-13v7L32 63 8 50z"/>
+      <path d="M32 6l4 8.5 9.3 1.3-6.8 6.4 1.7 9.2L32 27l-8.2 4.4 1.7-9.2-6.8-6.4 9.3-1.3z"/>
+    </g>`,
+  anchorGold: (id) => `
+    <defs>${lg(id("a"), "#fff1b8", "#e2b45a", "#a8752c")}</defs>
+    <g fill="none" stroke="#2a1c08" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="32" cy="12" r="5"/><path d="M32 18v38M20 26h24M10 38c2 12 12 18 22 18s20-6 22-18"/>
+    </g>
+    <g fill="none" stroke="url(#${id("a")})" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="32" cy="12" r="5"/><path d="M32 18v38M20 26h24M10 38c2 12 12 18 22 18s20-6 22-18"/>
+    </g>
+    <path d="M4 40l7-5 5 8zM60 40l-7-5-5 8z" fill="url(#${id("a")})" stroke="#2a1c08" stroke-width="2.5" stroke-linejoin="round"/>`,
+  bullet: (id) => `
+    <defs>${lg(id("a"), "#fff1b8", "#e2b45a", "#a8752c")}</defs>
+    <circle cx="32" cy="32" r="22" fill="none" stroke="#2a1c08" stroke-width="8"/>
+    <circle cx="32" cy="32" r="22" fill="none" stroke="url(#${id("a")})" stroke-width="4"/>
+    <path d="M32 2v14M32 48v14M2 32h14M48 32h14" stroke="#2a1c08" stroke-width="8" stroke-linecap="round"/>
+    <path d="M32 2v14M32 48v14M2 32h14M48 32h14" stroke="url(#${id("a")})" stroke-width="4" stroke-linecap="round"/>
+    <path d="M26 44V28c0-6 3-11 6-13 3 2 6 7 6 13v16z" fill="url(#${id("a")})" stroke="#2a1c08" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M26 37h12" stroke="#2a1c08" stroke-width="2.5"/>`,
 } satisfies Record<string, Draw>;
 
 export type IconName = keyof typeof ICONS;

@@ -7,11 +7,15 @@ import {
   buildingCenter,
   type CrewLayout,
   capacity,
+  clearBlocker,
   cornerFor,
   fits,
   footprint,
   GRID_ORIGIN,
   hqLevel,
+  OBSTACLE_KINDS,
+  obstacleAtTile,
+  obstacles,
   type PlacedBuilding,
   plateauInside,
   sanitizeLayout,
@@ -23,7 +27,6 @@ import {
   ZONES,
   zoneCenter,
   zoneIdOfTile,
-  zoneOf,
   zoneTiles,
 } from "./crewIsland";
 import { costFor, START_RESOURCES } from "./economy";
@@ -41,12 +44,15 @@ const building = (
 const turret = (id: string, x: number, y: number, rotated = false) =>
   building(id, "gunTurret", { x, y }, rotated);
 
-/** A crew's island with its headquarters at a given level and plenty of every resource. */
-function island(hq = 20, unlocked = 1): CrewLayout {
+const allCleared = () => obstacles().map((o) => o.id);
+
+/** A crew's island with its headquarters at a given level and plenty of every resource. By
+ * default every obstacle is cleared, so placement tests can use the whole plateau. */
+function island(hq = 20, cleared: string[] = allCleared()): CrewLayout {
   const start = starterLayout(NOW);
   return {
     ...start,
-    unlocked,
+    cleared,
     buildings: start.buildings.map((b) => ({ ...b, level: hq })),
     resources: { gold: 1e9, timber: 1e9, stone: 1e9, scrap: 1e9 },
   };
@@ -129,30 +135,55 @@ describe("crew island zones", () => {
     }
   });
 
-  it("starts with zone 1 open and its headquarters inside it", () => {
+  it("starts overgrown, with a clearing round the headquarters", () => {
     const layout = starterLayout(NOW);
-    expect(layout.unlocked).toBe(1);
+    expect(layout.cleared).toEqual([]);
     expect(layout.buildings).toHaveLength(1);
-    expect(zoneOf(layout.buildings[0] as PlacedBuilding)?.id).toBe(1);
+    expect(fits(layout, layout.buildings[0] as PlacedBuilding)).toBe(true);
+    const all = obstacles();
+    expect(all.length).toBeGreaterThan(80);
+    // Every kind shows up, and ids are unique.
+    expect(new Set(all.map((o) => o.kind)).size).toBe(Object.keys(OBSTACLE_KINDS).length);
+    expect(new Set(all.map((o) => o.id)).size).toBe(all.length);
+    // No obstacle overlaps another.
+    const tiles = new Set<string>();
+    for (const o of all)
+      for (let y = o.y; y < o.y + o.h; y++)
+        for (let x = o.x; x < o.x + o.w; x++) {
+          expect(tiles.has(`${x},${y}`)).toBe(false);
+          tiles.add(`${x},${y}`);
+        }
   });
 
-  it("only allows building in unlocked zones, unlocked one at a time", () => {
-    const spot = spotIn(2);
-    const inZone2 = turret("t", spot.x, spot.y);
-    expect(applyOp(island(), { kind: "place", building: inZone2 }, NOW)).toBeNull();
-    expect(applyOp(island(), { kind: "unlock", zone: 3 }, NOW)).toBeNull();
-    const opened = applyOp(island(), { kind: "unlock", zone: 2 }, NOW);
-    expect(opened?.unlocked).toBe(2);
-    expect(opened && applyOp(opened, { kind: "place", building: inZone2 }, NOW)).not.toBeNull();
-    expect(
-      applyOp(island(20, ZONES.length), { kind: "unlock", zone: ZONES.length + 1 }, NOW),
-    ).toBeNull();
+  it("only builds on cleared ground; clearing takes the right tool and pays out", () => {
+    const thicket = obstacles().find((o) => o.kind === "thicket");
+    const boulder = obstacles().find((o) => o.kind === "boulder");
+    if (!thicket || !boulder) throw new Error("missing obstacles");
+    const overgrown = island(1, []);
+    const onThicket = turret("t", thicket.x, thicket.y);
+    expect(obstacleAtTile(overgrown, thicket)?.id).toBe(thicket.id);
+    expect(applyOp(overgrown, { kind: "place", building: onThicket }, NOW)).toBeNull();
+    // The axe comes with HQ 1; dynamite needs HQ 5.
+    expect(clearBlocker(overgrown, thicket)).toBeNull();
+    expect(clearBlocker(overgrown, boulder)).toMatch(/Dynamite/);
+    expect(applyOp(overgrown, { kind: "clear", id: boulder.id }, NOW)).toBeNull();
+    const poor = { ...overgrown, resources: { gold: 50, timber: 0, stone: 0, scrap: 0 } };
+    const cleared = applyOp(poor, { kind: "clear", id: thicket.id }, NOW);
+    expect(cleared?.cleared[0]).toBe(thicket.id);
+    // Any brush touching it goes too.
+    for (const id of cleared?.cleared.slice(1) ?? [])
+      expect(obstacles().find((x) => x.id === id)?.kind).toBe("brush");
+    expect(cleared?.resources.gold).toBe(50 - (OBSTACLE_KINDS.thicket.cost.gold ?? 0));
+    expect(cleared?.resources.timber).toBe(OBSTACLE_KINDS.thicket.gives.timber);
+    expect(cleared && applyOp(cleared, { kind: "clear", id: thicket.id }, NOW)).toBeNull();
+    expect(cleared && obstacleAtTile(cleared, thicket)).toBeUndefined();
   });
 
-  it("refuses buildings that straddle a zone edge or sit outside every zone", () => {
-    const open = island(20, ZONES.length);
+  it("refuses buildings that poke off the plateau", () => {
+    const open = island(20);
     // The east-most tile of a row: a 2x2 building there pokes off the plateau.
-    const edge = zoneTiles(1).reduce((a, b) => (b.y === O.y && b.x > a.x ? b : a), O);
+    const row = ZONES.flatMap((z) => zoneTiles(z.id)).filter((t) => t.y === O.y);
+    const edge = row.reduce((a, b) => (b.x > a.x ? b : a), O);
     expect(applyOp(open, { kind: "place", building: turret("a", edge.x, edge.y) }, NOW)).toBeNull();
     const far = tileAt({ x: 90, y: -50 }); // the hills north-east of the plateau
     expect(zoneIdOfTile(far.x, far.y)).toBeUndefined();
@@ -244,7 +275,7 @@ describe("crew island progression", () => {
       [19, 2],
       [20, 3],
     ] as const) {
-      let layout = island(hq, ZONES.length);
+      let layout = island(hq);
       let placed = 0;
       for (const t of zoneTiles(1)) {
         const vault = building(`v${placed}`, "goldVault", t);
@@ -286,7 +317,7 @@ describe("crew island progression", () => {
   });
 
   it("charges for building and upgrading, and refuses what the crew can't afford", () => {
-    const start = starterLayout(NOW);
+    const start = { ...starterLayout(NOW), cleared: allCleared() };
     const built = place(start, turret("t", at(0, 0).x, at(0, 0).y));
     const cost = costFor("gunTurret", 1);
     expect(built.resources.gold).toBe(START_RESOURCES.gold - (cost.gold ?? 0));
@@ -318,7 +349,7 @@ describe("crew island progression", () => {
     expect(sanitizeLayout(null, NOW)).toEqual(starterLayout(NOW));
     const hq = starterLayout(NOW).buildings[0] as PlacedBuilding;
     const messy = {
-      unlocked: 2,
+      cleared: ["nonsense", 4],
       resources: { gold: 1e9, timber: -5, stone: "x" },
       stamp: NOW - HOUR,
       buildings: [
@@ -333,7 +364,6 @@ describe("crew island progression", () => {
       ],
     };
     const clean = sanitizeLayout(messy, NOW);
-    expect(clean.unlocked).toBe(2);
     expect(clean.buildings.map((b) => [b.id, b.level])).toEqual([
       ["hq", 2],
       ["ok", 2],
@@ -343,6 +373,12 @@ describe("crew island progression", () => {
     expect(clean.resources.timber).toBe(0);
     expect(clean.resources.stone).toBe(0);
     expect(clean.stamp).toBe(NOW - HOUR);
-    expect(sanitizeLayout({ unlocked: 99, buildings: [] }, NOW).unlocked).toBe(ZONES.length);
+    // Old islands: ground under existing buildings counts as cleared, nothing else.
+    for (const b of clean.buildings) {
+      const { w, h } = footprint(b.type, b.rotated);
+      for (let y = b.y; y < b.y + h; y++)
+        for (let x = b.x; x < b.x + w; x++) expect(obstacleAtTile(clean, { x, y })).toBeUndefined();
+    }
+    expect(clean.cleared).not.toContain("nonsense");
   });
 });

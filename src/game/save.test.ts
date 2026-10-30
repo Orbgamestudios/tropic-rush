@@ -33,6 +33,7 @@ const DEFAULTS: SaveData = {
   heroLevels: LEVELS,
   unlocked: ["rifleman", "medic", "heavy"],
   squad: ["medic", "heavy"],
+  settings: { tilt: 0.5, zoom: 0.37, uiScale: 1, muted: false },
 };
 
 describe("save", () => {
@@ -51,6 +52,7 @@ describe("save", () => {
       heroLevels: { ...LEVELS, grenadier: 4 },
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
       squad: ["medic", "grenadier"],
+      settings: { tilt: 0.2, zoom: 0.9, uiScale: 1.1, muted: true },
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
@@ -61,6 +63,15 @@ describe("save", () => {
     expect(loadSave(storage)).toEqual(DEFAULTS);
     storage.items.set("tropic-rush:save:v1", "{not json");
     expect(loadSave(storage)).toEqual(DEFAULTS);
+  });
+
+  it("clamps settings into range", () => {
+    const storage = memoryStorage();
+    storage.items.set(
+      "tropic-rush:save:v1",
+      JSON.stringify({ settings: { tilt: 4, zoom: -1, uiScale: 9, muted: "yes" } }),
+    );
+    expect(loadSave(storage).settings).toEqual({ tilt: 1, zoom: 0, uiScale: 1.25, muted: false });
   });
 
   it("keeps only unlocked heroes in the squad", () => {

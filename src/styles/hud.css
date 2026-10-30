@@ -10,13 +10,14 @@
   align-items: flex-start;
 }
 
-/* Squad: the AI squadmates' portraits in a row under the hero card. */
+/* Squad: the AI squadmates' portraits in a column down the left, under the hero card. */
 .hud-squad {
   position: absolute;
   left: 14px;
-  top: 82px;
+  top: 84px;
   display: flex;
-  gap: 9px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .hud-mate {
@@ -28,14 +29,13 @@
   position: relative;
   width: 40px;
   height: 40px;
-  border: 2.5px solid var(--ink);
-  border-radius: 11px;
-  padding: 2px;
+  border-radius: 8px;
+  padding: 2.5px;
   box-sizing: border-box;
-  background: linear-gradient(170deg, #dce5f0, #8d9eb6 55%, #5f7089);
+  background: var(--brass-grad);
   box-shadow:
-    inset 0 1.5px 0 rgb(255 255 255 / 0.7),
-    0 4px 8px rgb(5 10 20 / 0.4);
+    0 0 0 2px var(--ink),
+    0 4px 8px rgb(0 0 0 / 0.45);
   overflow: hidden;
   transition: transform 0.12s;
 }
@@ -44,13 +44,30 @@
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 7px;
+  border-radius: 6px;
   object-fit: cover;
-  background: radial-gradient(circle at 50% 35%, #8fb0d8, #4a6488 60%, #2c3c57);
+  background: radial-gradient(circle at 50% 35%, #5c7fb0, #2c4370 55%, #15243f);
 }
 
 .hud-mate.hit .hud-mate-frame {
   background: linear-gradient(170deg, #ffd0c4, #e5503a 60%, #8e2414);
+}
+
+/* A little brass anchor in each squadmate's corner. */
+.hud-mate::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  top: 26px;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 50% 30%, var(--brass-hi) 0 1.5px, transparent 2px),
+    linear-gradient(180deg, var(--navy-500), var(--navy-800));
+  box-shadow:
+    0 0 0 1.5px var(--brass-mid),
+    0 0 0 3px var(--ink);
 }
 
 .hud-mate-ko {
@@ -74,10 +91,10 @@
 }
 
 .hud-mate-level {
-  left: -7px;
-  bottom: 2px;
-  width: 19px;
-  height: 19px;
+  left: -6px;
+  top: -6px;
+  width: 17px;
+  height: 20px;
 }
 
 .hud-mate-level .ui-level-num {
@@ -120,23 +137,22 @@
   z-index: 1;
   width: 62px;
   height: 62px;
-  border: 2.5px solid var(--ink);
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 3px;
   box-sizing: border-box;
-  background: linear-gradient(170deg, #dce5f0, #8d9eb6 55%, #5f7089);
+  background: var(--brass-grad);
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.7),
-    0 5px 10px rgb(5 10 20 / 0.45);
+    0 0 0 2px var(--ink),
+    0 5px 10px rgb(0 0 0 / 0.5);
 }
 
 .hud-portrait-img {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 9px;
+  border-radius: 7px;
   object-fit: cover;
-  background: radial-gradient(circle at 50% 35%, #8fb0d8, #4a6488 60%, #2c3c57);
+  background: radial-gradient(circle at 50% 35%, #5c7fb0, #2c4370 55%, #15243f);
 }
 
 .hud-card.hurt .hud-portrait {
@@ -156,23 +172,27 @@
 }
 
 .hud-level .ui-level {
-  left: -9px;
-  bottom: -9px;
-  width: 30px;
+  left: auto;
+  right: -10px;
+  top: auto;
+  bottom: -8px;
+  width: 26px;
   height: 30px;
 }
 
 .hud-bars {
   margin: 5px 0 0 -8px;
-  padding: 4px 10px 6px 16px;
+  padding: 4px 10px 6px 18px;
   min-width: 168px;
-  border: 2.5px solid var(--ink);
+  border: 2px solid var(--brass-mid);
   border-left: 0;
-  border-radius: 0 12px 12px 0;
-  background: linear-gradient(180deg, var(--tan-hi), var(--tan) 60%, var(--tan-lo));
+  border-radius: 0 8px 8px 0;
+  background:
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.015) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg, var(--navy-700), var(--navy-900));
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.7),
-    0 5px 10px rgb(5 10 20 / 0.35);
+    0 0 0 1.5px var(--ink),
+    0 5px 10px rgb(0 0 0 / 0.4);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -182,8 +202,9 @@
   font-family: var(--display);
   font-size: 12px;
   text-transform: uppercase;
-  color: #2b3446;
-  letter-spacing: 0.5px;
+  color: var(--gold-text);
+  text-shadow: 0 1.5px 0 var(--ink);
+  letter-spacing: 0.8px;
   line-height: 1;
 }
 
@@ -202,11 +223,11 @@
   position: relative;
   flex: 1;
   height: 14px;
-  border-radius: 7px;
-  background: linear-gradient(#2c3240, #3f4656);
+  border-radius: 4px;
+  background: linear-gradient(#070e1b, #13223b);
   box-shadow:
-    inset 0 2px 3px rgb(0 0 0 / 0.55),
-    0 0 0 1.5px var(--ink);
+    inset 0 2px 3px rgb(0 0 0 / 0.6),
+    0 0 0 1.5px #3a4d6e;
   overflow: hidden;
 }
 
@@ -216,7 +237,7 @@
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: 7px;
+  border-radius: 4px;
 }
 
 .hud-bar-lag {
@@ -264,11 +285,12 @@
   top: 10px;
   transform: translateX(-50%);
   padding: 5px 14px 7px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgb(12 18 30 / 0.82), rgb(26 34 50 / 0.82));
+  border-radius: 8px;
+  border: 2px solid var(--brass-mid);
+  background: linear-gradient(180deg, rgb(19 34 59 / 0.92), rgb(7 14 27 / 0.92));
   box-shadow:
-    inset 0 2px 4px rgb(0 0 0 / 0.5),
-    0 0 0 1.5px rgb(255 255 255 / 0.08);
+    0 0 0 1.5px var(--ink),
+    0 4px 10px rgb(0 0 0 / 0.35);
 }
 
 .hud-objective-row {
@@ -329,52 +351,100 @@
   gap: 8px;
 }
 
+/* "PAUSE": a navy plate in a brass frame with cut corners. */
 .hud-pause {
+  --cut: 7px;
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 5px;
+  margin-top: 4px;
   border: 0;
+  padding: 7px 14px 8px 10px;
   background: none;
-  padding: 0;
+  filter: drop-shadow(0 3px 0 var(--ink));
+  transition: transform 0.08s;
+}
+
+.hud-pause::before,
+.hud-pause::after {
+  content: "";
+  position: absolute;
+  clip-path: var(--chamfer);
+}
+
+.hud-pause::before {
+  inset: 0;
+  background: var(--brass-grad);
+}
+
+.hud-pause::after {
+  --cut: 5px;
+  inset: 2.5px;
+  background: linear-gradient(180deg, var(--navy-500), var(--navy-800));
+}
+
+.hud-pause:active {
+  transform: translateY(3px);
 }
 
 .hud-pause-icon {
-  width: 36px;
-  height: 36px;
-  padding: 6px;
-  box-sizing: border-box;
-  border: 2.5px solid var(--ink);
-  border-radius: 10px;
-  background: linear-gradient(180deg, #9fd8ff, #3f9bf5 50%, #1f6fd8);
-  box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.6),
-    0 4px 0 #123d86;
-}
-
-.hud-pause:active .hud-pause-icon {
-  transform: translateY(3px);
-  box-shadow: inset 0 2px 0 rgb(255 255 255 / 0.6);
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
 }
 
 .hud-pause-label {
+  position: relative;
+  z-index: 1;
   font-family: var(--display);
-  font-size: 11px;
+  font-size: 15px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold-text);
   text-shadow: var(--outline-thin);
 }
 
+/* The minimap in a navy bezel with a brass rim and a rivet at each compass point. */
 .hud-minimap {
   position: relative;
-  width: 92px;
-  height: 92px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
-  padding: 4px;
+  padding: 8px;
   box-sizing: border-box;
-  background: linear-gradient(170deg, #eef3f9, #8d9eb6 55%, #4f5f78);
+  background:
+    radial-gradient(circle, transparent 0 41px, var(--brass) 41px 43px, transparent 43px),
+    radial-gradient(
+      circle at 50% 4px,
+      var(--brass-hi) 0 2px,
+      var(--brass-lo) 2.5px,
+      transparent 3.5px
+    ),
+    radial-gradient(
+      circle at 50% calc(100% - 4px),
+      var(--brass-hi) 0 2px,
+      var(--brass-lo) 2.5px,
+      transparent 3.5px
+    ),
+    radial-gradient(
+      circle at 4px 50%,
+      var(--brass-hi) 0 2px,
+      var(--brass-lo) 2.5px,
+      transparent 3.5px
+    ),
+    radial-gradient(
+      circle at calc(100% - 4px) 50%,
+      var(--brass-hi) 0 2px,
+      var(--brass-lo) 2.5px,
+      transparent 3.5px
+    ),
+    linear-gradient(170deg, var(--navy-500), var(--navy-900));
   box-shadow:
-    0 0 0 2.5px var(--ink),
-    inset 0 2px 0 rgb(255 255 255 / 0.7),
-    0 6px 12px rgb(5 10 20 / 0.45);
+    0 0 0 2.5px var(--brass-mid),
+    0 0 0 4.5px var(--ink),
+    0 6px 12px rgb(0 0 0 / 0.5);
 }
 
 .hud-minimap-canvas {
@@ -445,8 +515,8 @@
   display: flex;
   gap: 8px;
   padding: 5px;
-  border-radius: 14px;
-  background: rgb(12 18 30 / 0.55);
+  border-radius: 10px;
+  background: rgb(7 14 27 / 0.6);
   box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.4);
 }
 
@@ -458,13 +528,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 2.5px solid var(--ink);
-  border-radius: 12px;
+  border: 2px solid var(--brass-mid);
+  border-radius: 8px;
   padding: 3px 0 0;
-  background: linear-gradient(180deg, #5d6c86, #354157);
+  background: linear-gradient(180deg, #2c3b58, #141f35);
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.25),
-    0 4px 0 #1b2232;
+    0 0 0 1.5px var(--ink),
+    0 4px 0 #050b16;
   filter: grayscale(0.6) brightness(0.8);
   transition:
     transform 0.1s,
@@ -473,15 +543,16 @@
 
 .hud-tray.active .hud-slot {
   filter: none;
-  background: linear-gradient(180deg, #7aa3d6, #3a5f96);
+  background: linear-gradient(180deg, var(--navy-500), var(--navy-700));
 }
 
 .hud-tray.active .hud-slot.selected {
-  background: linear-gradient(180deg, #9fd8ff, #3f9bf5 50%, #1f6fd8);
+  border-color: var(--brass-hi);
+  background: linear-gradient(180deg, #e6b75e, #a8752c);
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.6),
-    0 4px 0 #123d86,
-    0 0 16px rgb(95 190 255 / 0.85);
+    0 0 0 1.5px var(--ink),
+    0 4px 0 #050b16,
+    0 0 16px rgb(255 214 106 / 0.8);
   transform: translateY(-3px);
 }
 
@@ -516,7 +587,7 @@
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #ffe794, #e9a91d);
+  background: var(--brass-grad);
   border: 2px solid var(--ink);
   font-family: var(--display);
   font-size: 11px;
@@ -525,24 +596,28 @@
 
 /* ---------- Round buttons: super and gunboat ---------- */
 
+/* Round buttons: a navy disc in a thick brass ring with an engraved inner ring. */
 .hud-round {
   position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 2.5px solid var(--ink);
+  border: 0;
   border-radius: 50%;
   padding: 0;
   box-shadow:
-    0 5px 0 rgb(10 16 28 / 0.9),
-    0 8px 14px rgb(0 0 0 / 0.4);
+    inset 0 0 0 2px rgb(5 10 20 / 0.5),
+    inset 0 0 0 6px rgb(220 174 90 / 0.25),
+    0 0 0 4px var(--brass),
+    0 0 0 6px var(--ink),
+    0 5px 0 6px #050b16,
+    0 10px 16px 6px rgb(0 0 0 / 0.35);
   transition: transform 0.08s;
 }
 
 .hud-round:active {
   transform: translateY(4px);
-  box-shadow: 0 1px 0 rgb(10 16 28 / 0.9);
 }
 
 .hud-round-label {
@@ -560,14 +635,14 @@
   bottom: 118px;
   width: 64px;
   height: 64px;
-  background: radial-gradient(circle at 40% 30%, #6f7f99, #2c3649);
+  background: radial-gradient(circle at 40% 30%, var(--navy-400), var(--navy-800));
 }
 
 .hud-super-ring {
   position: absolute;
   inset: -2px;
   border-radius: 50%;
-  background: conic-gradient(#ffb43a var(--charge, 0deg), transparent 0);
+  background: conic-gradient(var(--gold-text) var(--charge, 0deg), transparent 0);
   mask: radial-gradient(circle, transparent 58%, black 60%);
   -webkit-mask: radial-gradient(circle, transparent 58%, black 60%);
 }
@@ -596,30 +671,19 @@
 @keyframes ready {
   50% {
     box-shadow:
-      0 5px 0 rgb(10 16 28 / 0.9),
-      0 0 0 6px rgb(255 216 74 / 0.35),
-      0 0 26px rgb(255 216 74 / 0.9);
+      0 0 0 4px var(--brass-hi),
+      0 0 0 6px var(--ink),
+      0 0 0 12px rgb(255 216 74 / 0.35),
+      0 0 30px 8px rgb(255 216 74 / 0.85);
   }
 }
 
 .hud-boat {
   right: 186px;
   bottom: 28px;
-  width: 60px;
-  height: 60px;
-  background: radial-gradient(circle at 40% 30%, #eef3f9, #9aabc2 60%, #5f7089);
-}
-
-/* A cog rim around the gunboat button, like the mockup's medkit gear. */
-.hud-boat::before {
-  content: "";
-  position: absolute;
-  inset: -9px;
-  z-index: -1;
-  border-radius: 50%;
-  background: repeating-conic-gradient(#56667f 0 15deg, transparent 15deg 30deg);
-  mask: radial-gradient(circle, transparent 60%, black 62%);
-  -webkit-mask: radial-gradient(circle, transparent 60%, black 62%);
+  width: 58px;
+  height: 58px;
+  background: radial-gradient(circle at 40% 30%, var(--navy-400), var(--navy-800));
 }
 
 .hud-boat.glow {
@@ -641,10 +705,12 @@
   height: 44px;
   align-items: center;
   justify-content: center;
-  border: 2.5px solid var(--ink);
+  border: 2.5px solid var(--brass);
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 30%, #eef3f9, #9aabc2);
-  box-shadow: 0 4px 10px rgb(0 0 0 / 0.4);
+  background: radial-gradient(circle at 40% 30%, var(--navy-400), var(--navy-800));
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 4px 10px rgb(0 0 0 / 0.4);
   pointer-events: none;
 }
 
@@ -704,27 +770,26 @@
   transition: opacity 0.2s;
 }
 
-.stick-move {
+/* Both sticks: a translucent navy dial with a brass rim and an engraved inner ring. */
+.stick-move,
+.stick-aim {
   background: radial-gradient(
     circle,
-    rgb(170 215 255 / 0.1) 0%,
-    rgb(170 215 255 / 0.22) 70%,
-    rgb(255 255 255 / 0.3) 72%
+    rgb(13 24 43 / 0.25) 0%,
+    rgb(13 24 43 / 0.45) 62%,
+    rgb(36 63 105 / 0.55) 64%,
+    rgb(13 24 43 / 0.55) 70%
   );
   box-shadow:
-    inset 0 0 0 3px rgb(255 255 255 / 0.55),
-    inset 0 0 22px rgb(140 200 255 / 0.35),
-    0 0 18px rgb(120 190 255 / 0.25);
+    inset 0 0 0 3px rgb(220 174 90 / 0.85),
+    inset 0 0 0 5px rgb(5 10 20 / 0.5),
+    0 0 0 1.5px rgb(5 10 20 / 0.6),
+    0 6px 14px rgb(0 0 0 / 0.3);
 }
 
 .stick-move.home {
-  left: 104px;
+  left: 150px;
   top: calc(100% - 100px);
-}
-
-.stick-aim {
-  background: radial-gradient(circle, rgb(20 30 46 / 0.12) 0%, rgb(20 30 46 / 0.3) 70%);
-  box-shadow: inset 0 0 0 3px rgb(255 255 255 / 0.5);
 }
 
 .stick-aim.home {
@@ -748,36 +813,42 @@
   transform: translate(-50%, -50%);
 }
 
-.stick-move .stick-knob {
-  width: 58px;
-  height: 58px;
+/* Knobs: navy discs in a brass ring, an anchor to move and a bullet sight to fire. */
+.stick-knob {
+  box-sizing: border-box;
   background: radial-gradient(
-    circle at 38% 30%,
-    #ffffff 0%,
-    #c9e6ff 25%,
-    #7fb6e8 65%,
-    #4a86c4 100%
+    circle at 40% 30%,
+    var(--navy-400),
+    var(--navy-700) 60%,
+    var(--navy-900)
   );
   box-shadow:
-    0 0 0 2.5px rgb(26 34 50 / 0.6),
-    0 6px 12px rgb(0 0 0 / 0.35),
-    inset 0 -4px 6px rgb(30 70 130 / 0.4);
+    inset 0 0 0 2px rgb(5 10 20 / 0.5),
+    inset 0 0 0 6px rgb(220 174 90 / 0.3),
+    0 0 0 3.5px var(--brass),
+    0 0 0 5px var(--ink),
+    0 6px 12px 4px rgb(0 0 0 / 0.35);
+}
+
+.stick-move .stick-knob {
+  width: 56px;
+  height: 56px;
+  padding: 11px;
 }
 
 .stick-aim .stick-knob {
-  width: 74px;
-  height: 74px;
-  padding: 13px;
-  box-sizing: border-box;
-  background: radial-gradient(circle at 40% 30%, #8a96a8, #4c586c 60%, #2e3748);
-  box-shadow:
-    0 0 0 2.5px var(--ink),
-    0 6px 12px rgb(0 0 0 / 0.4),
-    inset 0 2px 0 rgb(255 255 255 / 0.35);
+  width: 70px;
+  height: 70px;
+  padding: 14px;
 }
 
 .stick-aim.active .stick-knob {
-  background: radial-gradient(circle at 40% 30%, #ffe794, #f0a01a);
+  background: radial-gradient(circle at 40% 30%, #7a5a20, #3a2a10);
+  box-shadow:
+    inset 0 0 0 2px rgb(5 10 20 / 0.5),
+    0 0 0 3.5px var(--brass-hi),
+    0 0 0 5px var(--ink),
+    0 0 18px 6px rgb(255 214 106 / 0.6);
 }
 
 .stick-arrow {
@@ -787,7 +858,7 @@
   width: 0;
   height: 0;
   border: 7px solid transparent;
-  border-bottom: 9px solid rgb(255 255 255 / 0.8);
+  border-bottom: 9px solid var(--brass);
   margin: -8px 0 0 -7px;
 }
 
@@ -817,6 +888,7 @@
   font-family: var(--display);
   font-size: 17px;
   letter-spacing: 1px;
+  color: var(--cream);
   text-shadow: var(--outline-thin);
 }
 

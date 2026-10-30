@@ -1,8 +1,10 @@
 // The crew's home island: one big flat grass plateau where buildings go, with organic hills and
-// slopes around it and a single sandy beach on the south-west side. The plateau is split into
-// four sections ("zones") that open one at a time as the crew grows: zone 1 by the beach, then
-// west, east and north. Buildings snap to 2 m tiles, and only tiles well inside the plateau's
-// flowing outline can be built on. Enemy islands will start from this same design.
+// slopes around it and a single sandy beach on the south-west side. A new island is overgrown:
+// only a clearing round the headquarters is open, and the rest is thickets, palm groves, rocks,
+// dense jungle and boulders that the crew clears to make room. Each needs a tool, and better
+// tools come with headquarters levels. Buildings snap to 2 m tiles, and only tiles well inside
+// the plateau's flowing outline can be built on. Enemy islands will start from this same design.
+// (The plateau is still split into four "zones" internally, for the grid overlay.)
 // Plain rules with no engine imports, shared by the phone and the crew server, which checks
 // every change with the same functions before accepting it.
 
@@ -23,6 +25,7 @@ import {
   spend,
   storageCapacity,
 } from "./economy";
+import { createRng } from "./rng";
 import type { Vec2 } from "./vec";
 
 /** One tile is 2 m square. */
@@ -172,8 +175,8 @@ export interface PlacedBuilding {
 
 export interface CrewLayout {
   buildings: PlacedBuilding[];
-  /** How many zones are open (1 to 4). */
-  unlocked: number;
+  /** Ids of the obstacles (see OBSTACLES) the crew has cleared. */
+  cleared: string[];
   /** The crew's shared stock, as of `stamp`. */
   resources: Purse;
   /** When `resources` was last brought up to date (server time, milliseconds). */
@@ -185,7 +188,7 @@ export type LayoutOp =
   | { kind: "move"; id: string; x: number; y: number; rotated: boolean }
   | { kind: "remove"; id: string }
   | { kind: "upgrade"; id: string }
-  | { kind: "unlock"; zone: number };
+  | { kind: "clear"; id: string };
 
 export function footprint(type: BuildingType, rotated: boolean): { w: number; h: number } {
   const f = FOOTPRINTS[type];
@@ -207,15 +210,30 @@ export function zoneOf(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rotated">):
   return zoneForRect(b.x, b.y, w, h);
 }
 
-/** True if a building sits wholly inside an unlocked zone without overlapping others. */
+/** True if every tile of a rectangle is buildable plateau. */
+function onPlateau(x: number, y: number, w: number, h: number): boolean {
+  for (let ty = y; ty < y + h; ty++) {
+    for (let tx = x; tx < x + w; tx++) if (zoneIdOfTile(tx, ty) === undefined) return false;
+  }
+  return true;
+}
+
+/**
+ * True if a building sits wholly on the plateau, on cleared ground, without overlapping other
+ * buildings.
+ */
 export function fits(
-  layout: Pick<CrewLayout, "buildings" | "unlocked">,
+  layout: Pick<CrewLayout, "buildings" | "cleared">,
   candidate: Pick<PlacedBuilding, "id" | "type" | "x" | "y" | "rotated">,
   ignoreId = candidate.id,
 ): boolean {
   const { w, h } = footprint(candidate.type, candidate.rotated);
-  const zone = zoneForRect(candidate.x, candidate.y, w, h);
-  if (!zone || zone.id > layout.unlocked) return false;
+  if (!onPlateau(candidate.x, candidate.y, w, h)) return false;
+  const cleared = new Set(layout.cleared);
+  for (const o of obstacles()) {
+    if (cleared.has(o.id)) continue;
+    if (overlaps(candidate.x, candidate.y, w, h, o)) return false;
+  }
   return layout.buildings.every((b) => {
     if (b.id === ignoreId) return true;
     const o = footprint(b.type, b.rotated);
@@ -226,6 +244,185 @@ export function fits(
       b.y + o.h <= candidate.y
     );
   });
+}
+
+function overlaps(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  o: { x: number; y: number; w: number; h: number },
+): boolean {
+  return x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Clearing the island
+
+export type Tool = "axe" | "pickaxe" | "chainsaw" | "dynamite";
+
+/** Tools, in the order the headquarters' level hands them out. */
+export const TOOLS: Record<Tool, { label: string; hq: number }> = {
+  axe: { label: "Axe", hq: 1 },
+  pickaxe: { label: "Pickaxe", hq: 2 },
+  chainsaw: { label: "Chainsaw", hq: 3 },
+  dynamite: { label: "Dynamite", hq: 5 },
+};
+export const TOOL_ORDER: readonly Tool[] = ["axe", "pickaxe", "chainsaw", "dynamite"];
+
+export type ObstacleKind = "brush" | "thicket" | "grove" | "rocks" | "jungle" | "boulder";
+
+export const OBSTACLE_KINDS: Record<
+  ObstacleKind,
+  { label: string; tool: Tool; w: number; h: number; cost: Partial<Purse>; gives: Partial<Purse> }
+> = {
+  brush: { label: "Brush", tool: "axe", w: 1, h: 1, cost: { gold: 15 }, gives: { timber: 10 } },
+  thicket: { label: "Thicket", tool: "axe", w: 2, h: 2, cost: { gold: 40 }, gives: { timber: 40 } },
+  grove: {
+    label: "Palm grove",
+    tool: "axe",
+    w: 3,
+    h: 3,
+    cost: { gold: 90 },
+    gives: { timber: 100 },
+  },
+  rocks: {
+    label: "Rocks",
+    tool: "pickaxe",
+    w: 2,
+    h: 2,
+    cost: { gold: 150 },
+    gives: { stone: 120 },
+  },
+  jungle: {
+    label: "Dense jungle",
+    tool: "chainsaw",
+    w: 4,
+    h: 4,
+    cost: { gold: 400, stone: 100 },
+    gives: { timber: 380 },
+  },
+  boulder: {
+    label: "Boulder",
+    tool: "dynamite",
+    w: 3,
+    h: 3,
+    cost: { gold: 700, scrap: 60 },
+    gives: { stone: 450 },
+  },
+};
+
+export interface Obstacle {
+  /** Stable across versions: the crew server stores which ones are cleared by id. */
+  id: string;
+  kind: ObstacleKind;
+  /** Tile column and row of the north-west corner. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The open clearing round the headquarters on a new island, in meters. */
+const START_CLEARING = 18;
+
+let obstacleList: Obstacle[] | null = null;
+
+/**
+ * Every obstacle on the plateau. The same on every island and every phone (fixed seed), so the
+ * server only needs to store which are cleared. Easy ones grow near the start, harder ones
+ * further out.
+ */
+export function obstacles(): readonly Obstacle[] {
+  if (obstacleList) return obstacleList;
+  const list: Obstacle[] = [];
+  const start = zoneCenter(ZONES[0] as Zone);
+  const rng = createRng(0x7a11e);
+  const tiles: { x: number; y: number }[] = [];
+  for (const z of ZONES) tiles.push(...zoneTiles(z.id));
+  // Row by row, so the patches pack tightly and every tile outside the clearing is covered.
+  tiles.sort((a, b) => a.y - b.y || a.x - b.x);
+  const taken = new Set<string>();
+  const metersFromStart = (t: { x: number; y: number }) =>
+    Math.hypot(
+      GRID_ORIGIN.x + (t.x + 0.5) * TILE - start.x,
+      GRID_ORIGIN.y + (t.y + 0.5) * TILE - start.y,
+    );
+  const free = (x: number, y: number, w: number, h: number) => {
+    if (!onPlateau(x, y, w, h)) return false;
+    for (let ty = y; ty < y + h; ty++)
+      for (let tx = x; tx < x + w; tx++) {
+        if (taken.has(`${tx},${ty}`)) return false;
+        if (metersFromStart({ x: tx, y: ty }) < START_CLEARING) return false;
+      }
+    return true;
+  };
+  for (const t of tiles) {
+    if (taken.has(`${t.x},${t.y}`) || metersFromStart(t) < START_CLEARING) continue;
+    const d = metersFromStart(t);
+    const roll = rng();
+    // Easy growth near the start, harder further out.
+    const wanted: ObstacleKind =
+      d < 28
+        ? roll < 0.5
+          ? "thicket"
+          : "grove"
+        : d < 40
+          ? roll < 0.45
+            ? "rocks"
+            : roll < 0.75
+              ? "grove"
+              : "thicket"
+          : d < 52
+            ? roll < 0.55
+              ? "jungle"
+              : roll < 0.8
+                ? "rocks"
+                : "grove"
+            : roll < 0.45
+              ? "boulder"
+              : roll < 0.85
+                ? "jungle"
+                : "rocks";
+    // Fall back to smaller patches where the wanted one doesn't fit.
+    const tries: ObstacleKind[] = [wanted, d < 40 ? "thicket" : "rocks", "brush"];
+    for (const kind of tries) {
+      const { w, h } = OBSTACLE_KINDS[kind];
+      if (!free(t.x, t.y, w, h)) continue;
+      for (let ty = t.y; ty < t.y + h; ty++)
+        for (let tx = t.x; tx < t.x + w; tx++) taken.add(`${tx},${ty}`);
+      list.push({ id: "", kind, x: t.x, y: t.y, w, h });
+      break;
+    }
+  }
+  // Ids by position, so they stay the same as long as the plateau does.
+  for (const o of list) o.id = `${o.x}.${o.y}`;
+  obstacleList = list;
+  return list;
+}
+
+/** The uncleared obstacle covering a tile, if any. */
+export function obstacleAtTile(
+  layout: Pick<CrewLayout, "cleared">,
+  tile: { x: number; y: number },
+): Obstacle | undefined {
+  const cleared = new Set(layout.cleared);
+  return obstacles().find((o) => !cleared.has(o.id) && overlaps(tile.x, tile.y, 1, 1, o));
+}
+
+/** Why an obstacle can't be cleared right now, or null if it can. */
+export function clearBlocker(layout: CrewLayout, o: Obstacle): string | null {
+  const spec = OBSTACLE_KINDS[o.kind];
+  const tool = TOOLS[spec.tool];
+  if (hqLevel(layout) < tool.hq) return `Needs the ${tool.label} (HQ ${tool.hq})`;
+  if (!canAfford(layout.resources, spec.cost)) return "Not enough resources";
+  return null;
+}
+
+/** How much of the plateau's overgrowth is cleared, 0 to 1. */
+export function clearedShare(layout: Pick<CrewLayout, "cleared">): number {
+  const all = obstacles();
+  return all.length ? Math.min(1, layout.cleared.length / all.length) : 1;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -369,11 +566,32 @@ export function tryOp(
         },
       };
     }
-    case "unlock":
-      // Zones open one at a time, in order. (Free for now; a later step ties this to progress.)
-      if (op.zone !== layout.unlocked + 1 || op.zone > ZONES.length)
-        return { error: "Unlock the zones in order" };
-      return { layout: { ...layout, unlocked: op.zone } };
+    case "clear": {
+      const o = obstacles().find((x) => x.id === op.id);
+      if (!o || layout.cleared.includes(o.id)) return { error: "Already cleared" };
+      const blocker = clearBlocker(layout, o);
+      if (blocker) return { error: blocker };
+      const spec = OBSTACLE_KINDS[o.kind];
+      const cap = capacity(layout);
+      const resources = spend(layout.resources, spec.cost);
+      for (const r of RESOURCES)
+        resources[r] = Math.min(cap[r], resources[r] + (spec.gives[r] ?? 0));
+      // Loose brush touching the patch comes away with it, so nobody has to tap every tile.
+      const done = new Set(layout.cleared);
+      const brush = obstacles().filter(
+        (b) =>
+          b.kind === "brush" &&
+          !done.has(b.id) &&
+          overlaps(b.x, b.y, b.w, b.h, { x: o.x - 1, y: o.y - 1, w: o.w + 2, h: o.h + 2 }),
+      );
+      return {
+        layout: {
+          ...layout,
+          resources,
+          cleared: [...layout.cleared, o.id, ...brush.map((b) => b.id)],
+        },
+      };
+    }
   }
   return { error: "Unknown change" };
 }
@@ -386,7 +604,7 @@ export function applyOp(layout: CrewLayout, op: LayoutOp, now: number): CrewLayo
 
 /** The free spot for a footprint nearest a tile, searching outward in rings. */
 export function nearestFit(
-  layout: Pick<CrewLayout, "buildings" | "unlocked">,
+  layout: Pick<CrewLayout, "buildings" | "cleared">,
   building: PlacedBuilding,
   start: { x: number; y: number },
   maxRadius = 50,
@@ -419,8 +637,8 @@ export function zoneCenter(z: Zone): Vec2 {
   };
 }
 
-/** A new crew starts with zone 1 open, just its headquarters in the middle of it, and a little
- * of each resource. */
+/** A new crew starts with a clearing in the overgrowth, just its headquarters in the middle of
+ * it, and a little of each resource. */
 export function starterLayout(now = Date.now()): CrewLayout {
   const first = ZONES[0] as Zone;
   const hq: PlacedBuilding = {
@@ -432,8 +650,8 @@ export function starterLayout(now = Date.now()): CrewLayout {
     level: 1,
   };
   const start = cornerFor("headquarters", false, zoneCenter(first));
-  const spot = nearestFit({ buildings: [], unlocked: 1 }, hq, start) ?? { ...hq, ...start };
-  return { unlocked: 1, buildings: [spot], resources: { ...START_RESOURCES }, stamp: now };
+  const spot = nearestFit({ buildings: [], cleared: [] }, hq, start) ?? { ...hq, ...start };
+  return { cleared: [], buildings: [spot], resources: { ...START_RESOURCES }, stamp: now };
 }
 
 /** World position (meters) of a building's center. */
@@ -477,15 +695,17 @@ export function buildingAtTile(
 export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const data = value as {
     buildings?: unknown;
-    unlocked?: unknown;
+    cleared?: unknown;
     resources?: unknown;
     stamp?: unknown;
   } | null;
   const raw = data?.buildings;
   if (!Array.isArray(raw)) return starterLayout(now);
-  const unlocked = Number.isInteger(data?.unlocked)
-    ? Math.min(ZONES.length, Math.max(1, data?.unlocked as number))
-    : 1;
+  const known = new Set(obstacles().map((o) => o.id));
+  const rawCleared = Array.isArray(data?.cleared) ? data.cleared : [];
+  const cleared = [
+    ...new Set(rawCleared.filter((id): id is string => typeof id === "string" && known.has(id))),
+  ];
   const parsed: PlacedBuilding[] = [];
   for (const item of raw) {
     const b = item as Partial<PlacedBuilding>;
@@ -512,14 +732,18 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     const have = buildings.filter((o) => o.type === b.type).length;
     if (have >= allowedCount(b.type, hq)) continue;
     const building = { ...b, level: Math.min(b.level, Math.max(1, levelCap(b.type, hq))) };
-    if (!fits({ buildings, unlocked }, building)) continue;
+    // Islands from before the clearing rules: ground under existing buildings counts as cleared.
+    const { w, h } = footprint(building.type, building.rotated);
+    for (const o of obstacles())
+      if (!cleared.includes(o.id) && overlaps(building.x, building.y, w, h, o)) cleared.push(o.id);
+    if (!fits({ buildings, cleared }, building)) continue;
     buildings.push(building);
     ids.add(b.id);
   }
   if (!buildings.some((b) => b.type === "headquarters")) {
     // The HQ can't go missing: put it back on the nearest free spot.
     const fresh = starterLayout(now).buildings[0] as PlacedBuilding;
-    const spot = nearestFit({ buildings, unlocked }, fresh, { x: fresh.x, y: fresh.y });
+    const spot = nearestFit({ buildings, cleared }, fresh, { x: fresh.x, y: fresh.y });
     if (spot) buildings.unshift({ ...spot, level: hq });
   }
   const cap = capacity({ buildings });
@@ -536,5 +760,5 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     typeof data?.stamp === "number" && Number.isFinite(data.stamp) && data.stamp <= now
       ? data.stamp
       : now;
-  return { buildings, unlocked, resources, stamp };
+  return { buildings, cleared, resources, stamp };
 }
