@@ -11,7 +11,7 @@ import { createRng } from "../logic/rng";
 
 const PUFFS = 260;
 
-function cloudTexture(): THREE.CanvasTexture {
+export function cloudTexture(): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement("canvas");
   canvas.width = size;

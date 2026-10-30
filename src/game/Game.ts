@@ -6,11 +6,18 @@ import { COMBAT_ZOOM_DISTANCE, MAX_FRAME_SECONDS, RESULTS_DELAY, SIM_STEP } from
 import { type ControlMode, Controls } from "./controls";
 import { CrewMode } from "./crew/crewMode";
 import { BUILDINGS } from "./logic/buildings";
+import { hqLevel } from "./logic/crewIsland";
 import { generateIsland } from "./logic/enemyBase";
 import type { HeroKind } from "./logic/heroes";
 import { heroPower, perkMods, raidReward } from "./logic/heroProgress";
-import { BASE_CENTER, randomSeed } from "./logic/island";
-import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
+import { BASE_CENTER } from "./logic/island";
+import {
+  type NightRaid,
+  nightIsland,
+  nightNumber,
+  startNightRaid,
+  stepNightRaid,
+} from "./logic/nightRaid";
 import {
   canBoard,
   createRaid,
@@ -23,11 +30,14 @@ import {
 } from "./logic/raid";
 import { squadInput } from "./logic/squad";
 import { distance, lerp, vec } from "./logic/vec";
+import { type MapIsland, worldIslands } from "./logic/worldMap";
 import { CameraRig } from "./render/cameraRig";
+import { updateWind } from "./render/props";
 import { RaidView } from "./render/raidView";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
 import { heroPortrait } from "./render/thumbnails";
+import { WorldMapView } from "./render/worldMap";
 import { loadSave, type SaveData, type Settings, writeSave } from "./save";
 import { ControlsEditor } from "./ui/controlsEditor";
 import { HeroSelect } from "./ui/heroSelect";
@@ -37,8 +47,9 @@ import { WorldLabels } from "./ui/labels";
 import { PauseMenu } from "./ui/pause";
 import { ReplayBar } from "./ui/replayBar";
 import { ResultsScreen } from "./ui/results";
+import { WorldMapScreen } from "./ui/worldMapScreen";
 
-type Phase = "heroes" | "raid" | "ended" | "crew" | "replay";
+type Phase = "heroes" | "map" | "raid" | "ended" | "crew" | "replay";
 
 function layer(parent: HTMLElement, className: string): HTMLDivElement {
   const div = document.createElement("div");
@@ -53,6 +64,11 @@ export class Game {
   private readonly labels: WorldLabels;
   private readonly controls: Controls;
   private readonly controlsEditor: ControlsEditor;
+  private readonly mapView: WorldMapView;
+  private readonly mapScreen: WorldMapScreen;
+  private mapHero: HeroKind = "rifleman";
+  private mapSquad: HeroKind[] = [];
+  private raidTarget: MapIsland | null = null;
   private readonly replay: ReplayBar;
   private replaySpeed = 1;
   private readonly hud: Hud;
@@ -99,14 +115,13 @@ export class Game {
       save: () => this.save,
       update: (changes) => this.updateSave(changes),
       onBack: () => this.go(() => this.goHome()),
-      onStart: (hero, level, squad) => this.go(() => this.startRaid(hero, level, squad)),
+      onStart: (hero, squad) => this.go(() => this.showMap(hero, squad)),
     });
     this.results = new ResultsScreen(screens, {
       onAgain: () =>
         this.go(() =>
-          this.startRaid(
+          this.showMap(
             this.save.hero,
-            this.save.level,
             this.save.squad.filter((k) => k !== this.save.hero),
           ),
         ),
@@ -131,6 +146,12 @@ export class Game {
       onSettings: (settings) => this.setSettings(settings),
       onClose: () => this.pause.showSettings(),
     });
+    this.mapView = new WorldMapView(this.stage);
+    this.mapScreen = new WorldMapScreen(screens, {
+      onAttack: (island) => this.go(() => this.startRaid(this.mapHero, island, this.mapSquad)),
+      onReturn: () => this.go(() => this.goHome()),
+      screen: (x, y) => this.mapView.screen(x, y),
+    });
     this.replay = new ReplayBar(screens, {
       onSpeed: (speed) => {
         this.replaySpeed = speed;
@@ -148,7 +169,7 @@ export class Game {
         save: () => this.save,
         updateSave: (changes) => this.updateSave(changes),
         onMenu: () => this.pause.show(true, false),
-        onRaid: () => this.go(() => this.showHeroes()),
+        onHero: (kind) => this.go(() => this.showHeroes(kind)),
         onReplay: (raid) => this.go(() => this.startReplay(raid)),
       },
     );
@@ -170,6 +191,7 @@ export class Game {
     const hooks = {
       state: () => this.state,
       crew: () => this.crew.snapshot(),
+      openHeroes: () => this.showHeroes(),
       save: () => this.save,
       teleport: (x: number, y: number) => {
         const hero = this.player();
@@ -219,8 +241,24 @@ export class Game {
 
   private hideScreens(): void {
     this.heroes.hide();
+    this.mapScreen.hide();
+    this.mapView.show(false);
     this.results.hide();
     this.pause.show(false);
+  }
+
+  /** The world map, to pick an island to raid with this hero and squad. */
+  private showMap(hero: HeroKind, squad: readonly HeroKind[]): void {
+    this.endRaidWorld();
+    this.hideScreens();
+    this.phase = "map";
+    this.mapHero = hero;
+    this.mapSquad = [...squad];
+    const day = nightNumber(Date.now());
+    const islands = worldIslands(hqLevel(this.crew.snapshot().layout), day);
+    this.mapView.setIslands(islands);
+    this.mapView.show(true);
+    this.mapScreen.show(islands, this.save.beaten.day === day ? this.save.beaten.ids : []);
   }
 
   /** Back to the crew island, from hero select or the end of a raid. */
@@ -229,12 +267,12 @@ export class Game {
     this.enterCrew();
   }
 
-  private showHeroes(): void {
+  private showHeroes(kind?: HeroKind): void {
     if (this.crew.active) this.crew.exit();
     this.endRaidWorld();
     this.hideScreens();
     this.phase = "heroes";
-    this.heroes.show();
+    this.heroes.show(kind);
   }
 
   private enterCrew(): void {
@@ -256,12 +294,13 @@ export class Game {
     this.state = null;
   }
 
-  private startRaid(hero: HeroKind, level: number, squad: readonly HeroKind[] = []): void {
-    this.updateSave({ hero, level });
+  private startRaid(hero: HeroKind, target: MapIsland, squad: readonly HeroKind[] = []): void {
+    this.updateSave({ hero });
     this.endRaidWorld();
     this.hideScreens();
-    this.islandLevel = level;
-    const layout = generateIsland(randomSeed(), level);
+    this.islandLevel = target.tier;
+    this.raidTarget = target;
+    const layout = generateIsland(target.seed, target.hq);
     const kinds = [hero, ...squad.filter((k) => k !== hero && this.save.unlocked.includes(k))];
     const state = createRaid(
       layout,
@@ -391,7 +430,11 @@ export class Game {
     if (this.phase === "crew") this.crew.frame(dt, this.time);
     else if (this.phase === "heroes") this.showcase.update(dt, this.time);
     else if (this.phase === "replay") this.replayFrame(dt, now);
-    else this.raidFrame(dt, now);
+    else if (this.phase === "map") {
+      this.mapView.update(this.time);
+      this.mapScreen.update();
+      updateWind(this.time, null);
+    } else this.raidFrame(dt, now);
     this.stage.render();
     requestAnimationFrame(this.frame);
   };
@@ -479,6 +522,10 @@ export class Game {
     const won = state.status === "won";
     const percent = destructionPercent(state);
     const reward = raidReward(won, percent, this.islandLevel);
+    const today = nightNumber(Date.now());
+    const past = this.save.beaten.day === today ? this.save.beaten.ids : [];
+    if (won && this.raidTarget)
+      this.updateSave({ beaten: { day: today, ids: [...past, this.raidTarget.id] } });
     this.updateSave({
       wins: this.save.wins + (won ? 1 : 0),
       bestDestruction: Math.max(this.save.bestDestruction, percent),

@@ -89,7 +89,12 @@ export function updateWind(time: number, hero: THREE.Vector3 | null): void {
 // Shapes
 
 /** A lumpy blob: an icosahedron pushed in and out by a few sine waves. */
-function lump(radius: number, detail: number, seed: number, color: number): THREE.BufferGeometry {
+export function lump(
+  radius: number,
+  detail: number,
+  seed: number,
+  color: number,
+): THREE.BufferGeometry {
   // Welded so the normals come out smooth instead of faceted.
   const raw = new THREE.IcosahedronGeometry(radius, detail);
   raw.deleteAttribute("normal");

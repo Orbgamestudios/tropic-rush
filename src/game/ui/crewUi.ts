@@ -1,7 +1,7 @@
 // HTML for the crew island, in the game's steel-and-glass style:
 // - top bar: menu button, crew card (avatars, share code, status), resources and island progress
 // - a round Build button that opens the build drawer (category plates and building cards with
-//   3D icons, cost, count, locks), and the big RAID button
+//   3D icons, cost, count, locks)
 // - selected building: an info panel with its level and the Level up button
 // - the clearing panel for a tapped thicket, rock or boulder (tool, cost, what it gives), toasts,
 //   and the crew join panel
@@ -20,7 +20,6 @@ import { type IconName, icon } from "./kit/icons";
 export interface CrewUiHandlers {
   /** The pause menu (settings). */
   onMenu(): void;
-  onRaid(): void;
   onCreate(name: string): void;
   onJoin(name: string, code: string): void;
   onOffline(name: string): void;
@@ -158,7 +157,6 @@ export class CrewUi {
   private readonly tabs = new Map<Category, HTMLButtonElement>();
   private readonly buildButton: HTMLButtonElement;
   private readonly buildLabel = el("span", "crew-build-label", "Build");
-  private readonly raidButton: HTMLButtonElement;
   private readonly code: HTMLButtonElement;
   private readonly avatars = el("div", "crew-avatars");
   private readonly status = el("span", "crew-status");
@@ -322,14 +320,6 @@ export class CrewUi {
       },
     });
     this.buildButton.append(this.buildLabel);
-    this.raidButton = button({
-      label: "Raid",
-      icon: "sword2",
-      variant: "blue",
-      size: "lg",
-      className: "crew-raid",
-      onClick: () => handlers.onRaid(),
-    });
     this.showCategory("defenses");
 
     // Selected building: an info panel.
@@ -504,7 +494,6 @@ export class CrewUi {
       top,
       this.drawer,
       this.buildButton,
-      this.raidButton,
       this.selection,
       this.clearing,
       this.toast,
@@ -518,7 +507,6 @@ export class CrewUi {
       top,
       this.drawer,
       this.buildButton,
-      this.raidButton,
       this.selection,
       this.clearing,
       this.join,
@@ -563,7 +551,6 @@ export class CrewUi {
     this.drawerOpen = open;
     this.drawer.classList.toggle("closed", !open);
     this.buildButton.classList.toggle("open", open);
-    this.raidButton.classList.toggle("tucked", open);
     this.buildLabel.textContent = open ? "Close" : "Build";
     this.buildButton.setAttribute("aria-label", open ? "Close build menu" : "Build");
   }
@@ -696,7 +683,6 @@ export class CrewUi {
     const busy = info !== null || this.selecting;
     this.drawer.style.display = busy ? "none" : "";
     this.buildButton.style.display = busy ? "none" : "";
-    this.raidButton.style.display = busy ? "none" : "";
     if (!info) return;
     this.clearTitle.textContent = info.label;
     this.clearTool.replaceChildren(
@@ -777,7 +763,6 @@ export class CrewUi {
     this.selection.style.display = info ? "flex" : "none";
     this.drawer.style.display = info ? "none" : "";
     this.buildButton.style.display = info ? "none" : "";
-    this.raidButton.style.display = info ? "none" : "";
     if (info) {
       if (info.type !== this.selectedType) this.selectionImg.src = buildingIcon(info.type);
       if (info.type === this.selectedType && info.level > this.selectedLevel) {

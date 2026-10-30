@@ -23,13 +23,6 @@ import {
 import { between, createRng } from "./rng";
 import { add, fromAngle, type Vec2, vec } from "./vec";
 
-/** The enemy's headquarters level for each target island: Outpost, Fort and Stronghold. */
-const ENEMY_HQ: Record<number, number> = { 1: 1, 2: 6, 3: 12 };
-
-export function enemyHqLevel(level: number): number {
-  return ENEMY_HQ[Math.round(level)] ?? 1;
-}
-
 /** Defenses first so they take the front line, then everything behind them. */
 const BUILD_ORDER: readonly BuildingType[] = [
   "headquarters",
@@ -53,9 +46,8 @@ const BUILD_ORDER: readonly BuildingType[] = [
 const GAP_TILES = 2;
 
 /** An enemy base as a crew-style layout: every building on tiles, with its level. */
-export function enemyBase(seed: number, level: number): TileBuilding[] {
+export function enemyBase(seed: number, hq: number): TileBuilding[] {
   const rng = createRng(seed);
-  const hq = enemyHqLevel(level);
   const beach = Math.atan2(BEACH_DIRECTION.y, BEACH_DIRECTION.x);
   const front = [beach - 0.38 * Math.PI, beach + 0.38 * Math.PI] as const;
   const back = [beach + 0.3 * Math.PI, beach + 1.7 * Math.PI] as const;
@@ -121,7 +113,7 @@ export function toRaidBuilding(b: TileBuilding): PlacedBuilding {
   return { type: b.type, pos: buildingCenter(b), level: b.level };
 }
 
-/** A full raid island: an enemy base with cover, mines and a landing round it. */
-export function generateIsland(seed: number, level: number): IslandLayout {
-  return dressIsland(seed, level, enemyBase(seed, level).map(toRaidBuilding));
+/** A full raid island: an enemy base of this HQ level with cover, mines and a landing round it. */
+export function generateIsland(seed: number, hq: number): IslandLayout {
+  return dressIsland(seed, 1 + Math.floor(hq / 5), enemyBase(seed, hq).map(toRaidBuilding));
 }

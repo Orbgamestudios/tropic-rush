@@ -1,14 +1,16 @@
-// Hero select: the roster on the left, the chosen hero turning on a pedestal in the middle, their
-// stats and super on the right, and the island to raid. Gold levels heroes up; medals unlock new
-// ones.
+// The hero screen, reached by tapping a hero on the island: the roster on the left, the chosen
+// hero turning on a pedestal in the middle, their stats, super and perks on the right. Gold levels
+// heroes up, with a reveal for each level and a perk at the milestones; medals unlock new ones.
+// Raid goes to the world map to pick an island.
 
-import { enemyHqLevel } from "../logic/enemyBase";
 import { HERO_KINDS, HEROES, type HeroKind, type SuperKind } from "../logic/heroes";
 import {
   HERO_NAMES,
   heroStats,
   levelUpCost,
   MAX_HERO_LEVEL,
+  PERKS,
+  perkAt,
   statBars,
   UNLOCK_MEDALS,
 } from "../logic/heroProgress";
@@ -29,12 +31,14 @@ import {
 } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
+import { LevelUpReveal } from "./levelUp";
 
 export interface HeroSelectHost {
   save(): SaveData;
   update(changes: Partial<SaveData>): void;
   onBack(): void;
-  onStart(hero: HeroKind, islandLevel: number, squad: HeroKind[]): void;
+  /** Raid with this hero and squad: on to the world map. */
+  onStart(hero: HeroKind, squad: HeroKind[]): void;
 }
 
 const SUPER_ICONS: Record<SuperKind, IconName> = {
@@ -57,12 +61,6 @@ const SUPER_TEXT: Record<SuperKind, string> = {
   turret: "Build an auto-turret that fires at nearby defenses.",
 };
 
-const ISLANDS = [
-  { level: 1, name: "Outpost" },
-  { level: 2, name: "Fort" },
-  { level: 3, name: "Stronghold" },
-] as const;
-
 export class HeroSelect {
   readonly root = el("div", "screen screen-heroes");
   private readonly fx = el("div", "fx-layer");
@@ -84,14 +82,15 @@ export class HeroSelect {
   private readonly superIcon = el("div", "stats-super-icon");
   private readonly superName = el("div", "stats-super-name");
   private readonly superText = el("div", "stats-super-text");
-  private readonly islandButtons = new Map<number, HTMLButtonElement>();
+  private readonly perks = el("div", "perk-track");
+  private readonly perkText = el("div", "perk-text");
+  private readonly reveal: LevelUpReveal;
   private readonly levelUp: HTMLButtonElement;
   private readonly levelCost = el("span", "heroes-cost");
   private readonly start: HTMLButtonElement;
   private readonly squadSlots = el("div", "squad-slots");
   private readonly picker = el("div", "squad-picker");
   private hero: HeroKind = "rifleman";
-  private island = 1;
 
   constructor(
     parent: HTMLElement,
@@ -162,27 +161,9 @@ export class HeroSelect {
     const superWords = el("div", "stats-super-words");
     superWords.append(el("div", "stats-super-tag", "Super"), this.superName, this.superText);
     superCard.append(this.superIcon, superWords);
-    card.append(head, barsBox, superCard);
-    const islands = el("div", "heroes-islands");
-    islands.append(el("div", "heroes-islands-label", "Target"));
-    const islandRow = el("div", "heroes-island-row");
-    for (const island of ISLANDS) {
-      const b = el("button", "heroes-island");
-      b.setAttribute("aria-label", island.name);
-      const stars = el("span", "heroes-island-stars");
-      for (let i = 0; i < 3; i++) stars.append(icon("star", i < island.level ? "on" : "off"));
-      stars.append(el("span", "heroes-island-hq", `HQ ${enemyHqLevel(island.level)}`));
-      b.append(stars, el("span", "heroes-island-name", island.name));
-      b.addEventListener("click", () => {
-        sfx.tick();
-        this.setIsland(island.level);
-      });
-      islandRow.append(b);
-      this.islandButtons.set(island.level, b);
-    }
-    islands.append(islandRow);
+    card.append(head, barsBox, superCard, this.perks, this.perkText);
     info.body.append(card);
-    top.append(back, islands, wallet);
+    top.append(back, wallet);
 
     // Actions.
     this.levelUp = button({
@@ -194,7 +175,7 @@ export class HeroSelect {
     });
     this.levelUp.querySelector(".ui-btn-face")?.append(this.levelCost);
     this.start = button({
-      label: "Select",
+      label: "Raid",
       variant: "blue",
       size: "xl",
       className: "heroes-start",
@@ -204,28 +185,24 @@ export class HeroSelect {
     actions.append(this.levelUp, this.start);
 
     this.root.append(top, roster.root, stageArea, info.root, actions, this.fx);
+    this.reveal = new LevelUpReveal(this.root);
     this.root.style.display = "none";
     parent.append(this.root);
   }
 
-  show(): void {
+  /** Opens on a hero: the one tapped on the island, or the last one used. */
+  show(kind?: HeroKind): void {
     const save = this.host.save();
     this.gold.set(save.gold, false);
     this.medals.set(save.medals, false);
     this.root.style.display = "grid";
     this.showcase.show(true);
-    this.setIsland(save.level);
-    this.choose(save.unlocked.includes(save.hero) ? save.hero : "rifleman", true);
+    this.choose(kind ?? (save.unlocked.includes(save.hero) ? save.hero : "rifleman"), true);
   }
 
   hide(): void {
     this.root.style.display = "none";
     this.showcase.show(false);
-  }
-
-  private setIsland(level: number): void {
-    this.island = level;
-    for (const [l, b] of this.islandButtons) b.classList.toggle("selected", l === level);
   }
 
   private choose(kind: HeroKind, quiet = false): void {
@@ -282,6 +259,7 @@ export class HeroSelect {
     this.superIcon.replaceChildren(icon(SUPER_ICONS[spec.super]));
     this.superName.textContent = spec.superName;
     this.superText.textContent = SUPER_TEXT[spec.super];
+    this.refreshPerks(kind, level);
 
     // Level up, or unlock with medals.
     if (!unlocked) {
@@ -307,6 +285,30 @@ export class HeroSelect {
     this.refreshSquad();
     this.gold.set(save.gold);
     this.medals.set(save.medals);
+  }
+
+  /** The four milestones: earned ones lit, and the next one's words underneath. */
+  private refreshPerks(kind: HeroKind, level: number): void {
+    const next = PERKS[kind].find((p) => p.level > level);
+    this.perks.replaceChildren(
+      ...PERKS[kind].map((perk) => {
+        const earned = perk.level <= level;
+        const chip = el("button", `perk${earned ? " earned" : ""}`);
+        chip.setAttribute("aria-label", perk.name);
+        chip.append(
+          icon(earned ? "star" : "lock", "perk-icon"),
+          el("span", "perk-level", String(perk.level)),
+        );
+        chip.addEventListener("click", () => {
+          sfx.tick();
+          this.perkText.textContent = `${perk.name}: ${perk.text}`;
+        });
+        return chip;
+      }),
+    );
+    this.perkText.textContent = next
+      ? `Level ${next.level}: ${next.name}. ${next.text}`
+      : "All perks earned!";
   }
 
   /** The squad without the current leader, as the raid will use it. */
@@ -421,6 +423,8 @@ export class HeroSelect {
     sfx.levelUp();
     this.celebrate();
     this.refresh();
+    this.showcase.celebrate();
+    this.reveal.show(HERO_NAMES[kind], level + 1, heroPortrait(kind), perkAt(kind, level + 1));
   }
 
   private celebrate(): void {
@@ -439,7 +443,7 @@ export class HeroSelect {
       return;
     }
     this.closePicker();
-    this.host.update({ hero: this.hero, level: this.island });
-    this.host.onStart(this.hero, this.island, this.squad());
+    this.host.update({ hero: this.hero });
+    this.host.onStart(this.hero, this.squad());
   }
 }

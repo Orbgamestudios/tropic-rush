@@ -452,88 +452,6 @@
   color: #c6d2e4;
 }
 
-.heroes-islands {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 auto;
-  padding: 4px 6px 4px 12px;
-  border-radius: 10px;
-  border: 2px solid var(--brass-mid);
-  background: linear-gradient(180deg, var(--navy-950), var(--navy-800));
-  box-shadow:
-    inset 0 2px 4px rgb(0 0 0 / 0.5),
-    0 0 0 1.5px var(--ink);
-}
-
-.heroes-islands-label {
-  font-family: var(--display);
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--gold-text);
-}
-
-.heroes-island-row {
-  display: flex;
-  gap: 6px;
-}
-
-.heroes-island {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  min-width: 74px;
-  padding: 3px 6px 4px;
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #2c3b58, #1a253c);
-  box-shadow: inset 0 0 0 1.5px rgb(220 174 90 / 0.25);
-  transition: transform 0.1s;
-}
-
-.heroes-island.selected {
-  background: linear-gradient(180deg, var(--navy-400), var(--navy-600));
-  box-shadow:
-    inset 0 0 0 1.5px var(--brass),
-    0 0 12px rgb(95 190 255 / 0.55);
-}
-
-.heroes-island:active {
-  transform: scale(0.95);
-}
-
-.heroes-island-stars {
-  display: flex;
-}
-
-.heroes-island-stars .icon-wrap {
-  width: 13px;
-  height: 13px;
-}
-
-.heroes-island-stars .off {
-  filter: grayscale(1) brightness(0.55);
-}
-
-.heroes-island-hq {
-  margin-left: 3px;
-  font-family: var(--display);
-  font-size: 10px;
-  color: var(--gold-text);
-  text-shadow: var(--outline-thin);
-}
-
-.heroes-island-name {
-  font-family: var(--display);
-  font-size: 11px;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--cream);
-  text-shadow: var(--outline-thin);
-}
-
 .heroes-actions {
   grid-area: actions;
   display: flex;
@@ -840,6 +758,345 @@
     gap: 4px;
     padding: 8px 14px 12px;
   }
+}
+
+/* ---------- Perks and the level-up reveal ---------- */
+
+.perk-track {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.perk {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 5px;
+  border: 2px solid #5a4a2a;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #4a5872, #2a3448);
+  filter: saturate(0.5);
+}
+
+.perk.earned {
+  border-color: var(--brass);
+  background: linear-gradient(180deg, var(--navy-400), var(--navy-700));
+  box-shadow: 0 0 10px rgb(255 214 106 / 0.7);
+  filter: none;
+}
+
+.perk-icon {
+  width: 100%;
+  height: 100%;
+}
+
+.perk-level {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  min-width: 15px;
+  padding: 0 2px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--gold-text);
+  font-family: var(--display);
+  font-size: 10px;
+}
+
+.perk-text {
+  min-height: 28px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--navy-800);
+}
+
+.levelup {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+  background: rgb(7 14 27 / 0.82);
+  animation: pop-in 0.25s ease-out;
+}
+
+.levelup-rays {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 180vmax;
+  height: 180vmax;
+  margin: -90vmax 0 0 -90vmax;
+  background: repeating-conic-gradient(rgb(255 214 106 / 0.14) 0 12deg, transparent 12deg 24deg);
+  animation: spin 24s linear infinite;
+}
+
+.levelup > * {
+  position: relative;
+}
+
+.levelup-title {
+  font-family: var(--display);
+  font-size: clamp(34px, 12vh, 56px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold-text);
+  text-shadow: var(--outline);
+  animation: stamp 0.4s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.levelup-frame {
+  width: 96px;
+  height: 96px;
+  padding: 4px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: var(--brass-grad);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 30px rgb(255 214 106 / 0.7);
+}
+
+.levelup-portrait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+  background: radial-gradient(circle at 50% 35%, #5c7fb0, #2c4370 55%, #15243f);
+}
+
+.levelup-name {
+  font-family: var(--display);
+  font-size: 20px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+.levelup-plain {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.levelup-card {
+  position: relative;
+  width: min(320px, 80vw);
+  padding: 6px 12px 8px 46px;
+  border: 2px solid var(--brass);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.levelup-card-icon {
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  width: 30px;
+  height: 30px;
+}
+
+.levelup-card-tag {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold-text);
+}
+
+.levelup-card-name {
+  font-family: var(--display);
+  font-size: 18px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+.levelup-card-text {
+  font-size: 12px;
+  font-weight: 800;
+  color: #c6d2e4;
+}
+
+/* ---------- World map ---------- */
+
+.map-screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.map-pins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.map-pin {
+  --pin: var(--navy-500);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 10px 4px;
+  border: 2px solid var(--brass);
+  border-radius: 7px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 4px 8px rgb(0 0 0 / 0.4);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+/* A little pointer down to the island. */
+.map-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 11px;
+  height: 11px;
+  margin-left: -5.5px;
+  background: var(--navy-900);
+  border-right: 2px solid var(--brass);
+  border-bottom: 2px solid var(--brass);
+  transform: rotate(45deg);
+}
+
+.map-pin.selected {
+  border-color: var(--brass-hi);
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 0 16px rgb(255 214 106 / 0.85);
+}
+
+.map-pin.done {
+  opacity: 0.65;
+}
+
+.map-pin-title {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+.map-pin-rating {
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--pin);
+}
+
+.map-easy {
+  --pin: #9df27e;
+  color: #9df27e;
+}
+
+.map-fair {
+  --pin: #ffe07a;
+  color: #ffe07a;
+}
+
+.map-hard {
+  --pin: #ffa94d;
+  color: #ffa94d;
+}
+
+.map-deadly {
+  --pin: #ff7a66;
+  color: #ff7a66;
+}
+
+.map-card {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  width: 260px;
+  padding: 10px 12px 12px;
+  border: 3px solid #4a6187;
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--navy-700), var(--navy-900));
+  box-shadow:
+    0 0 0 2px var(--ink),
+    inset 0 0 0 1.5px rgb(220 174 90 / 0.4),
+    0 10px 22px rgb(0 0 0 / 0.5);
+}
+
+.map-card.open {
+  display: flex;
+  animation: pop-in 0.18s ease-out;
+}
+
+.map-card-name {
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: 0.8px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+.map-card-rating {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.map-card-facts {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 4px;
+}
+
+.map-fact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--display);
+  font-size: 14px;
+  color: var(--cream);
+}
+
+.map-fact-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.map-return {
+  position: absolute;
+  left: 18px;
+  bottom: 30px;
+}
+
+.map-return-label {
+  position: absolute;
+  left: 50%;
+  bottom: -18px;
+  transform: translateX(-50%);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow: var(--outline-thin);
 }
 
 /* ---------- Night raid replay ---------- */

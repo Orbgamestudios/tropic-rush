@@ -23,10 +23,15 @@ test("picks a hero and starts a raid", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Raid", exact: true }).click();
+  // On a phone you tap a strolling hero; the hook opens the same screen without chasing one.
+  await page.goto("/?testhooks");
+  await page.evaluate(() =>
+    (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
+  );
   await page.getByRole("button", { name: "Rifleman", exact: true }).click();
-  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.getByRole("button", { name: "Raid", exact: true }).click();
+  await page.locator(".map-pin").first().click();
+  await page.getByRole("button", { name: "Attack" }).click();
 
   const timer = page.locator(".hud-objective-time");
   await expect(timer).toBeVisible();

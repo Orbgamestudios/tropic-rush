@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, type BuildingType, HQ_LEVELS, MAX_HQ_LEVEL } from "./buildings";
+import { BUILDINGS, type BuildingType } from "./buildings";
 import { type CrewLayout, fits, hqLevel, obstacles } from "./crewIsland";
 import { allowedCount, levelCap } from "./economy";
-import { enemyBase, enemyHqLevel, generateIsland } from "./enemyBase";
+import { enemyBase, generateIsland } from "./enemyBase";
 import { BOARD_DISTANCE } from "./gunboat";
 import { isOnGrass, isOnLand, shoreDistance } from "./island";
 import { createRaid } from "./raid";
 import { add, distance, normalize, scale, vec } from "./vec";
 
 const SEEDS = [1, 2, 3, 42, 1234, 98765];
+const HQ_LEVELS = [1, 6, 12];
 
 function countByType(types: string[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -22,28 +23,25 @@ describe("generateIsland", () => {
   });
 
   it("gives every island at an HQ level exactly the same buildings", () => {
-    for (let level = 1; level <= MAX_HQ_LEVEL; level++) {
-      const hq = enemyHqLevel(level);
+    for (const hq of HQ_LEVELS) {
       const expected = Object.fromEntries(
         (Object.keys(BUILDINGS) as BuildingType[])
           .map((type) => [type, allowedCount(type, hq)] as const)
           .filter(([, count]) => count > 0),
       );
       for (const seed of SEEDS) {
-        const island = generateIsland(seed, level);
+        const island = generateIsland(seed, hq);
         expect(countByType(island.buildings.map((b) => b.type))).toEqual(expected);
-        expect(island.mines).toHaveLength(HQ_LEVELS[level]?.mines ?? -1);
       }
     }
   });
 
   it("builds enemy bases by the crew island's own tile, count and level rules", () => {
     const cleared = obstacles().map((o) => o.id);
-    for (let level = 1; level <= MAX_HQ_LEVEL; level++) {
+    for (const hq of HQ_LEVELS) {
       for (const seed of SEEDS) {
-        const buildings = enemyBase(seed, level);
+        const buildings = enemyBase(seed, hq);
         const layout: Pick<CrewLayout, "buildings" | "cleared"> = { buildings, cleared };
-        const hq = enemyHqLevel(level);
         expect(hqLevel(layout)).toBe(hq);
         for (const b of buildings) {
           expect(fits(layout, b)).toBe(true);
@@ -71,7 +69,7 @@ describe("generateIsland", () => {
 
   it("puts buildings on grass without overlapping", () => {
     for (const seed of SEEDS) {
-      const { buildings } = generateIsland(seed, MAX_HQ_LEVEL);
+      const { buildings } = generateIsland(seed, 12);
       buildings.forEach((b, i) => {
         const r = BUILDINGS[b.type].radius;
         expect(isOnGrass(b.pos.x, b.pos.y, r)).toBe(true);

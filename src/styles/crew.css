@@ -327,17 +327,6 @@
   filter: hue-rotate(-25deg) saturate(1.1);
 }
 
-.crew-raid {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
-  min-width: 150px;
-}
-
-.crew-raid.tucked {
-  display: none;
-}
-
 .crew-menu {
   flex: none;
 }

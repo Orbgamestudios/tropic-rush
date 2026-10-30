@@ -36,6 +36,7 @@ const DEFAULTS: SaveData = {
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
   nightRaid: null,
+  beaten: { day: 0, ids: [] },
 };
 
 describe("save", () => {
@@ -83,6 +84,7 @@ describe("save", () => {
           raidersDown: 2,
         },
       },
+      beaten: { day: 20_000, ids: [2, 7] },
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);

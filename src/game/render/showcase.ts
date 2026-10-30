@@ -231,6 +231,7 @@ export class Showcase {
   private spinVelocity = 0;
   private dragging = false;
   private drop = 1;
+  private leap = 0;
   private savedBackground: THREE.Scene["background"] = null;
   private savedFog: THREE.Scene["fog"] = null;
   private readonly background = backdropTexture();
@@ -294,6 +295,12 @@ export class Showcase {
     this.drop = 0;
   }
 
+  /** A level-up: the hero leaps and spins, and the rim flares. */
+  celebrate(): void {
+    this.leap = 1;
+    this.spinVelocity = 0.32;
+  }
+
   /** Drag to spin the hero; it keeps turning with momentum, then eases back to its idle turn. */
   drag(dx: number): void {
     this.dragging = true;
@@ -323,12 +330,13 @@ export class Showcase {
       // Fall from above, then a small squash-and-settle.
       const fall = (1 - t) ** 3 * 2.2;
       const bounce = Math.sin(t * Math.PI * 2.2) * (1 - t) * 0.08;
-      this.hero.position.y = fall + bounce;
+      this.leap = Math.max(0, this.leap - dt * 1.4);
+      this.hero.position.y = fall + bounce + Math.sin(this.leap * Math.PI) * 0.9;
       const breathe = 1 + Math.sin(time * 2.2) * 0.012;
       this.hero.scale.y = this.hero.scale.x * breathe;
     }
     (this.radar.material.uniforms.uTime as THREE.IUniform<number>).value = time;
-    const pulse = 0.65 + Math.sin(time * 2.4) * 0.25;
+    const pulse = 0.65 + Math.sin(time * 2.4) * 0.25 + this.leap;
     (this.glow.material as THREE.MeshBasicMaterial).opacity = pulse;
     (this.ring.material as THREE.MeshBasicMaterial).opacity = 0.1 + pulse * 0.1;
     const pos = this.dust.geometry.getAttribute("position") as THREE.BufferAttribute;

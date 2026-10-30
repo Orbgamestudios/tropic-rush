@@ -32,6 +32,8 @@ export interface SaveData {
   nightChecked: number;
   /** The latest night raid, for its report and replay. */
   nightRaid: NightRaid | null;
+  /** Islands beaten on the world map, and which day that map was for. */
+  beaten: { day: number; ids: number[] };
 }
 
 /** Where a control rests: its middle as a share of the screen (0 to 1), and its size. */
@@ -141,6 +143,7 @@ const DEFAULT_SAVE: SaveData = {
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
   nightRaid: null,
+  beaten: { day: 0, ids: [] },
 };
 
 function readNightRaid(value: unknown): NightRaid | null {
@@ -152,6 +155,14 @@ function readNightRaid(value: unknown): NightRaid | null {
     Array.isArray(v.cleared) &&
     typeof v.report?.survived === "boolean";
   return ok ? (v as NightRaid) : null;
+}
+
+function readBeaten(value: unknown): SaveData["beaten"] {
+  const v = value as Partial<SaveData["beaten"]> | null | undefined;
+  return {
+    day: count(v?.day),
+    ids: Array.isArray(v?.ids) ? v.ids.filter((id) => Number.isInteger(id)) : [],
+  };
 }
 
 const fresh = (): SaveData => ({
@@ -206,6 +217,7 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       settings: readSettings(parsed.settings),
       nightChecked: count(parsed.nightChecked),
       nightRaid: readNightRaid(parsed.nightRaid),
+      beaten: readBeaten(parsed.beaten),
     };
   } catch {
     return fresh();

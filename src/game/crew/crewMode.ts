@@ -47,6 +47,7 @@ import {
   levelCap,
   PROGRESSION,
 } from "../logic/economy";
+import type { HeroKind } from "../logic/heroes";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import { distance, vec } from "../logic/vec";
@@ -80,6 +81,7 @@ type Gesture =
       startY: number;
       hitId: string | null;
       obstacleId: string | null;
+      hero: HeroKind | null;
     }
   | { kind: "pan" }
   | { kind: "pinch"; distance: number; midX: number; midY: number };
@@ -96,7 +98,8 @@ export interface CrewModeHost {
   save(): SaveData;
   updateSave(changes: Partial<SaveData>): void;
   onMenu(): void;
-  onRaid(): void;
+  /** A hero was tapped: open them up. */
+  onHero(kind: HeroKind): void;
   onReplay(raid: NightRaid): void;
 }
 
@@ -128,7 +131,6 @@ export class CrewMode {
   ) {
     this.ui = new CrewUi(uiLayer, {
       onMenu: () => host.onMenu(),
-      onRaid: () => host.onRaid(),
       onCreate: (name) => void this.createCrew(name),
       onJoin: (name, code) => this.joinCrew(name, code),
       onOffline: (name) => this.goOffline(name),
@@ -200,6 +202,7 @@ export class CrewMode {
     else this.status = "solo";
     this.refreshTop();
     this.runDueRaid();
+    if (save.wins === 0) this.ui.flash("Tap a hero to upgrade them and go raiding");
   }
 
   /** If a raid night has passed since this phone last looked, that raid happens now. */
@@ -261,6 +264,7 @@ export class CrewMode {
     const others = this.holds.filter((h) => h.memberId !== save.memberId);
     const hidden = this.drag?.kind === "move" ? this.drag.building.id : null;
     this.view.sync(this.layout, hidden, others);
+    this.view.syncHeroes(save.unlocked, this.layout);
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
     this.view.update(dt, time);
@@ -706,12 +710,14 @@ export class CrewMode {
       return;
     }
     const obstacle = ground && !hit ? obstacleAtTile(this.layout, tileAt(ground)) : undefined;
+    const rect = this.stage.renderer.domElement.getBoundingClientRect();
     this.gesture = {
       kind: "pending",
       startX: e.clientX,
       startY: e.clientY,
       hitId: hit?.id ?? null,
       obstacleId: obstacle?.id ?? null,
+      hero: this.view.heroAt(e.clientX - rect.left, e.clientY - rect.top),
     };
   }
 
@@ -752,7 +758,8 @@ export class CrewMode {
     }
     const gesture = this.gesture;
     if (gesture?.kind === "pending" && this.pointers.size === 1 && e.type === "pointerup") {
-      if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
+      if (gesture.hero) this.host.onHero(gesture.hero);
+      else if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
       else {
         this.showClearing(null);
         this.select(gesture.hitId);

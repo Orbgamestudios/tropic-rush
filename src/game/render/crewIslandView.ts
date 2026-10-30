@@ -19,11 +19,13 @@ import {
   TILE,
 } from "../logic/crewIsland";
 import { formatDuration } from "../logic/economy";
+import type { HeroKind } from "../logic/heroes";
 import { homeHeight, landingPoints } from "../logic/island";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { JobPin } from "../ui/crewUi";
 import { buildClouds, type CloudView } from "./clouds";
 import { visibleBox } from "./heroAssets";
+import { HomeHeroes } from "./homeHeroes";
 import { buildingModel, CREW_PAINT, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
@@ -209,12 +211,15 @@ export class CrewIslandView {
   private readonly selection: THREE.Mesh;
   private readonly tags = new Map<string, HTMLDivElement>();
   private readonly overgrowth: OvergrowthView;
+  private readonly heroes: HomeHeroes;
 
   constructor(
     private readonly stage: Stage,
     private readonly labelLayer: HTMLElement,
   ) {
     this.camera = new HomeCamera(stage);
+    this.heroes = new HomeHeroes(stage, labelLayer);
+    this.root.add(this.heroes.root);
     const scenery = homeScenery(HOME_START);
     const landing = landingPoints();
     this.overgrowth = new OvergrowthView(scenery);
@@ -374,6 +379,16 @@ export class CrewIslandView {
     this.overgrowth.highlight(id);
   }
 
+  /** Keeps the unlocked heroes strolling round the base. */
+  syncHeroes(kinds: readonly HeroKind[], layout: CrewLayout): void {
+    this.heroes.sync(kinds, layout);
+  }
+
+  /** The hero under a canvas point, if any. */
+  heroAt(x: number, y: number): HeroKind | null {
+    return this.heroes.heroAt(x, y);
+  }
+
   /** Where each clearing job's countdown goes on screen (CSS pixels). */
   jobPins(jobs: readonly ClearJob[], now: number): JobPin[] {
     const pins: JobPin[] = [];
@@ -399,6 +414,7 @@ export class CrewIslandView {
   update(dt: number, time: number): void {
     this.camera.update(dt);
     this.overgrowth.update(dt);
+    this.heroes.update(dt);
     updateWind(time, null);
     this.terrain.update(time);
     this.clouds.update(time);
@@ -413,6 +429,7 @@ export class CrewIslandView {
     // The plants share geometry and materials with other views: dispose them separately.
     this.root.remove(this.overgrowth.root);
     this.overgrowth.dispose();
+    this.heroes.dispose();
     this.clouds.dispose();
     this.root.remove(this.clouds.root);
     for (const tag of this.tags.values()) tag.remove();
