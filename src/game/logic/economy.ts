@@ -227,3 +227,14 @@ export function formatAmount(n: number): string {
   if (v < 1_000_000) return `${Math.floor(v / 1000)}k`;
   return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
 }
+
+/** A span of time for the screen: "2d 4h", "3h 20m", "5m" or "40s". */
+export function formatDuration(ms: number): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}

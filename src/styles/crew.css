@@ -547,8 +547,69 @@
 
 /* ---------- Night raid ---------- */
 
-.crew-night-button {
+.crew-top-buttons {
+  display: flex;
+  gap: 8px;
   margin-top: 2px;
+}
+
+/* Countdowns over patches being cleared. */
+.crew-pin-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.crew-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px 3px;
+  border: 1.5px solid var(--brass);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow: 0 0 0 1.5px var(--ink);
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--gold-text);
+  white-space: nowrap;
+}
+
+.crew-tool-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.crew-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1.5px solid #3a4d6e;
+  border-radius: 8px;
+  background: rgb(7 14 27 / 0.6);
+}
+
+.crew-tool-words {
+  flex: 1;
+  min-width: 0;
+}
+
+.crew-tool-name {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: var(--gold-text);
+  text-shadow: 0 1.5px 0 var(--ink);
+}
+
+.crew-tool-level {
+  font-size: 11px;
+  font-weight: 800;
+  color: #c6d2e4;
 }
 
 .crew-night-card {
@@ -635,6 +696,12 @@
 .crew-clearing-tool-icon {
   width: 16px;
   height: 16px;
+}
+
+.crew-clearing-time {
+  font-family: var(--display);
+  font-size: 14px;
+  color: var(--gold-text);
 }
 
 .crew-clearing-trade {

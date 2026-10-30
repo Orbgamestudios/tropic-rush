@@ -9,6 +9,7 @@ import {
   type CrewLayout,
   capacity,
   clearBlocker,
+  clearTime,
   cornerFor,
   fits,
   footprint,
@@ -16,6 +17,7 @@ import {
   HOME_START,
   hqLevel,
   isBuildableTile,
+  MAX_TOOL_LEVEL,
   OBSTACLE_KINDS,
   obstacleAtTile,
   obstacles,
@@ -25,6 +27,7 @@ import {
   starterLayout,
   TILE,
   tileAt,
+  toolBlocker,
   tryOp,
 } from "./crewIsland";
 import { costFor, START_RESOURCES } from "./economy";
@@ -138,7 +141,7 @@ describe("crew island ground", () => {
   });
 
   it("only builds on cleared ground; clearing takes the right tool and pays out", () => {
-    const thicket = obstacles().find((o) => o.kind === "thicket");
+    const thicket = obstacles().find((o) => o.kind === "thicket" && o.tier === 1);
     const boulder = obstacles().find((o) => o.kind === "boulder");
     if (!thicket || !boulder) throw new Error("missing obstacles");
     const overgrown = island(1, []);
@@ -150,15 +153,40 @@ describe("crew island ground", () => {
     expect(clearBlocker(overgrown, boulder)).toMatch(/Dynamite/);
     expect(applyOp(overgrown, { kind: "clear", id: boulder.id }, NOW)).toBeNull();
     const poor = { ...overgrown, resources: { gold: 50, timber: 0, stone: 0, scrap: 0 } };
-    const cleared = applyOp(poor, { kind: "clear", id: thicket.id }, NOW);
-    expect(cleared?.cleared[0]).toBe(thicket.id);
-    // Any brush touching it goes too.
-    for (const id of cleared?.cleared.slice(1) ?? [])
+    const started = applyOp(poor, { kind: "clear", id: thicket.id }, NOW);
+    expect(started?.jobs).toHaveLength(1);
+    expect(started?.resources.gold).toBe(50 - (OBSTACLE_KINDS.thicket.cost.gold ?? 0));
+    // Work takes real time: nothing's cleared until the job is done.
+    expect(started?.cleared).toEqual([]);
+    if (!started) throw new Error("not started");
+    expect(settle(started, NOW + 1000).cleared).toEqual([]);
+    const done = settle(started, NOW + clearTime(thicket));
+    expect(done.cleared[0]).toBe(thicket.id);
+    expect(done.jobs).toEqual([]);
+    expect(done.resources.timber).toBeGreaterThanOrEqual(OBSTACLE_KINDS.thicket.gives.timber ?? 0);
+    for (const id of done.cleared.slice(1))
       expect(obstacles().find((x) => x.id === id)?.kind).toBe("brush");
-    expect(cleared?.resources.gold).toBe(50 - (OBSTACLE_KINDS.thicket.cost.gold ?? 0));
-    expect(cleared?.resources.timber).toBe(OBSTACLE_KINDS.thicket.gives.timber);
-    expect(cleared && applyOp(cleared, { kind: "clear", id: thicket.id }, NOW)).toBeNull();
-    expect(cleared && obstacleAtTile(cleared, thicket)).toBeUndefined();
+    expect(obstacleAtTile(done, thicket)).toBeUndefined();
+  });
+
+  it("only lets as many jobs run as there are workers, and raises tiers with tool levels", () => {
+    const [a, b] = obstacles().filter((o) => o.kind === "thicket" && o.tier === 1);
+    if (!a || !b) throw new Error("missing obstacles");
+    const start = island(1, []);
+    const one = applyOp(start, { kind: "clear", id: a.id }, NOW);
+    if (!one) throw new Error("not started");
+    expect(applyOp(one, { kind: "clear", id: b.id }, NOW)).toBeNull();
+    const far = obstacles().find((o) => o.tier === 3 && OBSTACLE_KINDS[o.kind].tool === "axe");
+    if (!far) throw new Error("missing obstacle");
+    expect(clearBlocker(island(20, []), far)).toMatch(/level 3 Axe/);
+    expect(toolBlocker(island(1, []), "axe")).toMatch(/HQ 4/);
+    const better = applyOp(island(20, []), { kind: "toolUp", tool: "axe" }, NOW);
+    expect(better?.tools.axe).toBe(2);
+  });
+
+  it("takes months to clear the whole island, even with every worker busy", () => {
+    const hours = obstacles().reduce((sum, o) => sum + clearTime(o, MAX_TOOL_LEVEL), 0) / 3.6e6;
+    expect(hours / 4 / 24).toBeGreaterThan(90);
   });
 
   it("refuses buildings that poke off the grass", () => {

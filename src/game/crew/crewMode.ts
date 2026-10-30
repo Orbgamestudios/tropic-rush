@@ -12,12 +12,16 @@ import {
   type CrewLayout,
   capacity,
   clearBlocker,
+  clearCost,
   clearedShare,
+  clearGives,
+  clearTime,
   cornerFor,
   firstHqAllowing,
   fits,
   hqLevel,
   type LayoutOp,
+  MAX_TOOL_LEVEL,
   OBSTACLE_KINDS,
   obstacleAtTile,
   obstacles,
@@ -27,11 +31,22 @@ import {
   settle,
   TOOL_ORDER,
   TOOLS,
+  type Tool,
   tileAt,
+  toolBlocker,
+  toolCost,
   tryOp,
   upgradeBlocker,
+  workerCount,
 } from "../logic/crewIsland";
-import { allowedCount, costFor, costText, levelCap, PROGRESSION } from "../logic/economy";
+import {
+  allowedCount,
+  costFor,
+  costText,
+  formatDuration,
+  levelCap,
+  PROGRESSION,
+} from "../logic/economy";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import { distance, vec } from "../logic/vec";
@@ -124,6 +139,8 @@ export class CrewMode {
       onDone: () => this.select(null),
       onClear: () => this.clearSelected(),
       onClearCancel: () => this.showClearing(null),
+      onToolsPanel: () => this.showToolsPanel(),
+      onToolUp: (tool) => this.upgradeTool(tool),
       onNightPanel: () => this.showNightPanel(),
       onNightRaidNow: () => this.raidNow(),
       onNightReplay: () => {
@@ -247,6 +264,7 @@ export class CrewMode {
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
     this.view.update(dt, time);
+    this.ui.placeJobPins(this.view.jobPins(this.layout.jobs, this.now()));
     this.refreshIn -= dt;
     if (this.refreshIn <= 0) {
       this.refreshIn = 0.25;
@@ -262,6 +280,19 @@ export class CrewMode {
   /** Updates the resource bar, the build buttons' costs and limits, and the upgrade button. */
   private refreshEconomy(): void {
     const current = settle(this.layout, this.now());
+    // Finished clearing: the patch comes away with a burst of leaves or chips.
+    if (current.jobs.length !== this.layout.jobs.length) {
+      for (const job of this.layout.jobs) {
+        if (current.jobs.some((j) => j.id === job.id)) continue;
+        const o = obstacles().find((x) => x.id === job.id);
+        if (o) this.view?.burst(o);
+        if (o) this.ui.flash(`${OBSTACLE_KINDS[o.kind].label} cleared!`);
+      }
+      this.layout = current;
+      writeLocalLayout(current);
+      this.ui.setProgress(clearedShare(current));
+    }
+    if (this.ui.toolsOpen) this.showToolsPanel(current);
     this.ui.setResources(current.resources, capacity(current), production(current));
     const hq = hqLevel(current);
     this.ui.setChips((type) => {
@@ -418,19 +449,42 @@ export class CrewMode {
       return;
     }
     const spec = OBSTACLE_KINDS[o.kind];
-    const hq = hqLevel(current);
+    const tool = current.tools[spec.tool];
+    const job = current.jobs.find((j) => j.id === o.id);
     this.ui.setClearing({
       label: spec.label,
-      tool: TOOLS[spec.tool].label,
-      cost: costText(spec.cost),
-      gives: costText(spec.gives),
+      tier: o.tier,
+      tool: `${TOOLS[spec.tool].label} ${o.tier}`,
+      time: formatDuration(job ? job.doneAt - this.now() : clearTime(o, tool)),
+      running: job !== undefined,
+      workers: `${current.jobs.length}/${workerCount(current)}`,
+      cost: costText(clearCost(o)),
+      gives: costText(clearGives(o)),
       blocker: clearBlocker(current, o),
-      tools: TOOL_ORDER.map((t) => ({
-        label: TOOLS[t].label,
-        hq: TOOLS[t].hq,
-        have: hq >= TOOLS[t].hq,
-      })),
     });
+  }
+
+  private showToolsPanel(current = settle(this.layout, this.now())): void {
+    this.ui.showTools(
+      TOOL_ORDER.map((tool) => ({
+        tool,
+        label: TOOLS[tool].label,
+        level: current.tools[tool],
+        max: MAX_TOOL_LEVEL,
+        cost: costText(toolCost(tool, current.tools[tool])),
+        blocker: toolBlocker(current, tool),
+      })),
+      `${current.jobs.length} of ${workerCount(current)} busy`,
+    );
+  }
+
+  private upgradeTool(tool: Tool): void {
+    if (this.commit({ kind: "toolUp", tool })) {
+      this.ui.flash(`${TOOLS[tool].label} upgraded!`);
+      this.ui.celebrate();
+      this.refreshEconomy();
+      this.showToolsPanel();
+    }
   }
 
   private clearSelected(): void {
@@ -442,10 +496,7 @@ export class CrewMode {
       return;
     }
     this.commit({ kind: "clear", id: o.id });
-    const spec = OBSTACLE_KINDS[o.kind];
-    this.ui.flash(`${spec.label} cleared! +${costText(spec.gives)}`);
-    this.ui.celebrate();
-    this.view?.burst(o);
+    this.ui.flash(`${OBSTACLE_KINDS[o.kind].label}: work started`);
     this.showClearing(null);
     this.refreshEconomy();
   }

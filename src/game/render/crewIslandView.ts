@@ -7,15 +7,20 @@ import * as THREE from "three";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import {
   buildingCenter,
+  type ClearJob,
   type CrewLayout,
   footprint,
+  GRID_ORIGIN,
   HOME_START,
   type Obstacle,
+  obstacles,
   type PlacedBuilding,
   TILE,
 } from "../logic/crewIsland";
+import { formatDuration } from "../logic/economy";
 import { homeHeight, landingPoints } from "../logic/island";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
+import type { JobPin } from "../ui/crewUi";
 import { buildClouds, type CloudView } from "./clouds";
 import { visibleBox } from "./heroAssets";
 import { buildingModel, CREW_PAINT, gunboatModel } from "./models";
@@ -361,6 +366,23 @@ export class CrewIslandView {
   /** Outlines the obstacle whose clearing panel is open (null hides it). */
   highlightObstacle(id: string | null): void {
     this.overgrowth.highlight(id);
+  }
+
+  /** Where each clearing job's countdown goes on screen (CSS pixels). */
+  jobPins(jobs: readonly ClearJob[], now: number): JobPin[] {
+    const pins: JobPin[] = [];
+    for (const job of jobs) {
+      const o = obstacles().find((x) => x.id === job.id);
+      if (!o) continue;
+      const cx = GRID_ORIGIN.x + (o.x + o.w / 2) * TILE;
+      const cy = GRID_ORIGIN.y + (o.y + o.h / 2) * TILE;
+      const p = new THREE.Vector3(cx, homeHeight(cx, cy) + 5, cy).project(this.stage.camera);
+      const x = ((p.x + 1) / 2) * this.stage.width;
+      const y = ((1 - p.y) / 2) * this.stage.height;
+      const visible = p.z < 1 && x > 0 && x < this.stage.width && y > 40 && y < this.stage.height;
+      pins.push({ id: job.id, x, y, visible, time: formatDuration(job.doneAt - now) });
+    }
+    return pins;
   }
 
   /** Leaves or stone chips flying off a cleared obstacle. */

@@ -2,7 +2,8 @@
 // landing beach, one set of hills. All the grass can be built on, right down to the top of the
 // beach. A new island is overgrown: only a clearing round the headquarters and the trail from
 // the beach are open, and the rest is thickets, palm groves, rocks, dense jungle and boulders that
-// the crew clears to make room. Each needs a tool, and better tools come with headquarters levels.
+// the crew clears to make room. Clearing is meant to take months: each patch needs a tool of a
+// high enough level, work takes real time, and only so many workers can be busy at once.
 // Buildings snap to 2 m tiles.
 // Plain rules with no engine imports, shared by the phone and the crew server, which checks
 // every change with the same functions before accepting it.
@@ -114,10 +115,19 @@ export interface CrewLayout {
   buildings: PlacedBuilding[];
   /** Ids of the obstacles (see OBSTACLES) the crew has cleared. */
   cleared: string[];
+  /** Each tool's level; 0 until it's bought. */
+  tools: Record<Tool, number>;
+  /** Clearing under way: each finishes by itself at `doneAt` (server time, milliseconds). */
+  jobs: ClearJob[];
   /** The crew's shared stock, as of `stamp`. */
   resources: Purse;
   /** When `resources` was last brought up to date (server time, milliseconds). */
   stamp: number;
+}
+
+export interface ClearJob {
+  id: string;
+  doneAt: number;
 }
 
 export type LayoutOp =
@@ -125,7 +135,8 @@ export type LayoutOp =
   | { kind: "move"; id: string; x: number; y: number; rotated: boolean }
   | { kind: "remove"; id: string }
   | { kind: "upgrade"; id: string }
-  | { kind: "clear"; id: string };
+  | { kind: "clear"; id: string }
+  | { kind: "toolUp"; tool: Tool };
 
 export function footprint(type: BuildingType, rotated: boolean): { w: number; h: number } {
   const f = FOOTPRINTS[type];
@@ -183,12 +194,21 @@ function overlaps(
 
 export type Tool = "axe" | "pickaxe" | "chainsaw" | "dynamite";
 
-/** Tools, in the order the headquarters' level hands them out. */
-export const TOOLS: Record<Tool, { label: string; hq: number }> = {
-  axe: { label: "Axe", hq: 1 },
-  pickaxe: { label: "Pickaxe", hq: 2 },
-  chainsaw: { label: "Chainsaw", hq: 3 },
-  dynamite: { label: "Dynamite", hq: 5 },
+/** A tool's best level. Every patch needs a tool at its tier or better. */
+export const MAX_TOOL_LEVEL = 5;
+
+/**
+ * Tools, in the order they come. `hq` is the headquarters level for level 1, `step` how many
+ * more each further level needs, and `cost` the price of level 1.
+ */
+export const TOOLS: Record<
+  Tool,
+  { label: string; hq: number; step: number; cost: Partial<Purse> }
+> = {
+  axe: { label: "Axe", hq: 1, step: 3, cost: { gold: 200, timber: 100 } },
+  pickaxe: { label: "Pickaxe", hq: 2, step: 3, cost: { gold: 300, timber: 200 } },
+  chainsaw: { label: "Chainsaw", hq: 3, step: 4, cost: { gold: 600, stone: 300 } },
+  dynamite: { label: "Dynamite", hq: 5, step: 4, cost: { gold: 1000, scrap: 200 } },
 };
 export const TOOL_ORDER: readonly Tool[] = ["axe", "pickaxe", "chainsaw", "dynamite"];
 
@@ -234,10 +254,25 @@ export const OBSTACLE_KINDS: Record<
   },
 };
 
+/** Hours of work for each kind of patch at tier 1. */
+const CLEAR_HOURS: Record<ObstacleKind, number> = {
+  brush: 0.1,
+  thicket: 0.25,
+  grove: 0.75,
+  rocks: 2,
+  jungle: 10,
+  boulder: 18,
+};
+
+/** How much longer each tier takes: the far side of the island is the work of months. */
+const TIER_TIME = [1, 2.5, 6, 12, 20] as const;
+
 export interface Obstacle {
   /** Stable across versions: the crew server stores which ones are cleared by id. */
   id: string;
   kind: ObstacleKind;
+  /** 1 to 5: the tool level it needs, rising with distance from the start. */
+  tier: number;
   /** Tile column and row of the north-west corner. */
   x: number;
   y: number;
@@ -333,7 +368,8 @@ export function obstacles(): readonly Obstacle[] {
       if (!free(t.x, t.y, w, h)) continue;
       for (let ty = t.y; ty < t.y + h; ty++)
         for (let tx = t.x; tx < t.x + w; tx++) taken.add(`${tx},${ty}`);
-      list.push({ id: "", kind, x: t.x, y: t.y, w, h });
+      const tier = d < 30 ? 1 : d < 44 ? 2 : d < 58 ? 3 : d < 72 ? 4 : 5;
+      list.push({ id: "", kind, tier, x: t.x, y: t.y, w, h });
       break;
     }
   }
@@ -352,12 +388,65 @@ export function obstacleAtTile(
   return obstacles().find((o) => !cleared.has(o.id) && overlaps(tile.x, tile.y, 1, 1, o));
 }
 
+/** How many patches can be worked on at once. */
+export function workerCount(layout: Pick<CrewLayout, "buildings">): number {
+  return Math.min(4, 1 + Math.floor(hqLevel(layout) / 4));
+}
+
+const tierScale = (o: Obstacle) => 1 + 0.7 * (o.tier - 1);
+
+function scaled(purse: Partial<Purse>, factor: number): Partial<Purse> {
+  const out: Partial<Purse> = {};
+  for (const r of RESOURCES) {
+    const v = purse[r];
+    if (v) out[r] = Math.round((v * factor) / 5) * 5;
+  }
+  return out;
+}
+
+export function clearCost(o: Obstacle): Partial<Purse> {
+  return scaled(OBSTACLE_KINDS[o.kind].cost, tierScale(o));
+}
+
+export function clearGives(o: Obstacle): Partial<Purse> {
+  return scaled(OBSTACLE_KINDS[o.kind].gives, tierScale(o));
+}
+
+/** Milliseconds to clear a patch; a tool better than the patch needs goes quicker. */
+export function clearTime(o: Obstacle, toolLevel = o.tier): number {
+  const speed = 1 + 0.25 * Math.max(0, toolLevel - o.tier);
+  const hours = (CLEAR_HOURS[o.kind] * (TIER_TIME[o.tier - 1] ?? 1)) / speed;
+  return Math.round(hours * 3_600_000);
+}
+
 /** Why an obstacle can't be cleared right now, or null if it can. */
 export function clearBlocker(layout: CrewLayout, o: Obstacle): string | null {
   const spec = OBSTACLE_KINDS[o.kind];
   const tool = TOOLS[spec.tool];
-  if (hqLevel(layout) < tool.hq) return `Needs the ${tool.label} (HQ ${tool.hq})`;
-  if (!canAfford(layout.resources, spec.cost)) return "Not enough resources";
+  if (layout.jobs.some((j) => j.id === o.id)) return "Already being cleared";
+  if (layout.tools[spec.tool] < o.tier) return `Needs a level ${o.tier} ${tool.label}`;
+  if (layout.jobs.length >= workerCount(layout)) return "All your workers are busy";
+  if (!canAfford(layout.resources, clearCost(o))) return "Not enough resources";
+  return null;
+}
+
+/** The price of a tool's next level. */
+export function toolCost(tool: Tool, level: number): Partial<Purse> {
+  return scaled(TOOLS[tool].cost, 2.1 ** level);
+}
+
+/** The headquarters level a tool's next level needs. */
+export function toolHq(tool: Tool, level: number): number {
+  return TOOLS[tool].hq + level * TOOLS[tool].step;
+}
+
+/** Why a tool can't be upgraded right now, or null if it can. */
+export function toolBlocker(layout: CrewLayout, tool: Tool): string | null {
+  const level = layout.tools[tool];
+  if (level >= MAX_TOOL_LEVEL) return "Already at its best";
+  const hq = toolHq(tool, level);
+  if (hqLevel(layout) < hq) return `Needs HQ ${hq}`;
+  if (!canAfford(layout.resources, toolCost(tool, level))) return "Not enough resources";
   return null;
 }
 
@@ -409,7 +498,29 @@ export function settle(layout: CrewLayout, now: number): CrewLayout {
   for (const r of RESOURCES) {
     if (resources[r] < cap[r]) resources[r] = Math.min(cap[r], resources[r] + rate[r] * hours);
   }
-  return { ...layout, resources, stamp: now };
+  // Finished clearing: the patch is gone and pays out, and loose brush touching it comes away
+  // too, so nobody has to tap every tile.
+  const finished = layout.jobs.filter((j) => j.doneAt <= now);
+  if (finished.length === 0) return { ...layout, resources, stamp: now };
+  const cleared = [...layout.cleared];
+  const done = new Set(cleared);
+  for (const job of finished) {
+    const o = obstacles().find((x) => x.id === job.id);
+    if (!o || done.has(o.id)) continue;
+    cleared.push(o.id);
+    done.add(o.id);
+    const gives = clearGives(o);
+    for (const r of RESOURCES) resources[r] = Math.min(cap[r], resources[r] + (gives[r] ?? 0));
+    for (const b of obstacles()) {
+      if (b.kind !== "brush" || done.has(b.id)) continue;
+      if (!overlaps(b.x, b.y, b.w, b.h, { x: o.x - 1, y: o.y - 1, w: o.w + 2, h: o.h + 2 }))
+        continue;
+      cleared.push(b.id);
+      done.add(b.id);
+    }
+  }
+  const jobs = layout.jobs.filter((j) => j.doneAt > now);
+  return { ...layout, resources, cleared, jobs, stamp: now };
 }
 
 /** Why a building can't be built right now, or null if it can (ignoring where it goes). */
@@ -513,24 +624,25 @@ export function tryOp(
       if (!o || layout.cleared.includes(o.id)) return { error: "Already cleared" };
       const blocker = clearBlocker(layout, o);
       if (blocker) return { error: blocker };
-      const spec = OBSTACLE_KINDS[o.kind];
-      const cap = capacity(layout);
-      const resources = spend(layout.resources, spec.cost);
-      for (const r of RESOURCES)
-        resources[r] = Math.min(cap[r], resources[r] + (spec.gives[r] ?? 0));
-      // Loose brush touching the patch comes away with it, so nobody has to tap every tile.
-      const done = new Set(layout.cleared);
-      const brush = obstacles().filter(
-        (b) =>
-          b.kind === "brush" &&
-          !done.has(b.id) &&
-          overlaps(b.x, b.y, b.w, b.h, { x: o.x - 1, y: o.y - 1, w: o.w + 2, h: o.h + 2 }),
-      );
+      const tool = layout.tools[OBSTACLE_KINDS[o.kind].tool];
       return {
         layout: {
           ...layout,
-          resources,
-          cleared: [...layout.cleared, o.id, ...brush.map((b) => b.id)],
+          resources: spend(layout.resources, clearCost(o)),
+          jobs: [...layout.jobs, { id: o.id, doneAt: now + clearTime(o, tool) }],
+        },
+      };
+    }
+    case "toolUp": {
+      if (!(op.tool in TOOLS)) return { error: "Unknown tool" };
+      const blocker = toolBlocker(layout, op.tool);
+      if (blocker) return { error: blocker };
+      const level = layout.tools[op.tool];
+      return {
+        layout: {
+          ...layout,
+          resources: spend(layout.resources, toolCost(op.tool, level)),
+          tools: { ...layout.tools, [op.tool]: level + 1 },
         },
       };
     }
@@ -563,6 +675,8 @@ export function nearestFit(
   return null;
 }
 
+const START_TOOLS: Record<Tool, number> = { axe: 1, pickaxe: 0, chainsaw: 0, dynamite: 0 };
+
 /** A new crew starts with a clearing in the overgrowth, just its headquarters in the middle of
  * it, and a little of each resource. */
 export function starterLayout(now = Date.now()): CrewLayout {
@@ -576,7 +690,14 @@ export function starterLayout(now = Date.now()): CrewLayout {
   };
   const start = cornerFor("headquarters", false, HOME_START);
   const spot = nearestFit({ buildings: [], cleared: [] }, hq, start) ?? { ...hq, ...start };
-  return { cleared: [], buildings: [spot], resources: { ...START_RESOURCES }, stamp: now };
+  return {
+    cleared: [],
+    tools: { ...START_TOOLS },
+    jobs: [],
+    buildings: [spot],
+    resources: { ...START_RESOURCES },
+    stamp: now,
+  };
 }
 
 /** World position (meters) of a building's center. */
@@ -621,6 +742,8 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const data = value as {
     buildings?: unknown;
     cleared?: unknown;
+    tools?: unknown;
+    jobs?: unknown;
     resources?: unknown;
     stamp?: unknown;
   } | null;
@@ -691,5 +814,23 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     typeof data?.stamp === "number" && Number.isFinite(data.stamp) && data.stamp <= now
       ? data.stamp
       : now;
-  return { buildings, cleared, resources, stamp };
+  const rawTools = (data?.tools ?? {}) as Partial<Record<Tool, unknown>>;
+  const tools = { ...START_TOOLS };
+  for (const t of TOOL_ORDER) {
+    const v = rawTools[t];
+    if (Number.isInteger(v)) tools[t] = Math.max(0, Math.min(MAX_TOOL_LEVEL, v as number));
+  }
+  const isCleared = new Set(cleared);
+  const jobs = (Array.isArray(data?.jobs) ? (data.jobs as Partial<ClearJob>[]) : [])
+    .filter(
+      (j): j is ClearJob =>
+        typeof j?.id === "string" &&
+        known.has(j.id) &&
+        !isCleared.has(j.id) &&
+        typeof j.doneAt === "number" &&
+        Number.isFinite(j.doneAt),
+    )
+    .slice(0, 4)
+    .map((j) => ({ id: j.id, doneAt: j.doneAt }));
+  return { buildings, cleared, tools, jobs, resources, stamp };
 }

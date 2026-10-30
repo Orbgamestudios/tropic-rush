@@ -7,6 +7,7 @@
 //   and the crew join panel
 
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
+import type { Tool } from "../logic/crewIsland";
 import { formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
 import type { NightRaid } from "../logic/nightRaid";
 import type { ConnectionStatus } from "../net/crewClient";
@@ -30,6 +31,8 @@ export interface CrewUiHandlers {
   onDone(): void;
   onClear(): void;
   onClearCancel(): void;
+  onToolsPanel(): void;
+  onToolUp(tool: Tool): void;
   onNightPanel(): void;
   onNightRaidNow(): void;
   onNightReplay(): void;
@@ -38,13 +41,35 @@ export interface CrewUiHandlers {
 /** What the clearing panel shows for a tapped obstacle. */
 export interface ClearInfo {
   label: string;
+  tier: number;
   tool: string;
+  /** How long it takes, or how long is left once it's under way. */
+  time: string;
+  running: boolean;
+  workers: string;
   cost: string;
   gives: string;
   /** Why it can't be cleared yet (wrong tool, not enough resources), or null. */
   blocker: string | null;
-  /** The tool belt: every tool, and whether the crew has it yet. */
-  tools: { label: string; hq: number; have: boolean }[];
+}
+
+/** A row of the tools panel. */
+export interface ToolInfo {
+  tool: Tool;
+  label: string;
+  level: number;
+  max: number;
+  cost: string;
+  blocker: string | null;
+}
+
+/** A countdown over a patch being cleared. */
+export interface JobPin {
+  id: string;
+  x: number;
+  y: number;
+  time: string;
+  visible: boolean;
 }
 
 type Category = "defenses" | "resources" | "storage";
@@ -144,7 +169,12 @@ export class CrewUi {
   private readonly clearTool = el("div", "crew-clearing-tool");
   private readonly clearCost = el("div", "crew-clearing-cost");
   private readonly clearGives = el("div", "crew-clearing-gives");
-  private readonly clearTools = el("div", "crew-clearing-tools");
+  private readonly clearTime = el("div", "crew-clearing-time");
+  private readonly toolsPanel = el("div", "crew-join crew-tools");
+  private readonly toolRows = el("div", "crew-tool-rows");
+  private readonly toolWorkers = el("div", "crew-night-stats");
+  private readonly pinLayer = el("div", "crew-pin-layer");
+  private readonly pins = new Map<string, HTMLElement>();
   private readonly clearButton: HTMLButtonElement;
   private readonly night = el("div", "crew-join crew-night");
   private readonly nightNext = el("p", "crew-join-text");
@@ -227,6 +257,13 @@ export class CrewUi {
     const track = el("div", "crew-progress-track");
     track.append(this.progressFill);
     progress.append(icon("map", "crew-progress-icon"), this.progressLabel, track);
+    const toolsButton = button({
+      label: "Tools",
+      icon: "hammer",
+      variant: "steel",
+      size: "sm",
+      onClick: () => handlers.onToolsPanel(),
+    });
     const night = button({
       label: "Night raid",
       icon: "skull",
@@ -236,7 +273,9 @@ export class CrewUi {
       onClick: () => handlers.onNightPanel(),
     });
     const right = el("div", "crew-top-right");
-    right.append(resources, progress, night);
+    const topButtons = el("div", "crew-top-buttons");
+    topButtons.append(toolsButton, night);
+    right.append(resources, progress, topButtons);
     const menu = button({
       icon: "pause",
       aria: "Menu",
@@ -358,7 +397,7 @@ export class CrewUi {
     const clearWords = el("div", "crew-clearing-words");
     const trade = el("div", "crew-clearing-trade");
     trade.append(this.clearCost, icon("play", "crew-clearing-arrow"), this.clearGives);
-    clearWords.append(this.clearTitle, this.clearTool, trade, this.clearTools);
+    clearWords.append(this.clearTitle, this.clearTool, this.clearTime, trade);
     clearCard.body.append(clearWords, this.clearButton, clearClose);
     this.clearing.append(clearCard.root);
     this.clearing.style.display = "none";
@@ -398,6 +437,22 @@ export class CrewUi {
       offline,
     );
     this.join.append(joinCard.root);
+
+    // Tools: what each is up to, and the next level.
+    const toolCard = panel("Tools", "crew-night-card");
+    toolCard.body.append(this.toolWorkers, this.toolRows);
+    toolCard.root.append(
+      button({
+        icon: "close",
+        aria: "Close tools",
+        round: true,
+        variant: "red",
+        size: "sm",
+        className: "crew-join-close",
+        onClick: () => this.hideTools(),
+      }),
+    );
+    this.toolsPanel.append(toolCard.root);
 
     // The nightly raid: when the next one lands, how the last went, and its replay.
     const nightCard = panel("Night raid", "crew-night-card");
@@ -445,6 +500,7 @@ export class CrewUi {
     joinCard.root.append(closeJoin);
 
     this.root.append(
+      this.pinLayer,
       top,
       this.drawer,
       this.buildButton,
@@ -453,6 +509,7 @@ export class CrewUi {
       this.clearing,
       this.toast,
       this.join,
+      this.toolsPanel,
       this.night,
       this.fx,
     );
@@ -465,6 +522,7 @@ export class CrewUi {
       this.selection,
       this.clearing,
       this.join,
+      this.toolsPanel,
       this.night,
     ]) {
       node.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -612,6 +670,11 @@ export class CrewUi {
     this.night.style.display = "none";
   }
 
+  /** True while the tools panel is open. */
+  get toolsOpen(): boolean {
+    return this.toolsPanel.style.display === "flex";
+  }
+
   /** Sparkles and a chime over the middle of the screen. */
   celebrate(): void {
     sfx.levelUp();
@@ -638,22 +701,65 @@ export class CrewUi {
     this.clearTitle.textContent = info.label;
     this.clearTool.replaceChildren(
       icon("hammer", "crew-clearing-tool-icon"),
-      el("span", "", `Needs: ${info.tool}`),
+      el("span", "", `Tier ${info.tier} · needs ${info.tool} · workers ${info.workers}`),
     );
+    this.clearTime.textContent = info.running ? `${info.time} left` : `Takes ${info.time}`;
     this.clearCost.replaceChildren(costChips(info.cost));
     this.clearGives.replaceChildren(costChips(info.gives));
-    this.clearTools.replaceChildren(
-      ...info.tools.map((t) => {
-        const chip = el("span", `crew-tool${t.have ? " have" : ""}`);
-        chip.append(
-          icon(t.have ? "check" : "lock", "crew-tool-icon"),
-          el("span", "", t.have ? t.label : `${t.label} · HQ ${t.hq}`),
+    this.clearButton.disabled = info.blocker !== null;
+    setLabel(this.clearButton, info.running ? "Clearing" : (info.blocker ?? "Clear"));
+  }
+
+  /** Opens the tools panel, or refreshes it while it's open. */
+  showTools(tools: readonly ToolInfo[], workers: string): void {
+    this.toolWorkers.textContent = `Workers: ${workers}. Better tools reach further out and work faster.`;
+    this.toolRows.replaceChildren(
+      ...tools.map((t) => {
+        const row = el("div", "crew-tool-row");
+        const words = el("div", "crew-tool-words");
+        words.append(
+          el("div", "crew-tool-name", t.level > 0 ? `${t.label} ${t.level}` : t.label),
+          el("div", "crew-tool-level", t.level >= t.max ? "Best level" : (t.blocker ?? "Ready")),
         );
-        return chip;
+        const up = button({
+          label: t.level === 0 ? "Buy" : "Upgrade",
+          variant: "green",
+          size: "sm",
+          onClick: () => this.handlers.onToolUp(t.tool),
+        });
+        up.disabled = t.blocker !== null;
+        row.append(words);
+        if (t.level < t.max) row.append(costChips(t.cost), up);
+        return row;
       }),
     );
-    this.clearButton.disabled = info.blocker !== null;
-    setLabel(this.clearButton, info.blocker ?? "Clear");
+    this.toolsPanel.style.display = "flex";
+  }
+
+  hideTools(): void {
+    this.toolsPanel.style.display = "none";
+  }
+
+  /** Places the countdowns over the patches being cleared; call every frame. */
+  placeJobPins(pins: readonly JobPin[]): void {
+    const live = new Set<string>();
+    for (const pin of pins) {
+      live.add(pin.id);
+      let node = this.pins.get(pin.id);
+      if (!node) {
+        node = el("div", "crew-pin");
+        this.pinLayer.append(node);
+        this.pins.set(pin.id, node);
+      }
+      node.style.display = pin.visible ? "block" : "none";
+      node.textContent = pin.time;
+      node.style.transform = `translate(${pin.x.toFixed(1)}px, ${pin.y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+    for (const [id, node] of this.pins) {
+      if (live.has(id)) continue;
+      node.remove();
+      this.pins.delete(id);
+    }
   }
 
   setSelection(
