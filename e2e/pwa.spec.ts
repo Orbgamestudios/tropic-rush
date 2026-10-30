@@ -24,7 +24,7 @@ test("starts a raid from the menus", async ({ page }) => {
   page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Play" }).click();
+  await page.getByRole("button", { name: /Raid/ }).click();
   await page.getByRole("button", { name: /Rifleman/ }).click();
   await page.getByRole("button", { name: "Start raid" }).click();
 
@@ -55,4 +55,27 @@ test("works offline after the first visit", async ({ page }) => {
   await server.close();
   await page.reload();
   await expect(page.locator("#game canvas")).toBeVisible();
+});
+
+test("builds on the crew island offline", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  // The plain preview server has no crew server, so this checks the offline path.
+  await page.goto("/?testhooks");
+  await page.getByRole("button", { name: "Crew island" }).click();
+  await page.getByPlaceholder("Your nickname").fill("Tester");
+  await page.getByRole("button", { name: "Build offline for now" }).click();
+  await page.getByRole("button", { name: /Gun turret/ }).click();
+
+  const count = () =>
+    page.evaluate(
+      () =>
+        (
+          window as unknown as { tropicRush: { crew(): { layout: { buildings: unknown[] } } } }
+        ).tropicRush.crew().layout.buildings.length,
+    );
+  await expect.poll(count, { timeout: 40_000 }).toBe(2);
+  await expect(page.getByRole("button", { name: "Rotate" })).toBeVisible();
+  expect(errors).toEqual([]);
 });

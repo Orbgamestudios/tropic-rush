@@ -10,12 +10,28 @@ function memoryStorage() {
   };
 }
 
-const DEFAULTS: SaveData = { hero: "rifleman", level: 1, wins: 0, bestDestruction: 0 };
+const DEFAULTS: SaveData = {
+  hero: "rifleman",
+  level: 1,
+  wins: 0,
+  bestDestruction: 0,
+  nickname: "",
+  crewCode: "",
+  memberId: "",
+};
 
 describe("save", () => {
   it("round-trips save data", () => {
     const storage = memoryStorage();
-    const data: SaveData = { hero: "grenadier", level: 3, wins: 4, bestDestruction: 87 };
+    const data: SaveData = {
+      hero: "grenadier",
+      level: 3,
+      wins: 4,
+      bestDestruction: 87,
+      nickname: "Ada",
+      crewCode: "ABC234",
+      memberId: "m-1",
+    };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
   });
@@ -33,12 +49,7 @@ describe("save", () => {
       "tropic-rush:save:v1",
       JSON.stringify({ hero: "wizard", level: 9, wins: -2, bestDestruction: 400 }),
     );
-    expect(loadSave(storage)).toEqual({
-      hero: "rifleman",
-      level: 3,
-      wins: 0,
-      bestDestruction: 100,
-    });
+    expect(loadSave(storage)).toEqual({ ...DEFAULTS, level: 3, bestDestruction: 100 });
   });
 
   it("reports failure instead of throwing when storage is full", () => {

@@ -608,3 +608,289 @@ button {
   touch-action: manipulation;
   z-index: 20;
 }
+
+/* ---------- Crew island ---------- */
+
+.crew-surface,
+.crew-layer {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.crew-surface {
+  touch-action: none;
+}
+
+.crew-layer {
+  display: block;
+  pointer-events: none;
+}
+
+.crew-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crew-ui > * {
+  pointer-events: auto;
+}
+
+.crew-top {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.crew-top > * {
+  pointer-events: auto;
+}
+
+.crew-small {
+  font-size: 15px;
+  padding: 9px 16px;
+}
+
+.crew-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 6px 10px;
+}
+
+.crew-code {
+  border: 0;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: var(--crew);
+  color: white;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.crew-members {
+  display: flex;
+  gap: 6px;
+}
+
+.crew-member {
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.crew-member::before {
+  content: "●";
+  margin-right: 3px;
+  color: #9aa;
+}
+
+.crew-member.online {
+  opacity: 1;
+}
+
+.crew-member.online::before {
+  color: #6fe08a;
+}
+
+.crew-status {
+  margin-left: auto;
+  background: var(--panel);
+  color: white;
+  border-radius: 12px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.crew-status[data-status="offline"],
+.crew-status[data-status="solo"],
+.crew-status[data-status="full"] {
+  color: var(--gold);
+}
+
+.crew-build-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  overflow-x: auto;
+  background: linear-gradient(transparent, rgb(20 32 44 / 0.45));
+}
+
+.crew-chip {
+  flex: 0 0 auto;
+  min-width: 92px;
+  border: 0;
+  border-radius: 14px;
+  padding: 9px 10px;
+  background: rgb(255 255 255 / 0.93);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  box-shadow: 0 3px 0 rgb(0 0 0 / 0.2);
+  touch-action: pan-x;
+}
+
+.crew-chip-name {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.crew-chip-size {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.crew-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  color: white;
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.crew-selection {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.crew-selection-label {
+  background: var(--panel);
+  color: white;
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.crew-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.crew-toast {
+  position: absolute;
+  left: 50%;
+  top: 64px;
+  transform: translateX(-50%);
+  background: rgb(20 32 44 / 0.8);
+  color: white;
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.crew-join {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgb(14 40 60 / 0.45);
+}
+
+.crew-join-card {
+  background: white;
+  border-radius: 20px;
+  padding: 18px 22px;
+  width: min(360px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  color: var(--ink);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+}
+
+.crew-join-title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.crew-join-text,
+.crew-join-or {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.crew-input {
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+  border: 2px solid #d5dde3;
+  border-radius: 12px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.crew-code-input {
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.crew-join-row {
+  display: flex;
+  gap: 8px;
+}
+
+.crew-join-error {
+  color: #c4402c;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 1em;
+}
+
+.crew-link {
+  border: 0;
+  background: none;
+  color: var(--crew-dark);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.name-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: var(--crew);
+  color: white;
+  border-radius: 10px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+}

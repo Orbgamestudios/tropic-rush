@@ -1,14 +1,24 @@
-// Cloudflare Workers static-assets deployment: serves the built game from ./dist.
+// Cloudflare Workers deployment: serves the built game from ./dist, and runs the crew island
+// servers (worker/index.ts, one Durable Object per crew) for real-time building together.
 // `npm run deploy` builds and uploads; `npm run cf:dev` runs Cloudflare's runtime locally.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tropic-rush",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   // Build before every `wrangler deploy` / `wrangler dev`, so the Cloudflare dashboard needs only
   // the deploy command and can never upload a missing or stale ./dist.
   "build": { "command": "npm run build" },
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Only /api/* reaches the Worker code; everything else is served straight from ./dist.
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "CREW_ISLAND", "class_name": "CrewIsland" }]
+  },
+  // SQLite-backed Durable Objects are available on Cloudflare's free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CrewIsland"] }]
 }

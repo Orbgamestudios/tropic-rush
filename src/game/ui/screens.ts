@@ -5,6 +5,7 @@ import { COLORS } from "../render/palette";
 
 export interface ScreenHandlers {
   onPlay(): void;
+  onCrew(): void;
   onStart(hero: HeroKind, level: number): void;
   onAgain(): void;
   onChangeHero(): void;
@@ -65,10 +66,14 @@ export class Screens {
   constructor(parent: HTMLElement, handlers: ScreenHandlers) {
     // Title
     const logo = el("h1", "logo", "TROPIC RUSH");
-    const tagline = el("p", "tagline", "Draft build: placeholder art, solo raids");
-    const play = el("button", "btn btn-primary", "Play");
+    const tagline = el("p", "tagline", "Draft build: placeholder art");
+    const crew = el("button", "btn btn-primary", "Crew island");
+    crew.addEventListener("click", () => handlers.onCrew());
+    const play = el("button", "btn", "Raid (solo draft)");
     play.addEventListener("click", () => handlers.onPlay());
-    this.title.append(logo, tagline, play);
+    const titleButtons = el("div", "results-buttons");
+    titleButtons.append(crew, play);
+    this.title.append(logo, tagline, titleButtons);
 
     // Hero select
     const heading = el("h2", "select-heading", "Choose your hero");

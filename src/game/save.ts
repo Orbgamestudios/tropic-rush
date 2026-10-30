@@ -9,9 +9,23 @@ export interface SaveData {
   level: number;
   wins: number;
   bestDestruction: number;
+  /** Name shown to crewmates; empty until chosen. */
+  nickname: string;
+  /** Invite code of the crew this phone belongs to; empty if none yet. */
+  crewCode: string;
+  /** Random id that tells the crew server this phone is the same player next time. */
+  memberId: string;
 }
 
-const DEFAULT_SAVE: SaveData = { hero: "rifleman", level: 1, wins: 0, bestDestruction: 0 };
+const DEFAULT_SAVE: SaveData = {
+  hero: "rifleman",
+  level: 1,
+  wins: 0,
+  bestDestruction: 0,
+  nickname: "",
+  crewCode: "",
+  memberId: "",
+};
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 
@@ -19,6 +33,10 @@ function count(value: unknown, max = Number.MAX_SAFE_INTEGER): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(max, Math.max(0, Math.floor(value)))
     : 0;
+}
+
+function text(value: unknown, max: number): string {
+  return typeof value === "string" ? value.slice(0, max) : "";
 }
 
 export function loadSave(storage: Storage = localStorage): SaveData {
@@ -33,6 +51,9 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       level: level >= 1 ? level : DEFAULT_SAVE.level,
       wins: count(parsed.wins),
       bestDestruction: count(parsed.bestDestruction, 100),
+      nickname: text(parsed.nickname, 16),
+      crewCode: text(parsed.crewCode, 6),
+      memberId: text(parsed.memberId, 64),
     };
   } catch {
     return { ...DEFAULT_SAVE };
@@ -46,5 +67,25 @@ export function writeSave(data: SaveData, storage: Storage = localStorage): bool
     return true;
   } catch {
     return false;
+  }
+}
+
+const LAYOUT_KEY = "tropic-rush:crew-layout:v1";
+
+/** This phone's copy of the crew island, used while offline. */
+export function loadLocalLayout(storage: Storage = localStorage): unknown {
+  try {
+    const raw = storage.getItem(LAYOUT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeLocalLayout(layout: unknown, storage: Storage = localStorage): void {
+  try {
+    storage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    // Storage full or blocked: the island still works, it just won't be kept offline.
   }
 }

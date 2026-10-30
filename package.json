@@ -12,7 +12,7 @@
     "phone:preview": "npm run build && node scripts/phone.mjs --preview",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "lint": "biome check .",
     "fix": "biome check --write .",
     "test": "vitest run",
@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
+    "@cloudflare/workers-types": "^5.20261029.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.5",
     "@types/three": "^0.186.0",

@@ -41,6 +41,17 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/ui/`: HTML HUD, menus and floating health bars.
 - `src/game/controls.ts`: touch sticks, mouse and keyboard turned into `HeroInput`.
 - `src/game/Game.ts`: wires controls → rules (fixed 60 Hz steps) → view.
+- Crew island (real-time building with up to 5 crewmates):
+  - `src/game/logic/crewIsland.ts`: the tile grid and the place/move/remove rules.
+  - `src/game/net/`: the message protocol and the phone's reconnecting client.
+  - `worker/index.ts`: the Cloudflare Worker, with one `CrewIsland` Durable Object per crew code.
+    It checks every change with the same `crewIsland.ts` rules and sends the whole layout to
+    everyone.
+  - `src/game/render/homeIsland.ts`: the sand island, cliff and water shader.
+  - `src/game/crew/crewMode.ts`: touch handling and syncing.
+- To test the crew server locally, run `npx wrangler dev`. It builds, then serves the game and
+  runs the Durable Object. `npm run dev` and `npm run phone` have no crew server, so the crew
+  island falls back to offline mode there.
 
 ## Conventions
 

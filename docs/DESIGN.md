@@ -184,6 +184,44 @@ Starting size ratios, in hero heights:
 
 ## Home island and crew
 
+### Crew island draft (2026-10-29)
+
+**Decided:**
+
+- Crew members build on their island together in real time.
+- The island is 3D and tile-based, so buildings can be placed and moved around.
+- It's a deeper island, with a sand-colored cliff across the back.
+- For now everything is sand, with better-looking sand and water. Trees, rocks and real building
+  models come later.
+
+**Built:** the crew island screen, reached from the title screen.
+
+- **Island:** the sand island, with a raised plateau, a sloping beach and a curved cliff. The
+  water is animated and lighter in the shallows, with foam at the shore.
+- **Grid:** a build grid of 26 × 16 tiles, 2 m each.
+- **Building:** drag a building from the build bar, or tap it to drop it at the nearest free
+  spot. Tap a building to select it, then drag it to move it, rotate it or remove it. The
+  headquarters can't be removed. Buildings are plain blocks sized to their footprints.
+- **Sync:** each crew has its own server on Cloudflare. It checks every change with the same rules
+  as the phone, saves the island, and sends the whole island to every crewmate. A building
+  someone is moving is locked to them, with a name tag.
+- **Offline:** the island keeps working on the phone, and the server's copy wins on reconnect.
+
+**Proposed** (defaults, not yet confirmed by the owner):
+
+- Joining uses a nickname and a 6-character crew code, with no accounts or passwords. On iPhone,
+  Safari and the Home Screen app keep separate storage, so they count as two players.
+- Crewmates show only as name tags on the buildings they're moving, not as walking characters.
+- Building is free: no resources or HQ-level limits yet.
+- Footprints in tiles:
+  - headquarters 6×6
+  - defenses 2×2
+  - resource buildings and the refinery 3×3
+  - storehouse 3×2
+
+**Not built yet:** the world map with other crews' islands, the home screen UI, resources, and
+leaving or switching crews.
+
 **Decided** (from the original brief):
 
 - Up to 5 players per island.

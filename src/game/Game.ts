@@ -3,6 +3,7 @@
 
 import { COMBAT_ZOOM_DISTANCE, MAX_FRAME_SECONDS, RESULTS_DELAY, SIM_STEP } from "./config";
 import { type ControlMode, Controls } from "./controls";
+import { CrewMode } from "./crew/crewMode";
 import { BUILDINGS } from "./logic/buildings";
 import { HEROES, type HeroKind } from "./logic/heroes";
 import { BASE_CENTER, generateIsland, randomSeed } from "./logic/island";
@@ -25,7 +26,7 @@ import { Hud } from "./ui/hud";
 import { WorldLabels } from "./ui/labels";
 import { type RaidResult, Screens } from "./ui/screens";
 
-type Phase = "menu" | "raid" | "ended";
+type Phase = "menu" | "raid" | "ended" | "crew";
 
 function layer(parent: HTMLElement, className: string): HTMLDivElement {
   const div = document.createElement("div");
@@ -53,6 +54,7 @@ export class Game {
   private resultsAt = 0;
   private resultShown = false;
   private retreated = false;
+  private readonly crew: CrewMode;
 
   constructor(container: HTMLElement) {
     this.stage = new Stage(container);
@@ -74,9 +76,24 @@ export class Game {
       onStart: (hero, level) => this.startRaid(hero, level),
       onAgain: () => this.startRaid(this.save.hero, this.save.level),
       onChangeHero: () => this.showMenu(true),
+      onCrew: () => this.enterCrew(),
     });
     const rotate = layer(container, "rotate");
     rotate.textContent = "Turn your phone sideways to play";
+    this.crew = new CrewMode(
+      this.stage,
+      layer(container, "crew-surface"),
+      layer(container, "labels"),
+      layer(container, "crew-layer"),
+      {
+        save: () => this.save,
+        updateSave: (changes) => {
+          this.save = { ...this.save, ...changes };
+          writeSave(this.save);
+        },
+        onBack: () => this.leaveCrew(),
+      },
+    );
 
     const menu = this.menuIsland();
     this.state = menu.state;
@@ -93,6 +110,7 @@ export class Game {
   private installTestHooks(): void {
     const hooks = {
       state: () => this.state,
+      crew: () => this.crew.snapshot(),
       teleport: (x: number, y: number) => {
         const hero = this.player();
         if (hero) hero.pos = vec(x, y);
@@ -122,6 +140,20 @@ export class Game {
     this.state = next.state;
     this.view = next.view;
     this.accumulator = 0;
+  }
+
+  private enterCrew(): void {
+    this.phase = "crew";
+    this.screens.hideAll();
+    this.stage.scene.remove(this.view.root);
+    this.crew.enter();
+  }
+
+  private leaveCrew(): void {
+    this.crew.exit();
+    this.phase = "menu";
+    this.stage.scene.add(this.view.root);
+    this.screens.showTitle();
   }
 
   private showMenu(select: boolean): void {
@@ -183,6 +215,12 @@ export class Game {
     this.last = now;
     this.time += dt;
     this.stage.adaptQuality(dt);
+    if (this.phase === "crew") {
+      this.crew.frame(dt, this.time);
+      this.stage.render();
+      requestAnimationFrame(this.frame);
+      return;
+    }
     const hero = this.player();
 
     if (this.phase !== "menu" && hero) {
