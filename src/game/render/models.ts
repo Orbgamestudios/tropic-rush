@@ -54,8 +54,29 @@ export function buildingModel(type: BuildingType): BuildingModel {
         root.add(at(cone(1.85, 1.8, C.enemyRust, 14), x, 10.9, z));
       }
       root.add(at(rbox(3, 3.6, 0.6, C.woodDark), 0, 1.8, 4.55));
-      root.add(at(cyl(0.08, 0.08, 4, C.metal, 8), 0, 12.6, 0));
-      root.add(at(rbox(2, 1.2, 0.08, C.enemyRust), 1.05, 13.9, 0));
+      // A railing round the roof deck.
+      for (let i = -2; i <= 2; i++) {
+        for (const side of [-1, 1]) {
+          root.add(at(cyl(0.05, 0.05, 0.9, C.metal, 6), i * 1.35, 11.1, side * 2.9));
+          root.add(at(cyl(0.05, 0.05, 0.9, C.metal, 6), side * 2.9, 11.1, i * 1.35));
+        }
+      }
+      for (const side of [-1, 1]) {
+        root.add(at(rbox(5.9, 0.08, 0.08, C.metal), 0, 11.55, side * 2.9));
+        root.add(at(rbox(0.08, 0.08, 5.9, C.metal), side * 2.9, 11.55, 0));
+      }
+      // The radar dish on its mast, tipped to the sky, and a radio mast beside it.
+      root.add(at(cyl(0.22, 0.3, 1.6, C.metal, 10), -0.9, 11.4, -0.6));
+      const dish = mesh(new THREE.SphereGeometry(1.5, 18, 8, 0, Math.PI * 2, 0, 1.1), C.tin);
+      dish.material = material(C.tin, { metalness: 0.5, roughness: 0.4 });
+      (dish.material as THREE.Material).side = THREE.DoubleSide;
+      root.add(at(dish, -0.9, 13.7, -0.6, Math.PI - 0.6, 0, 0.4));
+      root.add(at(cyl(0.07, 0.07, 0.9, C.darkMetal, 6), -0.9, 13, -0.6));
+      root.add(at(cyl(0.08, 0.08, 4, C.metal, 8), 1.5, 12.6, 1.2));
+      root.add(at(rbox(1.6, 1, 0.08, C.enemyRust), 2.35, 13.9, 1.2));
+      // Supplies by the door.
+      root.add(at(rbox(1, 1, 1, C.woodLight), 2.9, 0.5, 5.2));
+      root.add(at(cyl(0.42, 0.42, 1.1, C.enemyRust, 12), -2.8, 0.55, 5.2));
       break;
     }
     case "gunTurret": {
@@ -119,6 +140,16 @@ export function buildingModel(type: BuildingType): BuildingModel {
         root.add(at(cyl(0.07, 0.07, 2.6, C.bamboo, 6), 0, y, 1.15, 0, 0, Math.PI / 2));
         root.add(at(cyl(0.07, 0.07, 2.6, C.bamboo, 6), 0, y, -1.15, 0, 0, Math.PI / 2));
       }
+      // Cross-braces between the legs, and a ladder up the front.
+      for (const side of [1, -1]) {
+        for (const lean of [0.72, -0.72]) {
+          root.add(at(cyl(0.05, 0.05, 3.3, C.woodDark, 6), 0, 3.7, side * 1.22, 0, 0, lean));
+          root.add(at(cyl(0.05, 0.05, 3.3, C.woodDark, 6), side * 1.22, 3.7, 0, lean, 0, 0));
+        }
+      }
+      for (const z of [0.3, -0.3]) root.add(at(cyl(0.05, 0.05, 7.2, C.wood, 6), 1.5, 3.6, z));
+      for (let y = 0.6; y < 7; y += 0.75)
+        root.add(at(cyl(0.04, 0.04, 0.6, C.wood, 6), 1.5, y, 0, Math.PI / 2, 0, 0));
       root.add(at(rbox(3.4, 0.35, 3.4, C.wood), 0, 7.4, 0));
       root.add(at(rbox(3.4, 0.6, 0.15, C.bamboo), 0, 8, 1.65));
       root.add(at(rbox(3.4, 0.6, 0.15, C.bamboo), 0, 8, -1.65));
