@@ -4,6 +4,7 @@
 // zoom).
 
 import * as THREE from "three";
+import { VIEW_YAW } from "../config";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import {
   buildingCenter,
@@ -98,7 +99,7 @@ const PAN_X = 90;
 const PAN_BACK = -82;
 const PAN_FRONT = 78;
 
-/** The home island's camera: always facing north, panned and zoomed by the player. */
+/** The home island's camera: always at the diamond angle, panned and zoomed by the player. */
 class HomeCamera {
   readonly focus = new THREE.Vector3(HOME_START.x, 1, HOME_START.y + 3);
   distance = 62;
@@ -111,8 +112,12 @@ class HomeCamera {
   pan(dx: number, dy: number): void {
     const fov = THREE.MathUtils.degToRad(this.stage.camera.fov);
     const perPixel = (2 * this.smoothDistance * Math.tan(fov / 2)) / this.stage.height;
-    this.focus.x = clamp(this.focus.x - dx * perPixel, -PAN_X, PAN_X);
-    this.focus.z = clamp(this.focus.z - (dy * perPixel) / Math.sin(PITCH), PAN_BACK, PAN_FRONT);
+    const across = dx * perPixel;
+    const along = (dy * perPixel) / Math.sin(PITCH);
+    const c = Math.cos(VIEW_YAW);
+    const s = Math.sin(VIEW_YAW);
+    this.focus.x = clamp(this.focus.x - c * across - s * along, -PAN_X, PAN_X);
+    this.focus.z = clamp(this.focus.z + s * across - c * along, PAN_BACK, PAN_FRONT);
   }
 
   zoom(factor: number): void {
@@ -132,10 +137,11 @@ class HomeCamera {
     this.smoothFocus.lerp(this.focus, k);
     this.smoothDistance = lerp(this.smoothDistance, this.distance, k);
     const cam = this.stage.camera;
+    const flat = Math.cos(PITCH) * this.smoothDistance;
     cam.position.set(
-      this.smoothFocus.x,
+      this.smoothFocus.x + Math.sin(VIEW_YAW) * flat,
       this.smoothFocus.y + Math.sin(PITCH) * this.smoothDistance,
-      this.smoothFocus.z + Math.cos(PITCH) * this.smoothDistance,
+      this.smoothFocus.z + Math.cos(VIEW_YAW) * flat,
     );
     cam.lookAt(this.smoothFocus);
     this.stage.focusShadows(this.smoothFocus, Math.max(30, this.smoothDistance * 0.75));

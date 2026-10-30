@@ -15,6 +15,7 @@ import {
   START_ENERGY,
 } from "./gunboat";
 import { HEROES, type HeroKind, type SuperKind, shotSpread } from "./heroes";
+import { NO_PERKS, type PerkMods } from "./heroProgress";
 import { type IslandLayout, isOnLand, type ObstacleKind } from "./island";
 import { createRng, type Rng } from "./rng";
 import {
@@ -66,8 +67,10 @@ export type Team = "crew" | "enemy";
 export interface RaidHero {
   id: number;
   kind: HeroKind;
-  /** Health and damage multiplier from the hero's level (1 at level 1). */
+  /** Damage multiplier from the hero's level and perks (1 at level 1). */
   power: number;
+  /** What the hero's perks change. */
+  mods: PerkMods;
   pos: Vec2;
   /** Radians on the ground plane; 0 is east. */
   facing: number;
@@ -252,11 +255,15 @@ export const IDLE_INPUT: HeroInput = {
   boatAbility: null,
 };
 
-/** `powers` are each hero's level multipliers (see heroPower); missing ones are 1. */
+/**
+ * `powers` are each hero's level multipliers (see heroPower) and `mods` their perks (see
+ * perkMods); missing ones change nothing.
+ */
 export function createRaid(
   layout: IslandLayout,
   kinds: readonly HeroKind[],
   powers: readonly number[] = [],
+  mods: readonly PerkMods[] = [],
 ): RaidState {
   const rng = createRng(layout.seed ^ 0x5bd1e995);
   let nextId = 1;
@@ -264,14 +271,17 @@ export function createRaid(
     const spec = HEROES[kind];
     const offset = (i - (kinds.length - 1) / 2) * 2.2;
     const power = powers[i] ?? 1;
+    const perks = mods[i] ?? NO_PERKS;
+    const hp = spec.hp * power * perks.hp;
     return {
       id: nextId++,
       kind,
-      power,
+      power: power * perks.damage,
+      mods: perks,
       pos: vec(layout.spawn.x + offset, layout.spawn.y),
       facing: -Math.PI / 2,
-      hp: spec.hp * power,
-      maxHp: spec.hp * power,
+      hp,
+      maxHp: hp,
       alive: true,
       inBoat: false,
       moving: false,
@@ -418,7 +428,10 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     const move = length(input.move) > 1 ? normalize(input.move) : input.move;
     const slowed = hero.firing || input.aimPreview !== null;
     const speed =
-      spec.speed * (hero.sprintTime > 0 ? SPRINT.speed : 1) * (slowed ? SHOOTING_SPEED : 1);
+      spec.speed *
+      hero.mods.speed *
+      (hero.sprintTime > 0 ? SPRINT.speed : 1) *
+      (slowed ? SHOOTING_SPEED : 1);
     hero.moving = length(move) > 0.05;
     if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
   }
@@ -431,7 +444,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     if (!target) {
       // Nothing there: a quick volley in that direction.
       hero.autoDir = normalize(input.lockAt);
-      hero.autoDistance = clamp(length(input.lockAt), 0.3, 1) * spec.attack.range;
+      hero.autoDistance = clamp(length(input.lockAt), 0.3, 1) * heroRange(hero);
       hero.autoFireTime = AUTO_FIRE_SECONDS;
     }
   } else if (input.autoAim) {
@@ -441,13 +454,13 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   }
 
   let dir: Vec2 | null = null;
-  let aimDistance = spec.attack.range;
+  let aimDistance = heroRange(hero);
   const aim = input.aim;
   const locked = hero.targetId === null ? null : lockedBuilding(state, hero);
   if (hero.targetId !== null && !locked) hero.targetId = null;
   if (aim && length(aim) > 0.15) {
     dir = normalize(aim);
-    aimDistance = clamp(length(aim), 0, 1) * spec.attack.range;
+    aimDistance = clamp(length(aim), 0, 1) * heroRange(hero);
     hero.autoFireTime = 0;
   } else if (locked) {
     dir = normalize(sub(locked.pos, hero.pos));
@@ -512,17 +525,17 @@ function updateAttack(
             "bullet",
             fromAngle(angleOf(hero.burstDir) + stray),
             atk.speed,
-            atk.range,
+            atk.range + hero.mods.range,
             atk.damage * hero.power,
             0,
             1,
           );
           hero.burstLeft--;
           hero.burstTimer = atk.interval;
-          if (hero.burstLeft === 0) hero.reload = atk.reload;
+          if (hero.burstLeft === 0) hero.reload = atk.reload * hero.mods.reload;
         }
       } else if (dir && hero.reload <= 0) {
-        hero.burstLeft = atk.shots;
+        hero.burstLeft = atk.shots + hero.mods.shots;
         hero.burstTimer = 0;
         hero.burstDir = dir;
       }
@@ -543,12 +556,12 @@ function updateAttack(
           "bullet",
           shotDir,
           atk.speed,
-          atk.range,
+          atk.range + hero.mods.range,
           atk.damage * hero.power,
           0,
           1,
         );
-        hero.reload = lerp(atk.slowInterval, atk.fastInterval, hero.spin);
+        hero.reload = lerp(atk.slowInterval, atk.fastInterval, hero.spin) * hero.mods.reload;
       }
       return;
     }
@@ -561,20 +574,20 @@ function updateAttack(
           kind,
           dir,
           atk.speed,
-          atk.range,
+          atk.range + hero.mods.range,
           atk.damage * hero.power,
           atk.splash,
           atk.buildingBonus,
         );
-        hero.reload = atk.reload;
+        hero.reload = atk.reload * hero.mods.reload;
       }
       return;
     }
     case "lob": {
       if (dir && hero.reload <= 0) {
-        const reach = clamp(aimDistance, 3, atk.range);
+        const reach = clamp(aimDistance, 3, atk.range + hero.mods.range);
         const to = add(hero.pos, scale(dir, reach));
-        const duration = atk.flightTime * (0.55 + (0.45 * reach) / atk.range);
+        const duration = atk.flightTime * (0.55 + (0.45 * reach) / (atk.range + hero.mods.range));
         spawnLob(
           state,
           "grenade",
@@ -587,7 +600,7 @@ function updateAttack(
           atk.damage * hero.power,
           atk.splash,
         );
-        hero.reload = atk.reload;
+        hero.reload = atk.reload * hero.mods.reload;
       }
       return;
     }
@@ -597,12 +610,12 @@ function updateAttack(
           state,
           hero,
           dir,
-          atk.range,
+          atk.range + hero.mods.range,
           atk.damage * hero.power,
           atk.heal,
           atk.coneHalfAngle,
         );
-        hero.reload = atk.reload;
+        hero.reload = atk.reload * hero.mods.reload;
       }
       return;
     }
@@ -633,7 +646,10 @@ function sprayTick(
   }
   // A little self-heal, so a medic playing solo isn't helpless.
   healed += healHero(state, medic, heal * 0.2);
-  medic.superCharge = Math.min(1, medic.superCharge + healed / HEROES.medic.superCharge);
+  medic.superCharge = Math.min(
+    1,
+    medic.superCharge + (healed * medic.mods.superRate) / HEROES.medic.superCharge,
+  );
   for (const b of state.buildings) {
     if (!b.destroyed && inCone(b.pos, b.radius)) damageBuilding(state, b, damage, medic.id);
   }
@@ -981,11 +997,16 @@ function updateCrewTurrets(state: RaidState, dt: number): void {
   });
 }
 
+/** How far a hero reaches, perks included. */
+export function heroRange(hero: RaidHero): number {
+  return HEROES[hero.kind].attack.range + hero.mods.range;
+}
+
 /** The locked target, if it still stands and is in range. */
 function lockedBuilding(state: RaidState, hero: RaidHero): RaidBuilding | null {
   const b = state.buildings.find((x) => x.id === hero.targetId);
   if (!b || b.destroyed) return null;
-  const reach = HEROES[hero.kind].attack.range + 0.5;
+  const reach = heroRange(hero) + 0.5;
   return distance(b.pos, hero.pos) - b.radius <= reach ? b : null;
 }
 
@@ -998,7 +1019,7 @@ export function lockCandidate(
   hero: RaidHero,
   dir: Vec2 | null,
 ): RaidBuilding | null {
-  const range = HEROES[hero.kind].attack.range;
+  const range = heroRange(hero);
   if (!dir) {
     let best: RaidBuilding | null = null;
     let bestScore = Infinity;
@@ -1054,7 +1075,10 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
   b.hp -= amount;
   const owner = state.heroes.find((h) => h.id === ownerId);
   if (owner) {
-    owner.superCharge = Math.min(1, owner.superCharge + dealt / HEROES[owner.kind].superCharge);
+    owner.superCharge = Math.min(
+      1,
+      owner.superCharge + (dealt * owner.mods.superRate) / HEROES[owner.kind].superCharge,
+    );
   }
   if (b.hp > 0) return;
   b.hp = 0;

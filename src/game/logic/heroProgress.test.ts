@@ -7,6 +7,9 @@ import {
   isStarter,
   levelUpCost,
   MAX_HERO_LEVEL,
+  PERK_LEVELS,
+  PERKS,
+  perkMods,
   raidReward,
   statBars,
   UNLOCK_MEDALS,
@@ -48,5 +51,23 @@ describe("hero progress", () => {
     expect(won.medals).toBe(1);
     expect(won.gold).toBeGreaterThan(lost.gold);
     expect(raidReward(true, 100, 3).gold).toBeGreaterThan(won.gold);
+  });
+
+  it("gives every hero four perks of their own at the milestone levels", () => {
+    const names = new Set<string>();
+    for (const kind of HERO_KINDS) {
+      expect(PERKS[kind].map((p) => p.level)).toEqual([...PERK_LEVELS]);
+      for (const p of PERKS[kind]) {
+        expect(names.has(p.name)).toBe(false);
+        names.add(p.name);
+      }
+    }
+  });
+
+  it("adds perks up and shows them in the stats", () => {
+    expect(perkMods("rifleman", 2).shots).toBe(0);
+    expect(perkMods("rifleman", 10).shots).toBe(2);
+    expect(perkMods("rifleman", 7).range).toBe(3);
+    expect(heroStats("heavy", 5).hp).toBeGreaterThan(heroStats("heavy", 4).hp * 1.3);
   });
 });

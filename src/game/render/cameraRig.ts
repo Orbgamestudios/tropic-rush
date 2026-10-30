@@ -3,6 +3,7 @@
 // slowly orbit the island.
 
 import * as THREE from "three";
+import { VIEW_YAW } from "../config";
 import { terrainHeight } from "../logic/island";
 import { angleDiff, clamp, lerp, type Vec2, vec } from "../logic/vec";
 import type { Stage } from "./stage";
@@ -56,7 +57,7 @@ export class CameraRig {
 
   /** Jumps straight to the desired view (no easing), e.g. when a raid starts. */
   snap(focus: Vec2 | null): void {
-    this.yaw = 0;
+    this.yaw = VIEW_YAW;
     this.update(10, focus);
   }
 
@@ -71,7 +72,7 @@ export class CameraRig {
     const desired = new THREE.Vector3();
     let distance: number;
     let pitch: number;
-    let yaw = 0;
+    let yaw = VIEW_YAW;
     let turnRate = 5;
     switch (this.mode) {
       case "follow": {
@@ -86,7 +87,14 @@ export class CameraRig {
           turnRate = BEHIND_TURN_RATE;
           break;
         }
-        desired.set(f.x + lead.x, terrainHeight(f.x, f.y) + 0.8, f.y + lead.y);
+        // Lead is in screen terms: turn it with the view.
+        const c = Math.cos(VIEW_YAW);
+        const s = Math.sin(VIEW_YAW);
+        desired.set(
+          f.x + c * lead.x + s * lead.y,
+          terrainHeight(f.x, f.y) + 0.8,
+          f.y + c * lead.y - s * lead.x,
+        );
         distance = lerp(FOLLOW_NEAR, FOLLOW_FAR, this.zoomOut) * zoom;
         pitch = FOLLOW_PITCH + FOLLOW_PITCH_PER_TILT * this.tilt;
         break;
@@ -131,12 +139,12 @@ export class CameraRig {
   pan(dxPixels: number, dyPixels: number): void {
     const fov = THREE.MathUtils.degToRad(this.stage.camera.fov);
     const metersPerPixel = (2 * this.distance * Math.tan(fov / 2)) / this.stage.height;
-    this.boatFocus.x = clamp(this.boatFocus.x - dxPixels * metersPerPixel, -PAN_LIMIT, PAN_LIMIT);
-    this.boatFocus.z = clamp(
-      this.boatFocus.z - (dyPixels * metersPerPixel) / Math.sin(this.pitch),
-      -PAN_LIMIT,
-      PAN_LIMIT,
-    );
+    const across = dxPixels * metersPerPixel;
+    const along = (dyPixels * metersPerPixel) / Math.sin(this.pitch);
+    const c = Math.cos(this.yaw);
+    const s = Math.sin(this.yaw);
+    this.boatFocus.x = clamp(this.boatFocus.x - c * across - s * along, -PAN_LIMIT, PAN_LIMIT);
+    this.boatFocus.z = clamp(this.boatFocus.z + s * across - c * along, -PAN_LIMIT, PAN_LIMIT);
   }
 
   /** The point on the island under a screen position (client pixels), or null for the sky. */

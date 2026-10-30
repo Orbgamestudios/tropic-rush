@@ -8,7 +8,7 @@ import { CrewMode } from "./crew/crewMode";
 import { BUILDINGS } from "./logic/buildings";
 import { generateIsland } from "./logic/enemyBase";
 import type { HeroKind } from "./logic/heroes";
-import { heroPower, raidReward } from "./logic/heroProgress";
+import { heroPower, perkMods, raidReward } from "./logic/heroProgress";
 import { BASE_CENTER, randomSeed } from "./logic/island";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
 import {
@@ -267,6 +267,7 @@ export class Game {
       layout,
       kinds,
       kinds.map((k) => heroPower(this.save.heroLevels[k])),
+      kinds.map((k) => perkMods(k, this.save.heroLevels[k])),
     );
     this.state = state;
     this.view = new RaidView(layout, state, this.labels);
@@ -463,7 +464,7 @@ export class Game {
       hero,
       canBoard(state, hero),
       this.controls.selectedAbility,
-      { angle, onScreen },
+      { angle, onScreen, turn: this.rig.turn },
       this.islandLevel,
       dt,
     );

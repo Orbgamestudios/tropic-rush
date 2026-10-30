@@ -462,6 +462,8 @@
   width: 11px;
   height: 11px;
   margin-left: -5.5px;
+  /* Pivots on the map's middle, so it can swing round the rim with the view. */
+  transform-origin: 5.5px 53px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #ff9a8a, #d6312a);
   box-shadow: 0 0 0 2px var(--ink);

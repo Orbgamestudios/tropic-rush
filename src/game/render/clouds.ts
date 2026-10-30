@@ -1,10 +1,11 @@
 // Soft banks of mist drifting low over the sea around the island, so the edges of the view fade
 // into white puffs the way the beach mockup does. They stay off the landing beach's side so they
-// never hide the gunboat. Every puff is a quad tilted towards the follow camera (which always
-// looks north from above), all merged into one mesh: one draw call for the lot.
+// never hide the gunboat. Every puff is a quad tilted towards the camera, all merged into one
+// mesh: one draw call for the lot.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { VIEW_YAW } from "../config";
 import { beachSide, shoreRadius } from "../logic/island";
 import { createRng } from "../logic/rng";
 
@@ -62,8 +63,9 @@ export function buildClouds(seed: number): CloudView {
     if (beachSide(x, y) > 0.12) continue;
     const size = 11 + rng() * 15;
     const quad = new THREE.PlaneGeometry(size, size * 0.62);
-    // Lean back to face the camera, which sits south of its target and about 50 degrees up.
+    // Lean back and turn to face the camera, about 40 degrees up at the diamond angle.
     quad.rotateX(-0.75);
+    quad.rotateY(VIEW_YAW);
     quad.translate(x, 2 + rng() * 2.5, y);
     quads.push(quad);
   }

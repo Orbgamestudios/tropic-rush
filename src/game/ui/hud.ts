@@ -28,6 +28,8 @@ export interface BoatMarker {
   /** Screen direction from the hero to the gunboat, in radians (0 = right, PI/2 = down). */
   angle: number;
   onScreen: boolean;
+  /** How far the view is turned from north, so the minimap can turn with it. */
+  turn: number;
 }
 
 const SUPER_ICONS: Record<SuperKind, IconName> = {
@@ -72,6 +74,7 @@ export class Hud {
   private readonly energy = new CurrencyPill("energy", "Gunboat energy");
   private readonly loot = new CurrencyPill("coin", "Loot");
   private readonly map = el("canvas", "hud-minimap-canvas");
+  private readonly mapNorth = el("div", "hud-minimap-north");
   private readonly superButton = el("button", "hud-round hud-super");
   private readonly superRing = el("div", "hud-super-ring");
   private readonly superIcon = el("div", "hud-super-icon");
@@ -146,7 +149,7 @@ export class Hud {
     const minimap = el("div", "hud-minimap");
     this.map.width = 128;
     this.map.height = 128;
-    minimap.append(this.map, el("div", "hud-minimap-north"));
+    minimap.append(this.map, this.mapNorth);
     const mapRow = el("div", "hud-map-row");
     mapRow.append(pause, minimap);
     const pills = el("div", "hud-pills");
@@ -354,6 +357,8 @@ export class Hud {
       }
     });
 
+    this.map.style.transform = `rotate(${boat.turn}rad)`;
+    this.mapNorth.style.transform = `rotate(${boat.turn}rad)`;
     this.mapTimer -= dt;
     if (this.mapTimer <= 0) {
       this.mapTimer = 0.1;
