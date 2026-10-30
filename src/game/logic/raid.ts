@@ -3,6 +3,7 @@
 // stepRaid() updates the state object in place instead of returning a new one.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
+import { buildingPower } from "./economy";
 import {
   type Ability,
   ARTILLERY,
@@ -98,6 +99,9 @@ export interface RaidHero {
 export interface RaidBuilding {
   id: number;
   type: BuildingType;
+  /** Upgrade level, and the health and damage multiplier it gives. */
+  level: number;
+  power: number;
   pos: Vec2;
   radius: number;
   hp: number;
@@ -289,13 +293,17 @@ export function createRaid(
   });
   const buildings = layout.buildings.map((b): RaidBuilding => {
     const spec = BUILDINGS[b.type];
+    const level = b.level ?? 1;
+    const power = buildingPower(level);
     return {
       id: nextId++,
       type: b.type,
+      level,
+      power,
       pos: { ...b.pos },
       radius: spec.radius,
-      hp: spec.hp,
-      maxHp: spec.hp,
+      hp: spec.hp * power,
+      maxHp: spec.hp * power,
       destroyed: false,
       reload: spec.attack ? rng() * spec.attack.reload : 0,
       aim: Math.PI / 2,
@@ -887,10 +895,10 @@ function updateBuildings(state: RaidState, dt: number): void {
         if (!hero.alive || hero.inBoat) continue;
         if (distance(hero.pos, b.pos) > atk.range + HEROES[hero.kind].radius) continue;
         if (Math.abs(angleDiff(angleOf(sub(hero.pos, b.pos)), b.aim)) > atk.coneHalfAngle) continue;
-        damageHero(state, hero, atk.damage);
+        damageHero(state, hero, atk.damage * b.power);
       }
       for (const t of state.turrets) {
-        if (distance(t.pos, b.pos) <= atk.range) t.hp -= atk.damage;
+        if (distance(t.pos, b.pos) <= atk.range) t.hp -= atk.damage * b.power;
       }
       continue;
     }
@@ -899,7 +907,17 @@ function updateBuildings(state: RaidState, dt: number): void {
     b.firing = true;
     switch (atk.kind) {
       case "bullet":
-        spawnEnemyDirect(state, b, "bullet", muzzle, dir, atk.speed, atk.range + 2, atk.damage, 1);
+        spawnEnemyDirect(
+          state,
+          b,
+          "bullet",
+          muzzle,
+          dir,
+          atk.speed,
+          atk.range + 2,
+          atk.damage * b.power,
+          1,
+        );
         break;
       case "harpoon":
         spawnEnemyDirect(
@@ -910,7 +928,7 @@ function updateBuildings(state: RaidState, dt: number): void {
           dir,
           atk.speed,
           atk.range + 2,
-          atk.damage,
+          atk.damage * b.power,
           atk.heavyBonus,
         );
         break;
@@ -924,7 +942,7 @@ function updateBuildings(state: RaidState, dt: number): void {
           { ...target.pos },
           atk.flightTime,
           9,
-          atk.damage,
+          atk.damage * b.power,
           atk.splash,
         );
         break;

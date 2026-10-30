@@ -8,6 +8,7 @@
 
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import { formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
+import type { NightRaid } from "../logic/nightRaid";
 import type { ConnectionStatus } from "../net/crewClient";
 import type { Member } from "../net/protocol";
 import { buildingIcon } from "../render/thumbnails";
@@ -29,6 +30,9 @@ export interface CrewUiHandlers {
   onDone(): void;
   onClear(): void;
   onClearCancel(): void;
+  onNightPanel(): void;
+  onNightRaidNow(): void;
+  onNightReplay(): void;
 }
 
 /** What the clearing panel shows for a tapped obstacle. */
@@ -142,6 +146,11 @@ export class CrewUi {
   private readonly clearGives = el("div", "crew-clearing-gives");
   private readonly clearTools = el("div", "crew-clearing-tools");
   private readonly clearButton: HTMLButtonElement;
+  private readonly night = el("div", "crew-join crew-night");
+  private readonly nightNext = el("p", "crew-join-text");
+  private readonly nightResult = el("div", "crew-night-result");
+  private readonly nightStats = el("div", "crew-night-stats");
+  private readonly nightReplay: HTMLButtonElement;
   private readonly resourceItems = new Map<
     Resource,
     { amount: HTMLSpanElement; fill: HTMLSpanElement; root: HTMLDivElement; rate: HTMLSpanElement }
@@ -218,8 +227,16 @@ export class CrewUi {
     const track = el("div", "crew-progress-track");
     track.append(this.progressFill);
     progress.append(icon("map", "crew-progress-icon"), this.progressLabel, track);
+    const night = button({
+      label: "Night raid",
+      icon: "skull",
+      variant: "steel",
+      size: "sm",
+      className: "crew-night-button",
+      onClick: () => handlers.onNightPanel(),
+    });
     const right = el("div", "crew-top-right");
-    right.append(resources, progress);
+    right.append(resources, progress, night);
     const menu = button({
       icon: "pause",
       aria: "Menu",
@@ -382,6 +399,40 @@ export class CrewUi {
     );
     this.join.append(joinCard.root);
 
+    // The nightly raid: when the next one lands, how the last went, and its replay.
+    const nightCard = panel("Night raid", "crew-night-card");
+    this.nightReplay = button({
+      label: "Watch replay",
+      icon: "play",
+      variant: "blue",
+      size: "md",
+      onClick: () => handlers.onNightReplay(),
+    });
+    const nightButtons = el("div", "crew-night-row");
+    nightButtons.append(
+      button({
+        label: "Raid now",
+        icon: "skull",
+        variant: "red",
+        size: "md",
+        onClick: () => handlers.onNightRaidNow(),
+      }),
+      this.nightReplay,
+    );
+    nightCard.body.append(this.nightNext, this.nightResult, this.nightStats, nightButtons);
+    nightCard.root.append(
+      button({
+        icon: "close",
+        aria: "Close night raid",
+        round: true,
+        variant: "red",
+        size: "sm",
+        className: "crew-join-close",
+        onClick: () => this.hideNight(),
+      }),
+    );
+    this.night.append(nightCard.root);
+
     const closeJoin = button({
       icon: "close",
       aria: "Close",
@@ -402,6 +453,7 @@ export class CrewUi {
       this.clearing,
       this.toast,
       this.join,
+      this.night,
       this.fx,
     );
     this.setDrawer(false);
@@ -413,6 +465,7 @@ export class CrewUi {
       this.selection,
       this.clearing,
       this.join,
+      this.night,
     ]) {
       node.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
@@ -537,6 +590,26 @@ export class CrewUi {
     );
     this.status.textContent = STATUS_TEXT[status];
     this.status.dataset.status = status;
+  }
+
+  /** Opens the night raid panel: when the next raid lands, and how the last one went. */
+  showNight(last: NightRaid | null, nextAt: number): void {
+    const hours = Math.max(0, nextAt - Date.now()) / 3_600_000;
+    const h = Math.floor(hours);
+    const m = Math.floor((hours - h) * 60);
+    this.nightNext.textContent = `Raiders land every night. Next raid in ${h}h ${m}m.`;
+    this.nightReplay.disabled = last === null;
+    const r = last?.report;
+    this.nightResult.textContent = r ? (r.survived ? "Island held!" : "Island overrun!") : "";
+    this.nightResult.classList.toggle("lost", r?.survived === false);
+    this.nightStats.textContent = r
+      ? `${r.destroyedPercent}% destroyed · ${r.raidersDown} of ${r.raiders} raiders down`
+      : "No raids yet. Tap Raid now to test your defenses.";
+    this.night.style.display = "flex";
+  }
+
+  hideNight(): void {
+    this.night.style.display = "none";
   }
 
   /** Sparkles and a chime over the middle of the screen. */

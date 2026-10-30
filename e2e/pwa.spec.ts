@@ -77,3 +77,18 @@ test("builds on the crew island offline", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Rotate" })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("runs a night raid, replays it and reports the result", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Night raid", exact: true }).click();
+  await page.getByRole("button", { name: "Raid now" }).click();
+  await expect(page.locator(".replay-title")).toBeVisible({ timeout: 40_000 });
+  await page.getByRole("button", { name: "Skip" }).click();
+  await expect(page.locator(".crew-night-result")).toHaveText(/Island (held|overrun)!/, {
+    timeout: 40_000,
+  });
+  expect(errors).toEqual([]);
+});

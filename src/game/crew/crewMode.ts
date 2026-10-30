@@ -32,6 +32,8 @@ import {
   upgradeBlocker,
 } from "../logic/crewIsland";
 import { allowedCount, costFor, costText, levelCap, PROGRESSION } from "../logic/economy";
+import { randomSeed } from "../logic/island";
+import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import { distance, vec } from "../logic/vec";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
 import {
@@ -80,6 +82,7 @@ export interface CrewModeHost {
   updateSave(changes: Partial<SaveData>): void;
   onMenu(): void;
   onRaid(): void;
+  onReplay(raid: NightRaid): void;
 }
 
 export class CrewMode {
@@ -121,6 +124,12 @@ export class CrewMode {
       onDone: () => this.select(null),
       onClear: () => this.clearSelected(),
       onClearCancel: () => this.showClearing(null),
+      onNightPanel: () => this.showNightPanel(),
+      onNightRaidNow: () => this.raidNow(),
+      onNightReplay: () => {
+        const raid = this.host.save().nightRaid;
+        if (raid) host.onReplay(raid);
+      },
     });
     surface.addEventListener("pointerdown", (e) => this.onDown(e));
     surface.addEventListener("pointermove", (e) => this.onMove(e));
@@ -173,6 +182,43 @@ export class CrewMode {
     if (save.crewCode && save.nickname) this.connect();
     else this.status = "solo";
     this.refreshTop();
+    this.runDueRaid();
+  }
+
+  /** If a raid night has passed since this phone last looked, that raid happens now. */
+  private runDueRaid(): void {
+    const save = this.host.save();
+    const night = nightNumber(Date.now());
+    if (save.nightChecked === night) return;
+    // A brand new phone starts counting tonight rather than being raided on arrival.
+    if (save.nightChecked === 0) {
+      this.host.updateSave({ nightChecked: night });
+      return;
+    }
+    const nightRaid = runNightRaid(settle(this.layout, this.now()), night, night * 31 + 7);
+    this.host.updateSave({ nightChecked: night, nightRaid });
+    this.showNightPanel();
+  }
+
+  private showNightPanel(): void {
+    this.ui.showNight(this.host.save().nightRaid, nextRaidTime(Date.now()));
+  }
+
+  /** Runs a raid on the island as it stands, and goes straight to watching it. */
+  private raidNow(): void {
+    const nightRaid = runNightRaid(
+      settle(this.layout, this.now()),
+      nightNumber(Date.now()),
+      randomSeed(),
+    );
+    this.host.updateSave({ nightRaid });
+    this.ui.hideNight();
+    this.host.onReplay(nightRaid);
+  }
+
+  /** Back from a replay: shows how it went. */
+  showNightResult(): void {
+    this.showNightPanel();
   }
 
   exit(): void {
@@ -189,6 +235,7 @@ export class CrewMode {
     this.surface.style.display = "none";
     this.ui.show(false);
     this.ui.hideJoin();
+    this.ui.hideNight();
   }
 
   frame(dt: number, time: number): void {

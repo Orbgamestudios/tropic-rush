@@ -17,6 +17,21 @@ export interface BuildingModel {
 
 const C = COLORS;
 
+/** Enemy paint becomes crew paint on the crew's own buildings: rust to blue, charcoal to steel. */
+export const CREW_PAINT = new Map<number, number>([
+  [COLORS.enemyRust, COLORS.crewBlue],
+  [COLORS.enemyDark, 0x55657e],
+]);
+
+/** Repaints a building in crew colors. */
+export function paintCrew(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const paint = CREW_PAINT.get((o.material as THREE.MeshStandardMaterial).color?.getHex());
+    if (paint !== undefined) o.material = material(paint);
+  });
+}
+
 function flameCone(length: number): THREE.Mesh {
   const geometry = new THREE.ConeGeometry(length * 0.22, length, 14, 1, true);
   geometry.rotateZ(Math.PI / 2);

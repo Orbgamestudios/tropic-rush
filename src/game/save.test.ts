@@ -34,6 +34,8 @@ const DEFAULTS: SaveData = {
   unlocked: ["rifleman", "medic", "heavy"],
   squad: ["medic", "heavy"],
   settings: DEFAULT_SETTINGS,
+  nightChecked: 0,
+  nightRaid: null,
 };
 
 describe("save", () => {
@@ -64,6 +66,22 @@ describe("save", () => {
           super: { x: 0.6, y: 0.5, size: 1.5 },
         },
         rev: DEFAULT_SETTINGS.rev,
+      },
+      nightChecked: 20_000,
+      nightRaid: {
+        night: 20_000,
+        seed: 5,
+        buildings: [],
+        cleared: ["1.2"],
+        report: {
+          survived: true,
+          destroyedPercent: 20,
+          destroyed: 1,
+          total: 5,
+          seconds: 90,
+          raiders: 2,
+          raidersDown: 2,
+        },
       },
     };
     expect(writeSave(data, storage)).toBe(true);

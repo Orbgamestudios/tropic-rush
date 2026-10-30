@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateIsland } from "./island";
+import { generateIsland } from "./enemyBase";
 import { createRaid, IDLE_INPUT, type RaidHero, type RaidState, stepRaid } from "./raid";
 import { squadInput } from "./squad";
 import { distance, vec } from "./vec";

@@ -2,6 +2,7 @@
 // stats and super on the right, and the island to raid. Gold levels heroes up; medals unlock new
 // ones.
 
+import { enemyHqLevel } from "../logic/enemyBase";
 import { HERO_KINDS, HEROES, type HeroKind, type SuperKind } from "../logic/heroes";
 import {
   HERO_NAMES,
@@ -170,6 +171,7 @@ export class HeroSelect {
       b.setAttribute("aria-label", island.name);
       const stars = el("span", "heroes-island-stars");
       for (let i = 0; i < 3; i++) stars.append(icon("star", i < island.level ? "on" : "off"));
+      stars.append(el("span", "heroes-island-hq", `HQ ${enemyHqLevel(island.level)}`));
       b.append(stars, el("span", "heroes-island-name", island.name));
       b.addEventListener("click", () => {
         sfx.tick();

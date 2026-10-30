@@ -90,6 +90,8 @@ export function homeHeight(x: number, y: number): number {
 export interface PlacedBuilding {
   type: BuildingType;
   pos: Vec2;
+  /** Upgrade level (1 if missing): scales health and damage in a raid. */
+  level?: number;
 }
 
 export type ObstacleKind = "rock" | "palm" | "sandbag";
@@ -126,8 +128,6 @@ export interface IslandLayout {
   /** Where a hero steps off the boat. */
   boatExit: Vec2;
 }
-
-const BUILDING_GAP = 3;
 
 /** Walks along a ray from the island's center until the shore distance drops to `target`. */
 function pointAtShoreDistance(direction: Vec2, target: number, sideways = 0): Vec2 {
@@ -167,83 +167,34 @@ export function trailPoints(spawn: Vec2, hq: Vec2): Vec2[] {
   return [spawn, mid, hq];
 }
 
-export function generateIsland(seed: number, level: number): IslandLayout {
+/**
+ * Everything on an island around its buildings: cover, palms, bushes, mines and the landing.
+ * The buildings themselves come from enemyBase.ts or from a crew's own island.
+ */
+export function dressIsland(
+  seed: number,
+  level: number,
+  buildings: readonly PlacedBuilding[],
+): IslandLayout {
   const rng = createRng(seed);
   const contents = levelContents(level);
-  const landing = BEACH_DIRECTION;
   const { spawn, boat, boatExit } = landingPoints();
-
-  const buildings: PlacedBuilding[] = [];
-  const placed: Placed[] = [];
+  const placed: Placed[] = buildings.map((b) => ({
+    pos: b.pos,
+    radius: BUILDINGS[b.type].radius,
+  }));
   const keepClear: Placed[] = [
     { pos: spawn, radius: 6 },
     { pos: boatExit, radius: 4 },
   ];
 
-  const tryPlace = (type: BuildingType, sample: () => Vec2): void => {
-    const radius = BUILDINGS[type].radius;
-    for (let attempt = 0; attempt < 600; attempt++) {
-      // Loosen the rules a little if a spot is hard to find.
-      const gap = attempt < 400 ? BUILDING_GAP : 1.5;
-      const pos = sample();
-      if (!isOnGrass(pos.x, pos.y, radius + 1.5)) continue;
-      if (overlaps(pos, radius, placed, gap) || overlaps(pos, radius, keepClear, 1)) continue;
-      buildings.push({ type, pos });
-      placed.push({ pos, radius });
-      return;
-    }
-    throw new Error(`Could not place ${type} on island ${seed}`);
-  };
-
   const around =
     (center: Vec2, minAngle: number, maxAngle: number, minR: number, maxR: number) => () =>
       add(center, fromAngle(between(rng, minAngle, maxAngle), between(rng, minR, maxR)));
 
-  // Angles point from the base: towards the beach is the front, away from it the back.
-  const beachAngle = Math.atan2(landing.y, landing.x);
-  const hq = add(
-    add(BASE_CENTER, fromAngle(beachAngle + Math.PI, 13)),
-    vec(between(rng, -4, 4), between(rng, -4, 4)),
-  );
+  // Angles point from the base: towards the beach is the front.
+  const beachAngle = Math.atan2(BEACH_DIRECTION.y, BEACH_DIRECTION.x);
   const front = [beachAngle - 0.38 * Math.PI, beachAngle + 0.38 * Math.PI] as const;
-  const back = [beachAngle + 0.3 * Math.PI, beachAngle + 1.7 * Math.PI] as const;
-  const samplers: Record<BuildingType, () => Vec2> = {
-    headquarters: () => hq,
-    gunTurret: around(BASE_CENTER, front[0], front[1], 12, 25),
-    harpoon: around(BASE_CENTER, front[0], front[1], 10, 22),
-    mortar: around(BASE_CENTER, 0, Math.PI * 2, 5, 15),
-    flamethrower: around(hq, front[0], front[1], 9, 14),
-    watchtower: around(BASE_CENTER, 0, Math.PI * 2, 14, 28),
-    goldMine: around(BASE_CENTER, back[0], back[1], 10, 30),
-    lumberCamp: around(BASE_CENTER, back[0], back[1], 10, 30),
-    quarry: around(BASE_CENTER, back[0], back[1], 10, 30),
-    scrapYard: around(BASE_CENTER, back[0], back[1], 10, 30),
-    storehouse: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
-    goldVault: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
-    timberShed: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
-    stoneYard: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
-    scrapBin: around(BASE_CENTER, 0, Math.PI * 2, 8, 26),
-    refinery: around(BASE_CENTER, back[0], back[1], 10, 30),
-  };
-  // Defenses first so they get the front line, then everything else.
-  const order: BuildingType[] = [
-    "headquarters",
-    "gunTurret",
-    "harpoon",
-    "flamethrower",
-    "mortar",
-    "watchtower",
-    "refinery",
-    "goldMine",
-    "lumberCamp",
-    "quarry",
-    "scrapYard",
-    "storehouse",
-  ];
-  for (const type of order) {
-    const count = contents.buildings[type] ?? 0;
-    for (let i = 0; i < count; i++) tryPlace(type, samplers[type]);
-  }
 
   const obstacles: ObstacleSpawn[] = [];
   const blockers = (): Placed[] => [...placed, ...keepClear, ...obstacles];
@@ -337,7 +288,17 @@ export function generateIsland(seed: number, level: number): IslandLayout {
     mines.push(pos);
   }
 
-  return { seed, level, buildings, obstacles, decor, mines, spawn, boat, boatExit };
+  return {
+    seed,
+    level,
+    buildings: [...buildings],
+    obstacles,
+    decor,
+    mines,
+    spawn,
+    boat,
+    boatExit,
+  };
 }
 
 export function randomSeed(rng: Rng = Math.random): number {

@@ -6,9 +6,11 @@ import { COMBAT_ZOOM_DISTANCE, MAX_FRAME_SECONDS, RESULTS_DELAY, SIM_STEP } from
 import { type ControlMode, Controls } from "./controls";
 import { CrewMode } from "./crew/crewMode";
 import { BUILDINGS } from "./logic/buildings";
+import { generateIsland } from "./logic/enemyBase";
 import type { HeroKind } from "./logic/heroes";
 import { heroPower, raidReward } from "./logic/heroProgress";
-import { BASE_CENTER, generateIsland, randomSeed } from "./logic/island";
+import { BASE_CENTER, randomSeed } from "./logic/island";
+import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
 import {
   canBoard,
   createRaid,
@@ -33,9 +35,10 @@ import { Hud } from "./ui/hud";
 import { sfx } from "./ui/kit/fx";
 import { WorldLabels } from "./ui/labels";
 import { PauseMenu } from "./ui/pause";
+import { ReplayBar } from "./ui/replayBar";
 import { ResultsScreen } from "./ui/results";
 
-type Phase = "heroes" | "raid" | "ended" | "crew";
+type Phase = "heroes" | "raid" | "ended" | "crew" | "replay";
 
 function layer(parent: HTMLElement, className: string): HTMLDivElement {
   const div = document.createElement("div");
@@ -50,6 +53,8 @@ export class Game {
   private readonly labels: WorldLabels;
   private readonly controls: Controls;
   private readonly controlsEditor: ControlsEditor;
+  private readonly replay: ReplayBar;
+  private replaySpeed = 1;
   private readonly hud: Hud;
   private readonly heroes: HeroSelect;
   private readonly results: ResultsScreen;
@@ -126,6 +131,12 @@ export class Game {
       onSettings: (settings) => this.setSettings(settings),
       onClose: () => this.pause.showSettings(),
     });
+    this.replay = new ReplayBar(screens, {
+      onSpeed: (speed) => {
+        this.replaySpeed = speed;
+      },
+      onSkip: () => this.go(() => this.endReplay()),
+    });
     const rotate = layer(container, "rotate");
     rotate.textContent = "Turn your phone sideways to play";
     this.crew = new CrewMode(
@@ -138,6 +149,7 @@ export class Game {
         updateSave: (changes) => this.updateSave(changes),
         onMenu: () => this.pause.show(true, false),
         onRaid: () => this.go(() => this.showHeroes()),
+        onReplay: (raid) => this.go(() => this.startReplay(raid)),
       },
     );
     this.wipe = layer(container, "wipe");
@@ -279,6 +291,58 @@ export class Game {
     this.hud.flash("Destroy the headquarters!");
   }
 
+  /** Watches a night raid play out on the island as it stood that night. */
+  private startReplay(raid: NightRaid): void {
+    if (this.crew.active) this.crew.exit();
+    this.endRaidWorld();
+    this.hideScreens();
+    const state = startNightRaid(raid, raid.seed);
+    const layout = nightIsland(raid, raid.seed);
+    this.state = state;
+    this.view = new RaidView(layout, state, this.labels, raid);
+    this.stage.scene.add(this.view.root);
+    this.accumulator = 0;
+    this.phase = "replay";
+    this.replaySpeed = 1;
+    this.resultsAt = 0;
+    this.setControlMode("off");
+    this.rig.mode = "follow";
+    this.rig.behind = false;
+    this.rig.zoomOut = 1;
+    this.rig.snap(layout.spawn);
+    this.replay.show(true);
+  }
+
+  private endReplay(): void {
+    if (this.phase !== "replay") return;
+    this.replay.show(false);
+    this.applySettings();
+    this.goHome();
+    this.crew.showNightResult();
+  }
+
+  private replayFrame(dt: number, now: number): void {
+    const { state, view } = this;
+    if (!state || !view) return;
+    this.accumulator += dt * this.replaySpeed;
+    while (this.accumulator >= SIM_STEP && state.status === "playing") {
+      stepNightRaid(state, SIM_STEP);
+      view.handleEvents(state.events, state);
+      this.accumulator -= SIM_STEP;
+    }
+    if (state.status !== "playing") {
+      this.resultsAt ||= now + RESULTS_DELAY * 1000;
+      if (now >= this.resultsAt) {
+        this.resultsAt = Number.POSITIVE_INFINITY;
+        this.go(() => this.endReplay());
+      }
+    }
+    const watched = state.heroes.find((h) => h.alive) ?? state.heroes[0];
+    if (watched) this.rig.update(dt, watched.pos, vec(0, -3));
+    view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
+    this.replay.update(state);
+  }
+
   private setPaused(on: boolean): void {
     if (this.phase !== "raid") return;
     this.paused = on;
@@ -325,6 +389,7 @@ export class Game {
     this.stage.adaptQuality(frameTime);
     if (this.phase === "crew") this.crew.frame(dt, this.time);
     else if (this.phase === "heroes") this.showcase.update(dt, this.time);
+    else if (this.phase === "replay") this.replayFrame(dt, now);
     else this.raidFrame(dt, now);
     this.stage.render();
     requestAnimationFrame(this.frame);

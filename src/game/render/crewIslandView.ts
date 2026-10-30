@@ -18,7 +18,7 @@ import { homeHeight, landingPoints } from "../logic/island";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import { buildClouds, type CloudView } from "./clouds";
 import { visibleBox } from "./heroAssets";
-import { buildingModel, gunboatModel } from "./models";
+import { buildingModel, CREW_PAINT, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
 import { buildShore, updateWind } from "./props";
@@ -27,12 +27,6 @@ import { rbox } from "./shapes";
 import type { Stage } from "./stage";
 import { buildTerrain, type TerrainView } from "./terrain";
 import { buildTileGrid } from "./tileGrid";
-
-/** Enemy paint becomes crew paint on the home island: rust to crew blue, charcoal to steel. */
-const CREW_PAINT = new Map<number, number>([
-  [COLORS.enemyRust, COLORS.crewBlue],
-  [COLORS.enemyDark, 0x55657e],
-]);
 
 /**
  * A building on the crew island: its 3D model, repainted in crew colors and turned to face the

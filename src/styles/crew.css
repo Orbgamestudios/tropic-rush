@@ -545,6 +545,53 @@
 
 /* ---------- Selected building ---------- */
 
+/* ---------- Night raid ---------- */
+
+.crew-night-button {
+  margin-top: 2px;
+}
+
+.crew-night-card {
+  position: relative;
+  width: min(380px, 92vw);
+}
+
+.crew-night-card > .ui-panel-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.crew-night-result {
+  font-family: var(--display);
+  font-size: 26px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9df27e;
+  text-shadow: var(--outline);
+}
+
+.crew-night-result:empty {
+  display: none;
+}
+
+.crew-night-result.lost {
+  color: #ff8a73;
+}
+
+.crew-night-stats {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--cream);
+  text-align: center;
+}
+
+.crew-night-row {
+  display: flex;
+  gap: 10px;
+}
+
 /* ---------- Clearing panel ---------- */
 
 .crew-clearing {

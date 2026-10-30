@@ -1,5 +1,6 @@
 import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
 import { MAX_HERO_LEVEL } from "./logic/heroProgress";
+import type { NightRaid } from "./logic/nightRaid";
 
 // Bump the version suffix if the shape of SaveData changes incompatibly.
 const KEY = "tropic-rush:save:v1";
@@ -27,6 +28,10 @@ export interface SaveData {
   /** AI squadmates brought along on raids (unlocked heroes, at most MAX_SQUAD). */
   squad: HeroKind[];
   settings: Settings;
+  /** The last night the raid was run for; 0 until this phone has seen its first night. */
+  nightChecked: number;
+  /** The latest night raid, for its report and replay. */
+  nightRaid: NightRaid | null;
 }
 
 /** Where a control rests: its middle as a share of the screen (0 to 1), and its size. */
@@ -134,7 +139,20 @@ const DEFAULT_SAVE: SaveData = {
   unlocked: starters(),
   squad: starters().slice(1),
   settings: DEFAULT_SETTINGS,
+  nightChecked: 0,
+  nightRaid: null,
 };
+
+function readNightRaid(value: unknown): NightRaid | null {
+  const v = value as Partial<NightRaid> | null | undefined;
+  const ok =
+    typeof v?.seed === "number" &&
+    typeof v.night === "number" &&
+    Array.isArray(v.buildings) &&
+    Array.isArray(v.cleared) &&
+    typeof v.report?.survived === "boolean";
+  return ok ? (v as NightRaid) : null;
+}
 
 const fresh = (): SaveData => ({
   ...DEFAULT_SAVE,
@@ -186,6 +204,8 @@ export function loadSave(storage: Storage = localStorage): SaveData {
         ? unlocked.filter((k) => (parsed.squad as unknown[]).includes(k)).slice(0, MAX_SQUAD)
         : DEFAULT_SAVE.squad,
       settings: readSettings(parsed.settings),
+      nightChecked: count(parsed.nightChecked),
+      nightRaid: readNightRaid(parsed.nightRaid),
     };
   } catch {
     return fresh();

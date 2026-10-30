@@ -3,8 +3,9 @@
 
 import * as THREE from "three";
 import { BUILDINGS } from "../logic/buildings";
+import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { HEROES } from "../logic/heroes";
-import { type IslandLayout, terrainHeight } from "../logic/island";
+import { homeHeight, type IslandLayout, terrainHeight } from "../logic/island";
 import type { Projectile, ProjectileKind, RaidEvent, RaidState, Team } from "../logic/raid";
 import { angleDiff, angleOf, distance, normalize, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
@@ -20,11 +21,13 @@ import {
   type HeroModel,
   heroModel,
   mineModel,
+  paintCrew,
   rubbleModel,
 } from "./models";
+import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
-import { buildProps, sandbagPileGeometry, updateWind } from "./props";
-import { sceneryMap } from "./scenery";
+import { buildProps, buildShore, sandbagPileGeometry, updateWind } from "./props";
+import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries, vertexColored } from "./shapes";
 import { buildTerrain, type TerrainView } from "./terrain";
 
@@ -79,10 +82,6 @@ function heroRing(radius: number, leader: boolean): THREE.Mesh {
 }
 
 const BULLET_HEIGHT = 1.1;
-
-function ground(x: number, y: number): number {
-  return Math.max(0, terrainHeight(x, y));
-}
 
 function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
   switch (kind) {
@@ -150,25 +149,46 @@ export class RaidView {
   private readonly focus = new THREE.Vector3();
   private readonly sandbagGeometry = sandbagPileGeometry();
 
+  /** Set when the island being raided is the crew's own (a nightly raid's replay). */
+  private readonly overgrowth: OvergrowthView | null = null;
+  private readonly defending: boolean;
+  private readonly ground: (x: number, y: number) => number;
+
+  /** `home` draws the crew's own island instead: the heroes are then the attackers. */
   constructor(
     layout: IslandLayout,
     state: RaidState,
     private readonly labels: WorldLabels,
+    home?: Pick<CrewLayout, "buildings" | "cleared">,
   ) {
-    const scenery = sceneryMap(layout);
-    this.terrain = buildTerrain(scenery);
-    this.props = buildProps(layout, scenery);
-    this.props.add(buildCamp(layout, scenery));
+    this.defending = home !== undefined;
+    const height = home ? homeHeight : terrainHeight;
+    this.ground = (x, y) => Math.max(0, height(x, y));
+    if (home) {
+      const scenery = homeScenery(HOME_START);
+      this.overgrowth = new OvergrowthView(scenery);
+      this.overgrowth.sync(home);
+      this.terrain = buildTerrain(scenery, { height, shade: this.overgrowth.shade });
+      this.props = new THREE.Group();
+      this.props.add(buildShore(layout.seed, scenery, layout.spawn, height, -0.5));
+      this.root.add(this.overgrowth.root);
+    } else {
+      const scenery = sceneryMap(layout);
+      this.terrain = buildTerrain(scenery);
+      this.props = buildProps(layout, scenery);
+      this.props.add(buildCamp(layout, scenery));
+    }
     this.clouds = buildClouds(layout.seed);
     this.root.add(this.clouds.root, this.aimView.root);
     this.root.add(this.terrain.root, this.props, this.effects.root);
 
     for (const b of state.buildings) {
       const model = buildingModel(b.type);
+      if (home) paintCrew(model.root);
       // Turn each building's front towards the landing beach.
       const toBeach = sub(layout.spawn, b.pos);
       const baseRotation = Math.atan2(toBeach.x, toBeach.y);
-      model.root.position.set(b.pos.x, ground(b.pos.x, b.pos.y), b.pos.y);
+      model.root.position.set(b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y);
       model.root.rotation.y = baseRotation;
       this.root.add(model.root);
       this.buildings.set(b.id, { model, rubble: null, baseRotation });
@@ -183,7 +203,7 @@ export class RaidView {
 
     for (const m of state.mines) {
       const mesh = mineModel();
-      mesh.position.set(m.pos.x, ground(m.pos.x, m.pos.y) + 0.03, m.pos.y);
+      mesh.position.set(m.pos.x, this.ground(m.pos.x, m.pos.y) + 0.03, m.pos.y);
       this.root.add(mesh);
       this.mines.set(m.id, mesh);
     }
@@ -253,7 +273,7 @@ export class RaidView {
   }
 
   private at(pos: Vec2, height: number): THREE.Vector3 {
-    return new THREE.Vector3(pos.x, ground(pos.x, pos.y) + height, pos.y);
+    return new THREE.Vector3(pos.x, this.ground(pos.x, pos.y) + height, pos.y);
   }
 
   update(
@@ -271,12 +291,14 @@ export class RaidView {
     const watched = leader?.alive ? leader : state.heroes.find((h) => h.alive);
     this.focus.set(
       watched?.pos.x ?? 0,
-      watched ? ground(watched.pos.x, watched.pos.y) + 1 : 0,
+      watched ? this.ground(watched.pos.x, watched.pos.y) + 1 : 0,
       watched?.pos.y ?? 0,
     );
     updateWind(time, watched && !watched.inBoat && this.showBars ? this.focus : null);
     this.effects.update(dt);
-    this.aimView.update(state, this.showBars ? leader : undefined, this.aim, ground, time);
+    const aiming = this.showBars && !this.defending ? leader : undefined;
+    this.aimView.update(state, aiming, this.aim, this.ground, time);
+    this.overgrowth?.update(dt);
     this.updateBuildings(state);
     this.updateHeroes(state, dt);
     this.updateProjectiles(state);
@@ -305,9 +327,9 @@ export class RaidView {
       if (!view) continue;
       const { model, ring } = view;
       model.root.visible = !h.inBoat;
-      model.root.position.set(h.pos.x, ground(h.pos.x, h.pos.y), h.pos.y);
-      ring.visible = h.alive && !h.inBoat;
-      ring.position.set(h.pos.x, ground(h.pos.x, h.pos.y) + 0.06, h.pos.y);
+      model.root.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y);
+      ring.visible = h.alive && !h.inBoat && !this.defending;
+      ring.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y) + 0.06, h.pos.y);
       ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
       // Turn smoothly rather than snapping.
       view.facing += angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
@@ -387,12 +409,12 @@ export class RaidView {
       const { from, to, t: elapsed, duration, peak } = p.lob;
       obj.visible = elapsed >= 0;
       const t = Math.max(0, Math.min(1, elapsed / duration));
-      const h0 = ground(from.x, from.y) + 1.6;
-      const h1 = ground(to.x, to.y) + 0.2;
+      const h0 = this.ground(from.x, from.y) + 1.6;
+      const h1 = this.ground(to.x, to.y) + 0.2;
       obj.position.set(p.pos.x, h0 + (h1 - h0) * t + 4 * peak * t * (1 - t), p.pos.y);
       return;
     }
-    obj.position.set(p.pos.x, ground(p.pos.x, p.pos.y) + BULLET_HEIGHT, p.pos.y);
+    obj.position.set(p.pos.x, this.ground(p.pos.x, p.pos.y) + BULLET_HEIGHT, p.pos.y);
     obj.rotation.y = -Math.atan2(p.vel.y, p.vel.x);
   }
 
@@ -413,7 +435,7 @@ export class RaidView {
         fillGeometry,
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false }),
       );
-      const y = ground(p.lob.to.x, p.lob.to.y) + 0.12;
+      const y = this.ground(p.lob.to.x, p.lob.to.y) + 0.12;
       ring.position.set(p.lob.to.x, y, p.lob.to.y);
       fill.position.set(p.lob.to.x, y + 0.01, p.lob.to.y);
       this.root.add(ring, fill);
@@ -433,7 +455,7 @@ export class RaidView {
       let obj = this.zones.get(z.id);
       if (!obj) {
         obj = z.kind === "smoke" ? this.smokeCloud(z.radius) : this.healCircle(z.radius);
-        obj.position.set(z.pos.x, ground(z.pos.x, z.pos.y), z.pos.y);
+        obj.position.set(z.pos.x, this.ground(z.pos.x, z.pos.y), z.pos.y);
         this.root.add(obj);
         this.zones.set(z.id, obj);
       }
@@ -524,7 +546,7 @@ export class RaidView {
       let view = this.turrets.get(t.id);
       if (!view) {
         view = crewTurretModel();
-        view.root.position.set(t.pos.x, ground(t.pos.x, t.pos.y), t.pos.y);
+        view.root.position.set(t.pos.x, this.ground(t.pos.x, t.pos.y), t.pos.y);
         this.root.add(view.root);
         this.turrets.set(t.id, view);
       }
@@ -547,7 +569,7 @@ export class RaidView {
       if (this.tempSandbags.has(o.id)) continue;
       const mesh = new THREE.Mesh(this.sandbagGeometry, vertexColored());
       mesh.castShadow = true;
-      mesh.position.set(o.pos.x, ground(o.pos.x, o.pos.y), o.pos.y);
+      mesh.position.set(o.pos.x, this.ground(o.pos.x, o.pos.y), o.pos.y);
       mesh.rotation.y = -o.rotation;
       this.root.add(mesh);
       this.tempSandbags.set(o.id, mesh);
@@ -581,7 +603,7 @@ export class RaidView {
 
   /** Where a ground point appears on screen, in CSS pixels. */
   screenPosition(pos: Vec2, height: number, camera: THREE.Camera, width: number, h: number) {
-    const v = new THREE.Vector3(pos.x, ground(pos.x, pos.y) + height, pos.y).project(camera);
+    const v = new THREE.Vector3(pos.x, this.ground(pos.x, pos.y) + height, pos.y).project(camera);
     return { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * h, inFront: v.z < 1 };
   }
 
@@ -607,7 +629,7 @@ export class RaidView {
       if (!p.inFront) continue;
       this.labels.place(
         b.id,
-        "enemy",
+        this.defending ? "crew" : "enemy",
         p.x,
         p.y,
         b.hp / b.maxHp,
@@ -625,7 +647,8 @@ export class RaidView {
         width,
         height,
       );
-      if (p.inFront) this.labels.place(h.id, "crew", p.x, p.y, h.hp / h.maxHp, false, h.maxHp);
+      const style = this.defending ? "enemy" : "crew";
+      if (p.inFront) this.labels.place(h.id, style, p.x, p.y, h.hp / h.maxHp, false, h.maxHp);
     }
     for (const t of state.turrets) {
       const p = this.screenPosition(t.pos, 1.7, camera, width, height);
@@ -640,6 +663,11 @@ export class RaidView {
   }
 
   dispose(): void {
+    // The plants share geometry and materials with other views: dispose them separately.
+    if (this.overgrowth) {
+      this.root.remove(this.overgrowth.root);
+      this.overgrowth.dispose();
+    }
     this.clouds.dispose();
     this.aimView.dispose();
     for (const { ring } of this.heroes.values()) {

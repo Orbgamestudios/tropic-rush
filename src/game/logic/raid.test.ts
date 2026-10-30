@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { BUILDINGS } from "./buildings";
+import { generateIsland } from "./enemyBase";
 import { abilityCost, START_ENERGY } from "./gunboat";
 import type { HeroKind } from "./heroes";
-import { generateIsland, type IslandLayout, isOnLand, type PlacedBuilding } from "./island";
+import { type IslandLayout, isOnLand, type PlacedBuilding } from "./island";
 import {
   createRaid,
   destructionPercent,

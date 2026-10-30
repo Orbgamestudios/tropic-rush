@@ -517,6 +517,14 @@
   filter: grayscale(1) brightness(0.55);
 }
 
+.heroes-island-hq {
+  margin-left: 3px;
+  font-family: var(--display);
+  font-size: 10px;
+  color: var(--gold-text);
+  text-shadow: var(--outline-thin);
+}
+
 .heroes-island-name {
   font-family: var(--display);
   font-size: 11px;
@@ -832,6 +840,68 @@
     gap: 4px;
     padding: 8px 14px 12px;
   }
+}
+
+/* ---------- Night raid replay ---------- */
+
+.replay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Moonlight: the whole island goes cool and dark. A plain see-through layer, because this UI
+   layer is isolated from the 3D view and a blend mode wouldn't reach it. */
+.replay-tint {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, rgb(16 28 74 / 0.34), rgb(8 14 44 / 0.62));
+}
+
+.replay-bar {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 10px 6px 14px;
+  border: 2px solid var(--brass-mid);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgb(19 34 59 / 0.94), rgb(7 14 27 / 0.94));
+  box-shadow: 0 0 0 1.5px var(--ink);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.replay-title {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold-text);
+  text-shadow: var(--outline-thin);
+}
+
+.replay-stats {
+  display: flex;
+  gap: 12px;
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--cream);
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.replay-controls .ui-btn.selected {
+  --f-hi: var(--navy-400);
+  --f-mid: var(--navy-500);
+  --f-lo: var(--navy-600);
 }
 
 /* ---------- Pause ---------- */

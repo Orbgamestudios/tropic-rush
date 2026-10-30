@@ -146,6 +146,11 @@ export function allowedCount(type: BuildingType, hqLevel: number): number {
   return count;
 }
 
+/** How much a building's health and damage are multiplied by at a level, in a raid. */
+export function buildingPower(level: number): number {
+  return 1 + 0.12 * (Math.max(1, level) - 1);
+}
+
 /** The highest level a building can reach at this headquarters level. */
 export function levelCap(type: BuildingType, hqLevel: number): number {
   const p = PROGRESSION[type];
