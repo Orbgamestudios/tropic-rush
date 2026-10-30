@@ -20,7 +20,8 @@ import {
   rubbleModel,
 } from "./models";
 import { COLORS } from "./palette";
-import { buildProps, sandbagPileGeometry } from "./props";
+import { buildProps, sandbagPileGeometry, updateWind } from "./props";
+import { sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries, vertexColored } from "./shapes";
 import { buildTerrain, type TerrainView } from "./terrain";
 
@@ -35,6 +36,43 @@ interface HeroView {
   walk: number;
   fallen: number;
   facing: number;
+  ring: THREE.Mesh;
+}
+
+/** A glowing ring on the ground under a hero: bright green for you, blue for squadmates. */
+function heroRing(radius: number, leader: boolean): THREE.Mesh {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const g = canvas.getContext("2d");
+  if (g) {
+    const c = size / 2;
+    const color = leader ? "70, 235, 110" : "80, 175, 255";
+    // A crisp ring with a soft glow either side, clear in the middle.
+    const glow = g.createRadialGradient(c, c, c * 0.5, c, c, c);
+    glow.addColorStop(0, `rgba(${color}, 0)`);
+    glow.addColorStop(0.55, `rgba(${color}, 0.12)`);
+    glow.addColorStop(0.78, `rgba(${color}, 0.9)`);
+    glow.addColorStop(0.84, `rgba(${color}, 0.9)`);
+    glow.addColorStop(0.92, `rgba(${color}, 0.25)`);
+    glow.addColorStop(1, `rgba(${color}, 0)`);
+    g.fillStyle = glow;
+    g.fillRect(0, 0, size, size);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(radius * 2, radius * 2),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+    }),
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 2;
+  return mesh;
 }
 
 const BULLET_HEIGHT = 1.1;
@@ -101,6 +139,7 @@ export class RaidView {
   private readonly boat: { root: THREE.Group; cannon: THREE.Object3D };
   private readonly boatHeading: number;
   private cannonAim: number;
+  private ringPulse = 0;
   private readonly sandbagGeometry = sandbagPileGeometry();
 
   constructor(
@@ -108,8 +147,9 @@ export class RaidView {
     state: RaidState,
     private readonly labels: WorldLabels,
   ) {
-    this.terrain = buildTerrain();
-    this.props = buildProps(layout);
+    const scenery = sceneryMap(layout);
+    this.terrain = buildTerrain(scenery);
+    this.props = buildProps(layout, scenery);
     this.root.add(this.terrain.root, this.props, this.effects.root);
 
     for (const b of state.buildings) {
@@ -123,11 +163,12 @@ export class RaidView {
       this.buildings.set(b.id, { model, rubble: null, baseRotation });
     }
 
-    for (const h of state.heroes) {
+    state.heroes.forEach((h, i) => {
       const model = heroModel(h.kind);
-      this.root.add(model.root);
-      this.heroes.set(h.id, { model, walk: 0, fallen: 0, facing: h.facing });
-    }
+      const ring = heroRing(HEROES[h.kind].radius * 2 + (i === 0 ? 0.5 : 0.2), i === 0);
+      this.root.add(model.root, ring);
+      this.heroes.set(h.id, { model, walk: 0, fallen: 0, facing: h.facing, ring });
+    });
 
     for (const m of state.mines) {
       const mesh = mineModel();
@@ -213,6 +254,7 @@ export class RaidView {
     height: number,
   ): void {
     this.terrain.update(time);
+    updateWind(time);
     this.effects.update(dt);
     this.updateBuildings(state);
     this.updateHeroes(state, dt);
@@ -236,12 +278,16 @@ export class RaidView {
   }
 
   private updateHeroes(state: RaidState, dt: number): void {
+    this.ringPulse += dt;
     for (const h of state.heroes) {
       const view = this.heroes.get(h.id);
       if (!view) continue;
-      const { model } = view;
+      const { model, ring } = view;
       model.root.visible = !h.inBoat;
       model.root.position.set(h.pos.x, ground(h.pos.x, h.pos.y), h.pos.y);
+      ring.visible = h.alive && !h.inBoat;
+      ring.position.set(h.pos.x, ground(h.pos.x, h.pos.y) + 0.06, h.pos.y);
+      ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
       // Turn smoothly rather than snapping.
       view.facing += angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
       model.root.rotation.y = -view.facing;
@@ -573,6 +619,11 @@ export class RaidView {
   }
 
   dispose(): void {
+    for (const { ring } of this.heroes.values()) {
+      const m = ring.material as THREE.MeshBasicMaterial;
+      m.map?.dispose();
+      m.dispose();
+    }
     this.labels.clear();
     this.terrain.dispose();
     this.effects.dispose();

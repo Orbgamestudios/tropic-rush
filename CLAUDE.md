@@ -35,9 +35,13 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   - `buildings.ts`: building stats and the HQ-level table.
   - `heroes.ts`: hero stats.
   - `gunboat.ts`: gunboat abilities and energy costs.
+  - `squad.ts`: the AI squadmates' input (heroes 1 and up when raiding without friends).
 - `src/game/render/`: Three.js. It draws the state and never changes it.
   - `raidView.ts` mirrors a raid into the scene and turns events into effects.
-  - `models.ts` holds the placeholder models (swap these for GLBs).
+  - `models.ts` holds the placeholder building models; `heroModels.ts` the hero models (swap
+    these for GLBs).
+  - `scenery.ts` maps the trail, the base's clearing and the jungle; `terrain.ts` (ground and
+    shader sea) and `props.ts` (instanced, wind-swayed plants in culled chunks) use it.
   - `cameraRig.ts` is the MOBA follow camera, the gunboat view and the menu orbit.
 - `src/game/ui/`: HTML HUD, menus and floating health bars.
 - `src/game/controls.ts`: touch sticks, mouse and keyboard turned into `HeroInput`.

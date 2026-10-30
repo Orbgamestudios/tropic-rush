@@ -24,7 +24,12 @@ export interface SaveData {
   heroLevels: Record<HeroKind, number>;
   /** Heroes this player can pick. */
   unlocked: HeroKind[];
+  /** AI squadmates brought along on raids (unlocked heroes, at most MAX_SQUAD). */
+  squad: HeroKind[];
 }
+
+/** AI squadmates fill the other crew seats: a crew is up to 5 heroes. */
+export const MAX_SQUAD = 4;
 
 const starters = (): HeroKind[] => HERO_KINDS.filter((k) => STARTER_HEROES.includes(k));
 
@@ -43,7 +48,15 @@ const DEFAULT_SAVE: SaveData = {
   medals: 0,
   heroLevels: startLevels(),
   unlocked: starters(),
+  squad: starters().slice(1),
 };
+
+const fresh = (): SaveData => ({
+  ...DEFAULT_SAVE,
+  heroLevels: startLevels(),
+  unlocked: starters(),
+  squad: [...DEFAULT_SAVE.squad],
+});
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 
@@ -60,7 +73,7 @@ function text(value: unknown, max: number): string {
 export function loadSave(storage: Storage = localStorage): SaveData {
   try {
     const raw = storage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SAVE, heroLevels: startLevels(), unlocked: starters() };
+    if (!raw) return fresh();
     const parsed: Partial<Record<keyof SaveData, unknown>> = JSON.parse(raw);
     const hero = HERO_KINDS.find((k) => k === parsed.hero) ?? DEFAULT_SAVE.hero;
     const level = count(parsed.level, 3);
@@ -83,9 +96,12 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       medals: count(parsed.medals),
       heroLevels,
       unlocked,
+      squad: Array.isArray(parsed.squad)
+        ? unlocked.filter((k) => (parsed.squad as unknown[]).includes(k)).slice(0, MAX_SQUAD)
+        : DEFAULT_SAVE.squad,
     };
   } catch {
-    return { ...DEFAULT_SAVE, heroLevels: startLevels(), unlocked: starters() };
+    return fresh();
   }
 }
 

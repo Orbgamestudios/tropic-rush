@@ -10,6 +10,111 @@
   align-items: flex-start;
 }
 
+/* Squad: the AI squadmates' portraits in a row under the hero card. */
+.hud-squad {
+  position: absolute;
+  left: 14px;
+  top: 82px;
+  display: flex;
+  gap: 9px;
+}
+
+.hud-mate {
+  position: relative;
+  width: 40px;
+}
+
+.hud-mate-frame {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border: 2.5px solid var(--ink);
+  border-radius: 11px;
+  padding: 2px;
+  box-sizing: border-box;
+  background: linear-gradient(170deg, #dce5f0, #8d9eb6 55%, #5f7089);
+  box-shadow:
+    inset 0 1.5px 0 rgb(255 255 255 / 0.7),
+    0 4px 8px rgb(5 10 20 / 0.4);
+  overflow: hidden;
+  transition: transform 0.12s;
+}
+
+.hud-mate-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  object-fit: cover;
+  background: radial-gradient(circle at 50% 35%, #8fb0d8, #4a6488 60%, #2c3c57);
+}
+
+.hud-mate.hit .hud-mate-frame {
+  background: linear-gradient(170deg, #ffd0c4, #e5503a 60%, #8e2414);
+}
+
+.hud-mate-ko {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  font-family: var(--display);
+  font-size: 15px;
+  color: #ff6a52;
+  text-shadow: var(--outline-thin);
+  background: rgb(20 10 10 / 0.35);
+}
+
+.hud-mate.down .hud-mate-img {
+  filter: grayscale(1) brightness(0.5);
+}
+
+.hud-mate.down .hud-mate-ko {
+  display: grid;
+}
+
+.hud-mate-level {
+  left: -7px;
+  bottom: 2px;
+  width: 19px;
+  height: 19px;
+}
+
+.hud-mate-level .ui-level-num {
+  font-size: 10px;
+}
+
+.hud-mate-bar {
+  position: relative;
+  height: 7px;
+  margin-top: 3px;
+  border: 1.5px solid var(--ink);
+  border-radius: 4px;
+  background: #2a3446;
+  overflow: hidden;
+}
+
+.hud-mate-fill,
+.hud-mate-lag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.hud-mate-lag {
+  background: #fff3c4;
+}
+
+.hud-mate-fill {
+  background: linear-gradient(180deg, var(--green-hi), var(--green));
+  transition: width 0.1s;
+}
+
+.hud-mate-fill.low {
+  background: linear-gradient(180deg, #ff9a7a, var(--red));
+}
+
 .hud-portrait {
   position: relative;
   z-index: 1;

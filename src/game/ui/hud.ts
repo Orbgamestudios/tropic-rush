@@ -1,5 +1,6 @@
 // The in-raid HUD, in HTML over the 3D view:
-// - top-left: the hero's portrait card with level badge, health and super bars
+// - top-left: the hero's portrait card with level badge, health and super bars, and under it
+//   the squad's portraits with their health
 // - top-middle: time left and how much of the island is destroyed
 // - top-right: pause, a live minimap, gunboat energy and the loot so far
 // - bottom-middle: the gunboat's abilities; bottom-right: super and gunboat buttons (the move
@@ -7,7 +8,7 @@
 // - an arrow at the screen edge pointing back to the gunboat when it's out of view
 
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
-import { HEROES, type SuperKind } from "../logic/heroes";
+import { HEROES, type HeroKind, type SuperKind } from "../logic/heroes";
 import { HERO_NAMES, raidReward } from "../logic/heroProgress";
 import { shoreRadius } from "../logic/island";
 import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
@@ -90,6 +91,15 @@ export class Hud {
   private mapTimer = 0;
   private superKind: SuperKind | null = null;
   private onFoot = true;
+  private readonly squadBox = el("div", "hud-squad");
+  private squad: {
+    root: HTMLElement;
+    fill: HTMLElement;
+    lag: HTMLElement;
+    lagHp: number;
+    alive: boolean;
+    kind: HeroKind;
+  }[] = [];
 
   constructor(parent: HTMLElement, handlers: HudHandlers) {
     // Hero card.
@@ -185,6 +195,7 @@ export class Hud {
 
     this.root.append(
       card,
+      this.squadBox,
       objective,
       right,
       trayBox,
@@ -211,6 +222,28 @@ export class Hud {
     this.level.replaceChildren(levelBadge(level));
     this.lastHp = -1;
     this.superKind = null;
+  }
+
+  /** The AI squadmates' portraits, in the same order as state.heroes[1..]. */
+  setSquad(mates: readonly { kind: HeroKind; level: number; portrait: Promise<string> }[]): void {
+    this.squad = mates.map((mate) => {
+      const root = el("div", "hud-mate");
+      const frame = el("div", "hud-mate-frame");
+      const img = el("img", "hud-mate-img");
+      img.alt = "";
+      void mate.portrait.then((url) => {
+        img.src = url;
+      });
+      frame.append(img, el("div", "hud-mate-ko", "KO"));
+      const bar = el("div", "hud-mate-bar");
+      const lag = el("div", "hud-mate-lag");
+      const fill = el("div", "hud-mate-fill");
+      bar.append(lag, fill);
+      root.append(frame, levelBadge(mate.level, "hud-mate-level"), bar);
+      root.title = HERO_NAMES[mate.kind];
+      return { root, fill, lag, lagHp: 1, alive: true, kind: mate.kind };
+    });
+    this.squadBox.replaceChildren(...this.squad.map((m) => m.root));
   }
 
   flash(message: string): void {
@@ -303,6 +336,23 @@ export class Hud {
       this.arrow.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       this.arrow.style.setProperty("--angle", `${angle}rad`);
     }
+
+    // Squad portraits.
+    this.squad.forEach((mate, i) => {
+      const h = state.heroes[i + 1];
+      if (!h) return;
+      const fraction = h.alive ? Math.max(0, h.hp / h.maxHp) : 0;
+      mate.lagHp = Math.max(fraction, mate.lagHp - dt * 0.35);
+      mate.fill.style.width = `${fraction * 100}%`;
+      mate.lag.style.width = `${mate.lagHp * 100}%`;
+      mate.fill.classList.toggle("low", fraction < 0.3);
+      mate.root.classList.toggle("hit", h.alive && fraction < mate.lagHp - 0.01);
+      if (mate.alive && !h.alive) {
+        mate.alive = false;
+        mate.root.classList.add("down");
+        this.flash(`${HERO_NAMES[mate.kind]} is down!`);
+      }
+    });
 
     this.mapTimer -= dt;
     if (this.mapTimer <= 0) {

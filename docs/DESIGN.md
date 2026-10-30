@@ -304,14 +304,30 @@ The look:
   - the super ability
   - a target-island picker
   - LEVEL UP (gold) or UNLOCK (medals), and RAID!
+  - a SQUAD column: tap + to bring up to 4 unlocked heroes as AI squadmates, tap one to drop it.
+    Choosing a squadmate as your hero swaps the two.
 - **Raid HUD:**
   - a portrait card with health and super bars
+  - the squad's portraits under it, with health bars and a KO mark when one falls
   - a timer and destruction plate
   - pause, a live minimap, and energy and loot pills
   - a MOVE stick and a FIRE pad resting in the corners
   - Super and gunboat buttons
   - a gunboat ability tray
   - damage numbers over hits
+  - a glowing ring under your hero (green) and each squadmate (blue)
+- **Raid scenery:** the island looks like the jungle and beach mockups:
+  - a dirt trail from the landing beach up to the HQ
+  - dense jungle (broadleaf trees, palms, elephant-ear plants) crowding in around the base's
+    clearing, kept clear of the trail and the landing area so the crew can see where it's going
+  - ferns, flowers and grass across the open ground, bare rock on steep slopes
+  - driftwood, starfish and shells on the beach
+  - a shader sea with clear turquoise shallows, ripples, glints and rolling foam
+  - plants sway in the wind
+    The jungle is scenery only: heroes walk through it, and it never blocks shots.
+- **Heroes:** each hero is now a detailed toy-style model (face, hair and headgear, jointed arms
+  holding their own weapon, belts, backpacks). The Rifleman also has a real GLB model on the
+  hero-select pedestal. All of them still wait for final art.
 - **Pause and results:** a pause menu (resume, sound, retreat). The results show a
   VICTORY/DEFEAT banner, stars that stamp in, stats, and loot counting up.
 - **Crew island:** the same style, with:
@@ -341,6 +357,16 @@ The look:
   - Mr. Pemberton (Grenadier)
   - Gus (Engineer)
 - Stars: 1 for 50% destroyed, 1 for the HQ (the win), and 1 for 100%.
+- **AI squadmates** (built as a draft, 2026-10-30, after the mockups showed a squad): when you
+  raid without friends, AI heroes fill the other crew seats. They are whole heroes at their own
+  level, not the troop squads listed as out of scope.
+  - They follow you, fight buildings near you (defenses first), side-step cover and fire their
+    supers when charged. The Medic heals whoever is hurt.
+  - They never board the gunboat.
+  - If you go down, the camera follows a squadmate and the raid goes on until they all fall.
+  - They count as crew for the rules, so a full squad makes islands easier. Nothing scales the
+    loot down for it yet.
+  - Open: should real crewmates replace them seat by seat once co-op raids exist?
 
 ## World map
 

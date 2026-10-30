@@ -32,6 +32,7 @@ const DEFAULTS: SaveData = {
   medals: 0,
   heroLevels: LEVELS,
   unlocked: ["rifleman", "medic", "heavy"],
+  squad: ["medic", "heavy"],
 };
 
 describe("save", () => {
@@ -49,6 +50,7 @@ describe("save", () => {
       medals: 5,
       heroLevels: { ...LEVELS, grenadier: 4 },
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
+      squad: ["medic", "grenadier"],
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
@@ -59,6 +61,15 @@ describe("save", () => {
     expect(loadSave(storage)).toEqual(DEFAULTS);
     storage.items.set("tropic-rush:save:v1", "{not json");
     expect(loadSave(storage)).toEqual(DEFAULTS);
+  });
+
+  it("keeps only unlocked heroes in the squad", () => {
+    const storage = memoryStorage();
+    storage.items.set(
+      "tropic-rush:save:v1",
+      JSON.stringify({ squad: ["tank", "medic", "wizard", "heavy"] }),
+    );
+    expect(loadSave(storage).squad).toEqual(["medic", "heavy"]);
   });
 
   it("repairs unknown heroes and out-of-range numbers", () => {

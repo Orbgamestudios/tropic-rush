@@ -20,6 +20,7 @@ import {
   type RaidState,
   stepRaid,
 } from "./logic/raid";
+import { squadInput } from "./logic/squad";
 import { distance, lerp, vec } from "./logic/vec";
 import { CameraRig } from "./render/cameraRig";
 import { buildHomeIsland, HOME_CENTER, type HomeIslandView } from "./render/homeIsland";
@@ -66,6 +67,7 @@ export class Game {
   private phase: Phase = "title";
   private paused = false;
   private state: RaidState | null = null;
+  private playerDown = false;
   private view: RaidView | null = null;
   private islandLevel = 1;
   private controlMode: ControlMode = "off";
@@ -102,10 +104,17 @@ export class Game {
       save: () => this.save,
       update: (changes) => this.updateSave(changes),
       onBack: () => this.go(() => this.showTitle()),
-      onStart: (hero, level) => this.go(() => this.startRaid(hero, level)),
+      onStart: (hero, level, squad) => this.go(() => this.startRaid(hero, level, squad)),
     });
     this.results = new ResultsScreen(screens, {
-      onAgain: () => this.go(() => this.startRaid(this.save.hero, this.save.level)),
+      onAgain: () =>
+        this.go(() =>
+          this.startRaid(
+            this.save.hero,
+            this.save.level,
+            this.save.squad.filter((k) => k !== this.save.hero),
+          ),
+        ),
       onHeroes: () => this.go(() => this.showHeroes()),
       onHome: () => this.go(() => this.showTitle()),
     });
@@ -154,7 +163,7 @@ export class Game {
       },
       advance: (seconds: number, input: Partial<HeroInput> = {}) => {
         for (let t = 0; t < seconds && this.phase === "raid" && this.state; t += SIM_STEP) {
-          stepRaid(this.state, [{ ...IDLE_INPUT, ...input }], SIM_STEP);
+          stepRaid(this.state, this.inputs({ ...IDLE_INPUT, ...input }), SIM_STEP);
           this.view?.handleEvents(this.state.events, this.state);
         }
       },
@@ -224,14 +233,19 @@ export class Game {
     this.state = null;
   }
 
-  private startRaid(hero: HeroKind, level: number): void {
+  private startRaid(hero: HeroKind, level: number, squad: readonly HeroKind[] = []): void {
     this.updateSave({ hero, level });
     this.endRaidWorld();
     this.hideScreens();
     this.backdrop.root.visible = false;
     this.islandLevel = level;
     const layout = generateIsland(randomSeed(), level);
-    const state = createRaid(layout, [hero], [heroPower(this.save.heroLevels[hero])]);
+    const kinds = [hero, ...squad.filter((k) => k !== hero && this.save.unlocked.includes(k))];
+    const state = createRaid(
+      layout,
+      kinds,
+      kinds.map((k) => heroPower(this.save.heroLevels[k])),
+    );
     this.state = state;
     this.view = new RaidView(layout, state, this.labels);
     this.stage.scene.add(this.view.root);
@@ -245,6 +259,12 @@ export class Game {
     this.rig.snap(layout.spawn);
     this.setControlMode("hero");
     this.hud.setHero(heroPortrait(hero), this.save.heroLevels[hero]);
+    this.hud.setSquad(
+      kinds
+        .slice(1)
+        .map((k) => ({ kind: k, level: this.save.heroLevels[k], portrait: heroPortrait(k) })),
+    );
+    this.playerDown = false;
     this.hud.show(true);
     this.hud.flash("Destroy the headquarters!");
   }
@@ -277,6 +297,13 @@ export class Game {
 
   private player(): RaidHero | undefined {
     return this.state?.heroes[0];
+  }
+
+  /** The player's input plus the AI squadmates'. */
+  private inputs(player: HeroInput): HeroInput[] {
+    const state = this.state;
+    if (!state) return [player];
+    return state.heroes.map((_, i) => (i === 0 ? player : squadInput(state, i)));
   }
 
   /** The title screen's camera: a slow circle high above the home island. */
@@ -323,7 +350,7 @@ export class Game {
           this.phase === "raid"
             ? this.controls.read(hero.pos, HEROES[hero.kind].attack.range)
             : IDLE_INPUT;
-        stepRaid(state, [input], SIM_STEP);
+        stepRaid(state, this.inputs(input), SIM_STEP);
         view.handleEvents(state.events, state);
         this.accumulator -= SIM_STEP;
       }
@@ -343,7 +370,13 @@ export class Game {
     if (this.phase === "raid" && state.status !== "playing") this.endRaid();
     if (this.phase === "ended" && !this.resultShown && now >= this.resultsAt) this.showResults();
 
-    this.rig.update(dt, hero.pos, vec(0, -3));
+    if (!hero.alive && !this.playerDown && this.phase === "raid") {
+      this.playerDown = true;
+      if (state.heroes.some((h) => h.alive)) this.hud.flash("You're down! Your squad fights on");
+    }
+    // Once the player is down, watch whoever is still fighting.
+    const watched = hero.alive ? hero : (state.heroes.find((h) => h.alive) ?? hero);
+    this.rig.update(dt, watched.pos, vec(0, -3));
     view.update(
       state,
       this.paused ? 0 : dt,
