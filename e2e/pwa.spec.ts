@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { preview } from "vite";
 
 test("boots without errors and fills the screen", async ({ page }) => {
@@ -18,6 +18,14 @@ test("boots without errors and fills the screen", async ({ page }) => {
   expect(box?.height).toBeCloseTo(viewport?.height ?? 0, 0);
   expect(errors).toEqual([]);
 });
+
+async function openMap(page: Page): Promise<void> {
+  await page.goto("/?testhooks");
+  await page.evaluate(() =>
+    (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
+  );
+  await page.getByRole("button", { name: "Raid", exact: true }).click();
+}
 
 test("picks a hero and starts a raid", async ({ page }) => {
   const errors: string[] = [];
@@ -44,21 +52,30 @@ test("scouts an island, then attacks it", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.goto("/?testhooks");
-  await page.evaluate(() =>
-    (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
-  );
-  await page.getByRole("button", { name: "Raid", exact: true }).click();
+  await openMap(page);
   await page.locator(".map-pin").first().click();
   await page.getByRole("button", { name: "Scout" }).click();
+  await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
 
-  await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 40_000 });
-  await page.getByRole("button", { name: "Back to map" }).click();
-  await page.locator(".map-pin").first().click();
-  await page.getByRole("button", { name: "Scout" }).click();
-  await page.getByRole("button", { name: "Attack" }).click();
+  await page.locator(".scout-attack").click();
+  await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".scout-tile").first()).toBeHidden();
+  expect(errors).toEqual([]);
+});
 
-  await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 40_000 });
+test("backs out of scouting and scouts again", async ({ page }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await openMap(page);
+  for (let round = 0; round < 2; round++) {
+    await page.locator(".map-pin").first().click();
+    await page.getByRole("button", { name: "Scout" }).click();
+    await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Back to map" }).click();
+    await expect(page.locator(".map-pin").first()).toBeVisible({ timeout: 60_000 });
+  }
   expect(errors).toEqual([]);
 });
 
