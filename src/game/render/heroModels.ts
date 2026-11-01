@@ -6,13 +6,50 @@
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
 import { COLORS as C, material } from "./palette";
+import { AT_EASE, RiflemanAnimator } from "./riflemanAnimator";
 import { at, ball, barrel, capsule, cone, cyl, mesh, rbox } from "./shapes";
+
+type Pair = [THREE.Object3D, THREE.Object3D];
+
+/** One of the Rifleman's arms: the shoulder is fixed, the rest is laid out by inverse kinematics. */
+export interface RifleArm {
+  shoulder: THREE.Vector3;
+  upper: THREE.Object3D;
+  fore: THREE.Object3D;
+  hand: THREE.Object3D;
+  upperLength: number;
+  foreLength: number;
+  /** Where the hand ends up when he's down. */
+  rest: THREE.Vector3;
+}
+
+/** The joints riflemanAnimator.ts moves. */
+export interface RifleRig {
+  outer: THREE.Group;
+  /** Hips and legs, which turn towards the way he's going. */
+  lower: THREE.Group;
+  /** Chest, head and arms, which stay on his aim. */
+  upper: THREE.Group;
+  /** How high the waist is. */
+  spine: number;
+  head: THREE.Group;
+  legs: Pair;
+  knees: Pair;
+  feet: Pair;
+  rifle: THREE.Group;
+  /** The end of the barrel. */
+  muzzle: THREE.Object3D;
+  right: RifleArm;
+  left: RifleArm;
+}
 
 export interface HeroModel {
   root: THREE.Group;
   /** Bobs and leans while moving. */
   body: THREE.Group;
-  legs: [THREE.Object3D, THREE.Object3D] | null;
+  legs: Pair | null;
+  /** Only the Rifleman has a full rig so far. */
+  rig: RifleRig | null;
   /** The Medic's healing spray, shown while she fires. */
   spray: THREE.Object3D | null;
   /** Height of the top of the model, for health bars. */
@@ -175,38 +212,68 @@ function helmet(r: number, color: number, trim: number): THREE.Group {
 }
 
 interface Built {
+  outer: THREE.Group;
+  lower: THREE.Group;
+  upper: THREE.Group;
+  spine: number;
+  /** Inside the upper body, in feet-up coordinates: where gear goes. */
   body: THREE.Group;
-  legs: [THREE.Object3D, THREE.Object3D];
+  legs: Pair;
+  knees: Pair;
+  feet: Pair;
   head: THREE.Group;
   /** Where the hands hold the weapon (center between both hands). */
   grip: THREE.Vector3;
   headRadius: number;
   look: Look;
+  /** Right, then left: only when the arms are left loose for animation. */
+  arms: RifleArm[];
 }
 
 /** The shared body: boots, legs, belt, torso, neck, head with a face, arms reaching the grip. */
-function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof face>[3]): Built {
+function person(
+  kind: Human,
+  grip: THREE.Vector3,
+  faceOptions: Parameters<typeof face>[3],
+  loose = false,
+): Built {
   const look = LOOKS[kind];
   const k = look.bulk;
-  const body = new THREE.Group();
+  const outer = new THREE.Group();
+  const lower = new THREE.Group();
+  outer.add(lower);
 
   const hip = 0.74;
+  // The upper body turns about the waist. `body` inside it keeps the feet-up coordinates, so gear
+  // can be placed as if nothing were jointed.
+  const spine = hip + 0.2;
+  const upper = at(new THREE.Group(), 0, spine, 0);
+  const body = at(new THREE.Group(), 0, -spine, 0);
+  upper.add(body);
+  outer.add(upper);
+
   const makeLeg = (z: number) => {
     const pivot = at(new THREE.Group(), 0, hip, z);
-    pivot.add(at(capsule(0.14 * Math.sqrt(k), 0.36, look.pants), 0, -0.28, 0));
-    pivot.add(at(capsule(0.15 * Math.sqrt(k), 0.04, look.pants), 0, -0.48, 0));
+    pivot.add(at(capsule(0.14 * Math.sqrt(k), 0.16, look.pants), 0, -0.16, 0));
+    const knee = at(new THREE.Group(), 0, -0.36, 0);
+    knee.add(at(capsule(0.135 * Math.sqrt(k), 0.14, look.pants), 0, -0.13, 0));
     // Boot with a darker sole and the toe forward.
-    pivot.add(at(rbox(0.36, 0.2, 0.25, look.boots), 0.06, -0.63, 0));
-    pivot.add(at(rbox(0.38, 0.06, 0.27, 0x231a14), 0.06, -0.72, 0));
-    body.add(pivot);
-    return pivot;
+    const foot = at(new THREE.Group(), 0, -0.27, 0);
+    foot.add(at(rbox(0.36, 0.2, 0.25, look.boots), 0.06, 0, 0));
+    foot.add(at(rbox(0.38, 0.06, 0.27, 0x231a14), 0.06, -0.09, 0));
+    knee.add(foot);
+    pivot.add(knee);
+    lower.add(pivot);
+    return { pivot, knee, foot };
   };
-  const legs: [THREE.Object3D, THREE.Object3D] = [makeLeg(0.15 * k), makeLeg(-0.15 * k)];
+  const right = makeLeg(0.15 * k);
+  const left = makeLeg(-0.15 * k);
+  const legs: Pair = [right.pivot, left.pivot];
 
   // Hips and belt with a buckle and pouches.
-  body.add(at(rbox(0.46 * Math.sqrt(k), 0.24, 0.56 * k, look.pants), 0, hip + 0.06, 0));
-  body.add(at(rbox(0.5 * Math.sqrt(k), 0.1, 0.6 * k, 0x5a3d26), 0, hip + 0.17, 0));
-  body.add(
+  lower.add(at(rbox(0.46 * Math.sqrt(k), 0.24, 0.56 * k, look.pants), 0, hip + 0.06, 0));
+  lower.add(at(rbox(0.5 * Math.sqrt(k), 0.1, 0.6 * k, 0x5a3d26), 0, hip + 0.17, 0));
+  lower.add(
     at(
       rbox(0.06, 0.1, 0.12, C.gold, { roughness: 0.3, metalness: 0.6 }),
       0.25 * Math.sqrt(k),
@@ -215,7 +282,7 @@ function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof
     ),
   );
   for (const z of [0.2, -0.2])
-    body.add(at(rbox(0.14, 0.15, 0.13, C.khaki), 0.2 * Math.sqrt(k), hip + 0.12, z * k));
+    lower.add(at(rbox(0.14, 0.15, 0.13, C.khaki), 0.2 * Math.sqrt(k), hip + 0.12, z * k));
 
   // Torso: a rounded block, wider at the shoulders.
   const torso = rbox(0.44 * Math.sqrt(k), 0.5, 0.6 * k, look.shirt);
@@ -236,11 +303,25 @@ function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof
 
   // Arms from the shoulders to the hands on the weapon.
   const sleeve = look.bareArms ? look.skin : look.shirt;
+  const arms: RifleArm[] = [];
   for (const side of [1, -1]) {
     const shoulder = v(0, hip + 0.64, side * 0.36 * k);
     const hand = v(grip.x + (side > 0 ? 0.12 : -0.12), grip.y, grip.z + side * 0.08);
     const elbow = v(0.06, hip + 0.32, side * 0.4 * k);
     body.add(at(ball(0.13 * Math.sqrt(k), look.shirt, 12), shoulder.x, shoulder.y, shoulder.z));
+    if (loose) {
+      // Upright capsules the animator lays along each arm bone, and a hand it moves.
+      const upperLength = 0.34;
+      const foreLength = 0.36;
+      const upperArm = capsule(0.09 * Math.sqrt(k), upperLength, sleeve);
+      const fore = capsule(0.085 * Math.sqrt(k), foreLength, sleeve);
+      fore.add(at(capsule(0.1, 0.05, look.shirt), 0, -foreLength * 0.26, 0));
+      const palm = ball(0.1, 0x4a3a2c, 10);
+      body.add(upperArm, fore, palm);
+      const rest = v(0.02, hip - 0.02, side * 0.46 * k);
+      arms.push({ shoulder, upper: upperArm, fore, hand: palm, upperLength, foreLength, rest });
+      continue;
+    }
     body.add(limb(shoulder, elbow, 0.09 * Math.sqrt(k), sleeve));
     body.add(limb(elbow, hand, 0.085 * Math.sqrt(k), look.bareArms ? look.skin : sleeve));
     if (!look.bareArms) {
@@ -255,7 +336,23 @@ function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof
     }
     body.add(at(ball(0.1, 0x4a3a2c, 10), hand.x, hand.y, hand.z));
   }
-  return { body, legs, head, grip, headRadius: r, look };
+  const knees: Pair = [right.knee, left.knee];
+  const feet: Pair = [right.foot, left.foot];
+  return {
+    outer,
+    lower,
+    upper,
+    spine,
+    body,
+    legs,
+    knees,
+    feet,
+    head,
+    grip,
+    headRadius: r,
+    look,
+    arms,
+  };
 }
 
 /** A strap across the chest from one shoulder to the opposite hip. */
@@ -389,9 +486,10 @@ function grenade(color = 0x6d7a45): THREE.Group {
 function human(kind: Human): HeroModel {
   let spray: THREE.Object3D | null = null;
   let built: Built;
+  let gun: THREE.Group | null = null;
   switch (kind) {
     case "rifleman": {
-      built = person(kind, v(0.42, 1.0, 0.02), { brows: "stern", mouth: "line" });
+      built = person(kind, v(0.42, 1.0, 0.02), { brows: "stern", mouth: "line" }, true);
       const { head, headRadius: r, body } = built;
       head.add(at(helmet(r, C.crewBlue, C.crewBlueDark), 0, 0, 0));
       // A grey moustache and stubbly chin.
@@ -399,7 +497,8 @@ function human(kind: Human): HeroModel {
       head.add(at(tache, r * 0.98, -r * 0.24, 0, Math.PI / 2, 0, 0));
       bandolier(built, 0x5a4030, C.gold);
       backpack(built, 0x58704a, 0x8a7a5a);
-      body.add(at(rifle(), built.grip.x, built.grip.y, built.grip.z));
+      gun = rifle();
+      body.add(gun);
       // Dog tags.
       body.add(at(rbox(0.02, 0.07, 0.05, 0xd8dde3, { metalness: 0.7 }), 0.24, 1.3, 0.05));
       break;
@@ -545,8 +644,31 @@ function human(kind: Human): HeroModel {
     }
   }
   const root = new THREE.Group();
-  root.add(built.body);
-  return { root, body: built.body, legs: built.legs, spray, height: 2.35 };
+  root.add(built.outer);
+  const [right, left] = built.arms;
+  const rig: RifleRig | null =
+    gun && right && left
+      ? {
+          outer: built.outer,
+          lower: built.lower,
+          upper: built.upper,
+          spine: built.spine,
+          head: built.head,
+          legs: built.legs,
+          knees: built.knees,
+          feet: built.feet,
+          rifle: gun,
+          muzzle: at(new THREE.Object3D(), 0.86, 0.04, 0),
+          right,
+          left,
+        }
+      : null;
+  if (rig) {
+    gun?.add(rig.muzzle);
+    // Stand him at ease, for anything that never animates him (portraits, say).
+    new RiflemanAnimator(rig).update(0, AT_EASE);
+  }
+  return { root, body: built.outer, legs: built.legs, rig, spray, height: 2.35 };
 }
 
 function tank(): HeroModel {
@@ -601,7 +723,7 @@ function tank(): HeroModel {
   driver.add(at(rbox(r * 0.12, r * 0.12, r * 2, 0x3a3e44), r * 0.4, r * 0.48, 0));
   turret.add(driver);
   body.add(turret);
-  return { root, body, legs: null, spray: null, height: 2.9 };
+  return { root, body, legs: null, rig: null, spray: null, height: 2.9 };
 }
 
 export function heroModel(kind: HeroKind): HeroModel {

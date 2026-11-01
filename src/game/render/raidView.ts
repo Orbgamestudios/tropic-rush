@@ -6,7 +6,14 @@ import { BUILDINGS } from "../logic/buildings";
 import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { HEROES } from "../logic/heroes";
 import { homeHeight, type IslandLayout, terrainHeight } from "../logic/island";
-import type { Projectile, ProjectileKind, RaidEvent, RaidState, Team } from "../logic/raid";
+import type {
+  Projectile,
+  ProjectileKind,
+  RaidEvent,
+  RaidHero,
+  RaidState,
+  Team,
+} from "../logic/raid";
 import { angleDiff, angleOf, distance, normalize, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
@@ -27,6 +34,7 @@ import {
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
 import { buildProps, buildShore, updateWind } from "./props";
+import { RiflemanAnimator } from "./riflemanAnimator";
 import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
 import { buildTerrain, type TerrainView } from "./terrain";
@@ -35,10 +43,20 @@ interface BuildingView {
   model: BuildingModel;
   rubble: THREE.Group | null;
   baseRotation: number;
+  /** How far it's come down, 0 to 1, once destroyed. */
+  collapse: number | null;
+  baseY: number;
 }
 
 interface HeroView {
   model: HeroModel;
+  /** Moves the full rig, for the heroes that have one. */
+  animator: RiflemanAnimator | null;
+  /** Where the hero was last frame and how much health they had, to see what changed. */
+  last: Vec2;
+  lastHp: number;
+  speed: number;
+  stepTimer: number;
   walk: number;
   fallen: number;
   facing: number;
@@ -88,21 +106,14 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
     case "bullet": {
       const geometry = new THREE.CapsuleGeometry(0.06, 0.45, 2, 6);
       geometry.rotateZ(Math.PI / 2);
-      return new THREE.Mesh(
-        geometry,
-        new THREE.MeshBasicMaterial({ color: team === "crew" ? 0xfff0a0 : 0xff7d4d }),
-      );
+      // Brighter than white, so tracers catch the bloom.
+      const color = new THREE.Color(team === "crew" ? 0xfff0a0 : 0xff7d4d).multiplyScalar(3);
+      return new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color }));
     }
     case "rocket": {
       const g = new THREE.Group();
       g.add(at(barrel(0.11, 0.7, COLORS.olive, 8), -0.35, 0, 0));
       g.add(at(cone(0.12, 0.25, COLORS.enemyRust, 8), 0.45, 0, 0, 0, 0, -Math.PI / 2));
-      g.add(
-        new THREE.Mesh(
-          new THREE.SphereGeometry(0.16, 8, 6),
-          new THREE.MeshBasicMaterial({ color: 0xffb347 }),
-        ),
-      );
       return g;
     }
     case "harpoon": {
@@ -124,7 +135,10 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
 
 export class RaidView {
   readonly root = new THREE.Group();
-  readonly effects = new Effects();
+  readonly effects: Effects;
+  /** How hard the last blasts should shake the camera; Game takes it each frame. */
+  private tremor = 0;
+  private trailTick = 0;
   /** Turned off once the raid is over, so bars don't float over the results screen. */
   showBars = true;
   /** Where the player is dragging the aim stick (null when not), for the aim cone. */
@@ -178,6 +192,7 @@ export class RaidView {
     }
     this.clouds = buildClouds(layout.seed);
     this.root.add(this.clouds.root, this.aimView.root);
+    this.effects = new Effects((x, z) => this.ground(x, z));
     this.root.add(this.terrain.root, this.props, this.effects.root);
 
     for (const b of state.buildings) {
@@ -189,14 +204,31 @@ export class RaidView {
       model.root.position.set(b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y);
       model.root.rotation.y = baseRotation;
       this.root.add(model.root);
-      this.buildings.set(b.id, { model, rubble: null, baseRotation });
+      this.buildings.set(b.id, {
+        model,
+        rubble: null,
+        baseRotation,
+        collapse: null,
+        baseY: model.root.position.y,
+      });
     }
 
     state.heroes.forEach((h, i) => {
       const model = heroModel(h.kind);
       const ring = heroRing(HEROES[h.kind].radius * 2 + (i === 0 ? 0.5 : 0.2), i === 0);
       this.root.add(model.root, ring);
-      this.heroes.set(h.id, { model, walk: 0, fallen: 0, facing: h.facing, ring });
+      this.heroes.set(h.id, {
+        model,
+        animator: model.rig && new RiflemanAnimator(model.rig),
+        last: { ...h.pos },
+        lastHp: h.hp,
+        speed: 0,
+        stepTimer: 0,
+        walk: 0,
+        fallen: 0,
+        facing: h.facing,
+        ring,
+      });
     });
 
     for (const m of state.mines) {
@@ -225,6 +257,19 @@ export class RaidView {
             e.kind === "mortar" ||
             e.kind === "harpoon";
           const h = e.kind === "mortar" ? 2.6 : BULLET_HEIGHT;
+          const shooter = e.team === "crew" ? this.heroes.get(e.ownerId) : undefined;
+          const hero = state.heroes.find((x) => x.id === e.ownerId);
+          // Ricochets are also shots of his, but they start off a building and not the barrel.
+          const fromBarrel = hero && distance(hero.pos, e.pos) < 2;
+          if (shooter?.animator && fromBarrel) {
+            shooter.animator.shot();
+            const barrel = shooter.animator.muzzle(new THREE.Vector3());
+            this.effects.muzzle(barrel, 0xffe08a, 0.25);
+            const a = shooter.facing;
+            const right = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+            this.effects.casing(barrel.addScaledVector(right, 0.1), right);
+            break;
+          }
           this.effects.muzzle(
             this.at(e.pos, h),
             e.team === "crew" ? 0xffe08a : 0xffa060,
@@ -234,6 +279,7 @@ export class RaidView {
         }
         case "explosion":
           this.effects.explosion(this.at(e.pos, 0.4), e.radius);
+          this.shake(e.pos, e.radius * 0.11, state);
           break;
         case "hit":
           this.effects.hit(this.at(e.pos, BULLET_HEIGHT));
@@ -245,11 +291,14 @@ export class RaidView {
           const radius = BUILDINGS[e.buildingType].radius;
           this.effects.explosion(this.at(e.pos, 1.2), radius * 1.3);
           this.effects.smokeColumn(this.at(e.pos, 0.5), e.buildingType === "headquarters" ? 8 : 4);
+          this.shake(e.pos, radius * 0.16, state);
           const view = this.buildings.get(e.id);
           if (view) {
-            view.model.root.visible = false;
+            // It comes down rather than vanishing; the rubble grows in under it.
+            view.collapse = 0;
             view.rubble = rubbleModel(radius);
             view.rubble.position.copy(view.model.root.position);
+            view.rubble.scale.setScalar(0.3);
             this.root.add(view.rubble);
           }
           break;
@@ -265,6 +314,20 @@ export class RaidView {
           break;
       }
     }
+  }
+
+  /** Blasts near the player shake the camera; distant ones barely do. */
+  private shake(pos: Vec2, amount: number, state: RaidState): void {
+    const hero = state.heroes[0];
+    const near = hero ? 1 - Math.min(1, distance(hero.pos, pos) / 40) : 1;
+    this.tremor = Math.max(this.tremor, amount * near);
+  }
+
+  /** The shake built up since the last call. */
+  takeTremor(): number {
+    const tremor = this.tremor;
+    this.tremor = 0;
+    return tremor;
   }
 
   private at(pos: Vec2, height: number): THREE.Vector3 {
@@ -294,7 +357,7 @@ export class RaidView {
     const aiming = this.showBars && !this.defending ? leader : undefined;
     this.aimView.update(state, aiming, this.aim, this.ground, time);
     this.overgrowth?.update(dt);
-    this.updateBuildings(state);
+    this.updateBuildings(state, dt);
     this.updateHeroes(state, dt);
     this.updateProjectiles(state);
     this.updateZones(state, time);
@@ -304,14 +367,36 @@ export class RaidView {
     this.updateLabels(state, camera, width, height);
   }
 
-  private updateBuildings(state: RaidState): void {
+  private updateBuildings(state: RaidState, dt: number): void {
     for (const b of state.buildings) {
       const view = this.buildings.get(b.id);
-      if (!view || b.destroyed) continue;
+      if (!view) continue;
+      const spec = BUILDINGS[b.type];
+      if (b.destroyed) {
+        this.collapse(view, spec.height, dt);
+        continue;
+      }
+      // A badly hurt building burns, harder the closer it is to falling.
+      const health = b.hp / b.maxHp;
+      if (health < 0.5 && Math.random() < dt * (health < 0.25 ? 9 : 4)) {
+        this.effects.burn(this.at(b.pos, spec.height * 0.55), spec.radius * 0.6);
+      }
       // Models point along +x; the root is already turned to face the beach.
       if (view.model.head) view.model.head.rotation.y = -b.aim - view.baseRotation;
       if (view.model.flame) view.model.flame.visible = b.firing;
     }
+  }
+
+  private collapse(view: BuildingView, height: number, dt: number): void {
+    if (view.collapse === null || view.collapse >= 1) return;
+    view.collapse = Math.min(1, view.collapse + dt * 1.5);
+    const t = view.collapse;
+    const { root } = view.model;
+    root.position.y = view.baseY - height * 1.05 * t * t;
+    root.rotation.z = t * 0.22;
+    root.rotation.x = t * 0.12;
+    view.rubble?.scale.setScalar(0.3 + 0.7 * t);
+    if (t >= 1) root.visible = false;
   }
 
   private updateHeroes(state: RaidState, dt: number): void {
@@ -329,6 +414,17 @@ export class RaidView {
       view.facing += angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
       model.root.rotation.y = -view.facing;
 
+      if (h.alive && h.moving && !h.inBoat) {
+        view.stepTimer -= dt;
+        if (view.stepTimer <= 0) {
+          view.stepTimer = 0.2;
+          this.effects.footstep(this.at(h.pos, 0));
+        }
+      }
+      if (view.animator) {
+        this.animateRifleman(view, view.animator, h, state, dt);
+        continue;
+      }
       if (!h.alive) {
         view.fallen = Math.min(1, view.fallen + dt * 3);
         model.body.rotation.x = (view.fallen * Math.PI) / 2.2;
@@ -348,6 +444,33 @@ export class RaidView {
       model.body.position.x = h.firing ? -0.04 * Math.random() : 0;
       if (model.spray) model.spray.visible = h.firing;
     }
+  }
+
+  private animateRifleman(
+    view: HeroView,
+    animator: RiflemanAnimator,
+    h: RaidHero,
+    state: RaidState,
+    dt: number,
+  ): void {
+    if (dt <= 0) return;
+    const gone = distance(h.pos, view.last);
+    view.speed += (gone / dt - view.speed) * Math.min(1, dt * 12);
+    const heading = gone > 1e-4 ? angleDiff(angleOf(sub(h.pos, view.last)), view.facing) : 0;
+    view.last = { ...h.pos };
+    if (h.hp < view.lastHp - 0.5 && h.alive) animator.flinch();
+    view.lastHp = h.hp;
+    const { attack } = HEROES.rifleman;
+    const reloadTime = (attack.kind === "burst" ? attack.reload : 1) * h.mods.reload;
+    animator.update(dt, {
+      moving: h.moving,
+      speed: view.speed,
+      heading,
+      aiming: h.firing || (this.aim !== null && h === state.heroes[0]),
+      reload: h.burstLeft === 0 ? Math.min(1, h.reload / reloadTime) : 0,
+      down: !h.alive,
+      cheering: state.status === "won",
+    });
   }
 
   private takeFromPool(kind: ProjectileKind, team: Team): THREE.Object3D {
@@ -371,6 +494,7 @@ export class RaidView {
   }
 
   private updateProjectiles(state: RaidState): void {
+    this.trailTick++;
     const live = new Set<number>();
     for (const p of state.projectiles) {
       live.add(p.id);
@@ -381,6 +505,9 @@ export class RaidView {
       }
       this.placeProjectile(p, obj);
       if (p.lob && (p.kind === "mortar" || p.kind === "artillery")) this.placeTelegraph(p);
+      if (p.kind === "rocket") this.effects.trail(obj.position, true);
+      else if (p.kind !== "bullet" && p.kind !== "harpoon" && this.trailTick % 3 === 0)
+        this.effects.trail(obj.position, false);
     }
     for (const [id, obj] of this.projectiles) {
       if (live.has(id)) continue;

@@ -46,6 +46,7 @@ export class CameraRig {
   readonly boatFocus = new THREE.Vector3(0, 0, -10);
 
   private scoutDistance = SCOUT_START;
+  private tremor = 0;
   private readonly target = new THREE.Vector3(0, 0, -8);
   private distance = ORBIT_DISTANCE;
   private pitch = ORBIT_PITCH;
@@ -138,11 +139,22 @@ export class CameraRig {
       this.target.z + Math.cos(this.yaw) * flat,
     );
     cam.lookAt(this.target);
+    this.tremor *= Math.exp(-dt * 11);
+    if (this.tremor > 0.005) {
+      cam.position.x += (Math.random() - 0.5) * this.tremor;
+      cam.position.y += (Math.random() - 0.5) * this.tremor;
+      cam.position.z += (Math.random() - 0.5) * this.tremor;
+    }
 
     const shadowSize = this.mode === "follow" ? 34 : 80;
     this.stage.focusShadows(this.target, shadowSize);
     if (this.mode === "follow") this.stage.setFogRange(70, 170);
     else this.stage.setFogRange(110, 320);
+  }
+
+  /** A blast's shake, in meters; a bigger one takes over from a smaller. */
+  kick(amount: number): void {
+    this.tremor = Math.min(1.1, Math.max(this.tremor, amount));
   }
 
   /** Starts looking over a base from above this spot. */

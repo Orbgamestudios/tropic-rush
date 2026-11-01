@@ -26,6 +26,7 @@ const PITCH = 1.12;
 const MIN_DISTANCE = 104;
 const LOOK_Z = 2;
 const CLOUD_PUFFS = 150;
+const SMOKE_PUFFS = 5;
 
 const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uTime;
@@ -146,9 +147,8 @@ function sharedShapes(): NonNullable<typeof shapes> {
 }
 
 interface Smoke {
-  mesh: THREE.Mesh;
-  x: number;
-  z: number;
+  puff: THREE.Sprite;
+  material: THREE.SpriteMaterial;
   phase: number;
 }
 
@@ -158,12 +158,8 @@ export class WorldMapView {
   private readonly islands = new THREE.Group();
   private readonly clouds: THREE.Mesh;
   private readonly smoke: Smoke[] = [];
-  private readonly smokeMaterial = new THREE.MeshBasicMaterial({
-    color: 0x9aa0a8,
-    transparent: true,
-    opacity: 0.4,
-    depthWrite: false,
-  });
+  /** One per step of the rising loop, so each puff can fade as it goes. */
+  private readonly smokeMaterials: THREE.SpriteMaterial[] = [];
   private readonly shallows = new THREE.MeshBasicMaterial({
     map: shallowsTexture(),
     transparent: true,
@@ -202,10 +198,16 @@ export class WorldMapView {
     this.boat.root.scale.setScalar(0.5);
     this.root.add(this.boat.root);
 
+    const puff = cloudTexture();
+    for (let i = 0; i < SMOKE_PUFFS; i++) {
+      const material = new THREE.SpriteMaterial({ map: puff, color: 0x6f747a, depthWrite: false });
+      material.transparent = true;
+      this.smokeMaterials.push(material);
+    }
     this.clouds = new THREE.Mesh(
       new THREE.BufferGeometry(),
       new THREE.MeshBasicMaterial({
-        map: cloudTexture(),
+        map: puff,
         transparent: true,
         depthWrite: false,
         fog: false,
@@ -240,11 +242,11 @@ export class WorldMapView {
       }
       this.islands.add(g);
       if (island.difficulty === "Hard" || island.difficulty === "Deadly") {
-        for (let i = 0; i < 5; i++) {
-          const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), this.smokeMaterial);
-          g.add(mesh);
-          this.smoke.push({ mesh, x: 0.5, z: -0.4, phase: i / 5 });
-        }
+        this.smokeMaterials.forEach((material, i) => {
+          const puff = new THREE.Sprite(material);
+          g.add(puff);
+          this.smoke.push({ puff, material, phase: i / SMOKE_PUFFS });
+        });
       }
     }
   }
@@ -272,8 +274,9 @@ export class WorldMapView {
     this.boat.root.rotation.y = 0.5;
     for (const s of this.smoke) {
       const t = (time * 0.18 + s.phase) % 1;
-      s.mesh.position.set(s.x + t * 2, 1 + t * 6, s.z);
-      s.mesh.scale.setScalar(0.5 + t * 1.8);
+      s.puff.position.set(0.5 + t * 2, 1 + t * 6, -0.4);
+      s.puff.scale.setScalar(1.2 + t * 4.5);
+      s.material.opacity = Math.sin(Math.PI * t) * 0.62;
     }
     const cam = this.stage.camera;
     // Pull back far enough that the whole map fits, however wide the screen.

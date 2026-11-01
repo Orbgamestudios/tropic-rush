@@ -19,6 +19,8 @@ export default defineConfig({
     command: "npm run build && npm run preview -- --port 4173 --strictPort",
     url: "http://localhost:4173",
     reuseExistingServer: !process.env.CI,
+    // The build alone can take a minute on a busy machine.
+    timeout: 240_000,
   },
   projects: [
     // WebKit is Safari's engine: the closest you can get to an iPhone without one.

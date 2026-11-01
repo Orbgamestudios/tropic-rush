@@ -43,7 +43,10 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/render/`: Three.js. It draws the state and never changes it.
   - `raidView.ts` mirrors a raid into the scene and turns events into effects.
   - `models.ts` holds the placeholder building models; `heroModels.ts` the hero models (swap
-    these for GLBs).
+    these for GLBs). `riflemanAnimator.ts` moves the Rifleman's rig procedurally: arms follow
+    the rifle by inverse kinematics, so there are no animation clips.
+  - `effects.ts` is every short-lived effect: instanced quads from one generated texture atlas,
+    plus instanced debris. Colours above 1 glow through the bloom, so keep them modest.
   - `scenery.ts` maps the trail, the base's clearing and the jungle; `terrain.ts` (ground and
     shader sea) and `props.ts` (instanced, wind-swayed plants in culled chunks) use it.
   - `cameraRig.ts` is the MOBA follow camera, the gunboat view and the menu orbit.
@@ -106,7 +109,7 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   the owner tests on their iPhone through the deployed Cloudflare URL.
 - Software-rendered test browsers manage only a few frames per second, so real-time play is in slow
   motion there. Open the game with `?testhooks` to get `window.tropicRush.{state, teleport,
-  advance}` for screenshot scripts: place the hero and fast-forward the rules.
+  advance, boom}` for screenshot scripts: place the hero, fast-forward the rules, set off a blast.
 
 ## iOS constraints
 

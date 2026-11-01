@@ -463,6 +463,14 @@ beaten today shows as Beaten until tomorrow's map.
 
 **Decided** (refined over many image rounds):
 
+- **Effects (Decided 2026-11-01):** no plain spheres. Blasts are a flash, flame rolling up into
+  soot, thrown dust, sparks, tumbling debris, a shockwave and a scorch mark that stays a while.
+  Hurt buildings burn, and destroyed ones come down into their rubble rather than vanishing.
+- **The Rifleman's animation (Proposed):** procedural, not clips. He runs with the rifle across
+  his chest, shoulders it to aim, strafes with his legs while his chest stays on target, kicks
+  with each shot, works the bolt between bursts, flinches, falls and cheers. Other heroes keep
+  their simple walk until the owner has seen this one.
+
 - **Rendering:** polished stylized 3D in the style of a mobile game, with smooth surfaces, crisp
   clean edges, simple painted shading and sunny lighting. Not low poly, not toy-like, not clay,
   and not realistic.

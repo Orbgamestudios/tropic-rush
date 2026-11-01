@@ -17,6 +17,7 @@ import { HERO_NAMES } from "../logic/heroProgress";
 import { homeHeight } from "../logic/island";
 import { angleDiff, type Vec2, vec } from "../logic/vec";
 import { type HeroModel, heroModel } from "./models";
+import { AT_EASE, RiflemanAnimator } from "./riflemanAnimator";
 
 /** Meters per second: a stroll, not a march. */
 const WALK_SPEED = 1.5;
@@ -33,6 +34,7 @@ interface Walker {
   target: Vec2 | null;
   rest: number;
   walk: number;
+  animator: RiflemanAnimator | null;
   facing: number;
 }
 
@@ -81,6 +83,7 @@ export class HomeHeroes {
         target: null,
         rest: Math.random() * 3,
         walk: 0,
+        animator: model.rig && new RiflemanAnimator(model.rig),
         facing: Math.random() * Math.PI * 2,
       });
     }
@@ -139,6 +142,11 @@ export class HomeHeroes {
       const { model } = w;
       model.root.position.set(w.pos.x, Math.max(0, homeHeight(w.pos.x, w.pos.y)), w.pos.y);
       model.root.rotation.y = -w.facing;
+      if (w.animator) {
+        w.animator.update(dt, { ...AT_EASE, moving, speed: moving ? WALK_SPEED : 0 });
+        this.placeTag(w);
+        continue;
+      }
       const swing = moving ? Math.sin(w.walk) : 0;
       if (model.legs) {
         model.legs[0].rotation.z = swing * 0.6;

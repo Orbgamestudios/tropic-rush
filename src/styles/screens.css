@@ -506,7 +506,8 @@
     gap: 9px 8px;
   }
   .stats-signature-text {
-    display: none;
+    font-size: 10px;
+    line-height: 1.1;
   }
   .heroes-start.ui-btn-xl {
     font-size: 26px;

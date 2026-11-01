@@ -205,6 +205,14 @@ export class Game {
       crew: () => this.crew.snapshot(),
       openHeroes: () => this.showHeroes(),
       save: () => this.save,
+      /** Sets off a blast by the player, for looking at effects. */
+      boom: (x: number, y: number, radius: number) => {
+        const { state, view } = this;
+        if (!state || !view) return;
+        const hero = this.player();
+        const pos = vec((hero?.pos.x ?? 0) + x, (hero?.pos.y ?? 0) + y);
+        view.handleEvents([{ type: "explosion", pos, radius }], state);
+      },
       teleport: (x: number, y: number) => {
         const hero = this.player();
         if (hero) hero.pos = vec(x, y);
@@ -539,6 +547,7 @@ export class Game {
     // Once the player is down, watch whoever is still fighting.
     const watched = hero.alive ? hero : (state.heroes.find((h) => h.alive) ?? hero);
     const heading = watched.moving || watched.firing ? watched.facing : null;
+    this.rig.kick(view.takeTremor());
     this.rig.update(dt, watched.pos, vec(0, -3), heading, watched.firing);
     view.aim = this.phase === "raid" && !this.paused ? this.controls.aimPreview() : null;
     view.update(
