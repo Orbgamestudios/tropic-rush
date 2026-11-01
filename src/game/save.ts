@@ -43,7 +43,7 @@ export interface ControlSpot {
   size: number;
 }
 
-export type ControlName = "move" | "aim" | "super";
+export type ControlName = "move" | "aim";
 export type ControlLayout = Record<ControlName, ControlSpot>;
 
 export type CameraMode = "top" | "behind";
@@ -59,7 +59,7 @@ export interface Settings {
   /** Raid camera: the angled view from above, or following close behind the hero. */
   camera: CameraMode;
   muted: boolean;
-  /** Where the sticks and the Super button sit, and how big they are. */
+  /** Where the sticks sit, and how big they are. */
   controls: ControlLayout;
   /** Bumped when the defaults change, so older saves pick up the new tilt and UI size. */
   rev: number;
@@ -73,7 +73,6 @@ export const CONTROL_SIZE_RANGE = [0.5, 2] as const;
 export const DEFAULT_CONTROLS: ControlLayout = {
   move: { x: 0.12, y: 0.76, size: 1 },
   aim: { x: 0.9, y: 0.76, size: 1 },
-  super: { x: 0.74, y: 0.66, size: 1 },
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -100,7 +99,7 @@ function readControls(value: unknown): ControlLayout {
       size: ranged(raw[name]?.size, CONTROL_SIZE_RANGE[0], CONTROL_SIZE_RANGE[1], d.size),
     };
   };
-  return { move: spot("move"), aim: spot("aim"), super: spot("super") };
+  return { move: spot("move"), aim: spot("aim") };
 }
 
 function readSettings(value: unknown): Settings {

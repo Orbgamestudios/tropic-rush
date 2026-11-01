@@ -64,7 +64,6 @@ describe("save", () => {
         controls: {
           move: { x: 0.2, y: 0.8, size: 1.3 },
           aim: { x: 0.85, y: 0.7, size: 0.9 },
-          super: { x: 0.6, y: 0.5, size: 1.5 },
         },
         rev: DEFAULT_SETTINGS.rev,
       },
@@ -108,7 +107,7 @@ describe("save", () => {
           uiScale: 9,
           muted: "yes",
           rev: DEFAULT_SETTINGS.rev,
-          controls: { super: { x: 5, y: -2, size: 30 } },
+          controls: { aim: { x: 5, y: -2, size: 30 } },
         },
       }),
     );
@@ -117,7 +116,7 @@ describe("save", () => {
       tilt: 1,
       zoom: 0,
       uiScale: 1.25,
-      controls: { ...DEFAULT_CONTROLS, super: { x: 1, y: 0, size: 2 } },
+      controls: { ...DEFAULT_CONTROLS, aim: { x: 1, y: 0, size: 2 } },
     });
   });
 

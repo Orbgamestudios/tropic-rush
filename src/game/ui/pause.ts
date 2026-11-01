@@ -180,7 +180,6 @@ export class PauseMenu {
       ),
       el("div", "", spotText("Move", s.controls.move)),
       el("div", "", spotText("Fire", s.controls.aim)),
-      el("div", "", spotText("Super", s.controls.super)),
     );
   }
 

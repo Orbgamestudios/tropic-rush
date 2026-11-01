@@ -75,7 +75,7 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   and its Raid button opens `worldMapScreen.ts`, which leads to `scoutScreen.ts` (with
   `render/rangeRings.ts`) or the raid. The other screens are `hud.ts`, `pause.ts` (with
   settings and `controlsEditor.ts`), `replayBar.ts`, `results.ts` and `crewUi.ts`.
-  `controlsEditor.ts` moves and sizes the sticks and Super. `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
+  `controlsEditor.ts` moves and sizes the sticks. `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
   portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero levels,
   unlocks and raid rewards.
 - Real models live in `public/models/` (meshopt-compressed GLB; `render/heroAssets.ts` loads

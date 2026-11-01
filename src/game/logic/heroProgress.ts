@@ -37,8 +37,6 @@ export interface PerkMods {
   reload: number;
   speed: number;
   hp: number;
-  /** How fast the super charges. */
-  superRate: number;
   /** Extra shots in a burst. */
   shots: number;
   /** Extra range in meters. */
@@ -52,7 +50,6 @@ export const NO_PERKS: PerkMods = {
   reload: 1,
   speed: 1,
   hp: 1,
-  superRate: 1,
   shots: 0,
   range: 0,
   signature: 0,
@@ -129,8 +126,8 @@ export const PERKS: Record<HeroKind, readonly Perk[]> = {
     {
       level: 10,
       name: "Danger close",
-      text: "5 bomblets a rocket, and volleys come 40% faster.",
-      mods: { signature: 1, superRate: 1.4 },
+      text: "5 bomblets a rocket, and reloads 15% faster again.",
+      mods: { signature: 1, reload: 0.85 },
     },
   ],
   grenadier: [
@@ -150,7 +147,7 @@ export const PERKS: Record<HeroKind, readonly Perk[]> = {
     },
   ],
   engineer: [
-    { level: 3, name: "Spare parts", text: "Turrets come 30% faster.", mods: { superRate: 1.3 } },
+    { level: 3, name: "Spare parts", text: "Works 20% faster.", mods: { reload: 0.8 } },
     {
       level: 5,
       name: "Salvage",
@@ -170,15 +167,15 @@ export const PERKS: Record<HeroKind, readonly Perk[]> = {
     {
       level: 5,
       name: "Aftershock",
-      text: "Every ram ends in a shockwave.",
+      text: "Whatever you destroy goes up in a shockwave that can set off the next.",
       mods: { signature: 1 },
     },
     { level: 7, name: "Autoloader", text: "Fires 25% faster.", mods: { reload: 0.75 } },
     {
       level: 10,
       name: "Tilly's pride",
-      text: "A far bigger shockwave, and rams come 30% faster.",
-      mods: { signature: 1, superRate: 1.3 },
+      text: "A far bigger shockwave, and fires 15% faster again.",
+      mods: { signature: 1, reload: 0.85 },
     },
   ],
 };
@@ -193,7 +190,6 @@ export function perkMods(kind: HeroKind, level: number): PerkMods {
     out.reload *= m.reload ?? 1;
     out.speed *= m.speed ?? 1;
     out.hp *= m.hp ?? 1;
-    out.superRate *= m.superRate ?? 1;
     out.shots += m.shots ?? 0;
     out.range += m.range ?? 0;
     out.signature += m.signature ?? 0;

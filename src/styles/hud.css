@@ -261,12 +261,6 @@
   }
 }
 
-.hud-bar-super .hud-bar-fill {
-  background: linear-gradient(180deg, #ffd890, #ffa031 55%, #e06a12);
-  box-shadow: inset 0 2px 0 rgb(255 255 255 / 0.5);
-  transition: width 0.2s;
-}
-
 .hud-bar-text {
   position: relative;
   display: block;
@@ -596,7 +590,7 @@
   color: var(--ink);
 }
 
-/* ---------- Round buttons: super and gunboat ---------- */
+/* ---------- Round buttons: the gunboat ---------- */
 
 /* Round buttons: a navy disc in a thick brass ring with an engraved inner ring. */
 .hud-round {
@@ -630,45 +624,6 @@
   text-transform: uppercase;
   text-shadow: var(--outline-thin);
   white-space: nowrap;
-}
-
-.hud-super {
-  /* Placed from the settings: left and top are set in hud.ts, around its middle. */
-  margin: -32px 0 0 -32px;
-  scale: var(--size, 1);
-  width: 64px;
-  height: 64px;
-  background: radial-gradient(circle at 40% 30%, var(--navy-400), var(--navy-800));
-}
-
-.hud-super-ring {
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  background: conic-gradient(var(--gold-text) var(--charge, 0deg), transparent 0);
-  mask: radial-gradient(circle, transparent 58%, black 60%);
-  -webkit-mask: radial-gradient(circle, transparent 58%, black 60%);
-}
-
-.hud-super-icon {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  filter: grayscale(0.5) brightness(0.85);
-}
-
-.hud-super-icon .icon-wrap {
-  width: 100%;
-  height: 100%;
-}
-
-.hud-super.ready {
-  background: radial-gradient(circle at 40% 30%, #ffe794, #f0a01a);
-  animation: ready 1s ease-in-out infinite;
-}
-
-.hud-super.ready .hud-super-icon {
-  filter: none;
 }
 
 @keyframes ready {

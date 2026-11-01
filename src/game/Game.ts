@@ -109,7 +109,6 @@ export class Game {
       this.stage.renderer.domElement,
     );
     this.hud = new Hud(container, {
-      onSuper: () => this.controls.pressSuper(),
       onBoat: () => this.controls.pressBoat(),
       onAbility: (ability) => this.controls.selectAbility(ability),
       onPause: () => this.setPaused(true),
@@ -229,7 +228,6 @@ export class Game {
     this.container.style.setProperty("--ui-scale", String(s.uiScale));
     this.controls.uiScale = s.uiScale;
     this.controls.setLayout(s.controls);
-    this.hud.setSuperSpot(s.controls.super);
     sfx.setMuted(s.muted);
   }
 

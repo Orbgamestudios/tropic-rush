@@ -26,9 +26,9 @@ import {
 } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
-import { buildProps, buildShore, sandbagPileGeometry, updateWind } from "./props";
+import { buildProps, buildShore, updateWind } from "./props";
 import { homeScenery, sceneryMap } from "./scenery";
-import { at, ball, barrel, cone, cyl, disposeGeometries, vertexColored } from "./shapes";
+import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
 import { buildTerrain, type TerrainView } from "./terrain";
 
 interface BuildingView {
@@ -140,14 +140,12 @@ export class RaidView {
   private readonly telegraphs = new Map<number, { ring: THREE.Mesh; fill: THREE.Mesh }>();
   private readonly zones = new Map<number, THREE.Object3D>();
   private readonly turrets = new Map<number, { root: THREE.Group; head: THREE.Object3D }>();
-  private readonly tempSandbags = new Map<number, THREE.Mesh>();
   private readonly mines = new Map<number, THREE.Mesh>();
   private readonly boat: { root: THREE.Group; cannon: THREE.Object3D };
   private readonly boatHeading: number;
   private cannonAim: number;
   private ringPulse = 0;
   private readonly focus = new THREE.Vector3();
-  private readonly sandbagGeometry = sandbagPileGeometry();
 
   /** Set when the island being raided is the crew's own (a nightly raid's replay). */
   private readonly overgrowth: OvergrowthView | null = null;
@@ -256,9 +254,6 @@ export class RaidView {
           }
           break;
         }
-        case "super":
-          this.effects.explosion(this.at(e.pos, 1), 0.6);
-          break;
         case "boatFire": {
           this.cannonAim = angleOf(sub(e.target, state.boat.pos));
           const muzzle = new THREE.Vector3();
@@ -304,7 +299,6 @@ export class RaidView {
     this.updateProjectiles(state);
     this.updateZones(state, time);
     this.updateTurrets(state);
-    this.updateObstacles(state);
     this.updateMines(state, time);
     this.updateBoat(time);
     this.updateLabels(state, camera, width, height);
@@ -342,7 +336,7 @@ export class RaidView {
         if (model.spray) model.spray.visible = false;
         continue;
       }
-      const speed = HEROES[h.kind].speed * (h.sprintTime > 0 ? 1.6 : 1);
+      const speed = HEROES[h.kind].speed;
       if (h.moving) view.walk += dt * speed * 2.2;
       const swing = h.moving ? Math.sin(view.walk) : 0;
       if (model.legs) {
@@ -350,7 +344,7 @@ export class RaidView {
         model.legs[1].rotation.z = -swing * 0.7;
       }
       model.body.position.y = h.moving ? Math.abs(Math.sin(view.walk)) * 0.07 : 0;
-      model.body.rotation.z = h.moving ? -0.08 - (h.sprintTime > 0 ? 0.12 : 0) : 0;
+      model.body.rotation.z = h.moving ? -0.08 : 0;
       model.body.position.x = h.firing ? -0.04 * Math.random() : 0;
       if (model.spray) model.spray.visible = h.firing;
     }
@@ -454,14 +448,14 @@ export class RaidView {
       live.add(z.id);
       let obj = this.zones.get(z.id);
       if (!obj) {
-        obj = z.kind === "smoke" ? this.smokeCloud(z.radius) : this.healCircle(z.radius);
+        obj = this.healCircle(z.radius);
         obj.position.set(z.pos.x, this.ground(z.pos.x, z.pos.y), z.pos.y);
         this.root.add(obj);
         this.zones.set(z.id, obj);
       }
       const fade = Math.min(1, z.time);
       obj.scale.setScalar(0.6 + 0.4 * fade);
-      if (z.kind === "heal") obj.rotation.y = time * 0.6;
+      obj.rotation.y = time * 0.6;
     }
     for (const [id, obj] of this.zones) {
       if (live.has(id)) continue;
@@ -469,27 +463,6 @@ export class RaidView {
       disposeGeometries(obj);
       this.zones.delete(id);
     }
-  }
-
-  private smokeCloud(radius: number): THREE.Group {
-    const g = new THREE.Group();
-    const m = new THREE.MeshStandardMaterial({
-      color: 0xd9dcd8,
-      transparent: true,
-      opacity: 0.82,
-      roughness: 1,
-    });
-    for (let i = 0; i < 10; i++) {
-      const angle = (i / 10) * Math.PI * 2;
-      const r = i % 2 ? radius * 0.55 : radius * 0.2;
-      const puff = new THREE.Mesh(
-        new THREE.SphereGeometry(radius * (0.35 + (i % 3) * 0.08), 12, 9),
-        m,
-      );
-      puff.position.set(Math.cos(angle) * r, radius * 0.3 + (i % 3) * 0.4, Math.sin(angle) * r);
-      g.add(puff);
-    }
-    return g;
   }
 
   private healCircle(radius: number): THREE.Group {
@@ -557,27 +530,6 @@ export class RaidView {
       this.root.remove(view.root);
       disposeGeometries(view.root);
       this.turrets.delete(id);
-    }
-  }
-
-  /** The Heavy's temporary sandbag walls (permanent ones are part of the props). */
-  private updateObstacles(state: RaidState): void {
-    const live = new Set<number>();
-    for (const o of state.obstacles) {
-      if (o.time === null) continue;
-      live.add(o.id);
-      if (this.tempSandbags.has(o.id)) continue;
-      const mesh = new THREE.Mesh(this.sandbagGeometry, vertexColored());
-      mesh.castShadow = true;
-      mesh.position.set(o.pos.x, this.ground(o.pos.x, o.pos.y), o.pos.y);
-      mesh.rotation.y = -o.rotation;
-      this.root.add(mesh);
-      this.tempSandbags.set(o.id, mesh);
-    }
-    for (const [id, mesh] of this.tempSandbags) {
-      if (live.has(id)) continue;
-      this.root.remove(mesh);
-      this.tempSandbags.delete(id);
     }
   }
 
@@ -679,7 +631,6 @@ export class RaidView {
     this.terrain.dispose();
     this.effects.dispose();
     disposeGeometries(this.root);
-    this.sandbagGeometry.dispose();
     for (const objects of this.pool.values()) for (const o of objects) disposeGeometries(o);
     for (const t of this.telegraphs.values()) {
       (t.ring.material as THREE.Material).dispose();

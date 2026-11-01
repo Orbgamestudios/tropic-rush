@@ -1,9 +1,9 @@
 // The hero screen, reached by tapping a hero on the island: the roster on the left, the chosen
-// hero turning on a pedestal in the middle, their stats, super and perks on the right. Gold levels
+// hero turning on a pedestal in the middle, their stats, signature move and perks on the right. Gold levels
 // heroes up, with a reveal for each level and a perk at the milestones; medals unlock new ones.
 // Raid goes to the world map to pick an island.
 
-import { HERO_KINDS, HEROES, type HeroKind, type SuperKind } from "../logic/heroes";
+import { HERO_KINDS, HEROES, type HeroKind } from "../logic/heroes";
 import {
   HERO_NAMES,
   heroStats,
@@ -31,7 +31,7 @@ import {
   setLabel,
 } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
-import { type IconName, icon } from "./kit/icons";
+import { icon } from "./kit/icons";
 import { LevelUpReveal } from "./levelUp";
 
 export interface HeroSelectHost {
@@ -41,26 +41,6 @@ export interface HeroSelectHost {
   /** Raid with this hero and squad: on to the world map. */
   onStart(hero: HeroKind, squad: HeroKind[]): void;
 }
-
-const SUPER_ICONS: Record<SuperKind, IconName> = {
-  sprint: "speed",
-  sandbags: "sandbags",
-  ram: "ram",
-  volley: "rocket",
-  smoke: "smoke",
-  healZone: "heal",
-  turret: "turret",
-};
-
-const SUPER_TEXT: Record<SuperKind, string> = {
-  sprint: "Dash forward fast, taking less damage for a few seconds.",
-  sandbags: "Drop a curved sandbag wall that soaks up enemy fire.",
-  ram: "Charge ahead, crushing defenses in the way.",
-  volley: "Fire three rockets in a wide spread.",
-  smoke: "A smoke cloud: defenses can't target anyone inside it.",
-  healZone: "A field medkit that heals the whole crew around it.",
-  turret: "Build an auto-turret that fires at nearby defenses.",
-};
 
 export class HeroSelect {
   readonly root = el("div", "screen screen-heroes");
@@ -80,9 +60,9 @@ export class HeroSelect {
     speed: new StatBar("speed", "Speed", "yellow"),
     range: new StatBar("range", "Range", "blue"),
   };
-  private readonly superIcon = el("div", "stats-super-icon");
-  private readonly superName = el("div", "stats-super-name");
-  private readonly superText = el("div", "stats-super-text");
+  private readonly signatureTag = el("div", "stats-signature-tag");
+  private readonly signatureName = el("div", "stats-signature-name");
+  private readonly signatureText = el("div", "stats-signature-text");
   private readonly perks = el("div", "perk-track");
   private readonly perkText = el("div", "perk-text");
   private readonly reveal: LevelUpReveal;
@@ -158,11 +138,13 @@ export class HeroSelect {
     head.append(this.cardLevel, this.cardName, this.cardBadges);
     const barsBox = el("div", "stats-bars");
     barsBox.append(...Object.values(this.bars).map((b) => b.root));
-    const superCard = el("div", "stats-super");
-    const superWords = el("div", "stats-super-words");
-    superWords.append(el("div", "stats-super-tag", "Super"), this.superName, this.superText);
-    superCard.append(this.superIcon, superWords);
-    card.append(head, barsBox, superCard, this.perks, this.perkText);
+    const signature = el("div", "stats-signature");
+    const signatureIcon = el("div", "stats-signature-icon");
+    signatureIcon.append(icon("star"));
+    const signatureWords = el("div", "stats-signature-words");
+    signatureWords.append(this.signatureTag, this.signatureName, this.signatureText);
+    signature.append(signatureIcon, signatureWords);
+    card.append(head, barsBox, signature, this.perks, this.perkText);
     info.body.append(card);
     top.append(back, wallet);
 
@@ -257,9 +239,11 @@ export class HeroSelect {
     this.bars.dps.set(bars.dps, `${formatNumber(now.dps)}/s`, nextBars.dps);
     this.bars.speed.set(bars.speed, now.speed.toFixed(1));
     this.bars.range.set(bars.range, `${now.range} m`);
-    this.superIcon.replaceChildren(icon(SUPER_ICONS[spec.super]));
-    this.superName.textContent = spec.superName;
-    this.superText.textContent = SUPER_TEXT[spec.super];
+    const move = PERKS[kind].find(isSignature);
+    this.signatureTag.textContent =
+      level >= (move?.level ?? 0) ? "Signature move" : `Signature move at level ${move?.level}`;
+    this.signatureName.textContent = move?.name ?? "";
+    this.signatureText.textContent = move?.text ?? "";
     this.refreshPerks(kind, level);
 
     // Level up, or unlock with medals.

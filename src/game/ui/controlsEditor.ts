@@ -1,4 +1,4 @@
-// The controls editor, opened from Settings: the sticks and the Super button shown as rings on
+// The controls editor, opened from Settings: the sticks shown as rings on
 // the screen. Drag one to move it, pick one and use the slider to resize it. A readout shows each
 // control's x, y and size, so the player can pass the numbers on to become the defaults.
 
@@ -12,12 +12,12 @@ export interface ControlsEditorHost {
   onClose(): void;
 }
 
-const NAMES: readonly ControlName[] = ["move", "aim", "super"];
+const NAMES: readonly ControlName[] = ["move", "aim"];
 
-const LABELS: Record<ControlName, string> = { move: "Move", aim: "Fire", super: "Super" };
+const LABELS: Record<ControlName, string> = { move: "Move", aim: "Fire" };
 
 /** Diameters at size 1 and UI size 1, matching the real controls. */
-const DIAMETER: Record<ControlName, number> = { move: 132, aim: 132, super: 64 };
+const DIAMETER: Record<ControlName, number> = { move: 132, aim: 132 };
 
 const round = (v: number) => Math.round(v * 1000) / 1000;
 

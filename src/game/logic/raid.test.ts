@@ -175,14 +175,6 @@ describe("raid combat", () => {
     expect(hero(inRange).hp).toBeLessThan(hero(inRange).maxHp);
   });
 
-  it("can't target heroes hidden in smoke", () => {
-    const state = raid([{ type: "gunTurret", pos: vec(0, -10) }], ["grenadier"]);
-    hero(state).superCharge = 1;
-    stepRaid(state, [input({ useSuper: true })], DT);
-    run(state, 3);
-    expect(hero(state).hp).toBe(hero(state).maxHp);
-  });
-
   it("does not respawn a fallen hero, and a fallen solo crew loses", () => {
     const state = raid([{ type: "gunTurret", pos: vec(0, -8) }]);
     hero(state).hp = 1;
@@ -212,26 +204,6 @@ describe("raid combat", () => {
     run(state, 2, [input({ aim: vec(0, -9 / 14) })]);
     expect(state.mines[0]?.exploded).toBe(true);
     expect(hero(state).hp).toBe(hero(state).maxHp);
-  });
-});
-
-describe("supers", () => {
-  it("charge from damage dealt", () => {
-    const state = raid([{ type: "headquarters", pos: vec(0, -10) }]);
-    run(state, 3, [input({ aim: vec(0, -1) })]);
-    expect(hero(state).superCharge).toBeGreaterThan(0);
-  });
-
-  it("fire once full and empty the meter", () => {
-    const state = raid([], ["rifleman", "heavy"]);
-    hero(state, 0).superCharge = 1;
-    hero(state, 1).superCharge = 1;
-    stepRaid(state, [input({ useSuper: true }), input({ useSuper: true })], DT);
-    expect(hero(state, 0).sprintTime).toBeGreaterThan(0);
-    expect(hero(state, 0).superCharge).toBe(0);
-    expect(state.obstacles.filter((o) => o.kind === "sandbag").length).toBeGreaterThan(0);
-    run(state, 13);
-    expect(state.obstacles).toHaveLength(0);
   });
 });
 
@@ -435,21 +407,20 @@ describe("signature moves", () => {
     expect(turrets(10)[0]?.time).toBeGreaterThan(turrets(5)[0]?.time ?? 0);
   });
 
-  it("ends a ram in a shockwave", () => {
+  it("sends a shockwave out from what the Tank destroys, further at level 10", () => {
     const damage = (level: number) => {
       const state = signed(["tank"], level, [
-        { type: "storehouse", pos: vec(0, -7) },
-        { type: "storehouse", pos: vec(6.5, -5) },
+        { type: "storehouse", pos: vec(0, -8) },
+        { type: "storehouse", pos: vec(10, -8) },
         { type: "headquarters", pos: vec(40, -40) },
       ]);
-      hero(state).superCharge = 1;
-      hero(state).facing = -Math.PI / 2;
-      run(state, 1.5, [input({ useSuper: true })]);
+      building(state, 0).hp = 1;
+      run(state, 1, [fire(vec(0, -1))]);
       return building(state, 1).maxHp - building(state, 1).hp;
     };
     expect(damage(4)).toBe(0);
-    expect(damage(5)).toBeGreaterThan(0);
-    expect(damage(10)).toBeGreaterThan(damage(5));
+    expect(damage(5)).toBe(0);
+    expect(damage(10)).toBeGreaterThan(0);
   });
 });
 

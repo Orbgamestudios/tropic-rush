@@ -14,7 +14,7 @@ import {
   HEAL,
   START_ENERGY,
 } from "./gunboat";
-import { HEROES, type HeroKind, type SuperKind, shotSpread } from "./heroes";
+import { HEROES, type HeroKind, shotSpread } from "./heroes";
 import { NO_PERKS, type PerkMods } from "./heroProgress";
 import { type IslandLayout, isOnLand, type ObstacleKind } from "./island";
 import { createRng, type Rng } from "./rng";
@@ -41,16 +41,10 @@ const MINE_FUSE = 0.5;
 const MINE_SPLASH = 2.6;
 const MINE_DAMAGE = 450;
 
-const SPRINT = { seconds: 3.5, speed: 1.6, damageTaken: 0.6 };
 /** Heroes move this much slower while aiming or shooting. */
 const SHOOTING_SPEED = 0.6;
 /** A released aim locks onto a building this far either side of it at least (radians). */
 const LOCK_TOLERANCE = 0.22;
-const RAM = { seconds: 0.6, speed: 14, damage: 450 };
-const SANDBAGS = { seconds: 12, distance: 2.4, spacing: 1.4, radius: 0.75 };
-const SMOKE = { seconds: 6, radius: 5 };
-const HEAL_ZONE = { seconds: 4, radius: 5, healPerSecond: 110 };
-const VOLLEY_SPREAD = 0.18;
 const CREW_TURRET = {
   hp: 900,
   seconds: 18,
@@ -81,9 +75,9 @@ const SIGNATURE = {
   skipDamage: 0.7,
   /** Gus: a salvaged turret's share of a full turret's time, by tier. */
   salvageTime: [0, 0.6, 1],
-  /** Tilly & Tank: the blast at the end of a ram, by tier. */
-  ramBlastRadius: [0, 4.5, 7],
-  ramBlastDamage: [0, 0.6, 1],
+  /** Tilly & Tank: the shockwave from whatever they destroy, by tier. */
+  shockwaveRadius: [0, 4.5, 7],
+  shockwaveDamage: [0, 270, 450],
 } as const;
 
 export type Team = "crew" | "enemy";
@@ -111,11 +105,6 @@ export interface RaidHero {
   burstDir: Vec2;
   /** Minigun spin-up, 0 to 1. */
   spin: number;
-  /** Super meter, 0 to 1. */
-  superCharge: number;
-  sprintTime: number;
-  ramTime: number;
-  ramDir: Vec2;
   autoFireTime: number;
   autoDir: Vec2;
   autoDistance: number;
@@ -191,7 +180,6 @@ export interface Mine {
 
 export interface Zone {
   id: number;
-  kind: "smoke" | "heal";
   pos: Vec2;
   radius: number;
   time: number;
@@ -217,8 +205,6 @@ export interface Obstacle {
   blocksShots: boolean;
   scale: number;
   rotation: number;
-  /** Seconds left for temporary obstacles (the Heavy's sandbags); null if permanent. */
-  time: number | null;
 }
 
 export type RaidEvent =
@@ -228,7 +214,6 @@ export type RaidEvent =
   | { type: "heal"; pos: Vec2 }
   | { type: "destroyed"; id: number; pos: Vec2; buildingType: BuildingType }
   | { type: "heroDown"; id: number; pos: Vec2 }
-  | { type: "super"; heroId: number; super: SuperKind; pos: Vec2 }
   | { type: "boarded"; heroId: number }
   | { type: "leftBoat"; heroId: number }
   | { type: "boatFire"; ability: Ability; target: Vec2 }
@@ -268,7 +253,6 @@ export interface HeroInput {
   lockAt: Vec2 | null;
   /** A quick tap of the fire button: lock onto the nearest tower in range (tap again to stop). */
   autoAim: boolean;
-  useSuper: boolean;
   /** Board the gunboat, or step off it. */
   toggleBoat: boolean;
   boatAbility: { ability: Ability; target: Vec2 } | null;
@@ -280,7 +264,6 @@ export const IDLE_INPUT: HeroInput = {
   aimPreview: null,
   lockAt: null,
   autoAim: false,
-  useSuper: false,
   toggleBoat: false,
   boatAbility: null,
 };
@@ -321,10 +304,6 @@ export function createRaid(
       burstTimer: 0,
       burstDir: vec(0, -1),
       spin: 0,
-      superCharge: 0,
-      sprintTime: 0,
-      ramTime: 0,
-      ramDir: vec(0, -1),
       autoFireTime: 0,
       autoDir: vec(0, -1),
       autoDistance: 0,
@@ -353,7 +332,7 @@ export function createRaid(
     };
   });
   const obstacles = layout.obstacles.map(
-    (o): Obstacle => ({ ...o, id: nextId++, pos: { ...o.pos }, time: null }),
+    (o): Obstacle => ({ ...o, id: nextId++, pos: { ...o.pos } }),
   );
   const mines = layout.mines.map(
     (pos): Mine => ({ id: nextId++, pos: { ...pos }, fuse: null, exploded: false }),
@@ -396,7 +375,6 @@ export function stepRaid(
   updateProjectiles(state, dt);
   updateMines(state, dt);
   updateZones(state, dt);
-  updateObstacles(state, dt);
   if (state.status === "playing") {
     if (state.heroes.every((h) => !h.alive)) {
       state.status = "lost";
@@ -427,17 +405,12 @@ export function nextAbilityCost(state: RaidState, ability: Ability): number {
   return abilityCost(ability, state.abilityUses[ability]);
 }
 
-export function isInSmoke(state: RaidState, pos: Vec2): boolean {
-  return state.zones.some((z) => z.kind === "smoke" && distance(z.pos, pos) <= z.radius);
-}
-
 // ---------------------------------------------------------------------------------------------
 // Heroes
 
 function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: number): void {
   if (!hero.alive) return;
   hero.reload = Math.max(0, hero.reload - dt);
-  hero.sprintTime = Math.max(0, hero.sprintTime - dt);
   hero.autoFireTime = Math.max(0, hero.autoFireTime - dt);
 
   if (input.toggleBoat) toggleBoat(state, hero);
@@ -452,21 +425,11 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   }
 
   const spec = HEROES[hero.kind];
-  if (input.useSuper && hero.superCharge >= 1) activateSuper(state, hero);
-
-  if (hero.ramTime > 0) {
-    updateRam(state, hero, dt);
-  } else {
-    const move = length(input.move) > 1 ? normalize(input.move) : input.move;
-    const slowed = hero.firing || input.aimPreview !== null;
-    const speed =
-      spec.speed *
-      hero.mods.speed *
-      (hero.sprintTime > 0 ? SPRINT.speed : 1) *
-      (slowed ? SHOOTING_SPEED : 1);
-    hero.moving = length(move) > 0.05;
-    if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
-  }
+  const move = length(input.move) > 1 ? normalize(input.move) : input.move;
+  const slowed = hero.firing || input.aimPreview !== null;
+  const speed = spec.speed * hero.mods.speed * (slowed ? SHOOTING_SPEED : 1);
+  hero.moving = length(move) > 0.05;
+  if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
 
   // Locking on: let go of a drag to lock onto the building in that direction, or tap to lock
   // onto the nearest tower (tapping the same one again stops).
@@ -675,98 +638,14 @@ function sprayTick(
       (d < 0.5 || Math.abs(angleDiff(angleOf(sub(pos, medic.pos)), facing)) <= halfAngle)
     );
   };
-  let healed = 0;
   for (const h of state.heroes) {
     if (h === medic || !h.alive || h.inBoat || !inCone(h.pos, 0)) continue;
-    healed += healHero(state, h, heal);
+    healHero(state, h, heal);
   }
   // A little self-heal, so a medic playing solo isn't helpless.
-  healed += healHero(state, medic, heal * 0.2);
-  medic.superCharge = Math.min(
-    1,
-    medic.superCharge + (healed * medic.mods.superRate) / HEROES.medic.superCharge,
-  );
+  healHero(state, medic, heal * 0.2);
   for (const b of state.buildings) {
     if (!b.destroyed && inCone(b.pos, b.radius)) damageBuilding(state, b, damage, medic.id);
-  }
-}
-
-function activateSuper(state: RaidState, hero: RaidHero): void {
-  const spec = HEROES[hero.kind];
-  hero.superCharge = 0;
-  const forward = fromAngle(hero.facing);
-  state.events.push({ type: "super", heroId: hero.id, super: spec.super, pos: { ...hero.pos } });
-  switch (spec.super) {
-    case "sprint":
-      hero.sprintTime = SPRINT.seconds;
-      return;
-    case "ram":
-      hero.ramTime = RAM.seconds;
-      hero.ramDir = forward;
-      return;
-    case "sandbags": {
-      const center = add(hero.pos, scale(forward, SANDBAGS.distance + spec.radius));
-      const along = vec(-forward.y, forward.x);
-      for (const offset of [-1.5, -0.5, 0.5, 1.5]) {
-        const pos = add(center, scale(along, offset * SANDBAGS.spacing));
-        if (!isOnLand(pos.x, pos.y, 0.5)) continue;
-        state.obstacles.push({
-          id: state.nextId++,
-          kind: "sandbag",
-          pos,
-          radius: SANDBAGS.radius,
-          blocksShots: true,
-          scale: 1,
-          rotation: angleOf(along),
-          time: SANDBAGS.seconds,
-        });
-      }
-      return;
-    }
-    case "volley": {
-      const atk = spec.attack;
-      if (atk.kind !== "shell") return;
-      for (const spread of [-VOLLEY_SPREAD, 0, VOLLEY_SPREAD]) {
-        const dir = fromAngle(hero.facing + spread);
-        spawnDirect(
-          state,
-          hero,
-          "rocket",
-          dir,
-          atk.speed,
-          atk.range,
-          atk.damage * hero.power,
-          atk.splash,
-          atk.buildingBonus,
-        );
-      }
-      return;
-    }
-    case "smoke":
-      state.zones.push({
-        id: state.nextId++,
-        kind: "smoke",
-        pos: { ...hero.pos },
-        radius: SMOKE.radius,
-        time: SMOKE.seconds,
-        healPerSecond: 0,
-      });
-      return;
-    case "healZone":
-      state.zones.push({
-        id: state.nextId++,
-        kind: "heal",
-        pos: { ...hero.pos },
-        radius: HEAL_ZONE.radius,
-        time: HEAL_ZONE.seconds,
-        healPerSecond: HEAL_ZONE.healPerSecond,
-      });
-      return;
-    case "turret": {
-      const pos = add(hero.pos, scale(forward, 1.8));
-      placeTurret(state, hero, isOnLand(pos.x, pos.y, 0.5) ? pos : hero.pos, CREW_TURRET.seconds);
-      return;
-    }
   }
 }
 
@@ -783,51 +662,16 @@ function placeTurret(state: RaidState, owner: RaidHero, pos: Vec2, seconds: numb
   });
 }
 
-function updateRam(state: RaidState, hero: RaidHero, dt: number): void {
-  hero.ramTime = Math.max(0, hero.ramTime - dt);
-  hero.moving = true;
-  hero.facing = angleOf(hero.ramDir);
-  const r = HEROES[hero.kind].radius;
-  const next = add(hero.pos, scale(hero.ramDir, RAM.speed * dt));
-  for (const b of state.buildings) {
-    if (!b.destroyed && distance(next, b.pos) < r + b.radius + 0.2) {
-      damageBuilding(state, b, RAM.damage, hero.id);
-      state.events.push({
-        type: "explosion",
-        pos: add(hero.pos, scale(hero.ramDir, r)),
-        radius: 1.5,
-      });
-      hero.ramTime = 0;
-      ramBlast(state, hero);
-      return;
-    }
-  }
-  moveHero(state, hero, sub(next, hero.pos));
-  if (hero.ramTime === 0) ramBlast(state, hero);
-}
-
-/** The Tank's signature: every ram ends in a shockwave. */
-function ramBlast(state: RaidState, hero: RaidHero): void {
-  const radius = SIGNATURE.ramBlastRadius[hero.mods.signature] ?? 0;
-  if (radius === 0) return;
-  const damage = RAM.damage * (SIGNATURE.ramBlastDamage[hero.mods.signature] ?? 0);
-  explode(state, hero.pos, radius, damage, "crew", hero.id, 1, 1);
-}
-
-function healHero(state: RaidState, hero: RaidHero, amount: number): number {
-  if (!hero.alive || hero.inBoat || hero.hp >= hero.maxHp) return 0;
-  const healed = Math.min(amount, hero.maxHp - hero.hp);
-  hero.hp += healed;
-  if (healed > 0 && state.rng() < 0.15) state.events.push({ type: "heal", pos: { ...hero.pos } });
-  return healed;
+function healHero(state: RaidState, hero: RaidHero, amount: number): void {
+  if (!hero.alive || hero.inBoat || hero.hp >= hero.maxHp) return;
+  hero.hp = Math.min(hero.maxHp, hero.hp + amount);
+  if (state.rng() < 0.15) state.events.push({ type: "heal", pos: { ...hero.pos } });
 }
 
 function damageHero(state: RaidState, hero: RaidHero, amount: number, heavyBonus = 1): void {
   if (!hero.alive || hero.inBoat) return;
   const spec = HEROES[hero.kind];
-  const taken =
-    amount * (spec.heavy ? heavyBonus : 1) * (hero.sprintTime > 0 ? SPRINT.damageTaken : 1);
-  hero.hp -= taken;
+  hero.hp -= amount * (spec.heavy ? heavyBonus : 1);
   state.events.push({ type: "hit", pos: { ...hero.pos } });
   if (hero.hp <= 0 && !guardianAngel(state, hero)) {
     hero.hp = 0;
@@ -866,7 +710,6 @@ function toggleBoat(state: RaidState, hero: RaidHero): void {
   } else if (canBoard(state, hero)) {
     hero.inBoat = true;
     state.boat.occupant = hero.id;
-    hero.ramTime = 0;
     state.events.push({ type: "boarded", heroId: hero.id });
   }
 }
@@ -918,7 +761,6 @@ function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
     case "heal":
       state.zones.push({
         id: state.nextId++,
-        kind: "heal",
         pos: { ...target },
         radius: HEAL.radius,
         time: HEAL.duration,
@@ -941,7 +783,7 @@ function findTarget(state: RaidState, from: Vec2, range: number, minRange: numbe
   let best: Target | null = null;
   let bestDistance = Infinity;
   for (const hero of state.heroes) {
-    if (!hero.alive || hero.inBoat || isInSmoke(state, hero.pos)) continue;
+    if (!hero.alive || hero.inBoat) continue;
     const d = distance(from, hero.pos);
     if (d < minRange || d > range + HEROES[hero.kind].radius || d >= bestDistance) continue;
     best = { pos: hero.pos, hero, turret: null };
@@ -1137,15 +979,8 @@ function nearestBuilding(state: RaidState, from: Vec2, range: number): RaidBuild
 
 function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, ownerId: number): void {
   if (b.destroyed || state.status !== "playing") return;
-  const dealt = Math.min(b.hp, amount);
   b.hp -= amount;
   const owner = state.heroes.find((h) => h.id === ownerId);
-  if (owner) {
-    owner.superCharge = Math.min(
-      1,
-      owner.superCharge + (dealt * owner.mods.superRate) / HEROES[owner.kind].superCharge,
-    );
-  }
   if (b.hp > 0) return;
   b.hp = 0;
   b.destroyed = true;
@@ -1153,10 +988,21 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
   state.energy += BUILDINGS[b.type].energy;
   state.events.push({ type: "destroyed", id: b.id, pos: { ...b.pos }, buildingType: b.type });
   if (b.type === "headquarters") state.status = "won";
-  // The Engineer's signature: whatever they knock down, they rebuild as a turret of their own.
-  if (owner?.kind === "engineer") {
-    const share = SIGNATURE.salvageTime[owner.mods.signature] ?? 0;
-    if (share > 0) placeTurret(state, owner, b.pos, CREW_TURRET.seconds * share);
+  if (owner) destroyedBy(state, owner, b);
+}
+
+/** Signature moves set off by knocking a building down. */
+function destroyedBy(state: RaidState, owner: RaidHero, b: RaidBuilding): void {
+  const tier = owner.mods.signature;
+  if (owner.kind === "engineer" && tier > 0) {
+    const share = SIGNATURE.salvageTime[tier] ?? 1;
+    placeTurret(state, owner, b.pos, CREW_TURRET.seconds * share);
+  }
+  // A shockwave can knock the next building down and set off another: that's the fun of it.
+  if (owner.kind === "tank" && tier > 0) {
+    const radius = SIGNATURE.shockwaveRadius[tier] ?? 0;
+    const damage = SIGNATURE.shockwaveDamage[tier] ?? 0;
+    explode(state, b.pos, radius + b.radius, damage, "crew", owner.id, 1, 1);
   }
 }
 
@@ -1441,7 +1287,7 @@ function explode(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Mines, zones and temporary obstacles
+// Mines and zones
 
 function updateMines(state: RaidState, dt: number): void {
   for (const mine of state.mines) {
@@ -1466,21 +1312,10 @@ function updateMines(state: RaidState, dt: number): void {
 function updateZones(state: RaidState, dt: number): void {
   for (const zone of state.zones) {
     zone.time -= dt;
-    if (zone.kind !== "heal") continue;
     for (const hero of state.heroes) {
       if (distance(hero.pos, zone.pos) <= zone.radius)
         healHero(state, hero, zone.healPerSecond * dt);
     }
   }
   state.zones = state.zones.filter((z) => z.time > 0);
-}
-
-function updateObstacles(state: RaidState, dt: number): void {
-  let expired = false;
-  for (const o of state.obstacles) {
-    if (o.time === null) continue;
-    o.time -= dt;
-    if (o.time <= 0) expired = true;
-  }
-  if (expired) state.obstacles = state.obstacles.filter((o) => o.time === null || o.time > 0);
 }

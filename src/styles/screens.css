@@ -398,8 +398,8 @@
   height: 12px;
 }
 
-/* The super: a navy plate inside a black-and-yellow hazard border. */
-.stats-super {
+/* The signature move: a navy plate inside a black-and-yellow hazard border. */
+.stats-signature {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -413,7 +413,7 @@
   color: var(--cream);
 }
 
-.stats-super-icon {
+.stats-signature-icon {
   flex: none;
   width: 40px;
   height: 40px;
@@ -424,12 +424,12 @@
   background: radial-gradient(circle at 40% 30%, #3d5a8a, #13223b);
 }
 
-.stats-super-icon .icon-wrap {
+.stats-signature-icon .icon-wrap {
   width: 100%;
   height: 100%;
 }
 
-.stats-super-tag {
+.stats-signature-tag {
   font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;
@@ -437,7 +437,7 @@
   color: var(--gold-text);
 }
 
-.stats-super-name {
+.stats-signature-name {
   font-family: var(--display);
   font-size: 15px;
   letter-spacing: 0.6px;
@@ -445,7 +445,7 @@
   text-shadow: var(--outline-thin);
 }
 
-.stats-super-text {
+.stats-signature-text {
   font-size: 11px;
   font-weight: 700;
   line-height: 1.2;
@@ -505,7 +505,7 @@
   .heroes-grid {
     gap: 9px 8px;
   }
-  .stats-super-text {
+  .stats-signature-text {
     display: none;
   }
   .heroes-start.ui-btn-xl {

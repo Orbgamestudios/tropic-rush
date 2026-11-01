@@ -36,8 +36,7 @@ These were explicitly left out to keep the first version to a basic structure:
 Raids are what matter most. If a co-op raid is fun, everything else builds on it.
 
 1. The crew picks an enemy island and lands together at its beach. **Decided**
-2. Each player controls one hero. Left thumb moves, right thumb aims and shoots, and dealing damage
-   charges a super ability. **Proposed**
+2. Each player controls one hero. Left thumb moves, right thumb aims and shoots. **Proposed**
    - **Aiming (Decided 2026-10-30):** dragging the aim stick shows a single cone as wide as the
      hero's shot spread and as long as their range, with a crosshair on the tower it will lock
      onto. It doesn't fire yet. Letting go locks on, and the hero keeps firing at that tower
@@ -90,8 +89,7 @@ the fight and costs walking time. A solo player is always choosing between fight
 
 **Proposed:**
 
-- Dynamic zoom: a bit closer while running, wider in big fights, a quick close-up on supers, and a
-  pinch to zoom within limits.
+- Dynamic zoom: a bit closer while running, wider in big fights, and a pinch to zoom within limits.
 - Off-screen teammates and the gunboat are shown by small arrows at the screen edge. The gunboat's
   targeting view is the big-picture view.
 
@@ -123,12 +121,17 @@ References:
   - `prop-grenade`
   - `prop-wrench`
   - `prop-engineer-backpack`
-  - `prop-turret-deployed` (the Engineer's super)
+  - `prop-turret-deployed` (the Engineer's Salvage turret)
 - The Engineer's backpack is still the simple version; the owner wants a more detailed one.
 - `props-sheet-v1.jpeg` is an earlier attempt with an RPG-style launcher and an odd wrench, kept
   for reference only.
 
 Gameplay is a first pass that hasn't been reviewed with the owner yet. **Proposed:**
+
+**Supers removed (Decided 2026-11-01, the owner's request, for now):** no hero has a super, a super
+meter or a Super button. The Super column below is kept as a record of what they were. The code
+was last in commit `9727b4e`, if they come back. Each hero's signature move (below) is now what
+sets them apart, and the Tank's Aftershock moved from the end of a ram to whatever they destroy.
 
 | Hero      | Health    | Speed   | Range          | Attack                                   | Super                                  | Job                                               |
 | --------- | --------- | ------- | -------------- | ---------------------------------------- | -------------------------------------- | ------------------------------------------------- |
@@ -157,7 +160,8 @@ Gameplay is a first pass that hasn't been reviewed with the owner yet. **Propose
   - Ace, Cluster warhead: rockets throw out 3 bomblets (5).
   - Mr. Pemberton, Skipping stone: grenades skip on for a second blast (a third).
   - Gus, Salvage: every building they destroy comes back as their turret for a while (full time).
-  - Tilly & Tank, Aftershock: every ram ends in a shockwave (far bigger).
+  - Tilly & Tank, Aftershock: whatever they destroy goes up in a shockwave that can set off the
+    next (far bigger).
 
 ## Islands
 
@@ -337,7 +341,7 @@ like theme but polished and simple"):
 - **Insignia:** brass rank chevrons, anchors and shield-shaped rank badges for levels.
 - **Bars:** segmented gauges (HP orange, attack green, speed yellow, range blue on hero select).
 - **Hero select:** "Personnel" roster, a radar sweeping behind the hero on a navy steel pedestal
-  with a grated top, "Technical specs" on cream paper, the super in a hazard-striped plate, and
+  with a grated top, "Technical specs" on cream paper, the signature move in a hazard-striped plate, and
   SELECT.
 - **Raid HUD:** a navy hero card, the squad in a column down the left, a PAUSE plate and a
   brass-rimmed minimap.
@@ -358,25 +362,25 @@ like theme but polished and simple"):
   with the view, so pushing up always goes forward.
 - **Finishing effects:** soft bloom on bright things, a gentle vignette, softer shadows. They
   switch off on devices that can't keep up.
-- **Controls editor** (Settings → Controls, **Decided**): drag the move stick, fire stick and
-  Super button anywhere and resize each one. x and y are shares of the screen (0 to 1). Settings
+- **Controls editor** (Settings → Controls, **Decided**): drag the move stick and fire stick
+  anywhere and resize each one. x and y are shares of the screen (0 to 1). Settings
   shows every value, so the owner can send them to become the defaults.
 - **Hero select:**
   - a roster of 3D-rendered portraits with gear-shaped level badges and medal locks
   - the hero on a stone-and-steel pedestal: drag to spin it, and it drops in when chosen
   - a stats card with HP, Attack, Speed and Range bars (a ghost bar previews the next level)
-  - the super ability
+  - the hero's signature move
   - the hero's perk track
   - LEVEL UP (gold) or UNLOCK (medals), and RAID, which opens the world map
   - a SQUAD column: tap + to bring up to 4 unlocked heroes as AI squadmates, tap one to drop it.
     Choosing a squadmate as your hero swaps the two.
 - **Raid HUD:**
-  - a portrait card with health and super bars
+  - a portrait card with a health bar
   - the squad's portraits under it, with health bars and a KO mark when one falls
   - a timer and destruction plate
   - pause, a live minimap, and energy and loot pills
   - a move stick and a FIRE pad, resting where the controls editor puts them
-  - Super and gunboat buttons
+  - the gunboat button
   - the gunboat ability tray, only while on the gunboat
   - damage numbers over hits
   - a glowing ring under your hero (green) and each squadmate (blue)
@@ -424,8 +428,7 @@ like theme but polished and simple"):
 - **AI squadmates** (built as a draft, 2026-10-30, after the mockups showed a squad): when you
   raid without friends, AI heroes fill the other crew seats. They are whole heroes at their own
   level, not the troop squads listed as out of scope.
-  - They follow you, fight buildings near you (defenses first), side-step cover and fire their
-    supers when charged. The Medic heals whoever is hurt.
+  - They follow you, fight buildings near you (defenses first), and side-step cover. The Medic heals whoever is hurt.
   - They never board the gunboat.
   - If you go down, the camera follows a squadmate and the raid goes on until they all fall.
   - They count as crew for the rules, so a full squad makes islands easier. Nothing scales the
@@ -556,7 +559,7 @@ Steps 1–3 exist as a first playable draft with placeholder models, at the owne
 
 - **Look:** Three.js in landscape with the MOBA camera.
 - **Islands:** generated islands, with the same buildings per HQ level and different layouts.
-- **Heroes:** all 7 heroes, with their attacks and supers from the Proposed table.
+- **Heroes:** all 7 heroes, with their attacks from the Proposed table.
 - **Enemies:** defenses that shoot back (gun turret, mortar with its blind spot, harpoon,
   flamethrower) and hidden beach mines.
 - **Gunboat:** walking back to the boat, boarding, the targeting view, the three abilities and

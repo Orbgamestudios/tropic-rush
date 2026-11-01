@@ -88,8 +88,6 @@ export function shotSpread(kind: HeroKind): number {
   }
 }
 
-export type SuperKind = "sprint" | "sandbags" | "ram" | "volley" | "smoke" | "healZone" | "turret";
-
 export interface HeroSpec {
   name: string;
   role: string;
@@ -98,10 +96,6 @@ export interface HeroSpec {
   speed: number;
   radius: number;
   attack: HeroAttack;
-  super: SuperKind;
-  superName: string;
-  /** Damage (or healing) needed to fill the super meter. */
-  superCharge: number;
   /** Harpoons do bonus damage to heavy heroes. */
   heavy: boolean;
 }
@@ -122,9 +116,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
       shots: 3,
       interval: 0.09,
     },
-    super: "sprint",
-    superName: "Sprint",
-    superCharge: 900,
     heavy: false,
   },
   medic: {
@@ -134,9 +125,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
     speed: 5.6,
     radius: 0.55,
     attack: { kind: "spray", range: 7, damage: 26, heal: 30, reload: 0.15, coneHalfAngle: 0.6 },
-    super: "healZone",
-    superName: "Field medkit",
-    superCharge: 750,
     heavy: false,
   },
   tank: {
@@ -154,9 +142,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
       splash: 2.2,
       buildingBonus: 1.3,
     },
-    super: "ram",
-    superName: "Ram",
-    superCharge: 1400,
     heavy: true,
   },
   heavy: {
@@ -175,9 +160,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
       spread: 0.1,
       speed: 32,
     },
-    super: "sandbags",
-    superName: "Sandbag wall",
-    superCharge: 1200,
     heavy: true,
   },
   bazooka: {
@@ -195,9 +177,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
       splash: 2.4,
       buildingBonus: 1,
     },
-    super: "volley",
-    superName: "Rocket volley",
-    superCharge: 1100,
     heavy: false,
   },
   grenadier: {
@@ -207,9 +186,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
     speed: 5.4,
     radius: 0.55,
     attack: { kind: "lob", range: 14, damage: 170, reload: 1.3, splash: 3, flightTime: 0.9 },
-    super: "smoke",
-    superName: "Smoke screen",
-    superCharge: 900,
     heavy: false,
   },
   engineer: {
@@ -227,9 +203,6 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
       splash: 0,
       buildingBonus: 1,
     },
-    super: "turret",
-    superName: "Auto-turret",
-    superCharge: 1000,
     heavy: false,
   },
 };

@@ -1,24 +1,22 @@
 // The in-raid HUD, in HTML over the 3D view:
-// - top-left: the hero's portrait card with level badge, health and super bars, and under it
+// - top-left: the hero's portrait card with level badge, health bar, and under it
 //   the squad's portraits with their health
 // - top-middle: time left and how much of the island is destroyed
 // - top-right: pause, a live minimap, gunboat energy and the loot so far
 // - bottom-middle, only on the gunboat: its abilities; bottom-right: the gunboat button, and the
-//   Super button wherever the settings put it (the move stick and fire pad belong to Controls)
+//   gunboat button (the move stick and fire pad belong to Controls)
 // - an arrow at the screen edge pointing back to the gunboat when it's out of view
 
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
-import { HEROES, type HeroKind, type SuperKind } from "../logic/heroes";
+import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, raidReward } from "../logic/heroProgress";
 import { shoreRadius } from "../logic/island";
 import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
-import type { ControlSpot } from "../save";
 import { CurrencyPill, el, formatNumber, levelBadge } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
 export interface HudHandlers {
-  onSuper(): void;
   onBoat(): void;
   onAbility(ability: Ability): void;
   onPause(): void;
@@ -31,16 +29,6 @@ export interface BoatMarker {
   /** How far the view is turned from north, so the minimap can turn with it. */
   turn: number;
 }
-
-const SUPER_ICONS: Record<SuperKind, IconName> = {
-  sprint: "speed",
-  sandbags: "sandbags",
-  ram: "ram",
-  volley: "rocket",
-  smoke: "smoke",
-  healZone: "heal",
-  turret: "turret",
-};
 
 const ABILITY_ICONS: Record<Ability, IconName> = {
   artillery: "artillery",
@@ -66,8 +54,6 @@ export class Hud {
   private readonly hpFill = el("div", "hud-bar-fill");
   private readonly hpLag = el("div", "hud-bar-lag");
   private readonly hpText = el("span", "hud-bar-text");
-  private readonly superFill = el("div", "hud-bar-fill");
-  private readonly superText = el("span", "hud-bar-text");
   private readonly timer = el("span", "hud-objective-time");
   private readonly destroyed = el("span", "hud-objective-pct");
   private readonly objectiveFill = el("div", "hud-objective-fill");
@@ -75,9 +61,6 @@ export class Hud {
   private readonly loot = new CurrencyPill("coin", "Loot");
   private readonly map = el("canvas", "hud-minimap-canvas");
   private readonly mapNorth = el("div", "hud-minimap-north");
-  private readonly superButton = el("button", "hud-round hud-super");
-  private readonly superRing = el("div", "hud-super-ring");
-  private readonly superIcon = el("div", "hud-super-icon");
   private readonly boatButton = el("button", "hud-round hud-boat");
   private readonly boatLabel = el("span", "hud-round-label", "Board");
   private readonly tray = el("div", "hud-tray");
@@ -92,9 +75,7 @@ export class Hud {
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
   private lastHp = -1;
   private lagHp = 0;
-  private superReady = false;
   private mapTimer = 0;
-  private superKind: SuperKind | null = null;
   private onFoot = true;
   private readonly squadBox = el("div", "hud-squad");
   private squad: {
@@ -115,13 +96,9 @@ export class Hud {
     const bars = el("div", "hud-bars");
     const hp = el("div", "hud-bar hud-bar-hp");
     hp.append(this.hpLag, this.hpFill, this.hpText);
-    const sup = el("div", "hud-bar hud-bar-super");
-    sup.append(this.superFill, this.superText);
     const hpRow = el("div", "hud-bar-row");
     hpRow.append(icon("heart", "hud-bar-icon"), hp);
-    const supRow = el("div", "hud-bar-row");
-    supRow.append(icon("energy", "hud-bar-icon"), sup);
-    bars.append(this.name, hpRow, supRow);
+    bars.append(this.name, hpRow);
     card.append(frame, bars);
 
     // Objective.
@@ -156,14 +133,7 @@ export class Hud {
     pills.append(this.energy.root, this.loot.root);
     right.append(mapRow, pills);
 
-    // Super and gunboat buttons.
-    this.superButton.setAttribute("aria-label", "Super");
-    this.superButton.append(this.superRing, this.superIcon, el("span", "hud-round-label", "Super"));
-    this.superButton.addEventListener("pointerdown", (e) => {
-      e.stopPropagation();
-      if (this.superReady) sfx.press();
-      handlers.onSuper();
-    });
+    // The gunboat button.
     this.boatButton.setAttribute("aria-label", "Board gunboat");
     this.boatButton.append(icon("anchorGold", "hud-boat-icon"), this.boatLabel);
     this.boatButton.addEventListener("click", () => {
@@ -198,7 +168,6 @@ export class Hud {
       objective,
       right,
       this.trayBox,
-      this.superButton,
       this.boatButton,
       this.arrow,
       this.flashText,
@@ -212,13 +181,6 @@ export class Hud {
     this.root.style.display = visible ? "block" : "none";
   }
 
-  /** Moves and sizes the Super button from the settings. */
-  setSuperSpot(spot: ControlSpot): void {
-    this.superButton.style.left = `${spot.x * 100}%`;
-    this.superButton.style.top = `${spot.y * 100}%`;
-    this.superButton.style.setProperty("--size", String(spot.size));
-  }
-
   /** Sets the hero card's picture and level at the start of a raid. */
   setHero(portraitUrl: Promise<string>, level: number): void {
     this.portrait.removeAttribute("src");
@@ -227,7 +189,6 @@ export class Hud {
     });
     this.level.replaceChildren(levelBadge(level));
     this.lastHp = -1;
-    this.superKind = null;
   }
 
   /** The AI squadmates' portraits, in the same order as state.heroes[1..]. */
@@ -268,12 +229,7 @@ export class Hud {
     islandLevel: number,
     dt: number,
   ): void {
-    const spec = HEROES[hero.kind];
     this.name.textContent = HERO_NAMES[hero.kind];
-    if (this.superKind !== spec.super) {
-      this.superKind = spec.super;
-      this.superIcon.replaceChildren(icon(SUPER_ICONS[spec.super]));
-    }
 
     // Health, with a trailing "damage taken" bar.
     const hpFraction = Math.max(0, hero.hp / hero.maxHp);
@@ -287,16 +243,6 @@ export class Hud {
     this.hpText.textContent = `${formatNumber(Math.ceil(hero.hp))} / ${formatNumber(hero.maxHp)}`;
     this.hpFill.classList.toggle("low", hpFraction < 0.3);
 
-    const charge = Math.min(1, hero.superCharge);
-    this.superFill.style.width = `${charge * 100}%`;
-    this.superText.textContent =
-      charge >= 1 ? `${spec.superName} ready!` : `Super ${Math.round(charge * 100)}%`;
-    const ready = charge >= 1;
-    if (ready && !this.superReady) sfx.coin();
-    this.superReady = ready;
-    this.superButton.classList.toggle("ready", ready);
-    this.superButton.style.setProperty("--charge", `${charge * 360}deg`);
-
     const percent = destructionPercent(state);
     this.timer.textContent = formatTime(state.timeLimit - state.time);
     this.timer.classList.toggle("urgent", state.timeLimit - state.time < 30);
@@ -306,7 +252,6 @@ export class Hud {
     this.loot.set(raidReward(false, percent, islandLevel).gold);
 
     this.onFoot = hero.alive && !hero.inBoat;
-    this.superButton.style.display = this.onFoot ? "flex" : "none";
     this.boatButton.style.display = (this.onFoot && canBoard) || hero.inBoat ? "flex" : "none";
     this.boatButton.setAttribute("aria-label", hero.inBoat ? "Back to the beach" : "Board gunboat");
     this.boatLabel.textContent = hero.inBoat ? "Land" : "Board";

@@ -1,6 +1,6 @@
 // AI squadmates: the heroes that fill the empty crew seats when you raid without friends. Each
 // one sticks near the leader (hero 0), picks fights close to them, shoots around cover, keeps the
-// medic on whoever is hurt, and fires its super when charged. Once the leader is down or in the
+// medic on whoever is hurt. Once the leader is down or in the
 // gunboat, the squad keeps pushing on its own. Squadmates never board the gunboat.
 
 import { BUILDINGS } from "./buildings";
@@ -107,7 +107,6 @@ export function squadInput(state: RaidState, index: number): HeroInput {
         ...IDLE_INPUT,
         move: close ? vec(0, 0) : steer(state, hero, patient.pos),
         aim: close ? aimAt(hero, patient.pos) : null,
-        useSuper: hero.superCharge >= 1 && close,
       };
     }
   }
@@ -128,7 +127,6 @@ export function squadInput(state: RaidState, index: number): HeroInput {
       ...IDLE_INPUT,
       move: scaleVec(spacing(state, hero), 0.5),
       aim: aimAt(hero, target.pos),
-      useSuper: hero.superCharge >= 1,
     };
   }
 
