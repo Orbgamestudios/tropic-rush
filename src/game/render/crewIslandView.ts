@@ -52,7 +52,7 @@ function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
   const footing = rbox(width + 0.2, 2.4, depth + 0.2, 0xb4a88e);
   footing.position.y = -1.15;
   g.add(footing, trim, pad);
-  const model = buildingModel(type).root;
+  const model = buildingModel(type, CREW_PAINT).root;
   // Models face +x; face the beach (+z, towards the camera), or turn a quarter more if rotated.
   model.rotation.y = -Math.PI / 2 + (rotated ? Math.PI / 2 : 0);
   const box = visibleBox(model);
@@ -70,7 +70,7 @@ function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
     if (!(o instanceof THREE.Mesh)) return;
     o.castShadow = true;
     const m = (o.material as THREE.MeshStandardMaterial).clone();
-    const paint = m.color ? CREW_PAINT.get(m.color.getHex()) : undefined;
+    const paint = m.vertexColors ? undefined : CREW_PAINT.get(m.color.getHex());
     if (paint !== undefined) m.color.setHex(paint);
     o.material = m;
   });

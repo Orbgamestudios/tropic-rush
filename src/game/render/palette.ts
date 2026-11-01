@@ -12,7 +12,7 @@ export const COLORS = {
   water: 0x3ccbd4,
   foam: 0xffffff,
 
-  enemyDark: 0x3d4149,
+  enemyDark: 0x5b6472,
   enemyRust: 0xc4582c,
   sandbag: 0xcdb78a,
   bamboo: 0xcdb36b,
@@ -23,7 +23,7 @@ export const COLORS = {
   stone: 0xa9a497,
   gold: 0xf3c24c,
   metal: 0x6e747b,
-  darkMetal: 0x3a3e44,
+  darkMetal: 0x41464e,
 
   crewBlue: 0x4f86c6,
   crewBlueDark: 0x3b6aa3,

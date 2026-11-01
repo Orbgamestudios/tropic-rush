@@ -118,6 +118,55 @@ export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return merged;
 }
 
+/** A sharp-edged box: 12 triangles, for small details that don't need rounded corners. */
+export function plain(
+  w: number,
+  h: number,
+  d: number,
+  color: number,
+  options?: MaterialOptions,
+): THREE.Mesh {
+  return mesh(new THREE.BoxGeometry(w, h, d), color, options);
+}
+
+/**
+ * Merges every solid mesh under `root` into one vertex-colored mesh, so a detailed model is a
+ * single draw call. Objects in `keep` (turning heads, flames) and their children stay separate.
+ * `paint` swaps colors as they're baked, for repainting a model.
+ */
+export function bake(
+  root: THREE.Object3D,
+  keep: readonly THREE.Object3D[] = [],
+  paint?: ReadonlyMap<number, number>,
+): void {
+  root.updateMatrixWorld(true);
+  const toRoot = root.matrixWorld.clone().invert();
+  const parts: THREE.BufferGeometry[] = [];
+  const baked: THREE.Mesh[] = [];
+  const visit = (o: THREE.Object3D) => {
+    if (keep.includes(o)) return;
+    const m = o as THREE.Mesh;
+    const stuff = m.material as THREE.MeshStandardMaterial | undefined;
+    if (m.isMesh && stuff && !stuff.transparent) {
+      const hex = stuff.color.getHex();
+      const g = m.geometry.clone().applyMatrix4(toRoot.clone().multiply(m.matrixWorld));
+      parts.push(painted(g, paint?.get(hex) ?? hex));
+      baked.push(m);
+    }
+    for (const child of o.children) visit(child);
+  };
+  for (const child of root.children) visit(child);
+  if (parts.length === 0) return;
+  for (const m of baked) {
+    m.removeFromParent();
+    m.geometry.dispose();
+  }
+  const merged = new THREE.Mesh(merge(parts), vertexColored());
+  merged.castShadow = true;
+  merged.receiveShadow = true;
+  root.add(merged);
+}
+
 /** A ring of sandbags around a building, as one mesh. */
 export function sandbagRing(radius: number, layers: number, color: number): THREE.Mesh {
   const parts: THREE.BufferGeometry[] = [];
