@@ -6,6 +6,9 @@ beyond it. Every name, number and ability here is a draft to confirm.
 
 These replace hero levels and perks. Today's signature moves all live on as dark-crystal capstones.
 
+The owner's reference art is `docs/concept/ui-upgrade-tree.webp` for the screen and
+`docs/concept/crystals.png` for the crystals. They like the crystal design specifically.
+
 ## How a tree works
 
 Every hero has the same shape, 13 upgrades in all. An upgrade needs the one before it.

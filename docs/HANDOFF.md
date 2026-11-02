@@ -10,7 +10,9 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 
 - **Hero upgrade trees:** the plan for all seven heroes is in `docs/HERO_TREES.md`, with the
   two-week "Tides" abilities beyond them. The owner called it a planning phase and hasn't approved
-  it. Don't build any of it until they do.
+  it. Don't build any of it until they do. Their reference art is in `docs/concept/`:
+  `ui-upgrade-tree.webp` for the screen and `crystals.png` for the crystals, whose design they like
+  specifically.
 - **iPhone feedback:** nothing below has been tried on a real iPhone. Ask about game speed, sound,
   haptics, the notch, the location card, how dark nights are, and battery.
 - **Hero unlock spacing:** a hero joins every three HQ levels: Heavy 3, Medic 6, Grenadier 9,
@@ -49,6 +51,8 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 - A drag on the world map can't start in the notch strip, because the map's touch area is inside
   the safe area.
 - The world map has lamps for 70 islands at most, so a very large world leaves some unlit.
+- From iOS 26.5, only a real finger can trigger haptics, so buttons buzz but explosions don't. That's
+  Apple's limit, not a bug (`audio/haptics.ts`).
 - At the owner's request new-moon nights are very dark. If that hurts play, `DARKEST` in
   `render/sky.ts` is the number to raise.
 
@@ -88,3 +92,7 @@ cost quality. Battery matters: keep Lambert materials, baked models and few draw
 - Frame timing needs `gl.readPixels` to force the frame to finish: `requestAnimationFrame` alone
   gives bogus numbers.
 - `npx wrangler dev` rebuilds when `src/` changes, so don't edit `src/` during a test run against it.
+- To test raiding together, run `npx wrangler dev` and open two browser pages. Put both in one crew
+  with `tropicRush.joinCrew(code, name, id)`, and move a hero with `tropicRush.holdMove(x, y)`.
+- WebKit has failed once with "Target page closed" and passed on a rerun, so rerun that before
+  chasing it. Anything else that fails is worth reading.
