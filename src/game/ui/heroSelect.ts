@@ -1,7 +1,8 @@
 // The hero screen, reached by tapping a hero on the island: the roster on the left, the chosen
 // hero turning on a pedestal in the middle, their stats, signature move and perks on the right. Gold levels
 // heroes up, with a reveal for each level and a perk at the milestones; medals unlock new ones.
-// Raid goes to the world map to pick an island.
+// Raid goes to the world map to pick an island. Nobody brings AI allies: the only crewmates on a
+// raid are other players, who team up from the map.
 
 import { HERO_KINDS, HEROES, type HeroKind } from "../logic/heroes";
 import {
@@ -17,7 +18,7 @@ import {
 } from "../logic/heroProgress";
 import type { Showcase } from "../render/showcase";
 import { heroPortrait } from "../render/thumbnails";
-import { MAX_SQUAD, type SaveData } from "../save";
+import type { SaveData } from "../save";
 import {
   backButton,
   button,
@@ -38,8 +39,8 @@ export interface HeroSelectHost {
   save(): SaveData;
   update(changes: Partial<SaveData>): void;
   onBack(): void;
-  /** Raid with this hero and squad: on to the world map. */
-  onStart(hero: HeroKind, squad: HeroKind[]): void;
+  /** Raid with this hero: on to the world map. */
+  onStart(hero: HeroKind): void;
 }
 
 export class HeroSelect {
@@ -69,8 +70,6 @@ export class HeroSelect {
   private readonly levelUp: HTMLButtonElement;
   private readonly levelCost = el("span", "heroes-cost");
   private readonly start: HTMLButtonElement;
-  private readonly squadSlots = el("div", "squad-slots");
-  private readonly picker = el("div", "squad-picker");
   private hero: HeroKind = "rifleman";
 
   constructor(
@@ -124,12 +123,7 @@ export class HeroSelect {
       icon("anchorGold", "heroes-name-badge"),
     );
     nameplate.append(nameRow, this.role);
-    // The squad: AI heroes who fill the other crew seats.
-    const squad = el("div", "squad");
-    squad.append(el("div", "squad-label", "Squad"), this.squadSlots, this.picker);
-    for (const stop of ["pointerdown", "pointermove", "pointerup"] as const)
-      squad.addEventListener(stop, (e) => e.stopPropagation());
-    stageArea.append(squad, el("div", "heroes-spin-hint", "Drag to spin"), nameplate);
+    stageArea.append(el("div", "heroes-spin-hint", "Drag to spin"), nameplate);
 
     // Stats & info.
     const info = panel("Technical specs", "heroes-info");
@@ -190,12 +184,6 @@ export class HeroSelect {
 
   private choose(kind: HeroKind, quiet = false): void {
     if (!quiet && kind !== this.hero) sfx.whoosh();
-    // Picking a squadmate as leader swaps them with the old leader.
-    const save = this.host.save();
-    if (save.squad.includes(kind) && save.unlocked.includes(this.hero) && kind !== this.hero) {
-      const squad = save.squad.map((k) => (k === kind ? this.hero : k));
-      this.host.update({ squad: squad.filter((k, i) => squad.indexOf(k) === i) });
-    }
     this.hero = kind;
     void this.showcase.setHero(kind);
     this.refresh();
@@ -227,7 +215,7 @@ export class HeroSelect {
     this.cardName.textContent = spec.name;
     this.cardBadges.replaceChildren(
       icon(spec.heavy ? "shield" : "speed", "stats-badge"),
-      icon(spec.attack.kind === "spray" ? "heal" : "crosshair", "stats-badge"),
+      icon(spec.attack.kind === "heal" ? "heal" : "crosshair", "stats-badge"),
     );
     this.cardLevel.replaceChildren(levelBadge(level, "stats-level-badge"));
     this.cardLevel.title =
@@ -236,6 +224,7 @@ export class HeroSelect {
     const bars = statBars(kind, level);
     const nextBars = statBars(kind, Math.min(MAX_HERO_LEVEL, level + 1));
     this.bars.hp.set(bars.hp, formatNumber(now.hp), nextBars.hp);
+    this.bars.dps.setLabel(spec.attack.kind === "heal" ? "Healing" : "Attack");
     this.bars.dps.set(bars.dps, `${formatNumber(now.dps)}/s`, nextBars.dps);
     this.bars.speed.set(bars.speed, now.speed.toFixed(1));
     this.bars.range.set(bars.range, `${now.range} m`);
@@ -267,7 +256,6 @@ export class HeroSelect {
       this.levelUp.classList.replace("ui-btn-gold", "ui-btn-steel");
     }
     this.start.disabled = !unlocked;
-    this.refreshSquad();
     this.gold.set(save.gold);
     this.medals.set(save.medals);
   }
@@ -297,90 +285,6 @@ export class HeroSelect {
     this.perkText.textContent = next
       ? `Level ${next.level}: ${next.name}. ${next.text}`
       : "All perks earned!";
-  }
-
-  /** The squad without the current leader, as the raid will use it. */
-  private squad(): HeroKind[] {
-    const save = this.host.save();
-    return save.squad.filter((k) => k !== this.hero && save.unlocked.includes(k));
-  }
-
-  private refreshSquad(): void {
-    const save = this.host.save();
-    const squad = this.squad();
-    const slots: HTMLElement[] = [];
-    for (let i = 0; i < MAX_SQUAD; i++) {
-      const kind = squad[i];
-      if (kind) {
-        const tile = portraitTile(`Remove ${HEROES[kind].name} from the squad`, null, {
-          level: save.heroLevels[kind],
-        });
-        tile.classList.add("squad-slot");
-        void heroPortrait(kind).then((url) => {
-          const img = tile.querySelector("img");
-          if (img) img.src = url;
-        });
-        tile.addEventListener("click", () => {
-          sfx.press();
-          this.host.update({ squad: this.host.save().squad.filter((k) => k !== kind) });
-          this.closePicker();
-          this.refreshSquad();
-        });
-        slots.push(tile);
-      } else {
-        const add = el("button", "squad-slot squad-add");
-        add.setAttribute("aria-label", "Add a squadmate");
-        add.append(el("span", "squad-plus", "+"));
-        const free = this.candidates().length > 0;
-        add.disabled = !free;
-        add.addEventListener("click", () => this.togglePicker());
-        slots.push(add);
-      }
-    }
-    this.squadSlots.replaceChildren(...slots);
-  }
-
-  /** Unlocked heroes who could join: not the leader and not already in. */
-  private candidates(): HeroKind[] {
-    const save = this.host.save();
-    const squad = this.squad();
-    return save.unlocked.filter((k) => k !== this.hero && !squad.includes(k));
-  }
-
-  private togglePicker(): void {
-    if (this.picker.classList.contains("open")) {
-      this.closePicker();
-      return;
-    }
-    sfx.press();
-    const save = this.host.save();
-    const tiles = this.candidates().map((kind) => {
-      const tile = portraitTile(`Add ${HEROES[kind].name}`, null, {
-        level: save.heroLevels[kind],
-      });
-      tile.classList.add("squad-option");
-      tile.append(el("span", "squad-option-name", HEROES[kind].name));
-      void heroPortrait(kind).then((url) => {
-        const img = tile.querySelector("img");
-        if (img) img.src = url;
-      });
-      tile.addEventListener("click", () => {
-        const current = this.squad();
-        if (current.length >= MAX_SQUAD) return;
-        sfx.levelUp();
-        this.host.update({ squad: [...current, kind] });
-        sparkleAt(this.fx, tile, { count: 10, spread: 40 });
-        this.closePicker();
-        this.refreshSquad();
-      });
-      return tile;
-    });
-    this.picker.replaceChildren(...tiles);
-    this.picker.classList.add("open");
-  }
-
-  private closePicker(): void {
-    this.picker.classList.remove("open");
   }
 
   private upgrade(): void {
@@ -430,8 +334,7 @@ export class HeroSelect {
       sfx.error();
       return;
     }
-    this.closePicker();
     this.host.update({ hero: this.hero });
-    this.host.onStart(this.hero, this.squad());
+    this.host.onStart(this.hero);
   }
 }

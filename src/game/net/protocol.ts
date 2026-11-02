@@ -2,7 +2,12 @@
 // The server checks every change with the same rules the phone uses (logic/crewIsland.ts),
 // then sends the whole layout to every crewmate. Layouts are small, so this stays simple.
 
+import type { Avatar } from "../logic/avatars";
+import type { RaidSnapshot, Seat } from "../logic/coop";
 import type { CrewLayout, LayoutOp } from "../logic/crewIsland";
+import type { HeroKind } from "../logic/heroes";
+import type { HeroInput } from "../logic/raid";
+import type { MapIsland } from "../logic/worldMap";
 
 export const MAX_CREW = 5;
 export const MAX_NAME_LENGTH = 16;
@@ -28,6 +33,8 @@ export function cleanName(input: string): string {
 export interface Member {
   id: string;
   name: string;
+  /** The icon they've picked. */
+  avatar: Avatar;
   online: boolean;
 }
 
@@ -38,10 +45,23 @@ export interface Hold {
   name: string;
 }
 
+/** Passed from phone to phone through the crew's server, which doesn't look inside. */
+export type RaidMessage =
+  | { k: "invite"; raidId: string; host: string; island: MapIsland }
+  | { k: "cancel"; raidId: string }
+  | { k: "join"; raidId: string; name: string; hero: HeroKind; level: number }
+  | { k: "seats"; raidId: string; seats: Seat[]; island: MapIsland }
+  | { k: "leave"; raidId: string }
+  | { k: "start"; raidId: string; seats: Seat[]; island: MapIsland }
+  | { k: "input"; raidId: string; seat: number; input: HeroInput }
+  | { k: "snap"; raidId: string; snap: RaidSnapshot };
+
 export type ClientMessage =
-  | { t: "hello"; memberId: string; name: string }
+  | { t: "hello"; memberId: string; name: string; avatar: Avatar }
   | { t: "op"; op: LayoutOp; opId: number }
-  | { t: "hold"; buildingId: string | null };
+  | { t: "hold"; buildingId: string | null }
+  /** To one crewmate, or with no `to` to everyone else online. */
+  | { t: "relay"; data: RaidMessage; to?: string };
 
 export type ServerMessage =
   | {
@@ -54,4 +74,8 @@ export type ServerMessage =
       now: number;
     }
   | { t: "reject"; opId: number; reason: string }
+  | { t: "relay"; from: string; data: RaidMessage }
   | { t: "full" };
+
+/** The most a relayed message may weigh, in characters. */
+export const MAX_RELAY = 64_000;

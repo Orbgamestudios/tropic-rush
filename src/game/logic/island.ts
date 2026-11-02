@@ -94,13 +94,13 @@ export interface PlacedBuilding {
   level?: number;
 }
 
-export type ObstacleKind = "rock" | "palm" | "sandbag";
+export type ObstacleKind = "rock" | "palm";
 
 export interface ObstacleSpawn {
   kind: ObstacleKind;
   pos: Vec2;
   radius: number;
-  /** Rocks and sandbags stop bullets; palm trunks don't. */
+  /** Rocks stop bullets; palm trunks don't. */
   blocksShots: boolean;
   /** Random variety for the renderer. */
   scale: number;
@@ -125,8 +125,6 @@ export interface IslandLayout {
   spawn: Vec2;
   /** The gunboat, pulled up in the shallows next to the landing beach. */
   boat: Vec2;
-  /** Where a hero steps off the boat. */
-  boatExit: Vec2;
 }
 
 /** Walks along a ray from the island's center until the shore distance drops to `target`. */
@@ -149,12 +147,11 @@ function overlaps(pos: Vec2, radius: number, others: readonly Placed[], gap: num
   return others.some((o) => distance(pos, o.pos) < radius + o.radius + gap);
 }
 
-/** Where every island's beach landing is: heroes, the gunboat and where you step off it. */
-export function landingPoints(): { spawn: Vec2; boat: Vec2; boatExit: Vec2 } {
+/** Where every island's beach landing is: the heroes, and the gunboat in the shallows. */
+export function landingPoints(): { spawn: Vec2; boat: Vec2 } {
   return {
     spawn: pointAtShoreDistance(BEACH_DIRECTION, 5),
     boat: pointAtShoreDistance(BEACH_DIRECTION, -3, 7),
-    boatExit: pointAtShoreDistance(BEACH_DIRECTION, 2.5, 7),
   };
 }
 
@@ -178,15 +175,12 @@ export function dressIsland(
 ): IslandLayout {
   const rng = createRng(seed);
   const contents = levelContents(level);
-  const { spawn, boat, boatExit } = landingPoints();
+  const { spawn, boat } = landingPoints();
   const placed: Placed[] = buildings.map((b) => ({
     pos: b.pos,
     radius: BUILDINGS[b.type].radius,
   }));
-  const keepClear: Placed[] = [
-    { pos: spawn, radius: 6 },
-    { pos: boatExit, radius: 4 },
-  ];
+  const keepClear: Placed[] = [{ pos: spawn, radius: 6 }];
 
   const around =
     (center: Vec2, minAngle: number, maxAngle: number, minR: number, maxR: number) => () =>
@@ -198,26 +192,6 @@ export function dressIsland(
 
   const obstacles: ObstacleSpawn[] = [];
   const blockers = (): Placed[] => [...placed, ...keepClear, ...obstacles];
-
-  // Short sandbag walls in front of the direct-fire defenses, facing the beach.
-  for (const b of buildings) {
-    if (b.type !== "gunTurret" && b.type !== "harpoon") continue;
-    const toBeach = normalize(sub(spawn, b.pos));
-    const center = add(b.pos, scale(toBeach, BUILDINGS[b.type].radius + 2.4));
-    const along = vec(-toBeach.y, toBeach.x);
-    for (const offset of [-1.4, 0, 1.4]) {
-      const pos = add(center, scale(along, offset));
-      if (!isOnLand(pos.x, pos.y, 1) || overlaps(pos, 0.75, placed, 0.3)) continue;
-      obstacles.push({
-        kind: "sandbag",
-        pos,
-        radius: 0.75,
-        blocksShots: true,
-        scale: 1,
-        rotation: Math.atan2(along.y, along.x),
-      });
-    }
-  }
 
   const scatter = (
     count: number,
@@ -297,7 +271,6 @@ export function dressIsland(
     mines,
     spawn,
     boat,
-    boatExit,
   };
 }
 

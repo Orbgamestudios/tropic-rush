@@ -1,8 +1,9 @@
 // The end-of-raid screen: a VICTORY or DEFEAT banner on sun rays, three stars that stamp in one
 // by one, the raid's numbers, and the loot counting up into the wallet.
 
+import { costText, type Purse, RESOURCES } from "../logic/economy";
 import type { RaidReward } from "../logic/heroProgress";
-import { button, el, formatNumber, plate } from "./kit/dom";
+import { button, costChips, el, formatNumber, plate } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
@@ -14,6 +15,8 @@ export interface RaidResult {
   totalCount: number;
   seconds: number;
   reward: RaidReward;
+  /** Materials carried off from mills and storages, for the crew's stock. */
+  materials: Purse;
 }
 
 export interface ResultsHandlers {
@@ -147,6 +150,8 @@ export class ResultsScreen {
     };
     lootItem("coin", result.reward.gold, "Gold");
     if (result.reward.medals > 0) lootItem("medal", result.reward.medals, "Medals");
+    if (RESOURCES.some((r) => result.materials[r] > 0))
+      this.loot.append(costChips(costText(result.materials)));
     this.timers.push(setTimeout(() => (result.won ? sfx.victory() : sfx.defeat()), 150));
   }
 

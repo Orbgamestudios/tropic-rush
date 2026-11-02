@@ -8,11 +8,12 @@
 import * as THREE from "three";
 import { shoreDistance, shoreRadius, terrainHeight } from "../logic/island";
 import { smoothstep } from "../logic/vec";
+import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
 
-const RINGS = 120;
-const SEGMENTS = 288;
+const RINGS = 84;
+const SEGMENTS = 200;
 const SEA_MARGIN = 26;
 /** The shore-distance texture covers this square around the middle (meters each way). */
 const MAP_HALF = 150;
@@ -41,7 +42,6 @@ const JUNGLE_FLOOR = new THREE.Color(0x3f8a3a);
 const DIRT = new THREE.Color(0xc79a62);
 const DIRT_DARK = new THREE.Color(0xa77a4a);
 const ROCK = new THREE.Color(0x9c9584);
-const PAD = new THREE.Color(0xb39167);
 
 function noise(x: number, y: number): number {
   return (
@@ -86,8 +86,6 @@ function groundColor(
   const t = map.trail(x, y);
   const dirt = DIRT.clone().lerp(DIRT_DARK, smoothstep(1.4, 0, t) * 0.5);
   lawn.lerp(dirt, smoothstep(2.6, 1.4, t + noise(x * 3, y * 3) * 0.4));
-  // Packed dirt where the buildings stand.
-  lawn.lerp(PAD, map.pad(x, y) * 0.8);
   return out.lerp(lawn, grass);
 }
 
@@ -123,7 +121,7 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   const { shade } = options;
   if (shade) {
     material.onBeforeCompile = (program) => {
@@ -198,14 +196,8 @@ const WATER_FRAGMENT = /* glsl */ `
   uniform vec3 uSunDir;
   varying vec3 vWorld;
 
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x),
-               mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-  }
+  uniform sampler2D uNoise;
+  float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
 
   void main() {
     vec2 p = vWorld.xz;
@@ -282,6 +274,7 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
     fragmentShader: WATER_FRAGMENT,
   });
   (material.uniforms.uShore as THREE.IUniform<THREE.Texture>).value = shore;
+  material.uniforms.uNoise = { value: noiseTexture() };
   const water = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), material);
   water.rotation.x = -Math.PI / 2;
   water.renderOrder = 1;

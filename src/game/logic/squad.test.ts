@@ -12,7 +12,7 @@ function hero(state: RaidState, i: number): RaidHero {
   return h;
 }
 
-describe("squad", () => {
+describe("raiders", () => {
   it("follows the leader across the island", () => {
     const layout = generateIsland(4, 1);
     // No buildings, so nothing distracts them.
@@ -38,16 +38,13 @@ describe("squad", () => {
     expect(squadInput(state, 1)).toBe(IDLE_INPUT);
   });
 
-  it("lets a squad of AI heroes win a level 1 island on its own", () => {
-    let wins = 0;
-    for (const seed of [1, 2, 3]) {
-      const state = createRaid(generateIsland(seed, 1), ["rifleman", "heavy", "medic"]);
-      // The leader is down from the start, so the squad has to finish the job.
-      hero(state, 0).alive = false;
-      for (let t = 0; t < 300 && state.status === "playing"; t += DT)
-        stepRaid(state, [IDLE_INPUT, squadInput(state, 1), squadInput(state, 2)], DT);
-      if (state.status === "won") wins++;
-    }
-    expect(wins).toBeGreaterThanOrEqual(2);
+  it("keeps a medic with the fighters, throwing to whoever's hurt", () => {
+    const layout = generateIsland(4, 1);
+    const state = createRaid({ ...layout, buildings: [], mines: [] }, ["rifleman", "medic"]);
+    const leader = hero(state, 0);
+    leader.hp = 100;
+    for (let t = 0; t < 3; t += DT) stepRaid(state, [IDLE_INPUT, squadInput(state, 1)], DT);
+    expect(leader.hp).toBeGreaterThan(100);
+    expect(distance(hero(state, 1).pos, leader.pos)).toBeLessThan(12);
   });
 });

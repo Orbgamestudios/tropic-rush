@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CONTROLS, DEFAULT_SETTINGS, loadSave, type SaveData, writeSave } from "./save";
+import { NEW_WORLD } from "./logic/worldMap";
+import {
+  DEFAULT_CONTROLS,
+  DEFAULT_SETTINGS,
+  loadAccount,
+  loadSave,
+  restoreBundle,
+  type SaveData,
+  saveBundle,
+  writeAccount,
+  writeSave,
+} from "./save";
 
 function memoryStorage() {
   const items = new Map<string, string>();
   return {
     getItem: (key: string) => items.get(key) ?? null,
     setItem: (key: string, value: string) => void items.set(key, value),
+    removeItem: (key: string) => void items.delete(key),
     items,
   };
 }
@@ -26,18 +38,45 @@ const DEFAULTS: SaveData = {
   wins: 0,
   bestDestruction: 0,
   nickname: "",
+  avatar: "rifleman-1",
   crewCode: "",
   memberId: "",
   gold: 300,
   medals: 0,
   heroLevels: LEVELS,
   unlocked: ["rifleman", "medic", "heavy"],
-  squad: ["medic", "heavy"],
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
   nightRaid: null,
-  beaten: { day: 0, ids: [] },
+  world: NEW_WORLD,
+  loot: {},
+  lostIslands: [],
 };
+
+describe("accounts on this phone", () => {
+  it("remembers who's signed in, apart from the save", () => {
+    const storage = memoryStorage();
+    expect(loadAccount(storage)).toBeNull();
+    const session = { token: "ann.abc", username: "Ann", syncedAt: 5 };
+    writeAccount(session, storage);
+    expect(loadAccount(storage)).toEqual(session);
+    expect(saveBundle(storage)).not.toContain("ann.abc");
+    writeAccount(null, storage);
+    expect(loadAccount(storage)).toBeNull();
+  });
+
+  it("moves a save and island from one phone to another", () => {
+    const first = memoryStorage();
+    writeSave({ ...loadSave(first), nickname: "Ann", gold: 777 }, first);
+    first.items.set("tropic-rush:crew-layout:v1", '{"buildings":[]}');
+    const second = memoryStorage();
+    expect(restoreBundle(saveBundle(first), second)).toBe(true);
+    expect(loadSave(second).nickname).toBe("Ann");
+    expect(loadSave(second).gold).toBe(777);
+    expect(second.items.get("tropic-rush:crew-layout:v1")).toBe('{"buildings":[]}');
+    expect(restoreBundle("not json", second)).toBe(false);
+  });
+});
 
 describe("save", () => {
   it("round-trips save data", () => {
@@ -48,19 +87,21 @@ describe("save", () => {
       wins: 4,
       bestDestruction: 87,
       nickname: "Ada",
+      avatar: "medic-2",
       crewCode: "ABC234",
       memberId: "m-1",
       gold: 1234,
       medals: 5,
       heroLevels: { ...LEVELS, grenadier: 4 },
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
-      squad: ["medic", "grenadier"],
       settings: {
         tilt: -0.2,
         zoom: 0.9,
         uiScale: 1.1,
         camera: "behind",
         muted: true,
+        musicMuted: true,
+        haptics: false,
         controls: {
           move: { x: 0.2, y: 0.8, size: 1.3 },
           aim: { x: 0.85, y: 0.7, size: 0.9 },
@@ -83,7 +124,9 @@ describe("save", () => {
           raidersDown: 2,
         },
       },
-      beaten: { day: 20_000, ids: [2, 7] },
+      world: { taken: ["0,0:2"], retaken: { "0,0:3": 6 }, opened: ["1,0"] },
+      loot: { timber: 250 },
+      lostIslands: ["Skull Rock"],
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
@@ -129,13 +172,22 @@ describe("save", () => {
     expect(loadSave(storage).settings).toEqual({ ...DEFAULT_SETTINGS, zoom: 0.8, muted: true });
   });
 
-  it("keeps only unlocked heroes in the squad", () => {
+  it("forgets the AI squad of an older save, and reads back the world and loot", () => {
     const storage = memoryStorage();
     storage.items.set(
       "tropic-rush:save:v1",
-      JSON.stringify({ squad: ["tank", "medic", "wizard", "heavy"] }),
+      JSON.stringify({
+        squad: ["tank", "medic"],
+        beaten: { day: 3, ids: [1] },
+        world: { taken: ["0,0:1"], retaken: {}, opened: [] },
+        loot: { timber: 40, gold: -3 },
+      }),
     );
-    expect(loadSave(storage).squad).toEqual(["medic", "heavy"]);
+    const save = loadSave(storage);
+    expect(save).not.toHaveProperty("squad");
+    expect(save).not.toHaveProperty("beaten");
+    expect(save.world.taken).toEqual(["0,0:1"]);
+    expect(save.loot).toEqual({ timber: 40 });
   });
 
   it("repairs unknown heroes and out-of-range numbers", () => {
@@ -166,6 +218,7 @@ describe("save", () => {
       setItem: () => {
         throw new Error("QuotaExceededError");
       },
+      removeItem: () => {},
     };
     expect(writeSave(DEFAULTS, full)).toBe(false);
   });

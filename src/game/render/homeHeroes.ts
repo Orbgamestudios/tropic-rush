@@ -26,6 +26,9 @@ const WANDER = 26;
 /** A tap this close to a hero (CSS pixels) counts as tapping them. */
 const TAP_RADIUS = 46;
 
+/** Heroes' names show once the camera is closer than this. */
+const NAME_DISTANCE = 38;
+
 interface Walker {
   kind: HeroKind;
   model: HeroModel;
@@ -36,11 +39,16 @@ interface Walker {
   walk: number;
   animator: RiflemanAnimator | null;
   facing: number;
+  /** Where the name tag was last put, and whether it's showing. */
+  tagX: number;
+  tagY: number;
+  tagShown: boolean;
 }
 
 export class HomeHeroes {
   readonly root = new THREE.Group();
   private readonly walkers = new Map<HeroKind, Walker>();
+  private named = false;
   private open = new Set<string>();
   private spots: Vec2[] = [];
   private openKey = "";
@@ -71,6 +79,7 @@ export class HomeHeroes {
       if (kind === "tank") model.root.scale.setScalar(0.6);
       const tag = document.createElement("div");
       tag.className = "name-tag hero-tag";
+      tag.style.display = "none";
       tag.textContent = HERO_NAMES[kind];
       this.labelLayer.append(tag);
       this.root.add(model.root);
@@ -79,6 +88,9 @@ export class HomeHeroes {
         kind,
         model,
         tag,
+        tagX: Number.NaN,
+        tagY: Number.NaN,
+        tagShown: false,
         pos: { ...start },
         target: null,
         rest: Math.random() * 3,
@@ -110,7 +122,9 @@ export class HomeHeroes {
     return to;
   }
 
-  update(dt: number): void {
+  /** `distance` is how far back the camera is: names only show from close up. */
+  update(dt: number, distance: number): void {
+    this.named = distance < NAME_DISTANCE;
     for (const w of this.walkers.values()) {
       // A new building or job landed on them: step aside.
       if (!this.isOpen(w.pos) && this.spots.length > 0) {
@@ -169,7 +183,16 @@ export class HomeHeroes {
 
   private placeTag(w: Walker): void {
     const s = this.screen(w, w.model.height + 0.4);
-    w.tag.style.display = s.ok ? "block" : "none";
+    const show = s.ok && this.named;
+    if (show !== w.tagShown) {
+      w.tagShown = show;
+      w.tag.style.display = show ? "block" : "none";
+    }
+    if (!show) return;
+    // A phone lays the page out again for every write, moved or not.
+    if (Math.abs(s.x - w.tagX) < 0.5 && Math.abs(s.y - w.tagY) < 0.5) return;
+    w.tagX = s.x;
+    w.tagY = s.y;
     w.tag.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
   }
 

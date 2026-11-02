@@ -11,6 +11,7 @@
 import type { BuildingType } from "./buildings";
 import {
   allowedCount,
+  buildTime,
   canAfford,
   costFor,
   hqCapacity,
@@ -81,22 +82,22 @@ export function buildableTiles(): readonly { x: number; y: number }[] {
 
 /** Footprint in tiles (width east-west, depth north-south) before rotating. */
 export const FOOTPRINTS: Record<BuildingType, { w: number; h: number }> = {
-  headquarters: { w: 6, h: 6 },
+  headquarters: { w: 5, h: 5 },
   gunTurret: { w: 2, h: 2 },
   mortar: { w: 2, h: 2 },
   harpoon: { w: 2, h: 2 },
   flamethrower: { w: 2, h: 2 },
   watchtower: { w: 2, h: 2 },
-  goldMine: { w: 3, h: 3 },
-  lumberCamp: { w: 3, h: 3 },
-  quarry: { w: 3, h: 3 },
-  scrapYard: { w: 3, h: 3 },
-  storehouse: { w: 3, h: 2 },
-  goldVault: { w: 3, h: 2 },
-  timberShed: { w: 3, h: 2 },
-  stoneYard: { w: 3, h: 2 },
-  scrapBin: { w: 3, h: 2 },
-  refinery: { w: 3, h: 3 },
+  goldMine: { w: 5, h: 5 },
+  lumberCamp: { w: 5, h: 5 },
+  quarry: { w: 5, h: 5 },
+  scrapYard: { w: 5, h: 5 },
+  storehouse: { w: 3, h: 3 },
+  goldVault: { w: 3, h: 3 },
+  timberShed: { w: 3, h: 3 },
+  stoneYard: { w: 3, h: 3 },
+  scrapBin: { w: 3, h: 3 },
+  refinery: { w: 5, h: 5 },
 };
 
 export interface PlacedBuilding {
@@ -107,7 +108,10 @@ export interface PlacedBuilding {
   y: number;
   /** Turned 90 degrees, swapping width and depth. */
   rotated: boolean;
-  /** 1 when built; raised by upgrades, up to what the headquarters' level allows. */
+  /**
+   * 0 while it's first going up, then 1; raised by upgrades when their work is done, up to what
+   * the headquarters' level allows.
+   */
   level: number;
 }
 
@@ -119,6 +123,8 @@ export interface CrewLayout {
   tools: Record<Tool, number>;
   /** Clearing under way: each finishes by itself at `doneAt` (server time, milliseconds). */
   jobs: ClearJob[];
+  /** Building and upgrading under way, which finish the same way. */
+  builds: BuildJob[];
   /** The crew's shared stock, as of `stamp`. */
   resources: Purse;
   /** When `resources` was last brought up to date (server time, milliseconds). */
@@ -130,13 +136,21 @@ export interface ClearJob {
   doneAt: number;
 }
 
+export interface BuildJob {
+  /** The building being worked on, or the tool being improved. */
+  target: { building: string } | { tool: Tool };
+  doneAt: number;
+}
+
 export type LayoutOp =
   | { kind: "place"; building: PlacedBuilding }
   | { kind: "move"; id: string; x: number; y: number; rotated: boolean }
   | { kind: "remove"; id: string }
   | { kind: "upgrade"; id: string }
   | { kind: "clear"; id: string }
-  | { kind: "toolUp"; tool: Tool };
+  | { kind: "toolUp"; tool: Tool }
+  /** Materials brought home from a raid. */
+  | { kind: "loot"; purse: Partial<Purse> };
 
 export function footprint(type: BuildingType, rotated: boolean): { w: number; h: number } {
   const f = FOOTPRINTS[type];
@@ -379,6 +393,14 @@ export function obstacles(): readonly Obstacle[] {
   return list;
 }
 
+let obstacleIndex: Map<string, Obstacle> | null = null;
+
+/** One obstacle by its id, without searching the whole island. */
+export function obstacleById(id: string): Obstacle | undefined {
+  obstacleIndex ??= new Map(obstacles().map((o) => [o.id, o]));
+  return obstacleIndex.get(id);
+}
+
 /** The uncleared obstacle covering a tile, if any. */
 export function obstacleAtTile(
   layout: Pick<CrewLayout, "cleared">,
@@ -386,6 +408,29 @@ export function obstacleAtTile(
 ): Obstacle | undefined {
   const cleared = new Set(layout.cleared);
   return obstacles().find((o) => !cleared.has(o.id) && overlaps(tile.x, tile.y, 1, 1, o));
+}
+
+/** How many buildings and tools can be worked on at once. */
+export function builderCount(layout: Pick<CrewLayout, "buildings">): number {
+  return Math.min(5, 2 + Math.floor(hqLevel(layout) / 5));
+}
+
+/** The work going on at a building, if any. */
+export function buildJobOn(layout: Pick<CrewLayout, "builds">, id: string): BuildJob | undefined {
+  return layout.builds.find((j) => "building" in j.target && j.target.building === id);
+}
+
+/** The work going on at a tool, if any. */
+export function toolJob(layout: Pick<CrewLayout, "builds">, tool: Tool): BuildJob | undefined {
+  return layout.builds.find((j) => "tool" in j.target && j.target.tool === tool);
+}
+
+/** Minutes to bring a tool to each level. */
+const TOOL_MINUTES = [30, 120, 480, 1440, 2880] as const;
+
+/** Milliseconds of work on a tool's next level. */
+export function toolTime(level: number): number {
+  return (TOOL_MINUTES[Math.min(level, TOOL_MINUTES.length - 1)] ?? 0) * 60_000;
 }
 
 /** How many patches can be worked on at once. */
@@ -443,7 +488,9 @@ export function toolHq(tool: Tool, level: number): number {
 /** Why a tool can't be upgraded right now, or null if it can. */
 export function toolBlocker(layout: CrewLayout, tool: Tool): string | null {
   const level = layout.tools[tool];
+  if (toolJob(layout, tool)) return "Being improved";
   if (level >= MAX_TOOL_LEVEL) return "Already at its best";
+  if (layout.builds.length >= builderCount(layout)) return "All your builders are busy";
   const hq = toolHq(tool, level);
   if (hqLevel(layout) < hq) return `Needs HQ ${hq}`;
   if (!canAfford(layout.resources, toolCost(tool, level))) return "Not enough resources";
@@ -470,7 +517,7 @@ export function capacity(layout: Pick<CrewLayout, "buildings">): Purse {
   const cap: Purse = { gold: base, timber: base, stone: base, scrap: base };
   for (const b of layout.buildings) {
     const r = STORAGES[b.type];
-    if (r) cap[r] += storageCapacity(b.level);
+    if (r && b.level > 0) cap[r] += storageCapacity(b.level);
   }
   return cap;
 }
@@ -480,7 +527,7 @@ export function production(layout: Pick<CrewLayout, "buildings">): Purse {
   const rate: Purse = { gold: 0, timber: 0, stone: 0, scrap: 0 };
   for (const b of layout.buildings) {
     const r = PRODUCERS[b.type];
-    if (r) rate[r] += productionPerHour(b.level);
+    if (r && b.level > 0) rate[r] += productionPerHour(b.level);
   }
   return rate;
 }
@@ -488,9 +535,28 @@ export function production(layout: Pick<CrewLayout, "buildings">): Purse {
 /** Resources build up for at most this long between visits. */
 const MAX_IDLE_MS = 7 * 24 * 3600 * 1000;
 
+/** Finished building work: new buildings open, upgrades take effect, tools improve. */
+function finishBuilds(layout: CrewLayout, now: number): CrewLayout {
+  const finished = layout.builds.filter((j) => j.doneAt <= now);
+  if (finished.length === 0) return layout;
+  const levels = new Map<string, number>();
+  const tools = { ...layout.tools };
+  for (const { target } of finished) {
+    if ("tool" in target) tools[target.tool] = Math.min(MAX_TOOL_LEVEL, tools[target.tool] + 1);
+    else levels.set(target.building, 1);
+  }
+  return {
+    ...layout,
+    tools,
+    builds: layout.builds.filter((j) => j.doneAt > now),
+    buildings: layout.buildings.map((b) => (levels.has(b.id) ? { ...b, level: b.level + 1 } : b)),
+  };
+}
+
 /** Brings the stock up to date: producers fill it until it reaches what storage can hold. */
-export function settle(layout: CrewLayout, now: number): CrewLayout {
-  if (now <= layout.stamp) return layout;
+export function settle(current: CrewLayout, now: number): CrewLayout {
+  if (now <= current.stamp) return current;
+  const layout = finishBuilds(current, now);
   const hours = Math.min(MAX_IDLE_MS, now - layout.stamp) / 3_600_000;
   const rate = production(layout);
   const cap = capacity(layout);
@@ -505,7 +571,7 @@ export function settle(layout: CrewLayout, now: number): CrewLayout {
   const cleared = [...layout.cleared];
   const done = new Set(cleared);
   for (const job of finished) {
-    const o = obstacles().find((x) => x.id === job.id);
+    const o = obstacleById(job.id);
     if (!o || done.has(o.id)) continue;
     cleared.push(o.id);
     done.add(o.id);
@@ -533,6 +599,7 @@ export function buildBlocker(layout: CrewLayout, type: BuildingType): string | n
     const next = firstHqAllowing(type, have + 1);
     return next ? `Upgrade headquarters to ${next} for another` : "You have the most allowed";
   }
+  if (layout.builds.length >= builderCount(layout)) return "All your builders are busy";
   if (!canAfford(layout.resources, costFor(type, 1))) return "Not enough resources";
   return null;
 }
@@ -545,15 +612,20 @@ export function firstHqAllowing(type: BuildingType, count = 1): number | null {
 
 /** Why a building can't be upgraded right now, or null if it can. */
 export function upgradeBlocker(layout: CrewLayout, b: PlacedBuilding): string | null {
+  if (buildJobOn(layout, b.id)) return b.level === 0 ? "Still being built" : "Already upgrading";
   const cap = levelCap(b.type, hqLevel(layout));
   if (b.level >= cap) {
     return b.type === "headquarters" || cap >= levelCap(b.type, MAX_HQ_LEVEL)
       ? "Already at its highest level"
       : "Upgrade the headquarters first";
   }
+  if (layout.builds.length >= builderCount(layout)) return "All your builders are busy";
   if (!canAfford(layout.resources, costFor(b.type, b.level + 1))) return "Not enough resources";
   return null;
 }
+
+/** The most a single raid can bring home, so a bad message can't fill the island. */
+const MOST_LOOT = 200_000;
 
 /**
  * Applies a change if it's allowed, returning the new layout, or why not. `now` is the server's
@@ -579,14 +651,19 @@ export function tryOp(
         x: b.x,
         y: b.y,
         rotated: !!b.rotated,
-        level: 1,
+        level: 0,
       };
       if (!fits(layout, building)) return { error: "That doesn't fit there" };
+      const job: BuildJob = {
+        target: { building: b.id },
+        doneAt: now + buildTime(b.type, 1),
+      };
       return {
         layout: {
           ...layout,
           resources: spend(layout.resources, costFor(b.type, 1)),
           buildings: [...layout.buildings, building],
+          builds: [...layout.builds, job],
         },
       };
     }
@@ -603,24 +680,34 @@ export function tryOp(
       const existing = layout.buildings.find((b) => b.id === op.id);
       if (!existing) return { error: "That building is gone" };
       if (existing.type === "headquarters") return { error: "The headquarters stays" };
-      return { layout: { ...layout, buildings: layout.buildings.filter((b) => b.id !== op.id) } };
+      return {
+        layout: {
+          ...layout,
+          buildings: layout.buildings.filter((b) => b.id !== op.id),
+          builds: layout.builds.filter((j) => j !== buildJobOn(layout, op.id)),
+        },
+      };
     }
     case "upgrade": {
       const existing = layout.buildings.find((b) => b.id === op.id);
       if (!existing) return { error: "That building is gone" };
       const blocker = upgradeBlocker(layout, existing);
       if (blocker) return { error: blocker };
-      const upgraded = { ...existing, level: existing.level + 1 };
+      const level = existing.level + 1;
+      const job: BuildJob = {
+        target: { building: op.id },
+        doneAt: now + buildTime(existing.type, level),
+      };
       return {
         layout: {
           ...layout,
-          resources: spend(layout.resources, costFor(existing.type, upgraded.level)),
-          buildings: layout.buildings.map((b) => (b.id === op.id ? upgraded : b)),
+          resources: spend(layout.resources, costFor(existing.type, level)),
+          builds: [...layout.builds, job],
         },
       };
     }
     case "clear": {
-      const o = obstacles().find((x) => x.id === op.id);
+      const o = obstacleById(op.id);
       if (!o || layout.cleared.includes(o.id)) return { error: "Already cleared" };
       const blocker = clearBlocker(layout, o);
       if (blocker) return { error: blocker };
@@ -638,13 +725,24 @@ export function tryOp(
       const blocker = toolBlocker(layout, op.tool);
       if (blocker) return { error: blocker };
       const level = layout.tools[op.tool];
+      const job: BuildJob = { target: { tool: op.tool }, doneAt: now + toolTime(level) };
       return {
         layout: {
           ...layout,
           resources: spend(layout.resources, toolCost(op.tool, level)),
-          tools: { ...layout.tools, [op.tool]: level + 1 },
+          builds: [...layout.builds, job],
         },
       };
+    }
+    case "loot": {
+      const cap = capacity(layout);
+      const resources = { ...layout.resources };
+      for (const r of RESOURCES) {
+        const amount = op.purse?.[r];
+        if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) continue;
+        resources[r] = Math.min(cap[r], resources[r] + Math.min(amount, MOST_LOOT));
+      }
+      return { layout: { ...layout, resources } };
     }
   }
   return { error: "Unknown change" };
@@ -694,6 +792,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     cleared: [],
     tools: { ...START_TOOLS },
     jobs: [],
+    builds: [],
     buildings: [spot],
     resources: { ...START_RESOURCES },
     stamp: now,
@@ -744,6 +843,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     cleared?: unknown;
     tools?: unknown;
     jobs?: unknown;
+    builds?: unknown;
     resources?: unknown;
     stamp?: unknown;
   } | null;
@@ -760,7 +860,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     const b = item as Partial<PlacedBuilding>;
     if (typeof b.id !== "string" || typeof b.type !== "string" || !(b.type in FOOTPRINTS)) continue;
     if (!Number.isInteger(b.x) || !Number.isInteger(b.y)) continue;
-    const level = Number.isInteger(b.level) ? Math.max(1, b.level as number) : 1;
+    const level = Number.isInteger(b.level) ? Math.max(0, b.level as number) : 1;
     parsed.push({
       id: b.id,
       type: b.type as BuildingType,
@@ -780,15 +880,18 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     if (ids.has(b.id)) continue;
     const have = buildings.filter((o) => o.type === b.type).length;
     if (have >= allowedCount(b.type, hq)) continue;
+    // Level 0 stands only while work on it is under way; building one needs a job, added below.
     const building = { ...b, level: Math.min(b.level, Math.max(1, levelCap(b.type, hq))) };
     // Older islands: a building that's off the grass moves to the nearest spot, and the ground
     // under existing buildings counts as cleared.
+    // So does one that's come to overlap another: buildings have changed size before, and nobody
+    // should lose one to that.
     const { w, h } = footprint(building.type, building.rotated);
     const open = { buildings, cleared: allIds };
-    const spot = onGrass(building.x, building.y, w, h)
+    const spot = fits(open, building)
       ? building
-      : nearestFit(open, building, { x: building.x, y: building.y }, 16);
-    if (!spot || !fits(open, spot)) continue;
+      : nearestFit(open, building, { x: building.x, y: building.y }, 24);
+    if (!spot) continue;
     for (const o of obstacles())
       if (!cleared.includes(o.id) && overlaps(spot.x, spot.y, w, h, o)) cleared.push(o.id);
     buildings.push(spot);
@@ -832,5 +935,29 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     )
     .slice(0, 4)
     .map((j) => ({ id: j.id, doneAt: j.doneAt }));
-  return { buildings, cleared, tools, jobs, resources, stamp };
+  const builds = readBuilds(data?.builds, buildings);
+  // A building with no work going on can't still be going up: it's finished.
+  const standing = buildings.map((b) =>
+    b.level === 0 && !buildJobOn({ builds }, b.id) ? { ...b, level: 1 } : b,
+  );
+  return { buildings: standing, cleared, tools, jobs, builds, resources, stamp };
+}
+
+function readBuilds(value: unknown, buildings: readonly PlacedBuilding[]): BuildJob[] {
+  if (!Array.isArray(value)) return [];
+  const ids = new Set(buildings.map((b) => b.id));
+  const out: BuildJob[] = [];
+  const busy = new Set<string>();
+  for (const item of value as Partial<BuildJob>[]) {
+    const { target, doneAt } = item ?? {};
+    if (typeof doneAt !== "number" || !Number.isFinite(doneAt)) continue;
+    if (!target || typeof target !== "object") continue;
+    const key = "building" in target ? target.building : target.tool;
+    if (busy.has(key)) continue;
+    const known = "building" in target ? ids.has(target.building) : target.tool in TOOLS;
+    if (!known) continue;
+    busy.add(key);
+    out.push("building" in target ? { target: { building: key }, doneAt } : { target, doneAt });
+  }
+  return out;
 }

@@ -1,18 +1,19 @@
 // The in-raid HUD, in HTML over the 3D view:
 // - top-left: the hero's portrait card with level badge, health bar, and under it
-//   the squad's portraits with their health
+//   the portraits of the crewmates raiding with you
 // - top-middle: time left and how much of the island is destroyed
 // - top-right: pause, a live minimap, gunboat energy and the loot so far
-// - bottom-middle, only on the gunboat: its abilities; bottom-right: the gunboat button, and the
-//   gunboat button (the move stick and fire pad belong to Controls)
-// - an arrow at the screen edge pointing back to the gunboat when it's out of view
+// - bottom-middle, only on the gunboat: its abilities; bottom-right: the gunboat button (the move
+//   stick and fire pad belong to Controls)
 
+import { hapticOnTap } from "../audio/haptics";
+import { costText, RESOURCES } from "../logic/economy";
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, raidReward } from "../logic/heroProgress";
 import { shoreRadius } from "../logic/island";
 import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
-import { CurrencyPill, el, formatNumber, levelBadge } from "./kit/dom";
+import { CurrencyPill, costChips, el, formatNumber, levelBadge } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
@@ -20,14 +21,6 @@ export interface HudHandlers {
   onBoat(): void;
   onAbility(ability: Ability): void;
   onPause(): void;
-}
-
-export interface BoatMarker {
-  /** Screen direction from the hero to the gunboat, in radians (0 = right, PI/2 = down). */
-  angle: number;
-  onScreen: boolean;
-  /** How far the view is turned from north, so the minimap can turn with it. */
-  turn: number;
 }
 
 const ABILITY_ICONS: Record<Ability, IconName> = {
@@ -62,7 +55,11 @@ export class Hud {
   private readonly map = el("canvas", "hud-minimap-canvas");
   private readonly mapNorth = el("div", "hud-minimap-north");
   private readonly boatButton = el("button", "hud-round hud-boat");
-  private readonly boatLabel = el("span", "hud-round-label", "Board");
+  private readonly boatLabel = el("span", "hud-round-label", "Gunboat");
+  private readonly materials = el("div", "hud-materials");
+  private shownMaterials = "";
+  private mapBase: HTMLCanvasElement | null = null;
+  private readonly card = el("div", "hud-card");
   private readonly tray = el("div", "hud-tray");
   private readonly trayBox = el("div", "hud-tray-box");
   private readonly trayHint = el("div", "hud-tray-hint");
@@ -70,13 +67,13 @@ export class Hud {
     Ability,
     { button: HTMLButtonElement; cost: HTMLElement }
   >();
-  private readonly arrow = el("div", "hud-boat-arrow");
   private readonly flashText = el("div", "hud-flash");
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
   private lastHp = -1;
   private lagHp = 0;
   private mapTimer = 0;
-  private onFoot = true;
+  /** The hero's health when the gunboat's view opened, to warn if they're being hit. */
+  private startOfView = 0;
   private readonly squadBox = el("div", "hud-squad");
   private squad: {
     root: HTMLElement;
@@ -85,11 +82,12 @@ export class Hud {
     lagHp: number;
     alive: boolean;
     kind: HeroKind;
+    seat: number;
   }[] = [];
 
   constructor(parent: HTMLElement, handlers: HudHandlers) {
     // Hero card.
-    const card = el("div", "hud-card");
+    const { card } = this;
     const frame = el("div", "hud-portrait");
     this.portrait.alt = "";
     frame.append(this.portrait, this.level);
@@ -123,6 +121,7 @@ export class Hud {
       sfx.press();
       handlers.onPause();
     });
+    hapticOnTap(pause);
     const minimap = el("div", "hud-minimap");
     this.map.width = 128;
     this.map.height = 128;
@@ -131,15 +130,16 @@ export class Hud {
     mapRow.append(pause, minimap);
     const pills = el("div", "hud-pills");
     pills.append(this.energy.root, this.loot.root);
-    right.append(mapRow, pills);
+    right.append(mapRow, pills, this.materials);
 
     // The gunboat button.
-    this.boatButton.setAttribute("aria-label", "Board gunboat");
+    this.boatButton.setAttribute("aria-label", "Gunboat");
     this.boatButton.append(icon("anchorGold", "hud-boat-icon"), this.boatLabel);
     this.boatButton.addEventListener("click", () => {
       sfx.press();
       handlers.onBoat();
     });
+    hapticOnTap(this.boatButton);
 
     // Gunboat abilities.
     for (const ability of ABILITY_ORDER) {
@@ -155,12 +155,11 @@ export class Hud {
         sfx.press();
         handlers.onAbility(ability);
       });
+      hapticOnTap(b);
       this.tray.append(b);
       this.abilityButtons.set(ability, { button: b, cost });
     }
     this.trayBox.append(this.trayHint, this.tray);
-
-    this.arrow.append(icon("anchorGold", "hud-boat-arrow-icon"), el("span", "hud-boat-arrow-tip"));
 
     this.root.append(
       card,
@@ -169,7 +168,6 @@ export class Hud {
       right,
       this.trayBox,
       this.boatButton,
-      this.arrow,
       this.flashText,
     );
     for (const node of [card, objective, right, this.trayBox, this.boatButton]) stop(node);
@@ -191,8 +189,10 @@ export class Hud {
     this.lastHp = -1;
   }
 
-  /** The AI squadmates' portraits, in the same order as state.heroes[1..]. */
-  setSquad(mates: readonly { kind: HeroKind; level: number; portrait: Promise<string> }[]): void {
+  /** The crewmates on this raid, by their place in state.heroes. */
+  setSquad(
+    mates: readonly { seat: number; kind: HeroKind; level: number; portrait: Promise<string> }[],
+  ): void {
     this.squad = mates.map((mate) => {
       const root = el("div", "hud-mate");
       const frame = el("div", "hud-mate-frame");
@@ -208,7 +208,7 @@ export class Hud {
       bar.append(lag, fill);
       root.append(frame, levelBadge(mate.level, "hud-mate-level"), bar);
       root.title = HERO_NAMES[mate.kind];
-      return { root, fill, lag, lagHp: 1, alive: true, kind: mate.kind };
+      return { root, fill, lag, lagHp: 1, alive: true, kind: mate.kind, seat: mate.seat };
     });
     this.squadBox.replaceChildren(...this.squad.map((m) => m.root));
   }
@@ -225,7 +225,8 @@ export class Hud {
     hero: RaidHero,
     canBoard: boolean,
     selected: Ability,
-    boat: BoatMarker,
+    /** How far the view is turned from north, so the minimap can turn with it. */
+    turn: number,
     islandLevel: number,
     dt: number,
   ): void {
@@ -234,8 +235,7 @@ export class Hud {
     // Health, with a trailing "damage taken" bar.
     const hpFraction = Math.max(0, hero.hp / hero.maxHp);
     if (this.lastHp < 0) this.lagHp = hpFraction;
-    if (hero.hp < this.lastHp) this.root.querySelector(".hud-card")?.classList.add("hurt");
-    else this.root.querySelector(".hud-card")?.classList.remove("hurt");
+    this.card.classList.toggle("hurt", hero.hp < this.lastHp);
     this.lastHp = hero.hp;
     this.lagHp = Math.max(hpFraction, this.lagHp - dt * 0.35);
     this.hpFill.style.width = `${hpFraction * 100}%`;
@@ -250,13 +250,23 @@ export class Hud {
     this.objectiveFill.style.width = `${percent}%`;
     this.energy.set(state.energy);
     this.loot.set(raidReward(false, percent, islandLevel).gold);
+    if (RESOURCES.some((r) => state.loot[r] > 0)) {
+      const carried = costText(state.loot);
+      if (carried !== this.shownMaterials) {
+        this.shownMaterials = carried;
+        this.materials.replaceChildren(costChips(carried));
+      }
+    } else if (this.shownMaterials) {
+      this.shownMaterials = "";
+      this.materials.replaceChildren();
+    }
 
-    this.onFoot = hero.alive && !hero.inBoat;
-    this.boatButton.style.display = (this.onFoot && canBoard) || hero.inBoat ? "flex" : "none";
-    this.boatButton.setAttribute("aria-label", hero.inBoat ? "Back to the beach" : "Board gunboat");
-    this.boatLabel.textContent = hero.inBoat ? "Land" : "Board";
-    this.boatButton.classList.toggle("glow", this.onFoot && canBoard);
-    this.trayHint.textContent = "Tap the island to fire";
+    this.boatButton.style.display = canBoard || hero.inBoat ? "flex" : "none";
+    this.boatButton.setAttribute("aria-label", hero.inBoat ? "Back to your hero" : "Gunboat");
+    this.boatLabel.textContent = hero.inBoat ? "Back" : "Gunboat";
+    this.trayHint.textContent =
+      hero.hp < this.startOfView ? "You're under fire!" : "Tap the island to fire";
+    if (!hero.inBoat) this.startOfView = hero.hp;
     this.trayBox.style.display = hero.inBoat ? "flex" : "none";
     this.tray.classList.toggle("active", hero.inBoat);
     for (const [ability, { button, cost }] of this.abilityButtons) {
@@ -266,29 +276,10 @@ export class Hud {
       button.classList.toggle("unaffordable", price > state.energy);
     }
 
-    // Point at the gunboat when it's off screen.
-    const showArrow = this.onFoot && !boat.onScreen;
-    this.arrow.style.display = showArrow ? "flex" : "none";
-    if (showArrow) {
-      const w = this.root.clientWidth;
-      const h = this.root.clientHeight;
-      const angle = boat.angle;
-      const margin = 46;
-      const scale = Math.min(
-        (w / 2 - margin) / Math.max(1e-6, Math.abs(Math.cos(angle))),
-        (h / 2 - margin) / Math.max(1e-6, Math.abs(Math.sin(angle))),
-      );
-      // Keep clear of the hero card, the minimap column and the bottom controls.
-      const x = Math.max(60, Math.min(w - 150, w / 2 + Math.cos(angle) * scale));
-      const y = Math.max(96, Math.min(h - 140, h / 2 + Math.sin(angle) * scale));
-      this.arrow.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-      this.arrow.style.setProperty("--angle", `${angle}rad`);
-    }
-
-    // Squad portraits.
-    this.squad.forEach((mate, i) => {
-      const h = state.heroes[i + 1];
-      if (!h) return;
+    // Crewmates' portraits.
+    for (const mate of this.squad) {
+      const h = state.heroes[mate.seat];
+      if (!h) continue;
       const fraction = h.alive ? Math.max(0, h.hp / h.maxHp) : 0;
       mate.lagHp = Math.max(fraction, mate.lagHp - dt * 0.35);
       mate.fill.style.width = `${fraction * 100}%`;
@@ -300,29 +291,28 @@ export class Hud {
         mate.root.classList.add("down");
         this.flash(`${HERO_NAMES[mate.kind]} is down!`);
       }
-    });
+    }
 
-    this.map.style.transform = `rotate(${boat.turn}rad)`;
-    this.mapNorth.style.transform = `rotate(${boat.turn}rad)`;
+    this.map.style.transform = `rotate(${turn}rad)`;
+    this.mapNorth.style.transform = `rotate(${turn}rad)`;
     this.mapTimer -= dt;
     if (this.mapTimer <= 0) {
-      this.mapTimer = 0.1;
+      this.mapTimer = 0.2;
       this.drawMap(state, hero);
     }
   }
 
-  /** The minimap: island, buildings, the gunboat and the crew, north up. */
-  private drawMap(state: RaidState, hero: RaidHero): void {
-    const g = this.map.getContext("2d");
-    if (!g) return;
-    const size = this.map.width;
-    const scale = size / 190;
-    const cx = size / 2;
-    const cy = size / 2;
-    const px = (x: number) => cx + x * scale;
-    const py = (y: number) => cy + y * scale;
-    g.clearRect(0, 0, size, size);
-    const sea = g.createRadialGradient(cx, cy, 10, cx, cy, size * 0.7);
+  /** The sea and island, which never change: drawn once and copied onto the minimap. */
+  private mapBackdrop(size: number, px: (x: number) => number, py: (y: number) => number) {
+    if (this.mapBase) return this.mapBase;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    this.mapBase = canvas;
+    const g = canvas.getContext("2d");
+    if (!g) return canvas;
+    const c = size / 2;
+    const sea = g.createRadialGradient(c, c, 10, c, c, size * 0.7);
     sea.addColorStop(0, "#56c7d8");
     sea.addColorStop(1, "#1a7fa6");
     g.fillStyle = sea;
@@ -345,6 +335,20 @@ export class Hud {
     shore(9);
     g.fillStyle = "#5fae46";
     g.fill();
+    return canvas;
+  }
+
+  /** The minimap: island, buildings, the gunboat and the crew, north up. */
+  private drawMap(state: RaidState, hero: RaidHero): void {
+    const g = this.map.getContext("2d");
+    if (!g) return;
+    const size = this.map.width;
+    const scale = size / 190;
+    const cx = size / 2;
+    const cy = size / 2;
+    const px = (x: number) => cx + x * scale;
+    const py = (y: number) => cy + y * scale;
+    g.drawImage(this.mapBackdrop(size, px, py), 0, 0);
     for (const b of state.buildings) {
       if (b.destroyed) {
         g.fillStyle = "rgba(40, 30, 20, 0.5)";

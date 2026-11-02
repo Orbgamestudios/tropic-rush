@@ -783,3 +783,39 @@
     clip-path: polygon(130% 0, 150% 0, 130% 100%, 110% 100%);
   }
 }
+
+/* The hidden switch behind the haptics (see audio/haptics.ts), and the see-through label that
+   sends a real tap on a control to it. */
+.haptic-switch {
+  position: fixed;
+  left: -100px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.haptic-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+}
+
+/* "Tap again" over a button that can't be undone. */
+.ui-confirm {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #b5301f;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  color: #fff;
+  transform: translateX(-50%);
+  pointer-events: none;
+}

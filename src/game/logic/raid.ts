@@ -3,13 +3,12 @@
 // stepRaid() updates the state object in place instead of returning a new one.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
-import { buildingPower } from "./economy";
+import { buildingPower, emptyPurse, lootFor, type Purse, RESOURCES } from "./economy";
 import {
   type Ability,
   ARTILLERY,
   abilityCost,
   BARRAGE,
-  BOARD_DISTANCE,
   boatShellFlightTime,
   HEAL,
   START_ENERGY,
@@ -41,8 +40,8 @@ const MINE_FUSE = 0.5;
 const MINE_SPLASH = 2.6;
 const MINE_DAMAGE = 450;
 
-/** Heroes move this much slower while aiming or shooting. */
-const SHOOTING_SPEED = 0.6;
+/** Heroes slow to this share of their speed while aiming or shooting. */
+const SHOOTING_SPEED = 0.2;
 /** A released aim locks onto a building this far either side of it at least (radians). */
 const LOCK_TOLERANCE = 0.22;
 const CREW_TURRET = {
@@ -95,6 +94,7 @@ export interface RaidHero {
   hp: number;
   maxHp: number;
   alive: boolean;
+  /** Calling the gunboat: the hero stands where they are, still in the fight, and can't move. */
   inBoat: boolean;
   moving: boolean;
   /** True while the hero is shooting (for muzzle flashes, spray and the minigun's spin). */
@@ -110,6 +110,8 @@ export interface RaidHero {
   autoDistance: number;
   /** The building this hero is locked onto and firing at, until it's gone or out of range. */
   targetId: number | null;
+  /** The crewmate a medic is locked onto and throwing to. */
+  patientId: number | null;
   /** Rounds fired, for the minigun's explosive belt. */
   shotCount: number;
   /** Fallen heroes this medic has brought back this raid. */
@@ -140,7 +142,8 @@ export type ProjectileKind =
   | "harpoon"
   | "grenade"
   | "mortar"
-  | "artillery";
+  | "artillery"
+  | "vial";
 
 export interface Lob {
   from: Vec2;
@@ -212,6 +215,8 @@ export type RaidEvent =
   | { type: "explosion"; pos: Vec2; radius: number }
   | { type: "hit"; pos: Vec2 }
   | { type: "heal"; pos: Vec2 }
+  | { type: "healBurst"; pos: Vec2; radius: number }
+  | { type: "loot"; pos: Vec2; loot: Partial<Purse> }
   | { type: "destroyed"; id: number; pos: Vec2; buildingType: BuildingType }
   | { type: "heroDown"; id: number; pos: Vec2 }
   | { type: "boarded"; heroId: number }
@@ -233,8 +238,10 @@ export interface RaidState {
   zones: Zone[];
   turrets: CrewTurret[];
   obstacles: Obstacle[];
-  boat: { pos: Vec2; exit: Vec2; occupant: number | null };
+  boat: { pos: Vec2; occupant: number | null };
   energy: number;
+  /** Materials carried off so far, from mills and storages broken. Kept win or lose. */
+  loot: Purse;
   abilityUses: Record<Ability, number>;
   /** What happened during the last step, for effects and sounds. */
   events: RaidEvent[];
@@ -253,7 +260,7 @@ export interface HeroInput {
   lockAt: Vec2 | null;
   /** A quick tap of the fire button: lock onto the nearest tower in range (tap again to stop). */
   autoAim: boolean;
-  /** Board the gunboat, or step off it. */
+  /** Open the gunboat's view, or go back to the hero. */
   toggleBoat: boolean;
   boatAbility: { ability: Ability; target: Vec2 } | null;
 }
@@ -310,6 +317,7 @@ export function createRaid(
       shotCount: 0,
       saves: 0,
       targetId: null,
+      patientId: null,
     };
   });
   const buildings = layout.buildings.map((b): RaidBuilding => {
@@ -349,8 +357,9 @@ export function createRaid(
     zones: [],
     turrets: [],
     obstacles,
-    boat: { pos: { ...layout.boat }, exit: { ...layout.boatExit }, occupant: null },
+    boat: { pos: { ...layout.boat }, occupant: null },
     energy: START_ENERGY,
+    loot: emptyPurse(),
     abilityUses: { artillery: 0, barrage: 0, heal: 0 },
     events: [],
     nextId,
@@ -392,13 +401,9 @@ export function destructionPercent(state: RaidState): number {
   return Math.round((destroyed / state.buildings.length) * 100);
 }
 
+/** The gunboat answers one hero at a time, wherever they are. */
 export function canBoard(state: RaidState, hero: RaidHero): boolean {
-  return (
-    hero.alive &&
-    !hero.inBoat &&
-    state.boat.occupant === null &&
-    distance(hero.pos, state.boat.pos) <= BOARD_DISTANCE
-  );
+  return hero.alive && !hero.inBoat && state.boat.occupant === null;
 }
 
 export function nextAbilityCost(state: RaidState, ability: Ability): number {
@@ -420,20 +425,19 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     hero.burstLeft = 0;
     hero.spin = 0;
     hero.targetId = null;
+    hero.patientId = null;
     if (input.boatAbility) fireAbility(state, input.boatAbility.ability, input.boatAbility.target);
     return;
   }
 
   const spec = HEROES[hero.kind];
-  const move = length(input.move) > 1 ? normalize(input.move) : input.move;
-  const slowed = hero.firing || input.aimPreview !== null;
-  const speed = spec.speed * hero.mods.speed * (slowed ? SHOOTING_SPEED : 1);
-  hero.moving = length(move) > 0.05;
-  if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
+  moveByInput(state, hero, input, dt);
 
   // Locking on: let go of a drag to lock onto the building in that direction, or tap to lock
-  // onto the nearest tower (tapping the same one again stops).
-  if (input.lockAt && length(input.lockAt) > 0.05) {
+  // onto the nearest tower (tapping the same one again stops). A medic locks onto crewmates.
+  const medic = spec.attack.kind === "heal";
+  if (medic) lockPatient(state, hero, input);
+  else if (input.lockAt && length(input.lockAt) > 0.05) {
     const target = lockCandidate(state, hero, input.lockAt);
     hero.targetId = target?.id ?? null;
     if (!target) {
@@ -453,6 +457,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   const aim = input.aim;
   const locked = hero.targetId === null ? null : lockedBuilding(state, hero);
   if (hero.targetId !== null && !locked) hero.targetId = null;
+  const patient = hero.patientId === null ? null : lockedPatient(state, hero);
   if (aim && length(aim) > 0.15) {
     dir = normalize(aim);
     aimDistance = clamp(length(aim), 0, 1) * heroRange(hero);
@@ -460,6 +465,9 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   } else if (locked) {
     dir = normalize(sub(locked.pos, hero.pos));
     aimDistance = distance(locked.pos, hero.pos);
+  } else if (patient) {
+    dir = normalize(sub(patient.pos, hero.pos));
+    aimDistance = distance(patient.pos, hero.pos);
   } else if (hero.autoFireTime > 0) {
     dir = hero.autoDir;
     aimDistance = hero.autoDistance;
@@ -469,6 +477,15 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   else if (hero.moving) hero.facing = angleOf(input.move);
 
   updateAttack(state, hero, dir, aimDistance, dt);
+}
+
+/** Walks a hero by the move stick. Guests' phones use this too, to answer the stick at once. */
+export function moveByInput(state: RaidState, hero: RaidHero, input: HeroInput, dt: number): void {
+  const move = length(input.move) > 1 ? normalize(input.move) : input.move;
+  const slowed = hero.firing || input.aimPreview !== null;
+  const speed = HEROES[hero.kind].speed * hero.mods.speed * (slowed ? SHOOTING_SPEED : 1);
+  hero.moving = length(move) > 0.05;
+  if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
 }
 
 function moveHero(state: RaidState, hero: RaidHero, delta: Vec2): void {
@@ -603,49 +620,26 @@ function updateAttack(
       }
       return;
     }
-    case "spray": {
+    case "heal": {
       if (dir && hero.reload <= 0) {
-        sprayTick(
+        const range = atk.range + hero.mods.range;
+        const reach = clamp(aimDistance, 0, range);
+        spawnLob(
           state,
-          hero,
-          dir,
-          atk.range + hero.mods.range,
-          atk.damage * hero.power,
-          atk.heal,
-          atk.coneHalfAngle,
+          "vial",
+          "crew",
+          hero.id,
+          hero.pos,
+          add(hero.pos, scale(dir, reach)),
+          atk.flightTime * (0.55 + (0.45 * reach) / range),
+          2.5 + reach * 0.2,
+          atk.heal * hero.power,
+          atk.splash,
         );
         hero.reload = atk.reload * hero.mods.reload;
       }
       return;
     }
-  }
-}
-
-function sprayTick(
-  state: RaidState,
-  medic: RaidHero,
-  dir: Vec2,
-  range: number,
-  damage: number,
-  heal: number,
-  halfAngle: number,
-): void {
-  const facing = angleOf(dir);
-  const inCone = (pos: Vec2, extra: number) => {
-    const d = distance(pos, medic.pos);
-    return (
-      d <= range + extra &&
-      (d < 0.5 || Math.abs(angleDiff(angleOf(sub(pos, medic.pos)), facing)) <= halfAngle)
-    );
-  };
-  for (const h of state.heroes) {
-    if (h === medic || !h.alive || h.inBoat || !inCone(h.pos, 0)) continue;
-    healHero(state, h, heal);
-  }
-  // A little self-heal, so a medic playing solo isn't helpless.
-  healHero(state, medic, heal * 0.2);
-  for (const b of state.buildings) {
-    if (!b.destroyed && inCone(b.pos, b.radius)) damageBuilding(state, b, damage, medic.id);
   }
 }
 
@@ -663,13 +657,13 @@ function placeTurret(state: RaidState, owner: RaidHero, pos: Vec2, seconds: numb
 }
 
 function healHero(state: RaidState, hero: RaidHero, amount: number): void {
-  if (!hero.alive || hero.inBoat || hero.hp >= hero.maxHp) return;
+  if (!hero.alive || hero.hp >= hero.maxHp) return;
   hero.hp = Math.min(hero.maxHp, hero.hp + amount);
   if (state.rng() < 0.15) state.events.push({ type: "heal", pos: { ...hero.pos } });
 }
 
 function damageHero(state: RaidState, hero: RaidHero, amount: number, heavyBonus = 1): void {
-  if (!hero.alive || hero.inBoat) return;
+  if (!hero.alive) return;
   const spec = HEROES[hero.kind];
   hero.hp -= amount * (spec.heavy ? heavyBonus : 1);
   state.events.push({ type: "hit", pos: { ...hero.pos } });
@@ -678,6 +672,8 @@ function damageHero(state: RaidState, hero: RaidHero, amount: number, heavyBonus
     hero.alive = false;
     hero.firing = false;
     hero.moving = false;
+    if (hero.inBoat) state.boat.occupant = null;
+    hero.inBoat = false;
     state.events.push({ type: "heroDown", id: hero.id, pos: { ...hero.pos } });
   }
 }
@@ -705,7 +701,6 @@ function toggleBoat(state: RaidState, hero: RaidHero): void {
   if (hero.inBoat) {
     hero.inBoat = false;
     state.boat.occupant = null;
-    hero.pos = { ...state.boat.exit };
     state.events.push({ type: "leftBoat", heroId: hero.id });
   } else if (canBoard(state, hero)) {
     hero.inBoat = true;
@@ -783,7 +778,7 @@ function findTarget(state: RaidState, from: Vec2, range: number, minRange: numbe
   let best: Target | null = null;
   let bestDistance = Infinity;
   for (const hero of state.heroes) {
-    if (!hero.alive || hero.inBoat) continue;
+    if (!hero.alive) continue;
     const d = distance(from, hero.pos);
     if (d < minRange || d > range + HEROES[hero.kind].radius || d >= bestDistance) continue;
     best = { pos: hero.pos, hero, turret: null };
@@ -816,7 +811,7 @@ function updateBuildings(state: RaidState, dt: number): void {
       if (b.reload > 0) continue;
       b.reload = atk.reload;
       for (const hero of state.heroes) {
-        if (!hero.alive || hero.inBoat) continue;
+        if (!hero.alive) continue;
         if (distance(hero.pos, b.pos) > atk.range + HEROES[hero.kind].radius) continue;
         if (Math.abs(angleDiff(angleOf(sub(hero.pos, b.pos)), b.aim)) > atk.coneHalfAngle) continue;
         damageHero(state, hero, atk.damage * b.power);
@@ -910,6 +905,64 @@ export function heroRange(hero: RaidHero): number {
   return HEROES[hero.kind].attack.range + hero.mods.range;
 }
 
+/** The medic's lock: on the crewmate she aims at, or with a tap on whoever is worst hurt. */
+function lockPatient(state: RaidState, hero: RaidHero, input: HeroInput): void {
+  if (input.lockAt && length(input.lockAt) > 0.05) {
+    const patient = patientCandidate(state, hero, input.lockAt);
+    hero.patientId = patient?.id ?? null;
+    if (!patient) {
+      // Nobody there: a bottle on that spot, which is also how she heals herself.
+      hero.autoDir = normalize(input.lockAt);
+      hero.autoDistance = clamp(length(input.lockAt), 0, 1) * heroRange(hero);
+      hero.autoFireTime = AUTO_FIRE_SECONDS;
+    }
+  } else if (input.autoAim) {
+    const patient = patientCandidate(state, hero, null);
+    hero.patientId = patient && patient.id !== hero.patientId ? patient.id : null;
+    hero.autoFireTime = 0;
+  }
+}
+
+/** The crewmate she's locked onto, while they're in reach and still need it. */
+function lockedPatient(state: RaidState, hero: RaidHero): RaidHero | null {
+  const patient = state.heroes.find((h) => h.id === hero.patientId);
+  if (!patient?.alive || distance(patient.pos, hero.pos) > heroRange(hero) + 0.5) {
+    hero.patientId = null;
+    return null;
+  }
+  return patient.hp < patient.maxHp ? patient : null;
+}
+
+/**
+ * Who a medic would lock onto: the crewmate closest to the aim direction in range, or with no
+ * direction the worst hurt of them. On her own she has nobody but herself to look after.
+ */
+export function patientCandidate(
+  state: RaidState,
+  hero: RaidHero,
+  dir: Vec2 | null,
+): RaidHero | null {
+  const range = heroRange(hero);
+  let best: RaidHero | null = null;
+  let bestScore = Infinity;
+  for (const h of state.heroes) {
+    if (!h.alive || distance(h.pos, hero.pos) > range) continue;
+    if (h === hero && dir) continue;
+    if (!dir && h.hp >= h.maxHp) continue;
+    let score = h.hp / h.maxHp + (h === hero ? 0.5 : 0);
+    if (dir) {
+      const off = Math.abs(angleDiff(angleOf(sub(h.pos, hero.pos)), angleOf(dir)));
+      if (off > 0.5) continue;
+      score = off;
+    }
+    if (score < bestScore) {
+      best = h;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /** The locked target, if it still stands and is in range. */
 function lockedBuilding(state: RaidState, hero: RaidHero): RaidBuilding | null {
   const b = state.buildings.find((x) => x.id === hero.targetId);
@@ -927,6 +980,7 @@ export function lockCandidate(
   hero: RaidHero,
   dir: Vec2 | null,
 ): RaidBuilding | null {
+  if (HEROES[hero.kind].attack.kind === "heal") return null;
   const range = heroRange(hero);
   if (!dir) {
     let best: RaidBuilding | null = null;
@@ -987,6 +1041,11 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
   b.firing = false;
   state.energy += BUILDINGS[b.type].energy;
   state.events.push({ type: "destroyed", id: b.id, pos: { ...b.pos }, buildingType: b.type });
+  const loot = lootFor(b.type, b.level);
+  if (Object.keys(loot).length > 0) {
+    for (const r of RESOURCES) state.loot[r] += loot[r] ?? 0;
+    state.events.push({ type: "loot", pos: { ...b.pos }, loot });
+  }
   if (b.type === "headquarters") state.status = "won";
   if (owner) destroyedBy(state, owner, b);
 }
@@ -1147,8 +1206,7 @@ function stepProjectile(state: RaidState, p: Projectile, dt: number): boolean {
     }
   } else {
     for (const hero of state.heroes) {
-      if (!hero.alive || hero.inBoat || distance(p.pos, hero.pos) > HEROES[hero.kind].radius)
-        continue;
+      if (!hero.alive || distance(p.pos, hero.pos) > HEROES[hero.kind].radius) continue;
       damageHero(state, hero, p.damage, p.heavyBonus);
       return false;
     }
@@ -1175,6 +1233,14 @@ function impact(state: RaidState, p: Projectile): boolean {
 
 /** A projectile's blast, and whatever the hero's signature adds to it. */
 function detonate(state: RaidState, p: Projectile, pos: Vec2): void {
+  if (p.kind === "vial") {
+    state.events.push({ type: "healBurst", pos: { ...pos }, radius: p.splash });
+    for (const hero of state.heroes) {
+      if (distance(pos, hero.pos) <= p.splash + HEROES[hero.kind].radius)
+        healHero(state, hero, p.damage);
+    }
+    return;
+  }
   explode(state, pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
   if (p.charges === 0) return;
   if (p.kind === "rocket") scatterBomblets(state, p, pos);
@@ -1294,7 +1360,7 @@ function updateMines(state: RaidState, dt: number): void {
     if (mine.exploded) continue;
     if (mine.fuse === null) {
       const stepped = state.heroes.some(
-        (h) => h.alive && !h.inBoat && distance(h.pos, mine.pos) <= MINE_TRIGGER_RADIUS,
+        (h) => h.alive && distance(h.pos, mine.pos) <= MINE_TRIGGER_RADIUS,
       );
       if (stepped) {
         mine.fuse = MINE_FUSE;

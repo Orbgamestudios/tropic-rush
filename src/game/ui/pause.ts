@@ -4,7 +4,7 @@
 
 import { DEFAULT_SETTINGS, type Settings, TILT_RANGE, UI_SCALE_RANGE } from "../save";
 import { spotText } from "./controlsEditor";
-import { button, el, panel, setLabel } from "./kit/dom";
+import { button, closeOnBackdrop, confirmTap, el, panel, setLabel } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
@@ -28,6 +28,8 @@ export class PauseMenu {
   private readonly retreat: HTMLButtonElement;
   private readonly title: HTMLElement;
   private readonly sound: HTMLButtonElement;
+  private readonly musicButton: HTMLButtonElement;
+  private readonly hapticsButton: HTMLButtonElement;
   private readonly cameraMode: HTMLButtonElement;
   /** Every value in one place, easy to read off and pass on. */
   private readonly summary = el("div", "pause-summary");
@@ -43,13 +45,8 @@ export class PauseMenu {
 
     // Main page.
     this.main = el("div", "pause-page");
-    this.retreat = button({
-      label: "Retreat",
-      icon: "close",
-      variant: "red",
-      size: "md",
-      onClick: () => handlers.onRetreat(),
-    });
+    this.retreat = button({ label: "Retreat", icon: "close", variant: "red", size: "md" });
+    confirmTap(this.retreat, "Tap again to retreat", () => handlers.onRetreat());
     this.main.append(
       button({
         label: "Resume",
@@ -84,6 +81,23 @@ export class PauseMenu {
       handlers.onSettings(next);
       this.refresh();
     });
+    this.musicButton = button({ label: "Music on", icon: "gear", variant: "steel", size: "sm" });
+    this.musicButton.addEventListener("click", () => {
+      const s = handlers.settings();
+      handlers.onSettings({ ...s, musicMuted: !s.musicMuted });
+      this.refresh();
+    });
+    this.hapticsButton = button({
+      label: "Vibration on",
+      icon: "gear",
+      variant: "steel",
+      size: "sm",
+    });
+    this.hapticsButton.addEventListener("click", () => {
+      const s = handlers.settings();
+      handlers.onSettings({ ...s, haptics: !s.haptics });
+      this.refresh();
+    });
     this.cameraMode = button({ label: "Camera: top", icon: "map", variant: "steel", size: "sm" });
     this.cameraMode.addEventListener("click", () => {
       const s = handlers.settings();
@@ -91,7 +105,7 @@ export class PauseMenu {
       this.refresh();
     });
     const toggles = el("div", "pause-row");
-    toggles.append(this.cameraMode, this.sound);
+    toggles.append(this.cameraMode, this.sound, this.musicButton, this.hapticsButton);
     const row = el("div", "pause-row");
     row.append(
       button({
@@ -100,8 +114,15 @@ export class PauseMenu {
         variant: "steel",
         size: "sm",
         onClick: () => {
-          const { muted, controls, camera } = handlers.settings();
-          handlers.onSettings({ ...DEFAULT_SETTINGS, muted, controls, camera });
+          const { muted, musicMuted, haptics, controls, camera } = handlers.settings();
+          handlers.onSettings({
+            ...DEFAULT_SETTINGS,
+            muted,
+            musicMuted,
+            haptics,
+            controls,
+            camera,
+          });
           this.refresh();
         },
       }),
@@ -132,6 +153,7 @@ export class PauseMenu {
     box.body.append(this.main, this.options);
     this.root.append(box.root);
     this.root.style.display = "none";
+    closeOnBackdrop(this.root, () => handlers.onResume());
     parent.append(this.root);
   }
 
@@ -166,6 +188,8 @@ export class PauseMenu {
       slider.input.dispatchEvent(new Event("refresh"));
     }
     setLabel(this.sound, s.muted ? "Sound off" : "Sound on");
+    setLabel(this.musicButton, s.musicMuted ? "Music off" : "Music on");
+    setLabel(this.hapticsButton, s.haptics ? "Vibration on" : "Vibration off");
     setLabel(this.cameraMode, s.camera === "top" ? "Camera: top" : "Camera: behind");
     this.paintSummary();
   }

@@ -63,7 +63,8 @@ export function nightIsland(crew: Island, seed: number): IslandLayout {
   return {
     seed,
     level: 1,
-    buildings: crew.buildings.map(toRaidBuilding),
+    // Anything still going up can't fight yet.
+    buildings: crew.buildings.filter((b) => b.level > 0).map(toRaidBuilding),
     obstacles: [],
     decor: [],
     mines: [],

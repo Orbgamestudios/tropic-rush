@@ -50,8 +50,6 @@ export interface HeroModel {
   legs: Pair | null;
   /** Only the Rifleman has a full rig so far. */
   rig: RifleRig | null;
-  /** The Medic's healing spray, shown while she fires. */
-  spray: THREE.Object3D | null;
   /** Height of the top of the model, for health bars. */
   height: number;
 }
@@ -134,8 +132,8 @@ function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, color: number)
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
-function glossy(color: number): THREE.MeshStandardMaterial {
-  return material(color, { roughness: 0.35 });
+function glossy(color: number): THREE.MeshLambertMaterial {
+  return material(color);
 }
 
 /** Eyes, brows, nose, mouth and ears on a head centered at (0, y, 0) facing +x. */
@@ -273,14 +271,7 @@ function person(
   // Hips and belt with a buckle and pouches.
   lower.add(at(rbox(0.46 * Math.sqrt(k), 0.24, 0.56 * k, look.pants), 0, hip + 0.06, 0));
   lower.add(at(rbox(0.5 * Math.sqrt(k), 0.1, 0.6 * k, 0x5a3d26), 0, hip + 0.17, 0));
-  lower.add(
-    at(
-      rbox(0.06, 0.1, 0.12, C.gold, { roughness: 0.3, metalness: 0.6 }),
-      0.25 * Math.sqrt(k),
-      hip + 0.17,
-      0,
-    ),
-  );
+  lower.add(at(rbox(0.06, 0.1, 0.12, C.gold), 0.25 * Math.sqrt(k), hip + 0.17, 0));
   for (const z of [0.2, -0.2])
     lower.add(at(rbox(0.14, 0.15, 0.13, C.khaki), 0.2 * Math.sqrt(k), hip + 0.12, z * k));
 
@@ -364,7 +355,7 @@ function bandolier(built: Built, color: number, studs: number | null): void {
   if (studs !== null) {
     for (let i = 1; i < 6; i++) {
       const p = from.clone().lerp(to, i / 6);
-      const bullet = cyl(0.03, 0.035, 0.12, studs, 8, { roughness: 0.3, metalness: 0.7 });
+      const bullet = cyl(0.03, 0.035, 0.12, studs, 8);
       bullet.position.copy(p).add(v(0.04, 0, 0));
       bullet.rotation.x = 0.85;
       built.body.add(bullet);
@@ -421,9 +412,9 @@ function bazookaTube(): THREE.Group {
   return g;
 }
 
-function sprayer(): THREE.Group {
+function healingBottle(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(rbox(0.32, 0.14, 0.12, WHITE), 0, 0, 0));
+  g.add(at(rbox(0.32, 0.14, 0.12, 0x3fa34d), 0, 0, 0));
   g.add(at(barrel(0.04, 0.36, 0x9aa3ad, 10), 0.14, 0.02, 0));
   g.add(
     at(
@@ -437,35 +428,18 @@ function sprayer(): THREE.Group {
     ),
   );
   g.add(at(rbox(0.06, 0.16, 0.08, 0xd8dde3), -0.04, -0.12, 0, 0, 0, -0.2));
-  // A red cross on the side.
-  g.add(at(rbox(0.12, 0.04, 0.01, 0xe5503a), 0, 0, 0.065));
-  g.add(at(rbox(0.04, 0.12, 0.01, 0xe5503a), 0, 0, 0.065));
+  // A white plus on the side.
+  g.add(at(rbox(0.12, 0.04, 0.01, WHITE), 0, 0, 0.065));
+  g.add(at(rbox(0.04, 0.12, 0.01, WHITE), 0, 0, 0.065));
   return g;
-}
-
-function sprayCone(): THREE.Mesh {
-  const geometry = new THREE.ConeGeometry(2.6, 7, 18, 1, true);
-  geometry.rotateZ(Math.PI / 2);
-  geometry.translate(3.5, 0, 0);
-  const m = new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      color: 0x7dff9a,
-      transparent: true,
-      opacity: 0.18,
-      depthWrite: false,
-    }),
-  );
-  m.visible = false;
-  return m;
 }
 
 function wrench(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(rbox(0.5, 0.07, 0.05, 0x9aa3ad, { metalness: 0.6, roughness: 0.35 }), 0.1, 0, 0));
+  g.add(at(rbox(0.5, 0.07, 0.05, 0x9aa3ad), 0.1, 0, 0));
   const jaw = new THREE.Mesh(
     new THREE.TorusGeometry(0.08, 0.035, 6, 12, Math.PI * 1.4),
-    material(0x9aa3ad, { metalness: 0.6, roughness: 0.35 }),
+    material(0x9aa3ad),
   );
   g.add(at(jaw, 0.4, 0, 0, 0, 0, -0.7));
   g.add(at(rbox(0.2, 0.1, 0.07, 0xe5503a), -0.08, 0, 0));
@@ -484,7 +458,6 @@ function grenade(color = 0x6d7a45): THREE.Group {
 }
 
 function human(kind: Human): HeroModel {
-  let spray: THREE.Object3D | null = null;
   let built: Built;
   let gun: THREE.Group | null = null;
   switch (kind) {
@@ -500,7 +473,7 @@ function human(kind: Human): HeroModel {
       gun = rifle();
       body.add(gun);
       // Dog tags.
-      body.add(at(rbox(0.02, 0.07, 0.05, 0xd8dde3, { metalness: 0.7 }), 0.24, 1.3, 0.05));
+      body.add(at(rbox(0.02, 0.07, 0.05, 0xd8dde3), 0.24, 1.3, 0.05));
       break;
     }
     case "medic": {
@@ -527,16 +500,14 @@ function human(kind: Human): HeroModel {
       head.add(at(cap, -r * 0.05, r * 0.82, 0, 0, 0, 0.12));
       head.add(at(rbox(0.02, 0.05, 0.16, 0xe5503a), r * 0.82, r * 0.86, 0));
       head.add(at(rbox(0.02, 0.16, 0.05, 0xe5503a), r * 0.82, r * 0.86, 0));
-      // Armband and a medical tank on her back, with a hose to the sprayer.
+      // Armband and a medical tank on her back, with a bottle in her hand to throw.
       body.add(at(cyl(0.11, 0.11, 0.08, WHITE, 10), 0.03, 1.15, 0.37));
       const pack = backpack(built, 0xe9eef3, null);
       pack.add(at(rbox(0.02, 0.18, 0.06, 0xe5503a), -0.14, 0.02, 0));
       pack.add(at(rbox(0.02, 0.06, 0.18, 0xe5503a), -0.14, 0.02, 0));
       pack.add(at(cyl(0.1, 0.1, 0.5, 0x7dc98a, 12), -0.02, 0.05, 0.22));
       body.add(limb(v(-0.3, 1.0, 0.25), v(0.3, 0.95, 0.1), 0.025, 0x3a3e44));
-      body.add(at(sprayer(), built.grip.x, built.grip.y, built.grip.z));
-      spray = sprayCone();
-      body.add(at(spray, built.grip.x + 0.55, built.grip.y + 0.02, built.grip.z));
+      body.add(at(healingBottle(), built.grip.x, built.grip.y, built.grip.z));
       break;
     }
     case "heavy": {
@@ -573,7 +544,7 @@ function human(kind: Human): HeroModel {
       head.add(at(rbox(r * 0.8, r * 0.08, r * 0.9, C.crewBlueDark), -r * 1.05, r * 0.38, 0));
       for (const z of [0.12, -0.12]) {
         const lens = ball(0.085, 0x1b1d22, 12);
-        lens.material = material(0x1b1d22, { roughness: 0.15, metalness: 0.5 });
+        lens.material = material(0x1b1d22);
         lens.scale.set(0.35, 0.8, 1);
         head.add(at(lens, r * 0.98, r * 0.1, z));
       }
@@ -603,10 +574,7 @@ function human(kind: Human): HeroModel {
         head.add(at(ball(r * 0.08, 0xc4682a, 8), r * 0.9, -r * 0.08, side * r * 0.42));
       }
       // A monocle.
-      const mono = new THREE.Mesh(
-        new THREE.TorusGeometry(0.07, 0.012, 6, 16),
-        material(C.gold, { metalness: 0.7 }),
-      );
+      const mono = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.012, 6, 16), material(C.gold));
       head.add(at(mono, r * 1.0, r * 0.08, r * 0.36, 0, Math.PI / 2, 0));
       // Grenades on the belt and one in hand.
       for (const z of [-0.26, -0.1, 0.1, 0.26]) body.add(at(grenade(), 0.28, 0.86, z));
@@ -625,7 +593,7 @@ function human(kind: Human): HeroModel {
       head.add(at(rbox(r * 1.0, r * 0.12, r * 0.12, 0xe0aa2c), 0, r * 0.82, 0));
       for (const z of [0.13, -0.13]) {
         const goggle = cyl(0.08, 0.08, 0.07, 0x4fb3ff, 12);
-        goggle.material = material(0x8fd8ff, { roughness: 0.15, emissive: 0x18405a });
+        goggle.material = material(0x8fd8ff, { emissive: 0x18405a });
         head.add(at(goggle, r * 0.95, r * 0.48, z, 0, 0, Math.PI / 2));
       }
       head.add(at(rbox(r * 0.2, r * 0.06, r * 1.9, 0x3a3e44), r * 0.7, r * 0.48, 0));
@@ -668,7 +636,7 @@ function human(kind: Human): HeroModel {
     // Stand him at ease, for anything that never animates him (portraits, say).
     new RiflemanAnimator(rig).update(0, AT_EASE);
   }
-  return { root, body: built.outer, legs: built.legs, rig, spray, height: 2.35 };
+  return { root, body: built.outer, legs: built.legs, rig, height: 2.35 };
 }
 
 function tank(): HeroModel {
@@ -723,7 +691,7 @@ function tank(): HeroModel {
   driver.add(at(rbox(r * 0.12, r * 0.12, r * 2, 0x3a3e44), r * 0.4, r * 0.48, 0));
   turret.add(driver);
   body.add(turret);
-  return { root, body, legs: null, rig: null, spray: null, height: 2.9 };
+  return { root, body, legs: null, rig: null, height: 2.9 };
 }
 
 export function heroModel(kind: HeroKind): HeroModel {

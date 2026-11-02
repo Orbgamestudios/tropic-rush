@@ -8,7 +8,9 @@ import { BUILDINGS } from "../logic/buildings";
 import {
   applyOp,
   buildBlocker,
+  builderCount,
   buildingAtTile,
+  buildJobOn,
   type CrewLayout,
   capacity,
   clearBlocker,
@@ -24,7 +26,7 @@ import {
   MAX_TOOL_LEVEL,
   OBSTACLE_KINDS,
   obstacleAtTile,
-  obstacles,
+  obstacleById,
   type PlacedBuilding,
   production,
   sanitizeLayout,
@@ -35,22 +37,27 @@ import {
   tileAt,
   toolBlocker,
   toolCost,
+  toolJob,
+  toolTime,
   tryOp,
   upgradeBlocker,
   workerCount,
 } from "../logic/crewIsland";
 import {
   allowedCount,
+  buildTime,
   costFor,
   costText,
   formatDuration,
   levelCap,
+  nextLevelGain,
   PROGRESSION,
 } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import { distance, vec } from "../logic/vec";
+import { retakeIslands } from "../logic/worldMap";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
 import {
   CREW_CODE_PATTERN,
@@ -87,8 +94,10 @@ type Gesture =
   | { kind: "pinch"; distance: number; midX: number; midY: number };
 
 const TAP_DISTANCE = 10;
+/** The most nights of retaking caught up on at once, for a phone that's been away a while. */
+const MOST_NIGHTS = 7;
 
-function newId(): string {
+export function newId(): string {
   return typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -98,6 +107,8 @@ export interface CrewModeHost {
   save(): SaveData;
   updateSave(changes: Partial<SaveData>): void;
   onMenu(): void;
+  onProfile(): void;
+  onMap(): void;
   /** A hero was tapped: open them up. */
   onHero(kind: HeroKind): void;
   onReplay(raid: NightRaid): void;
@@ -131,6 +142,8 @@ export class CrewMode {
   ) {
     this.ui = new CrewUi(uiLayer, {
       onMenu: () => host.onMenu(),
+      onProfile: () => host.onProfile(),
+      onMap: () => host.onMap(),
       onCreate: (name) => void this.createCrew(name),
       onJoin: (name, code) => this.joinCrew(name, code),
       onOffline: (name) => this.goOffline(name),
@@ -201,6 +214,7 @@ export class CrewMode {
     if (save.crewCode && save.nickname) this.connect();
     else this.status = "solo";
     this.refreshTop();
+    if (this.status === "solo") this.bankLoot();
     this.runDueRaid();
     if (save.wins === 0) this.ui.flash("Tap a hero to upgrade them and go raiding");
   }
@@ -218,6 +232,31 @@ export class CrewMode {
     const nightRaid = runNightRaid(settle(this.layout, this.now()), night, night * 31 + 7);
     this.host.updateSave({ nightChecked: night, nightRaid });
     this.showNightPanel();
+    this.loseIslands(save.nightChecked, night);
+  }
+
+  /** Each night since the last look, raiders may have retaken some of the crew's islands. */
+  private loseIslands(from: number, to: number): void {
+    let { world } = this.host.save();
+    const lost: string[] = [];
+    const hq = hqLevel(this.layout);
+    for (let night = Math.max(from + 1, to - MOST_NIGHTS + 1); night <= to; night++) {
+      const result = retakeIslands(world, night, hq);
+      world = result.world;
+      lost.push(...result.lost);
+    }
+    if (lost.length === 0) return;
+    this.host.updateSave({ world, lostIslands: lost });
+    this.ui.flash(`Raiders retook ${lost.join(" and ")}!`);
+  }
+
+  /** Hands materials brought back from raids over to the crew's stock. */
+  private bankLoot(): void {
+    const { loot } = this.host.save();
+    if (Object.keys(loot).length === 0) return;
+    if (!this.commit({ kind: "loot", purse: loot })) return;
+    this.host.updateSave({ loot: {} });
+    this.ui.flash(`Brought home ${costText(loot)}`);
   }
 
   private showNightPanel(): void {
@@ -268,7 +307,7 @@ export class CrewMode {
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
     this.view.update(dt, time);
-    this.ui.placeJobPins(this.view.jobPins(this.layout.jobs, this.now()));
+    this.ui.placeJobPins(this.view.jobPins(this.layout, this.now()));
     this.refreshIn -= dt;
     if (this.refreshIn <= 0) {
       this.refreshIn = 0.25;
@@ -284,11 +323,12 @@ export class CrewMode {
   /** Updates the resource bar, the build buttons' costs and limits, and the upgrade button. */
   private refreshEconomy(): void {
     const current = settle(this.layout, this.now());
+    if (current.builds.length !== this.layout.builds.length) this.finishedBuilding(current);
     // Finished clearing: the patch comes away with a burst of leaves or chips.
     if (current.jobs.length !== this.layout.jobs.length) {
       for (const job of this.layout.jobs) {
         if (current.jobs.some((j) => j.id === job.id)) continue;
-        const o = obstacles().find((x) => x.id === job.id);
+        const o = obstacleById(job.id);
         if (o) this.view?.burst(o);
         if (o) this.ui.flash(`${OBSTACLE_KINDS[o.kind].label} cleared!`);
       }
@@ -298,6 +338,7 @@ export class CrewMode {
     }
     if (this.ui.toolsOpen) this.showToolsPanel(current);
     this.ui.setResources(current.resources, capacity(current), production(current));
+    this.ui.setBuilders(current.builds.length, builderCount(current));
     const hq = hqLevel(current);
     this.ui.setChips((type) => {
       const have = current.buildings.filter((b) => b.type === type).length;
@@ -313,6 +354,35 @@ export class CrewMode {
     });
     this.refreshSelection(current);
     this.refreshClearing(current);
+    this.view?.showUpgradable(
+      current,
+      new Set(
+        current.buildings.filter((b) => upgradeBlocker(current, b) === null).map((b) => b.id),
+      ),
+    );
+  }
+
+  /** Says what's just been finished, and takes the finished layout on. */
+  private finishedBuilding(current: CrewLayout): void {
+    const done: string[] = [];
+    for (const job of this.layout.builds) {
+      if (job.doneAt > this.now()) continue;
+      if ("tool" in job.target) {
+        const { tool } = job.target;
+        done.push(`${TOOLS[tool].label} improved to level ${current.tools[tool]}!`);
+      } else {
+        const { building } = job.target;
+        const b = current.buildings.find((x) => x.id === building);
+        if (b) done.push(`${BUILDINGS[b.type].label} is ready: level ${b.level}`);
+      }
+    }
+    // Back after a while, several may have finished at once: one message, not a blur of them.
+    if (done.length > 0) {
+      this.ui.flash(done.length === 1 ? (done[0] ?? "") : `${done.length} jobs finished`);
+      this.ui.celebrate();
+    }
+    this.layout = current;
+    writeLocalLayout(current);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -370,7 +440,7 @@ export class CrewMode {
     const save = this.host.save();
     this.client?.close();
     this.status = "connecting";
-    this.client = new CrewClient(save.crewCode, save.memberId, save.nickname, {
+    this.client = new CrewClient(save.crewCode, save.memberId, save.nickname, save.avatar, {
       onState: (layout, members, holds, by, serverNow) => {
         this.clockOffset = serverNow - Date.now();
         this.layout = sanitizeLayout(layout, this.now());
@@ -381,6 +451,7 @@ export class CrewMode {
           this.select(null);
         if (by && by !== this.host.save().nickname) this.refreshSelection();
         this.refreshTop();
+        this.bankLoot();
       },
       onReject: (reason) => this.ui.flash(reason),
       onStatus: (status) => {
@@ -397,14 +468,36 @@ export class CrewMode {
 
   private refreshTop(): void {
     const save = this.host.save();
-    const members =
+    const connected = this.status === "online";
+    // Without a line to the crew there's nobody to say who's online, this player included.
+    const members = (
       this.members.length > 0
         ? this.members
-        : save.nickname
-          ? [{ id: save.memberId, name: save.nickname, online: true }]
-          : [];
-    this.ui.setCrew(save.crewCode, members, save.crewCode ? this.status : "solo");
+        : [{ id: save.memberId, name: save.nickname, avatar: save.avatar, online: connected }]
+    ).map((m) => ({
+      ...m,
+      avatar: m.id === save.memberId ? save.avatar : m.avatar,
+      online: connected && m.online,
+    }));
+    this.ui.setCrew(save.crewCode, members);
     this.ui.setProgress(clearedShare(this.layout));
+  }
+
+  /** The player's picture or name has changed: tells the crew, and redraws the bar. */
+  profileChanged(): void {
+    const save = this.host.save();
+    if (this.view && save.crewCode && save.nickname) this.connect();
+    this.refreshTop();
+  }
+
+  /** Shares the crew's invite code. */
+  shareCode(): void {
+    this.ui.shareCode();
+  }
+
+  /** Opens the panel for starting or joining a crew. */
+  showJoin(): void {
+    this.ui.showJoin(this.host.save().nickname);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -443,7 +536,7 @@ export class CrewMode {
   }
 
   private refreshClearing(current = settle(this.layout, this.now())): void {
-    const o = obstacles().find((x) => x.id === this.clearingId);
+    const o = this.clearingId ? obstacleById(this.clearingId) : undefined;
     if (!o || current.cleared.includes(o.id)) {
       if (this.clearingId) {
         this.clearingId = null;
@@ -470,29 +563,33 @@ export class CrewMode {
 
   private showToolsPanel(current = settle(this.layout, this.now())): void {
     this.ui.showTools(
-      TOOL_ORDER.map((tool) => ({
-        tool,
-        label: TOOLS[tool].label,
-        level: current.tools[tool],
-        max: MAX_TOOL_LEVEL,
-        cost: costText(toolCost(tool, current.tools[tool])),
-        blocker: toolBlocker(current, tool),
-      })),
-      `${current.jobs.length} of ${workerCount(current)} busy`,
+      TOOL_ORDER.map((tool) => {
+        const job = toolJob(current, tool);
+        const blocker = toolBlocker(current, tool);
+        return {
+          tool,
+          label: TOOLS[tool].label,
+          level: current.tools[tool],
+          max: MAX_TOOL_LEVEL,
+          cost: costText(toolCost(tool, current.tools[tool])),
+          blocker: job ? `Improving: ${formatDuration(job.doneAt - this.now())}` : blocker,
+          time: formatDuration(toolTime(current.tools[tool])),
+        };
+      }),
+      `Workers: ${current.jobs.length} of ${workerCount(current)} busy. Builders: ${current.builds.length} of ${builderCount(current)} busy`,
     );
   }
 
   private upgradeTool(tool: Tool): void {
     if (this.commit({ kind: "toolUp", tool })) {
-      this.ui.flash(`${TOOLS[tool].label} upgraded!`);
-      this.ui.celebrate();
+      this.ui.flash(`${TOOLS[tool].label}: work started`);
       this.refreshEconomy();
       this.showToolsPanel();
     }
   }
 
   private clearSelected(): void {
-    const o = obstacles().find((x) => x.id === this.clearingId);
+    const o = this.clearingId ? obstacleById(this.clearingId) : undefined;
     if (!o) return;
     const result = tryOp(this.layout, { kind: "clear", id: o.id }, this.now());
     if ("error" in result) {
@@ -515,13 +612,20 @@ export class CrewMode {
     const cap = levelCap(b.type, hqLevel(current));
     const max = PROGRESSION[b.type].maxLevel;
     const blocker = upgradeBlocker(current, b);
+    const job = buildJobOn(current, b.id);
+    const left = job ? formatDuration(job.doneAt - this.now()) : "";
     const detail = holder
       ? `${holder.name} is moving it`
-      : b.type === "headquarters"
-        ? `Level ${b.level} of ${max}`
-        : `Level ${b.level} (max ${cap} at this HQ)`;
-    const upgrade =
-      b.level >= max
+      : job
+        ? b.level === 0
+          ? `Going up: ${left} left`
+          : `Upgrading to level ${b.level + 1}: ${left} left`
+        : b.level >= max
+          ? `Level ${b.level}, the highest`
+          : `Level ${b.level} of ${b.type === "headquarters" ? max : cap}. Next: ${nextLevelGain(b.type, b.level)}, ${formatDuration(buildTime(b.type, b.level + 1))}`;
+    const upgrade = job
+      ? left
+      : b.level >= max
         ? "Fully upgraded"
         : blocker === "Upgrade the headquarters first"
           ? "Upgrade the HQ first"
@@ -548,7 +652,9 @@ export class CrewMode {
       return;
     }
     this.commit({ kind: "upgrade", id: b.id });
-    this.ui.flash(`${BUILDINGS[b.type].label} upgraded to level ${b.level + 1}`);
+    this.ui.flash(
+      `${BUILDINGS[b.type].label}: ${formatDuration(buildTime(b.type, b.level + 1))} to level ${b.level + 1}`,
+    );
     this.refreshEconomy();
   }
 
@@ -587,7 +693,7 @@ export class CrewMode {
     }
     this.drag = {
       kind: "place",
-      building: { id: newId(), type, x: 0, y: 0, rotated: false, level: 1 },
+      building: { id: newId(), type, x: 0, y: 0, rotated: false, level: 0 },
       pointerId: event.pointerId,
       valid: false,
       overIsland: false,

@@ -1,6 +1,7 @@
 // The game's UI building blocks: chunky beveled buttons, steel panels with header plates,
 // currency pills, stat bars and portrait tiles. Styles live in src/styles/kit.css (".ui-*").
 
+import { hapticOnTap } from "../../audio/haptics";
 import { sfx } from "./fx";
 import { type IconName, icon } from "./icons";
 
@@ -49,6 +50,7 @@ export function button(options: ButtonOptions): HTMLButtonElement {
   if (options.label) face.append(el("span", "ui-btn-label", options.label));
   b.append(face);
   b.setAttribute("aria-label", options.aria ?? options.label ?? options.icon ?? "");
+  hapticOnTap(b);
   b.addEventListener("pointerdown", () => {
     if (!b.disabled) sfx.press();
   });
@@ -57,6 +59,55 @@ export function button(options: ButtonOptions): HTMLButtonElement {
     b.addEventListener("click", () => handler());
   }
   return b;
+}
+
+/**
+ * A way to turn fractions of the whole screen into a layer's own pixels. The UI layers sit inside
+ * the safe area and are scaled by the UI size setting, so neither matches the 3D view's pixels.
+ * Measures the page, so make one per update rather than one per item.
+ */
+export function layerPlacer(
+  layer: HTMLElement,
+): (x: number, y: number) => { x: number; y: number } {
+  const box = layer.getBoundingClientRect();
+  const page = layer.closest("#game")?.getBoundingClientRect() ?? box;
+  const scale = box.width / (layer.clientWidth || 1) || 1;
+  return (x, y) => ({
+    x: (page.left + x * page.width - box.left) / scale,
+    y: (page.top + y * page.height - box.top) / scale,
+  });
+}
+
+/** Calls `close` when a press lands on the overlay's dimmed background, not on what's on it. */
+export function closeOnBackdrop(overlay: HTMLElement, close: () => void): void {
+  overlay.addEventListener("pointerdown", (e) => {
+    if (e.target === overlay) close();
+  });
+}
+
+const CONFIRM_MS = 3000;
+
+/** Makes a button ask again before doing something that can't be undone. */
+export function confirmTap(b: HTMLButtonElement, question: string, action: () => void): void {
+  const name = b.getAttribute("aria-label") ?? "";
+  const hint = el("span", "ui-confirm", question);
+  let waiting: ReturnType<typeof setTimeout> | null = null;
+  const settle = () => {
+    if (waiting) clearTimeout(waiting);
+    waiting = null;
+    hint.remove();
+    b.setAttribute("aria-label", name);
+  };
+  b.addEventListener("click", () => {
+    if (waiting) {
+      settle();
+      action();
+      return;
+    }
+    b.append(hint);
+    b.setAttribute("aria-label", question);
+    waiting = setTimeout(settle, CONFIRM_MS);
+  });
 }
 
 /** Changes a button's label (and accessible name). */
@@ -154,6 +205,7 @@ export class StatBar {
   private readonly fill = el("div", "ui-stat-fill");
   private readonly ghost = el("div", "ui-stat-ghost");
   private readonly value = el("span", "ui-stat-value");
+  private readonly label = el("span", "ui-stat-label");
 
   constructor(
     iconName: IconName,
@@ -161,12 +213,17 @@ export class StatBar {
     color: "green" | "orange" | "yellow" | "blue" | "red",
   ) {
     const head = el("div", "ui-stat-head");
-    head.append(el("span", "ui-stat-label", label), this.value);
+    this.label.textContent = label;
+    head.append(this.label, this.value);
     const track = el("div", `ui-stat-track ui-stat-${color}`);
     track.append(this.ghost, this.fill);
     const text = el("div", "ui-stat-text");
     text.append(head, track);
     this.root.append(icon(iconName, "ui-stat-icon"), text);
+  }
+
+  setLabel(text: string): void {
+    if (this.label.textContent !== text) this.label.textContent = text;
   }
 
   /** `preview` shows a lighter bar for what the next level would bring. */
@@ -209,4 +266,28 @@ export function levelBadge(level: number, className = ""): HTMLSpanElement {
   const badge = el("span", `ui-level ${className}`.trim());
   badge.append(el("span", "ui-level-num", String(level)));
   return badge;
+}
+
+/** Turns "🪙 300  🪵 200"-style cost text into icon chips. */
+export function costChips(text: string): HTMLElement {
+  const row = el("span", "cost-row");
+  const glyphs: Record<string, IconName> = {
+    "🪙": "coin",
+    "🪵": "timber",
+    "🪨": "stone",
+    "🔩": "scrap",
+  };
+  const parts = text.split(/\s{2,}/);
+  for (const part of parts) {
+    const [glyph, amount] = part.split(" ");
+    const name = glyph ? glyphs[glyph] : undefined;
+    if (name && amount) {
+      const chip = el("span", "cost-chip");
+      chip.append(icon(name, "cost-icon"), el("span", "cost-amount", amount));
+      row.append(chip);
+    } else {
+      row.append(el("span", "cost-text", part));
+    }
+  }
+  return row;
 }

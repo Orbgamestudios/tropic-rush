@@ -60,12 +60,13 @@ export type HeroAttack =
       flightTime: number;
     }
   | {
-      kind: "spray";
+      /** A thrown bottle that bursts into healing where it lands. It does nothing to buildings. */
+      kind: "heal";
       range: number;
-      damage: number;
       heal: number;
       reload: number;
-      coneHalfAngle: number;
+      splash: number;
+      flightTime: number;
     };
 
 /**
@@ -77,13 +78,12 @@ export function shotSpread(kind: HeroKind): number {
   switch (atk.kind) {
     case "minigun":
       return atk.spread;
-    case "spray":
-      return atk.coneHalfAngle;
     case "burst":
       return 0.05;
     case "shell":
       return 0.03;
     case "lob":
+    case "heal":
       return 0.06;
   }
 }
@@ -120,11 +120,11 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
   },
   medic: {
     name: "Medic",
-    role: "Keeps the crew alive",
+    role: "Heals the crew, can't hurt buildings",
     hp: 1250,
     speed: 5.6,
     radius: 0.55,
-    attack: { kind: "spray", range: 7, damage: 26, heal: 30, reload: 0.15, coneHalfAngle: 0.6 },
+    attack: { kind: "heal", range: 16, heal: 240, reload: 1.1, splash: 3.2, flightTime: 0.8 },
     heavy: false,
   },
   tank: {

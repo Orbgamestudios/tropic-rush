@@ -27,7 +27,6 @@ function layout(buildings: PlacedBuilding[], extra: Partial<IslandLayout> = {}):
     mines: [],
     spawn: vec(0, 0),
     boat: vec(0, 3),
-    boatExit: vec(0, 2),
     ...extra,
   };
 }
@@ -98,7 +97,7 @@ describe("aiming and locking on", () => {
   });
 
   it("stops firing when the hero walks out of range", () => {
-    const state = raid([{ type: "storehouse", pos: vec(0, -12) }]);
+    const state = raid([{ type: "storehouse", pos: vec(0, -17) }]);
     stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
     expect(hero(state).targetId).not.toBeNull();
     run(state, 4, [input({ move: vec(0, 1) })]);
@@ -129,12 +128,15 @@ describe("aiming and locking on", () => {
     expect(hero(state).targetId).toBe(building(state, 1).id);
   });
 
-  it("slows heroes while they aim", () => {
+  it("slows heroes to a crawl while they aim or fire", () => {
     const free = raid([]);
     const aiming = raid([]);
+    const firing = raid([]);
     run(free, 1, [input({ move: vec(1, 0) })]);
     run(aiming, 1, [input({ move: vec(1, 0), aimPreview: vec(0, -1) })]);
-    expect(hero(aiming).pos.x).toBeLessThan(hero(free).pos.x * 0.7);
+    run(firing, 1, [input({ move: vec(1, 0), aim: vec(0, -1) })]);
+    expect(hero(aiming).pos.x).toBeLessThan(hero(free).pos.x * 0.25);
+    expect(hero(firing).pos.x).toBeLessThan(hero(free).pos.x * 0.25);
   });
 });
 
@@ -160,7 +162,7 @@ describe("raid combat", () => {
     run(near, 3);
     expect(hero(near).hp).toBeLessThan(hero(near).maxHp);
 
-    const far = raid([{ type: "gunTurret", pos: vec(0, -22) }]);
+    const far = raid([{ type: "gunTurret", pos: vec(0, -30) }]);
     run(far, 3);
     expect(hero(far).hp).toBe(hero(far).maxHp);
   });
@@ -208,27 +210,35 @@ describe("raid combat", () => {
 });
 
 describe("the gunboat", () => {
-  it("has one seat and must be reached first", () => {
-    const state = raid([], ["rifleman", "heavy"], { spawn: vec(0, 1) });
-    const board = input({ toggleBoat: true });
-    stepRaid(state, [board, board], DT);
+  it("answers one hero at a time, from anywhere on the island", () => {
+    const state = raid([], ["rifleman", "heavy"], { spawn: vec(0, -30) });
+    const open = input({ toggleBoat: true });
+    stepRaid(state, [open, open], DT);
     expect(hero(state, 0).inBoat).toBe(true);
     expect(hero(state, 1).inBoat).toBe(false);
     expect(state.boat.occupant).toBe(hero(state, 0).id);
-
-    const far = raid([], ["rifleman"], { spawn: vec(0, -20) });
-    stepRaid(far, [board], DT);
-    expect(hero(far).inBoat).toBe(false);
   });
 
-  it("keeps the hero in it safe and drops them back on the beach", () => {
+  it("leaves the hero standing where they are, still in the line of fire", () => {
     const state = raid([{ type: "gunTurret", pos: vec(0, -6) }]);
+    const { pos } = hero(state);
     stepRaid(state, [input({ toggleBoat: true })], DT);
-    run(state, 3);
-    expect(hero(state).hp).toBe(hero(state).maxHp);
+    run(state, 3, [input({ move: vec(1, 0) })]);
+    expect(hero(state).pos).toEqual(pos);
+    expect(hero(state).hp).toBeLessThan(hero(state).maxHp);
     stepRaid(state, [input({ toggleBoat: true })], DT);
     expect(hero(state).inBoat).toBe(false);
-    expect(hero(state).pos).toEqual(vec(0, 2));
+    expect(hero(state).pos).toEqual(pos);
+  });
+
+  it("is free for someone else once the hero calling it falls", () => {
+    const state = raid([{ type: "gunTurret", pos: vec(0, -6) }]);
+    stepRaid(state, [input({ toggleBoat: true })], DT);
+    hero(state).hp = 1;
+    run(state, 3);
+    expect(hero(state).alive).toBe(false);
+    expect(hero(state).inBoat).toBe(false);
+    expect(state.boat.occupant).toBeNull();
   });
 
   it("spends escalating energy on abilities and refuses when short", () => {
@@ -252,7 +262,56 @@ describe("the gunboat", () => {
   });
 });
 
-/** True if a rock or sandbag sits on the straight line between two points. */
+describe("the medic", () => {
+  it("throws a bottle that heals crewmates where it lands, and locks onto them", () => {
+    const state = raid([], ["medic", "rifleman"]);
+    const patient = hero(state, 1);
+    patient.pos = vec(9, 0);
+    patient.hp = 100;
+    stepRaid(state, [input({ lockAt: vec(1, 0) })], DT);
+    expect(hero(state).patientId).toBe(patient.id);
+    run(state, 1.5);
+    expect(patient.hp).toBeGreaterThan(100);
+  });
+
+  it("never hurts a building", () => {
+    const state = raid([{ type: "storehouse", pos: vec(0, -8) }], ["medic"]);
+    run(state, 5, [input({ aim: vec(0, -0.5) })]);
+    expect(building(state).hp).toBe(building(state).maxHp);
+  });
+
+  it("has no buildings to lock onto", () => {
+    const state = raid([{ type: "gunTurret", pos: vec(0, -6) }], ["medic"]);
+    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
+    expect(hero(state).targetId).toBeNull();
+  });
+
+  it("can heal herself by throwing at her own feet", () => {
+    const state = raid([], ["medic"]);
+    hero(state).hp = 100;
+    run(state, 2, [input({ aim: vec(0, 0.16) })]);
+    expect(hero(state).hp).toBeGreaterThan(100);
+  });
+});
+
+describe("loot", () => {
+  it("pays out materials for mills and storages, and nothing for defenses", () => {
+    const state = raid([
+      { type: "lumberCamp", pos: vec(0, -7), level: 3 },
+      { type: "goldVault", pos: vec(-7, 0), level: 1 },
+      { type: "gunTurret", pos: vec(7, 0) },
+    ]);
+    for (const b of state.buildings) b.hp = 1;
+    run(state, 8, [input({ aim: vec(0, -1) })]);
+    expect(building(state, 0).destroyed).toBe(true);
+    expect(state.loot.timber).toBeGreaterThan(120);
+    run(state, 8, [input({ aim: vec(-1, 0) })]);
+    expect(building(state, 1).destroyed).toBe(true);
+    expect(state.loot.gold).toBe(300);
+  });
+});
+
+/** True if a rock sits on the straight line between two points. */
 function lineBlocked(state: RaidState, from: Vec2, to: Vec2): boolean {
   const d = sub(to, from);
   const len2 = d.x * d.x + d.y * d.y;
@@ -411,7 +470,7 @@ describe("signature moves", () => {
     const damage = (level: number) => {
       const state = signed(["tank"], level, [
         { type: "storehouse", pos: vec(0, -8) },
-        { type: "storehouse", pos: vec(10, -8) },
+        { type: "storehouse", pos: vec(12, -8) },
         { type: "headquarters", pos: vec(40, -40) },
       ]);
       building(state, 0).hp = 1;

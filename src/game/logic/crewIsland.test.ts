@@ -4,8 +4,10 @@ import {
   applyOp,
   buildableTiles,
   buildBlocker,
+  builderCount,
   buildingAtTile,
   buildingCenter,
+  buildJobOn,
   type CrewLayout,
   capacity,
   clearBlocker,
@@ -22,6 +24,7 @@ import {
   obstacleAtTile,
   obstacles,
   type PlacedBuilding,
+  production,
   sanitizeLayout,
   settle,
   starterLayout,
@@ -30,8 +33,9 @@ import {
   toolBlocker,
   tryOp,
 } from "./crewIsland";
-import { costFor, START_RESOURCES } from "./economy";
+import { buildTime, costFor, nextLevelGain, START_RESOURCES } from "./economy";
 import { isOnGrass } from "./island";
+import { nightIsland } from "./nightRaid";
 
 const NOW = 1_000_000_000;
 const HOUR = 3_600_000;
@@ -95,6 +99,12 @@ function place(layout: CrewLayout, b: PlacedBuilding): CrewLayout {
   const next = applyOp(layout, { kind: "place", building: b }, NOW);
   if (!next) throw new Error(`could not place ${b.id}`);
   return next;
+}
+
+/** Skips ahead until all the building work under way is done. */
+function finishWork(layout: CrewLayout): CrewLayout {
+  const last = Math.max(layout.stamp, ...layout.builds.map((j) => j.doneAt));
+  return settle(layout, last + 1);
 }
 
 describe("crew island ground", () => {
@@ -181,7 +191,10 @@ describe("crew island ground", () => {
     expect(clearBlocker(island(20, []), far)).toMatch(/level 3 Axe/);
     expect(toolBlocker(island(1, []), "axe")).toMatch(/HQ 4/);
     const better = applyOp(island(20, []), { kind: "toolUp", tool: "axe" }, NOW);
-    expect(better?.tools.axe).toBe(2);
+    if (!better) throw new Error("not started");
+    expect(better.tools.axe).toBe(1);
+    expect(toolBlocker(better, "axe")).toMatch(/Being improved/);
+    expect(finishWork(better).tools.axe).toBe(2);
   });
 
   it("takes months to clear the whole island, even with every worker busy", () => {
@@ -252,7 +265,7 @@ describe("crew island layout", () => {
     expect(buildingAtTile(layout, at(6, 4))?.id).toBe("t");
     expect(buildingAtTile(layout, at(7, 4))).toBeUndefined();
     expect(fits(layout, turret("u", at(7, 3).x, at(7, 3).y))).toBe(true);
-    expect(footprint("goldVault", true)).toEqual({ w: 2, h: 3 });
+    expect(footprint("goldVault", true)).toEqual({ w: 3, h: 3 });
   });
 });
 
@@ -272,7 +285,7 @@ describe("crew island progression", () => {
     expect(buildBlocker(layout, "harpoon")).toMatch(/level 4/);
     layout = place(layout, building("m", "goldMine", at(0, 0)));
     expect(buildBlocker(layout, "goldMine")).not.toBeNull();
-    layout = place(layout, turret("t", at(4, 0).x, at(4, 0).y));
+    layout = place(layout, turret("t", at(6, 0).x, at(6, 0).y));
     expect(buildBlocker(layout, "gunTurret")).toMatch(/headquarters to 3/);
   });
 
@@ -299,8 +312,9 @@ describe("crew island progression", () => {
   });
 
   it("caps upgrades by the headquarters' level, and storages at level 8", () => {
-    let layout = place(island(3), building("v", "goldVault", at(0, 0)));
-    const upgrade = (l: CrewLayout) => tryOp(l, { kind: "upgrade", id: "v" }, NOW);
+    let layout = finishWork(place(island(3), building("v", "goldVault", at(0, 0))));
+    const now = () => layout.stamp;
+    const upgrade = (l: CrewLayout) => tryOp(l, { kind: "upgrade", id: "v" }, now());
     expect(upgrade(layout)).toEqual({ error: "Upgrade the headquarters first" });
     layout = {
       ...layout,
@@ -309,7 +323,7 @@ describe("crew island progression", () => {
     for (let level = 2; level <= 8; level++) {
       const result = upgrade(layout);
       if (!("layout" in result)) throw new Error(result.error);
-      layout = result.layout;
+      layout = finishWork(result.layout);
     }
     expect(layout.buildings.find((b) => b.id === "v")?.level).toBe(8);
     expect(upgrade(layout)).toEqual({ error: "Already at its highest level" });
@@ -319,11 +333,108 @@ describe("crew island progression", () => {
     let layout = island(19);
     const result = tryOp(layout, { kind: "upgrade", id: "hq" }, NOW);
     if (!("layout" in result)) throw new Error(result.error);
-    layout = result.layout;
+    layout = finishWork(result.layout);
     expect(hqLevel(layout)).toBe(20);
-    expect(tryOp(layout, { kind: "upgrade", id: "hq" }, NOW)).toEqual({
+    expect(tryOp(layout, { kind: "upgrade", id: "hq" }, layout.stamp)).toEqual({
       error: "Already at its highest level",
     });
+  });
+
+  it("takes minutes, then hours, for each level, and longer for the headquarters", () => {
+    const minutes = (type: BuildingType, level: number) => buildTime(type, level) / 60_000;
+    expect([2, 3, 4, 5].map((level) => minutes("gunTurret", level))).toEqual([1, 5, 10, 30]);
+    expect(minutes("gunTurret", 6)).toBeGreaterThanOrEqual(60);
+    expect(minutes("headquarters", 2)).toBe(30);
+    expect(minutes("headquarters", 3)).toBeGreaterThanOrEqual(60);
+    for (let level = 3; level <= 10; level++) {
+      expect(minutes("mortar", level)).toBeGreaterThan(minutes("mortar", level - 1));
+    }
+    for (let level = 3; level <= 20; level++) {
+      expect(minutes("headquarters", level)).toBeGreaterThan(minutes("headquarters", level - 1));
+    }
+  });
+
+  it("charges up front, but only raises the level when the work is done", () => {
+    let layout = finishWork(place(island(5), turret("t", at(0, 0).x, at(0, 0).y)));
+    expect(layout.buildings.find((b) => b.id === "t")?.level).toBe(1);
+    const start = layout.stamp;
+    const gold = layout.resources.gold;
+    const started = applyOp(layout, { kind: "upgrade", id: "t" }, start);
+    if (!started) throw new Error("not started");
+    layout = started;
+    expect(layout.resources.gold).toBeLessThan(gold);
+    expect(layout.buildings.find((b) => b.id === "t")?.level).toBe(1);
+    expect(buildJobOn(layout, "t")?.doneAt).toBe(start + buildTime("gunTurret", 2));
+    expect(tryOp(layout, { kind: "upgrade", id: "t" }, start)).toEqual({
+      error: "Already upgrading",
+    });
+    const before = settle(layout, start + buildTime("gunTurret", 2) - 1);
+    expect(before.buildings.find((b) => b.id === "t")?.level).toBe(1);
+    const after = settle(layout, start + buildTime("gunTurret", 2));
+    expect(after.buildings.find((b) => b.id === "t")?.level).toBe(2);
+    expect(after.builds).toEqual([]);
+  });
+
+  it("says what the next level of a building gives", () => {
+    expect(nextLevelGain("goldMine", 1)).toMatch(/an hour/);
+    expect(nextLevelGain("goldVault", 1)).toMatch(/storage/);
+    expect(nextLevelGain("gunTurret", 1)).toBe("+12% strength");
+  });
+
+  it("keeps a new building out of action until it's up", () => {
+    const layout = place(island(3), building("m", "goldMine", at(0, 0)));
+    const broke = { ...layout, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 } };
+    expect(broke.buildings.find((b) => b.id === "m")?.level).toBe(0);
+    expect(production(broke).gold).toBe(0);
+    expect(production(finishWork(broke)).gold).toBeGreaterThan(0);
+    expect(nightIsland(broke, 1).buildings.some((b) => b.type === "goldMine")).toBe(false);
+  });
+
+  it("only has so many builders, more as the headquarters grows", () => {
+    let layout = island(3);
+    const turrets = [0, 4].map((x) => turret(`t${x}`, at(x, 0).x, at(x, 0).y));
+    for (const t of turrets) layout = place(layout, t);
+    expect(builderCount(layout)).toBe(2);
+    expect(buildBlocker(layout, "mortar")).toMatch(/builders are busy/);
+    expect(builderCount(island(20))).toBeGreaterThan(2);
+  });
+
+  it("drops the work when a building is removed", () => {
+    const layout = place(island(3), turret("t", at(0, 0).x, at(0, 0).y));
+    const removed = applyOp(layout, { kind: "remove", id: "t" }, NOW);
+    expect(removed?.builds).toEqual([]);
+  });
+
+  it("banks raid loot, up to what the island can hold", () => {
+    const layout = { ...island(3), resources: { gold: 0, timber: 10, stone: 0, scrap: 0 } };
+    const banked = applyOp(layout, { kind: "loot", purse: { timber: 90, gold: 1e12 } }, NOW);
+    expect(banked?.resources.timber).toBeCloseTo(100);
+    expect(banked?.resources.gold).toBe(capacity(layout).gold);
+    const nonsense = applyOp(
+      layout,
+      { kind: "loot", purse: { timber: Number.NaN, stone: -5 } },
+      NOW,
+    );
+    expect(nonsense?.resources).toEqual(layout.resources);
+  });
+
+  it("keeps work under way through a save, and drops work on what's gone", () => {
+    const layout = place(island(3), turret("t", at(0, 0).x, at(0, 0).y));
+    const back = sanitizeLayout(JSON.parse(JSON.stringify(layout)), NOW);
+    expect(back.builds).toEqual(layout.builds);
+    expect(back.buildings.find((b) => b.id === "t")?.level).toBe(0);
+    const orphaned = {
+      ...layout,
+      builds: [
+        ...layout.builds,
+        { target: { building: "ghost" }, doneAt: NOW + 1 },
+        { target: "nonsense", doneAt: NOW + 1 },
+      ],
+    };
+    expect(sanitizeLayout(JSON.parse(JSON.stringify(orphaned)), NOW).builds).toHaveLength(1);
+    const lost = { ...layout, builds: [] };
+    const healed = sanitizeLayout(JSON.parse(JSON.stringify(lost)), NOW);
+    expect(healed.buildings.find((b) => b.id === "t")?.level).toBe(1);
   });
 
   it("charges for building and upgrading, and refuses what the crew can't afford", () => {
@@ -343,16 +454,31 @@ describe("crew island progression", () => {
   });
 
   it("fills the stock from producers over time, up to what storage holds", () => {
-    let layout = place(island(3), building("m", "goldMine", at(0, 0)));
-    layout = { ...layout, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 } };
+    let layout = finishWork(place(island(3), building("m", "goldMine", at(0, 0))));
+    layout = { ...layout, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 }, stamp: NOW };
     const later = settle(layout, NOW + HOUR);
     expect(later.resources.gold).toBeCloseTo(900);
     expect(later.resources.timber).toBe(0);
     const muchLater = settle(layout, NOW + 1000 * HOUR);
     expect(muchLater.resources.gold).toBe(capacity(layout).gold);
     const rich = { ...layout, resources: island().resources };
-    const withVault = place(rich, building("v", "goldVault", at(4, 0)));
+    const withVault = finishWork(place(rich, building("v", "goldVault", at(6, 0))));
     expect(capacity(withVault).gold).toBeGreaterThan(capacity(layout).gold);
+  });
+
+  it("moves a building that a change of size has left overlapping another, not losing it", () => {
+    const hq = { ...(starterLayout(NOW).buildings[0] as PlacedBuilding), level: 3 };
+    const mine = building("m", "goldMine", at(0, 0));
+    const close = turret("t", at(3, 0).x, at(3, 0).y);
+    const back = sanitizeLayout(
+      { buildings: [hq, { ...mine, level: 2 }, { ...close, level: 2 }], cleared: allCleared() },
+      NOW,
+    );
+    expect(back.buildings.map((b) => b.id).sort()).toEqual(["hq", "m", "t"]);
+    const [a, b] = [back.buildings[1], back.buildings[2]];
+    if (!a || !b) throw new Error("buildings lost");
+    expect(fits({ buildings: [a], cleared: allCleared() }, b)).toBe(true);
+    expect(b.level).toBe(2);
   });
 
   it("cleans up untrusted layout data, dropping what the headquarters doesn't allow", () => {

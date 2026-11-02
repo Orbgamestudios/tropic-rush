@@ -269,6 +269,7 @@ export class Showcase {
     if (on === this.root.visible) return;
     this.root.visible = on;
     if (on) {
+      this.stage.refreshShadows();
       this.savedBackground = this.stage.scene.background;
       this.savedFog = this.stage.scene.fog;
       this.stage.scene.background = this.background;

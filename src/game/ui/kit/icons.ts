@@ -209,13 +209,6 @@ const ICONS = {
     <defs>${lg(id("a"), "#9bf56f", "#2c9a2f")}</defs>
     <circle cx="32" cy="32" r="26" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3.5"/>
     <path d="M27 14h10v13h13v10H37v13H27V37H14V27h13z" fill="#fff" stroke="${OUTLINE}" stroke-width="2.5" stroke-linejoin="round"/>`,
-  sandbags: (id) => `
-    <defs>${lg(id("a"), "#efd9a4", "#b8935a")}</defs>
-    <g stroke="${OUTLINE}" stroke-width="3" fill="url(#${id("a")})">
-      <rect x="4" y="38" width="20" height="14" rx="7"/><rect x="22" y="38" width="20" height="14" rx="7"/>
-      <rect x="40" y="38" width="20" height="14" rx="7"/><rect x="13" y="25" width="20" height="14" rx="7"/>
-      <rect x="31" y="25" width="20" height="14" rx="7"/><rect x="22" y="12" width="20" height="14" rx="7"/>
-    </g>`,
   smoke: (id) => `
     <defs>${lg(id("a"), "#f4f6fa", "#a7b2c2")}</defs>
     <path d="M14 50a10 10 0 0 1 0-20 12 12 0 0 1 22-8 11 11 0 0 1 18 10 9 9 0 0 1-2 18z" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3.5" stroke-linejoin="round"/>

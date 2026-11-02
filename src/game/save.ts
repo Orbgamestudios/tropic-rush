@@ -1,6 +1,9 @@
+import { type Avatar, DEFAULT_AVATAR, readAvatar } from "./logic/avatars";
+import { type Purse, RESOURCES } from "./logic/economy";
 import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
 import { MAX_HERO_LEVEL } from "./logic/heroProgress";
 import type { NightRaid } from "./logic/nightRaid";
+import { NEW_WORLD, sanitizeWorld, type WorldProgress } from "./logic/worldMap";
 
 // Bump the version suffix if the shape of SaveData changes incompatibly.
 const KEY = "tropic-rush:save:v1";
@@ -13,6 +16,8 @@ export interface SaveData {
   bestDestruction: number;
   /** Name shown to crewmates; empty until chosen. */
   nickname: string;
+  /** The player icon on their profile. */
+  avatar: Avatar;
   /** Invite code of the crew this phone belongs to; empty if none yet. */
   crewCode: string;
   /** Random id that tells the crew server this phone is the same player next time. */
@@ -25,15 +30,17 @@ export interface SaveData {
   heroLevels: Record<HeroKind, number>;
   /** Heroes this player can pick. */
   unlocked: HeroKind[];
-  /** AI squadmates brought along on raids (unlocked heroes, at most MAX_SQUAD). */
-  squad: HeroKind[];
   settings: Settings;
   /** The last night the raid was run for; 0 until this phone has seen its first night. */
   nightChecked: number;
   /** The latest night raid, for its report and replay. */
   nightRaid: NightRaid | null;
-  /** Islands beaten on the world map, and which day that map was for. */
-  beaten: { day: number; ids: number[] };
+  /** Which islands of the world are taken, retaken or out of the cloud. */
+  world: WorldProgress;
+  /** Materials from raids that haven't reached the crew's stock yet. */
+  loot: Partial<Purse>;
+  /** The latest islands raiders took back, to say so when the player next looks at the map. */
+  lostIslands: string[];
 }
 
 /** Where a control rests: its middle as a share of the screen (0 to 1), and its size. */
@@ -59,6 +66,10 @@ export interface Settings {
   /** Raid camera: the angled view from above, or following close behind the hero. */
   camera: CameraMode;
   muted: boolean;
+  /** Music, separately from the sound effects. */
+  musicMuted: boolean;
+  /** Little taps of the phone's vibration motor on hits and buttons. */
+  haptics: boolean;
   /** Where the sticks sit, and how big they are. */
   controls: ControlLayout;
   /** Bumped when the defaults change, so older saves pick up the new tilt and UI size. */
@@ -81,6 +92,8 @@ export const DEFAULT_SETTINGS: Settings = {
   uiScale: 0.7,
   camera: "top",
   muted: false,
+  musicMuted: false,
+  haptics: true,
   controls: DEFAULT_CONTROLS,
   rev: SETTINGS_REV,
 };
@@ -113,13 +126,12 @@ function readSettings(value: unknown): Settings {
       : DEFAULT_SETTINGS.uiScale,
     camera: v.camera === "behind" ? "behind" : "top",
     muted: v.muted === true,
+    musicMuted: v.musicMuted === true,
+    haptics: v.haptics !== false,
     controls: readControls(v.controls),
     rev: SETTINGS_REV,
   };
 }
-
-/** AI squadmates fill the other crew seats: a crew is up to 5 heroes. */
-export const MAX_SQUAD = 4;
 
 const starters = (): HeroKind[] => HERO_KINDS.filter((k) => STARTER_HEROES.includes(k));
 
@@ -132,17 +144,19 @@ const DEFAULT_SAVE: SaveData = {
   wins: 0,
   bestDestruction: 0,
   nickname: "",
+  avatar: DEFAULT_AVATAR,
   crewCode: "",
   memberId: "",
   gold: 300,
   medals: 0,
   heroLevels: startLevels(),
   unlocked: starters(),
-  squad: starters().slice(1),
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
   nightRaid: null,
-  beaten: { day: 0, ids: [] },
+  world: NEW_WORLD,
+  loot: {},
+  lostIslands: [],
 };
 
 function readNightRaid(value: unknown): NightRaid | null {
@@ -156,23 +170,24 @@ function readNightRaid(value: unknown): NightRaid | null {
   return ok ? (v as NightRaid) : null;
 }
 
-function readBeaten(value: unknown): SaveData["beaten"] {
-  const v = value as Partial<SaveData["beaten"]> | null | undefined;
-  return {
-    day: count(v?.day),
-    ids: Array.isArray(v?.ids) ? v.ids.filter((id) => Number.isInteger(id)) : [],
-  };
+function readLoot(value: unknown): Partial<Purse> {
+  const v = (value ?? {}) as Partial<Record<keyof Purse, unknown>>;
+  const out: Partial<Purse> = {};
+  for (const r of RESOURCES) {
+    const amount = count(v[r]);
+    if (amount > 0) out[r] = amount;
+  }
+  return out;
 }
 
 const fresh = (): SaveData => ({
   ...DEFAULT_SAVE,
   heroLevels: startLevels(),
   unlocked: starters(),
-  squad: [...DEFAULT_SAVE.squad],
   settings: { ...DEFAULT_SETTINGS, controls: readControls(null) },
 });
 
-type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
+type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 
 function count(value: unknown, max = Number.MAX_SAFE_INTEGER): number {
   return typeof value === "number" && Number.isFinite(value)
@@ -204,19 +219,21 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       wins: count(parsed.wins),
       bestDestruction: count(parsed.bestDestruction, 100),
       nickname: text(parsed.nickname, 16),
+      avatar: readAvatar(parsed.avatar),
       crewCode: text(parsed.crewCode, 6),
       memberId: text(parsed.memberId, 64),
       gold: parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold),
       medals: count(parsed.medals),
       heroLevels,
       unlocked,
-      squad: Array.isArray(parsed.squad)
-        ? unlocked.filter((k) => (parsed.squad as unknown[]).includes(k)).slice(0, MAX_SQUAD)
-        : DEFAULT_SAVE.squad,
       settings: readSettings(parsed.settings),
       nightChecked: count(parsed.nightChecked),
       nightRaid: readNightRaid(parsed.nightRaid),
-      beaten: readBeaten(parsed.beaten),
+      world: sanitizeWorld(parsed.world),
+      loot: readLoot(parsed.loot),
+      lostIslands: Array.isArray(parsed.lostIslands)
+        ? parsed.lostIslands.filter((n): n is string => typeof n === "string").slice(0, 8)
+        : [],
     };
   } catch {
     return fresh();
@@ -234,6 +251,55 @@ export function writeSave(data: SaveData, storage: Storage = localStorage): bool
 }
 
 const LAYOUT_KEY = "tropic-rush:crew-layout:v1";
+const ACCOUNT_KEY = "tropic-rush:account:v1";
+
+/** Who's signed in on this phone. Kept apart from the save, so it never leaves the phone with it. */
+export interface AccountSession {
+  token: string;
+  username: string;
+  /** When this phone last matched the server, by the server's clock. */
+  syncedAt: number;
+}
+
+export function loadAccount(storage: Storage = localStorage): AccountSession | null {
+  try {
+    const value = JSON.parse(storage.getItem(ACCOUNT_KEY) ?? "null");
+    const ok = typeof value?.token === "string" && typeof value.username === "string";
+    return ok ? { ...value, syncedAt: count(value.syncedAt) } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeAccount(
+  session: AccountSession | null,
+  storage: Storage = localStorage,
+): void {
+  try {
+    if (session) storage.setItem(ACCOUNT_KEY, JSON.stringify(session));
+    else storage.removeItem(ACCOUNT_KEY);
+  } catch {
+    // Storage full or blocked: they'll just need to log in again next time.
+  }
+}
+
+/** Everything an account keeps, as one string: the save and this phone's island. */
+export function saveBundle(storage: Storage = localStorage): string {
+  return JSON.stringify({ save: storage.getItem(KEY), layout: storage.getItem(LAYOUT_KEY) });
+}
+
+/** Takes on a bundle from the account, replacing what's on this phone. */
+export function restoreBundle(bundle: string, storage: Storage = localStorage): boolean {
+  try {
+    const { save, layout } = JSON.parse(bundle) as { save?: unknown; layout?: unknown };
+    if (typeof save !== "string") return false;
+    storage.setItem(KEY, save);
+    if (typeof layout === "string") storage.setItem(LAYOUT_KEY, layout);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** This phone's copy of the crew island, used while offline. */
 export function loadLocalLayout(storage: Storage = localStorage): unknown {

@@ -8,13 +8,13 @@ import { VIEW_YAW } from "../config";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import {
   buildingCenter,
-  type ClearJob,
+  buildJobOn,
   type CrewLayout,
   footprint,
   GRID_ORIGIN,
   HOME_START,
   type Obstacle,
-  obstacles,
+  obstacleById,
   type PlacedBuilding,
   TILE,
 } from "../logic/crewIsland";
@@ -26,35 +26,124 @@ import type { JobPin } from "../ui/crewUi";
 import { buildClouds, type CloudView } from "./clouds";
 import { visibleBox } from "./heroAssets";
 import { HomeHeroes } from "./homeHeroes";
-import { buildingModel, CREW_PAINT, gunboatModel } from "./models";
+import { buildingModel, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
-import { COLORS } from "./palette";
+import { COLORS, material } from "./palette";
 import { buildShore, updateWind } from "./props";
 import { homeScenery } from "./scenery";
-import { rbox } from "./shapes";
+import { at, barrel, cyl, flatten, rbox, vertexColored } from "./shapes";
 import type { Stage } from "./stage";
 import { buildTerrain, type TerrainView } from "./terrain";
 import { buildTileGrid } from "./tileGrid";
 
 /**
  * A building on the crew island: its 3D model, repainted in crew colors and turned to face the
- * beach, standing on a paved pad the size of its footprint.
+ * beach, standing straight on the grass.
  */
 function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
+  const key = `${type}|${rotated}`;
+  let template = crewModels.get(key);
+  if (!template) {
+    template = makeCrewBuilding(type, rotated);
+    crewModels.set(key, template);
+  }
+  return template.clone(true);
+}
+
+const crewModels = new Map<string, THREE.Group>();
+const SINK = 0.15;
+
+/** Drawn over a building while a crewmate is moving it. */
+const heldMaterial = new THREE.MeshLambertMaterial({
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.55,
+});
+
+let signTemplate: THREE.Group | null = null;
+
+/** A tiny signboard with a green arrow: this building can be upgraded right now. */
+function upgradeSign(): THREE.Group {
+  if (!signTemplate) {
+    signTemplate = new THREE.Group();
+    signTemplate.add(at(cyl(0.06, 0.07, 0.8, COLORS.woodDark, 6), 0, 0.4, 0));
+    signTemplate.add(at(rbox(1, 1, 0.14, 0xf7f7f2), 0, 1.15, 0));
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.38);
+    shape.lineTo(0.34, 0);
+    shape.lineTo(0.13, 0);
+    shape.lineTo(0.13, -0.36);
+    shape.lineTo(-0.13, -0.36);
+    shape.lineTo(-0.13, 0);
+    shape.lineTo(-0.34, 0);
+    shape.closePath();
+    const arrow = new THREE.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false });
+    signTemplate.add(at(new THREE.Mesh(arrow, material(0x2fc84a)), 0, 1.15, 0.05));
+    // Square on to the camera, however the building is turned.
+    signTemplate.rotation.y = VIEW_YAW;
+    flatten(signTemplate);
+  }
+  return signTemplate.clone(true);
+}
+
+const scaffolds = new Map<string, THREE.Group>();
+
+/** Laid flat over hills and rooftops alike, so it ignores the depth of what's under it. */
+function overlay(color: number, opacity: number): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+  });
+}
+
+/** Bamboo poles and planks round a footprint: the sign that a building is being worked on. */
+function scaffold(type: BuildingType, rotated: boolean): THREE.Group {
+  const { w, h } = footprint(type, rotated);
+  const tall = Math.min(BUILDINGS[type].height + 1, 9);
+  const key = `${w}|${h}|${tall}`;
+  let template = scaffolds.get(key);
+  if (!template) {
+    template = new THREE.Group();
+    const hw = (w * TILE) / 2 + 0.1;
+    const hd = (h * TILE) / 2 + 0.1;
+    for (const [x, z] of [
+      [hw, hd],
+      [-hw, hd],
+      [hw, -hd],
+      [-hw, -hd],
+    ] as const) {
+      const pole = cyl(0.09, 0.11, tall, COLORS.bamboo, 6);
+      pole.position.set(x, tall / 2, z);
+      template.add(pole);
+    }
+    for (let y = 1.4; y < tall; y += 2.2) {
+      for (const z of [hd, -hd]) {
+        const bar = barrel(0.07, hw * 2, COLORS.bamboo, 6);
+        bar.position.set(-hw, y, z);
+        template.add(bar);
+      }
+      for (const x of [hw, -hw]) {
+        const bar = barrel(0.07, hd * 2, COLORS.bamboo, 6);
+        bar.rotation.y = Math.PI / 2;
+        bar.position.set(x, y, hd);
+        template.add(bar);
+      }
+    }
+    flatten(template);
+    scaffolds.set(key, template);
+  }
+  return template.clone(true);
+}
+
+function makeCrewBuilding(type: BuildingType, rotated: boolean): THREE.Group {
   const { w, h } = footprint(type, rotated);
   const g = new THREE.Group();
   const width = w * TILE - 0.3;
   const depth = h * TILE - 0.3;
-  const pad = rbox(width, 0.3, depth, 0xd8ccb0);
-  pad.position.y = 0.15;
-  pad.receiveShadow = true;
-  const trim = rbox(width + 0.12, 0.16, depth + 0.12, COLORS.crewBlueDark);
-  trim.position.y = 0.06;
-  // A stone footing, so the pad sits level where the ground rolls away under it.
-  const footing = rbox(width + 0.2, 2.4, depth + 0.2, 0xb4a88e);
-  footing.position.y = -1.15;
-  g.add(footing, trim, pad);
-  const model = buildingModel(type).root;
+  const model = buildingModel(type, true).root;
   // Models face +x; face the beach (+z, towards the camera), or turn a quarter more if rotated.
   model.rotation.y = -Math.PI / 2 + (rotated ? Math.PI / 2 : 0);
   const box = visibleBox(model);
@@ -65,17 +154,10 @@ function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
     (depth - 0.4) / Math.max(0.1, size.z),
   );
   model.scale.setScalar(fit);
-  model.position.y = 0.3;
+  // Sunk a little, so it doesn't float where the ground rolls away under it.
+  model.position.y = -SINK;
   g.add(model);
-  // Own materials, so one building can fade (while a crewmate holds it) without fading the rest.
-  g.traverse((o) => {
-    if (!(o instanceof THREE.Mesh)) return;
-    o.castShadow = true;
-    const m = (o.material as THREE.MeshStandardMaterial).clone();
-    const paint = m.color ? CREW_PAINT.get(m.color.getHex()) : undefined;
-    if (paint !== undefined) m.color.setHex(paint);
-    o.material = m;
-  });
+  flatten(g);
   return g;
 }
 
@@ -197,7 +279,22 @@ export class CrewIslandView {
   private readonly terrain: TerrainView;
   private readonly clouds: CloudView;
   private readonly grid = buildTileGrid();
-  private readonly blocks = new Map<string, { group: THREE.Group; key: string }>();
+  private readonly blocks = new Map<
+    string,
+    {
+      group: THREE.Group;
+      key: string;
+      held: boolean;
+      scaffold: THREE.Group | null;
+      sign: THREE.Group | null;
+    }
+  >();
+  /** What sync() last drew, so a frame where nothing changed costs nothing. */
+  private drawn: { layout: CrewLayout | null; hidden: string | null; held: string } = {
+    layout: null,
+    hidden: null,
+    held: "",
+  };
   private readonly previewGroup = new THREE.Group();
   private previewKey = "";
   private readonly tilesMaterial = new THREE.MeshBasicMaterial({
@@ -209,6 +306,10 @@ export class CrewIslandView {
   });
   private readonly tiles: THREE.Mesh;
   private readonly selection: THREE.Mesh;
+  /** How far the selected defense reaches. */
+  private readonly reach = new THREE.Group();
+  private readonly reachFill = overlay(0x6fc6ff, 0.13);
+  private readonly reachEdge = overlay(0x9fdcff, 0.75);
   private readonly tags = new Map<string, HTMLDivElement>();
   private readonly overgrowth: OvergrowthView;
   private readonly heroes: HomeHeroes;
@@ -262,10 +363,29 @@ export class CrewIslandView {
     this.selection.renderOrder = 2;
     this.selection.visible = false;
     this.root.add(this.selection);
+
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 56).rotateX(-Math.PI / 2),
+      this.reachFill,
+    );
+    const edge = new THREE.Mesh(
+      new THREE.RingGeometry(0.975, 1, 72).rotateX(-Math.PI / 2),
+      this.reachEdge,
+    );
+    disc.renderOrder = 2;
+    edge.renderOrder = 2;
+    this.reach.add(disc, edge);
+    this.reach.visible = false;
+    this.root.add(this.reach);
   }
 
   /** Mirrors the layout: adds, moves and removes building blocks. */
   sync(layout: CrewLayout, hiddenId: string | null, holders: readonly Holder[]): void {
+    if (holders.length > 0) this.placeTags(layout, holders);
+    const held = holders.map((h) => h.buildingId).join();
+    const { drawn } = this;
+    if (drawn.layout === layout && drawn.hidden === hiddenId && drawn.held === held) return;
+    this.drawn = { layout, hidden: hiddenId, held };
     this.overgrowth.sync(layout);
     const live = new Set<string>();
     for (const b of layout.buildings) {
@@ -274,27 +394,55 @@ export class CrewIslandView {
       let entry = this.blocks.get(b.id);
       if (!entry || entry.key !== key) {
         if (entry) this.root.remove(entry.group);
-        entry = { group: crewBuildingModel(b.type, b.rotated), key };
+        entry = {
+          group: crewBuildingModel(b.type, b.rotated),
+          key,
+          held: false,
+          scaffold: null,
+          sign: null,
+        };
         this.blocks.set(b.id, entry);
         this.root.add(entry.group);
       }
       const center = buildingCenter(b);
       entry.group.position.set(center.x, groundFor(b), center.y);
       entry.group.visible = b.id !== hiddenId;
-      const held = holders.some((h) => h.buildingId === b.id);
-      entry.group.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          (o.material as THREE.MeshStandardMaterial).transparent = held;
-          (o.material as THREE.MeshStandardMaterial).opacity = held ? 0.55 : 1;
-        }
-      });
+      const working = buildJobOn(layout, b.id) !== undefined;
+      if (working !== (entry.scaffold !== null)) {
+        if (entry.scaffold) entry.group.remove(entry.scaffold);
+        entry.scaffold = working ? scaffold(b.type, b.rotated) : null;
+        if (entry.scaffold) entry.group.add(entry.scaffold);
+      }
+      const isHeld = holders.some((h) => h.buildingId === b.id);
+      if (isHeld !== entry.held) {
+        entry.held = isHeld;
+        entry.group.traverse((o) => {
+          if (o instanceof THREE.Mesh) o.material = isHeld ? heldMaterial : vertexColored();
+        });
+      }
     }
     for (const [id, entry] of this.blocks) {
       if (live.has(id)) continue;
       this.root.remove(entry.group);
       this.blocks.delete(id);
     }
-    this.placeTags(layout, holders);
+    if (holders.length === 0) this.placeTags(layout, holders);
+  }
+
+  /** Puts the little upgrade sign on these buildings, at the corner nearest the camera. */
+  showUpgradable(layout: CrewLayout, ids: ReadonlySet<string>): void {
+    for (const b of layout.buildings) {
+      const entry = this.blocks.get(b.id);
+      if (!entry) continue;
+      const wanted = ids.has(b.id);
+      if (wanted === (entry.sign !== null)) continue;
+      if (entry.sign) entry.group.remove(entry.sign);
+      entry.sign = wanted ? upgradeSign() : null;
+      if (!entry.sign) continue;
+      const { w, h } = footprint(b.type, b.rotated);
+      entry.sign.position.set((-w * TILE) / 2 + 0.5, 0, (h * TILE) / 2 - 0.5);
+      entry.group.add(entry.sign);
+    }
   }
 
   showPreview(preview: Preview | null): void {
@@ -312,7 +460,7 @@ export class CrewIslandView {
       const ghost = crewBuildingModel(b.type, b.rotated);
       ghost.traverse((o) => {
         if (o instanceof THREE.Mesh) {
-          o.material = new THREE.MeshStandardMaterial({
+          o.material = new THREE.MeshLambertMaterial({
             color: 0xffffff,
             transparent: true,
             opacity: 0.55,
@@ -332,14 +480,20 @@ export class CrewIslandView {
     this.tilesMaterial.color.set(preview.valid ? 0x5fe08a : 0xff5a4a);
     this.previewGroup.traverse((o) => {
       if (o instanceof THREE.Mesh)
-        (o.material as THREE.MeshStandardMaterial).color.set(preview.valid ? 0xd8ffe0 : 0xffc4bd);
+        (o.material as THREE.MeshLambertMaterial).color.set(preview.valid ? 0xd8ffe0 : 0xffc4bd);
     });
   }
 
   showSelection(b: PlacedBuilding | null): void {
     this.selection.visible = b !== null;
+    const attack = b ? BUILDINGS[b.type].attack : undefined;
+    this.reach.visible = attack !== undefined;
     if (!b) return;
     const center = buildingCenter(b);
+    if (attack) {
+      this.reach.position.set(center.x, groundFor(b) + 0.3, center.y);
+      this.reach.scale.set(attack.range, 1, attack.range);
+    }
     const { w, h } = footprint(b.type, b.rotated);
     this.selection.scale.set(w * TILE + 0.6, 1, h * TILE + 0.6);
     this.selection.position.set(center.x, groundFor(b) + 0.05, center.y);
@@ -390,18 +544,43 @@ export class CrewIslandView {
   }
 
   /** Where each clearing job's countdown goes, as fractions of the screen's width and height. */
-  jobPins(jobs: readonly ClearJob[], now: number): JobPin[] {
+  jobPins(layout: Pick<CrewLayout, "jobs" | "builds" | "buildings">, now: number): JobPin[] {
     const pins: JobPin[] = [];
-    for (const job of jobs) {
-      const o = obstacles().find((x) => x.id === job.id);
-      if (!o) continue;
-      const cx = GRID_ORIGIN.x + (o.x + o.w / 2) * TILE;
-      const cy = GRID_ORIGIN.y + (o.y + o.h / 2) * TILE;
-      const p = new THREE.Vector3(cx, homeHeight(cx, cy) + 5, cy).project(this.stage.camera);
+    const pin = (
+      id: string,
+      wx: number,
+      wz: number,
+      up: number,
+      doneAt: number,
+      build: boolean,
+    ) => {
+      const p = new THREE.Vector3(wx, homeHeight(wx, wz) + up, wz).project(this.stage.camera);
       const x = (p.x + 1) / 2;
       const y = (1 - p.y) / 2;
       const visible = p.z < 1 && x > 0 && x < 1 && y > 0.1 && y < 1;
-      pins.push({ id: job.id, x, y, visible, time: formatDuration(job.doneAt - now) });
+      pins.push({
+        id,
+        x,
+        y,
+        visible,
+        time: formatDuration(doneAt - now),
+        building: build,
+      });
+    };
+    for (const job of layout.jobs) {
+      const o = obstacleById(job.id);
+      if (!o) continue;
+      const cx = GRID_ORIGIN.x + (o.x + o.w / 2) * TILE;
+      const cy = GRID_ORIGIN.y + (o.y + o.h / 2) * TILE;
+      pin(job.id, cx, cy, 5, job.doneAt, false);
+    }
+    for (const job of layout.builds) {
+      const { target } = job;
+      if (!("building" in target)) continue;
+      const b = layout.buildings.find((x) => x.id === target.building);
+      if (!b) continue;
+      const c = buildingCenter(b);
+      pin(`b:${b.id}`, c.x, c.y, BUILDINGS[b.type].height + 2, job.doneAt, true);
     }
     return pins;
   }
@@ -413,8 +592,9 @@ export class CrewIslandView {
 
   update(dt: number, time: number): void {
     this.camera.update(dt);
+    this.overgrowth.setDistance(this.camera.distance);
     this.overgrowth.update(dt);
-    this.heroes.update(dt);
+    this.heroes.update(dt, this.camera.distance);
     updateWind(time, null);
     this.terrain.update(time);
     this.clouds.update(time);
@@ -436,12 +616,14 @@ export class CrewIslandView {
     this.tags.clear();
     this.root.remove(this.terrain.root);
     this.terrain.dispose();
+    // Materials are shared with the raids: only the view's own overlays go.
+    this.tilesMaterial.dispose();
+    this.reachFill.dispose();
+    this.reachEdge.dispose();
+    (this.selection.material as THREE.Material).dispose();
     this.root.traverse((o) => {
       if (o instanceof THREE.InstancedMesh) o.dispose();
-      if (o instanceof THREE.Mesh) {
-        o.geometry.dispose();
-        (o.material as THREE.Material).dispose();
-      }
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
   }
 }

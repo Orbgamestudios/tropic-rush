@@ -1,7 +1,6 @@
-// AI squadmates: the heroes that fill the empty crew seats when you raid without friends. Each
-// one sticks near the leader (hero 0), picks fights close to them, shoots around cover, keeps the
-// medic on whoever is hurt. Once the leader is down or in the
-// gunboat, the squad keeps pushing on its own. Squadmates never board the gunboat.
+// The AI raiders who land on the crew's island at night. Each one sticks near the leader (hero 0),
+// picks fights close to them, shoots around cover and keeps a medic on whoever is hurt. Once the
+// leader is down, the rest keep pushing on their own. Raiders never use the gunboat.
 
 import { BUILDINGS } from "./buildings";
 import { HEROES } from "./heroes";
@@ -55,7 +54,7 @@ function pickTarget(state: RaidState, hero: RaidHero, anchor: Vec2 | null): Raid
 function spacing(state: RaidState, hero: RaidHero): Vec2 {
   let push = vec(0, 0);
   for (const other of state.heroes) {
-    if (other === hero || !other.alive || other.inBoat) continue;
+    if (other === hero || !other.alive) continue;
     const gap = distance(other.pos, hero.pos);
     const room = HEROES[hero.kind].radius + HEROES[other.kind].radius + 0.9;
     if (gap < room && gap > 0.001) push = add(push, normalize(sub(hero.pos, other.pos)));
@@ -84,20 +83,20 @@ function aimAt(hero: RaidHero, pos: Vec2): Vec2 {
 export function squadInput(state: RaidState, index: number): HeroInput {
   const hero = state.heroes[index];
   const leader = state.heroes[0];
-  if (!hero || !hero.alive || hero.inBoat) return IDLE_INPUT;
+  if (!hero || !hero.alive) return IDLE_INPUT;
   const spec = HEROES[hero.kind];
-  const anchor = leader && leader !== hero && leader.alive && !leader.inBoat ? leader.pos : null;
+  const anchor = leader && leader !== hero && leader.alive ? leader.pos : null;
 
   // Too far behind: catch up before anything else.
   if (anchor && distance(hero.pos, anchor) > LEASH)
     return { ...IDLE_INPUT, move: steer(state, hero, anchor) };
 
   // The medic tends to the most hurt teammate in reach.
-  if (spec.attack.kind === "spray") {
+  if (spec.attack.kind === "heal") {
     let patient: RaidHero | null = null;
     for (const h of state.heroes) {
-      if (h === hero || !h.alive || h.inBoat || h.hp / h.maxHp >= HURT) continue;
-      if (distance(h.pos, hero.pos) > 14) continue;
+      if (h === hero || !h.alive || h.hp / h.maxHp >= HURT) continue;
+      if (distance(h.pos, hero.pos) > spec.attack.range) continue;
       if (!patient || h.hp / h.maxHp < patient.hp / patient.maxHp) patient = h;
     }
     if (patient) {
@@ -111,10 +110,11 @@ export function squadInput(state: RaidState, index: number): HeroInput {
     }
   }
 
-  const target = pickTarget(state, hero, anchor);
+  // A medic can't hurt anything: she keeps to whoever else is fighting.
+  const target = spec.attack.kind === "heal" ? null : pickTarget(state, hero, anchor);
   if (target) {
     const gap = distance(hero.pos, target.pos) - target.radius;
-    const reach = spec.attack.range * (spec.attack.kind === "spray" ? 0.8 : 0.85);
+    const reach = spec.attack.range * 0.85;
     if (gap > reach) return { ...IDLE_INPUT, move: steer(state, hero, target.pos) };
     const lobbed = spec.attack.kind === "lob";
     if (!lobbed && shotBlocked(state, hero.pos, target.pos)) {

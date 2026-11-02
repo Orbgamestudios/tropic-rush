@@ -38,14 +38,52 @@ test("picks a hero and starts a raid", async ({ page }) => {
   );
   await page.getByRole("button", { name: "Rifleman", exact: true }).click();
   await page.getByRole("button", { name: "Raid", exact: true }).click();
-  await page.locator(".map-pin").first().click();
+  await page.locator(".map-pin:visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
 
   const timer = page.locator(".hud-objective-time");
   await expect(timer).toBeVisible();
   await expect(timer).toHaveText(/^4:\d\d$/, { timeout: 40_000 });
   await expect(page.locator(".hud-objective-pct")).toHaveText("0%");
+  // The hero's health bar floats over them.
+  await expect(page.locator(".bar-crew").first()).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("drags round the world map, with clouds saying what lifts them", async ({ page }) => {
+  await openMap(page);
+  await expect(page.locator(".map-cloud-plate").first()).toBeAttached({ timeout: 60_000 });
+  const pin = page.locator(".map-pin:visible").first();
+  const before = await pin.evaluate((node) => (node as HTMLElement).style.transform);
+  await page.mouse.move(400, 180);
+  await page.mouse.down();
+  await page.mouse.move(300, 150, { steps: 4 });
+  await page.mouse.up();
+  await expect
+    .poll(() => pin.evaluate((node) => (node as HTMLElement).style.transform), { timeout: 40_000 })
+    .not.toBe(before);
+});
+
+test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
+  await openMap(page);
+  await page.locator(".map-pin:visible").first().click();
+  await page.getByRole("button", { name: "Attack" }).click();
+  const boat = page.locator(".hud-boat");
+  await expect(boat).toBeVisible({ timeout: 60_000 });
+  await boat.click();
+  await expect(page.locator(".hud-tray-box")).toBeVisible({ timeout: 40_000 });
+});
+
+test("won't send a medic to attack on her own", async ({ page }) => {
+  await page.goto("/?testhooks");
+  await page.evaluate(() =>
+    (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
+  );
+  await page.getByRole("button", { name: "Medic", exact: true }).click();
+  await page.getByRole("button", { name: "Raid", exact: true }).click();
+  await page.locator(".map-pin:visible").first().click();
+  await expect(page.getByRole("button", { name: "Attack" })).toBeDisabled();
+  await expect(page.locator(".map-card-note")).toHaveText(/can't hurt buildings/);
 });
 
 test("scouts an island, then attacks it", async ({ page }) => {
@@ -53,7 +91,7 @@ test("scouts an island, then attacks it", async ({ page }) => {
   page.on("pageerror", (error) => errors.push(error.message));
 
   await openMap(page);
-  await page.locator(".map-pin").first().click();
+  await page.locator(".map-pin:visible").first().click();
   await page.getByRole("button", { name: "Scout" }).click();
   await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
 
@@ -70,11 +108,11 @@ test("backs out of scouting and scouts again", async ({ page }) => {
 
   await openMap(page);
   for (let round = 0; round < 2; round++) {
-    await page.locator(".map-pin").first().click();
+    await page.locator(".map-pin:visible").first().click();
     await page.getByRole("button", { name: "Scout" }).click();
     await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
     await page.getByRole("button", { name: "Back to map" }).click();
-    await expect(page.locator(".map-pin").first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator(".map-pin:visible").first()).toBeVisible({ timeout: 60_000 });
   }
   expect(errors).toEqual([]);
 });
@@ -119,6 +157,35 @@ test("builds on the crew island offline", async ({ page }) => {
     );
   await expect.poll(count, { timeout: 40_000 }).toBe(2);
   await expect(page.getByRole("button", { name: "Rotate" })).toBeVisible();
+
+  // Removing asks again first, since it can't be undone. Both taps go in one step: a test
+  // browser's slow clicks would outlast the few seconds it stays armed.
+  const counts = await page.getByRole("button", { name: "Remove" }).evaluate((b: HTMLElement) => {
+    const { tropicRush } = window as unknown as {
+      tropicRush: { crew(): { layout: { buildings: unknown[] } } };
+    };
+    const buildings = () => tropicRush.crew().layout.buildings.length;
+    b.click();
+    const afterOne = buildings();
+    b.click();
+    return [afterOne, buildings()];
+  });
+  expect(counts).toEqual([2, 1]);
+  expect(errors).toEqual([]);
+});
+
+test("opens the profile from the crew bar, and the map from its button", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/?testhooks");
+  await page.getByRole("button", { name: "Profile and crew" }).click();
+  await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+  await page.getByRole("button", { name: "Close profile" }).click();
+  await expect(page.getByRole("button", { name: "Create account" })).toBeHidden();
+
+  await page.getByRole("button", { name: "World map" }).click();
+  await expect(page.locator(".map-pin:visible").first()).toBeVisible({ timeout: 60_000 });
   expect(errors).toEqual([]);
 });
 

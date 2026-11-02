@@ -3,9 +3,18 @@
 //
 //   POST /api/crew/new            -> { code } a fresh invite code
 //   GET  /api/crew/<code>/socket  -> WebSocket to that crew's island
+//   POST /api/account/<action>    -> sign up, log in, log out, and fetch or store a saved game
 //   anything else                 -> the game (static assets)
 
 import { DurableObject } from "cloudflare:workers";
+import {
+  accountKey,
+  MAX_SAVE_CHARS,
+  passwordProblem,
+  tokenAccount,
+  usernameProblem,
+} from "../src/game/logic/account";
+import { type Avatar, DEFAULT_AVATAR, readAvatar } from "../src/game/logic/avatars";
 import {
   type CrewLayout,
   sanitizeLayout,
@@ -18,14 +27,57 @@ import {
   cleanName,
   type Hold,
   MAX_CREW,
+  MAX_RELAY,
   type Member,
   newCrewCode,
   type ServerMessage,
 } from "../src/game/net/protocol";
+import { PlayerAccount } from "./account";
 
 interface Env {
   ASSETS: Fetcher;
   CREW_ISLAND: DurableObjectNamespace<CrewIsland>;
+  ACCOUNT: DurableObjectNamespace<PlayerAccount>;
+}
+
+export { PlayerAccount };
+
+/** Accounts: checks what can be checked here, then hands over to that player's own object. */
+async function handleAccount(action: string, request: Request, env: Env): Promise<Response> {
+  const text = await request.text();
+  if (text.length > MAX_SAVE_CHARS + 1000) return Response.json({ ok: false, error: "Too big" });
+  let body: { username?: unknown; password?: unknown; save?: unknown; token?: unknown };
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return Response.json({ ok: false, error: "Bad request" });
+  }
+  const account = (name: string) => env.ACCOUNT.get(env.ACCOUNT.idFromName(accountKey(name)));
+  const username = typeof body.username === "string" ? body.username : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  const save = typeof body.save === "string" ? body.save : "";
+  const token = typeof body.token === "string" ? body.token : "";
+  if (action === "signup" || action === "login") {
+    const problem = usernameProblem(username) ?? passwordProblem(password);
+    if (action === "login" && problem) {
+      return Response.json({ ok: false, error: "Wrong name or password" });
+    }
+    if (problem) return Response.json({ ok: false, error: problem });
+    const stub = account(username);
+    const result =
+      action === "signup" ? stub.signUp(username, password, save) : stub.logIn(password);
+    return Response.json(await result);
+  }
+  const owner = tokenAccount(token);
+  if (!owner) return Response.json({ ok: false });
+  const stub = account(owner);
+  if (action === "pull") return Response.json(await stub.pull(token));
+  if (action === "push") return Response.json(await stub.push(token, save));
+  if (action === "logout") {
+    await stub.logOut(token);
+    return Response.json({ ok: true });
+  }
+  return new Response("Not found", { status: 404 });
 }
 
 export default {
@@ -44,6 +96,10 @@ export default {
       }
       return env.CREW_ISLAND.get(env.CREW_ISLAND.idFromName(code)).fetch(request);
     }
+    const accountAction = url.pathname.match(/^\/api\/account\/([a-z]+)$/);
+    if (accountAction && request.method === "POST") {
+      return handleAccount(accountAction[1] ?? "", request, env);
+    }
     if (url.pathname.startsWith("/api/")) return new Response("Not found", { status: 404 });
     return env.ASSETS.fetch(request);
   },
@@ -52,6 +108,7 @@ export default {
 interface RosterEntry {
   id: string;
   name: string;
+  avatar?: Avatar;
 }
 
 interface Attachment {
@@ -95,6 +152,7 @@ export class CrewIsland extends DurableObject<Env> {
     if (message.t === "hello") {
       const memberId = typeof message.memberId === "string" ? message.memberId.slice(0, 64) : "";
       const name = cleanName(typeof message.name === "string" ? message.name : "") || "Crewmate";
+      const avatar = readAvatar(message.avatar);
       if (!memberId) return;
       const known = roster.find((m) => m.id === memberId);
       if (!known && roster.length >= MAX_CREW) {
@@ -102,14 +160,29 @@ export class CrewIsland extends DurableObject<Env> {
         ws.close(4001, "Crew is full");
         return;
       }
-      if (known) known.name = name;
-      else roster.push({ id: memberId, name });
+      if (known) {
+        known.name = name;
+        known.avatar = avatar;
+      } else roster.push({ id: memberId, name, avatar });
       await this.ctx.storage.put("roster", roster);
       ws.serializeAttachment({ memberId, name, hold: null } satisfies Attachment);
       this.broadcast(null);
       return;
     }
     if (!me) return; // must say hello first
+
+    // Raiding together: passed along as it is, and never stored.
+    if (message.t === "relay") {
+      if (typeof data === "string" && data.length > MAX_RELAY) return;
+      for (const other of this.ctx.getWebSockets()) {
+        if (other === ws) continue;
+        const a = other.deserializeAttachment() as Attachment | null;
+        if (!a || a.memberId === me.memberId) continue;
+        if (message.to && a.memberId !== message.to) continue;
+        send(other, { t: "relay", from: me.memberId, data: message.data });
+      }
+      return;
+    }
 
     if (message.t === "hold") {
       const id = typeof message.buildingId === "string" ? message.buildingId : null;
@@ -124,7 +197,7 @@ export class CrewIsland extends DurableObject<Env> {
       const target =
         op.kind === "place"
           ? op.building?.id
-          : op.kind === "clear" || op.kind === "toolUp"
+          : op.kind === "clear" || op.kind === "toolUp" || op.kind === "loot"
             ? undefined
             : op.id;
       if (target && this.holderOf(target, me.memberId)) {
@@ -169,6 +242,7 @@ export class CrewIsland extends DurableObject<Env> {
     const members = (this.roster ?? []).map((m) => ({
       id: m.id,
       name: m.name,
+      avatar: m.avatar ?? DEFAULT_AVATAR,
       online: online.has(m.id),
     }));
     const holds: Hold[] = [];

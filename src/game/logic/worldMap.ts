@@ -1,21 +1,26 @@
-// The world map: the islands near the crew's own, the same for a whole day and then fresh ones
-// the next. Their difficulty follows the crew's headquarters: a few easier than you, a few much
-// harder. No engine imports.
+// The world: one endless sea of islands, the same for every crew, laid out in regions from a seed.
+// Each region holds a loose scatter of enemy islands, and the further from home the harder they
+// are, with no end to it. Only the home region starts in the clear: taking enough islands in a
+// region blows the cloud off the regions beside it. Islands a crew has taken stay theirs until
+// raiders retake one in the night, which brings it back stronger. No engine imports.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
-import { allowedCount } from "./economy";
+import { allowedCount, MAX_HQ_LEVEL } from "./economy";
 import { type RaidReward, raidReward } from "./heroProgress";
 import { createRng } from "./rng";
 
 export type Difficulty = "Easy" | "Fair" | "Hard" | "Deadly";
 
 export interface MapIsland {
-  id: number;
+  /** Stable forever: "region column,region row:index". */
+  id: string;
   name: string;
   /** Position on the map, in map units, and how big it's drawn. */
   x: number;
   y: number;
   size: number;
+  /** The region it's in. */
+  region: string;
   seed: number;
   /** The enemy base's headquarters level. */
   hq: number;
@@ -24,19 +29,50 @@ export interface MapIsland {
   difficulty: Difficulty;
   defenses: number;
   reward: RaidReward;
+  /** Taken by the crew. */
+  taken: boolean;
+  /** Retaken by raiders: every building they're allowed, all at full level. */
+  retaken: boolean;
 }
 
-/** How far above the crew's HQ each island is; the nearest ones get the lowest of these. */
-const OFFSETS = [-1, 0, 0, 1, 1, 2, 2, 3, 4, 5] as const;
+/** What a crew has done to the map. */
+export interface WorldProgress {
+  /** Islands the crew holds. */
+  taken: string[];
+  /** Islands raiders have taken back, and the headquarters level they rebuilt to. */
+  retaken: Record<string, number>;
+  /** Regions out of the cloud, as "column,row". The home region is always open. */
+  opened: string[];
+}
 
-/** The stretch of sea islands fall in, in map units: home is at 0, 0, and cloud lies beyond. */
-const SEA = { west: -49, east: 49, north: -25, south: 29 } as const;
+export const NEW_WORLD: WorldProgress = { taken: [], retaken: {}, opened: [] };
 
-/** Past this west and south is the corner the Return to island button sits in. */
-const BUTTON_CORNER = { x: -24, y: 13 } as const;
+/** A region's size in map units. Wider than tall, like the screen. */
+export const REGION = { w: 112, h: 66 } as const;
 
+const HOME_REGION = "0,0";
+const ISLANDS_PER_REGION = [6, 8] as const;
 /** Kept clear round the crew's own island and the gunboat beside it. */
 const HOME_CLEAR = 14;
+/** How far from home (map units) one more headquarters level is. */
+const UNITS_PER_LEVEL = 34;
+
+export function regionKey(column: number, row: number): string {
+  return `${column},${row}`;
+}
+
+/** Which region a map spot is in. */
+export function regionAt(x: number, y: number): { column: number; row: number } {
+  return {
+    column: Math.floor(x / REGION.w + 0.5),
+    row: Math.floor(y / REGION.h + 0.5),
+  };
+}
+
+function parseRegion(key: string): { column: number; row: number } {
+  const [column, row] = key.split(",").map(Number);
+  return { column: column ?? 0, row: row ?? 0 };
+}
 
 /** An island's drawn radius in map units. */
 export function islandRadius(size: number): number {
@@ -59,34 +95,41 @@ function apart(a: Spot, b: Spot): boolean {
   return Math.abs(dx) >= 15 || Math.abs(dy) >= 9;
 }
 
+/** Mixes a region's position into a seed. */
+function regionSeed(column: number, row: number): number {
+  return (Math.imul(column, 73856093) ^ Math.imul(row, 19349663) ^ 0x51ab1e) >>> 0;
+}
+
 /**
- * Scatters the islands the way real ones lie: mostly in loose chains and clumps round a few
- * shoals, with open water between, some big and many small. Nothing sits at a regular angle or
- * distance from home.
+ * Scatters a region's islands the way real ones lie: mostly in a loose chain or two with open
+ * water between, some big and many small, and clear of the region's edges so neighboring regions
+ * can't collide.
  */
-function scatter(rng: () => number): Spot[] {
-  const clumps = Array.from({ length: 4 }, () => ({
-    x: SEA.west + rng() * (SEA.east - SEA.west),
-    y: SEA.north + rng() * (SEA.south - SEA.north),
-    // Each clump leans its own way, so they read as chains and not as round blobs, and mostly
-    // along the wide map so they don't stack up into columns.
+function scatter(rng: () => number, column: number, row: number): Spot[] {
+  const left = (column - 0.5) * REGION.w + 8;
+  const top = (row - 0.5) * REGION.h + 6;
+  const width = REGION.w - 16;
+  const height = REGION.h - 12;
+  const [fewest, most] = ISLANDS_PER_REGION;
+  const count = fewest + Math.floor(rng() * (most - fewest + 1));
+  const chains = Array.from({ length: 2 }, () => ({
+    x: left + rng() * width,
+    y: top + rng() * height,
     lean: (rng() - 0.5) * 1.5,
   }));
   const spots: Spot[] = [];
-  for (let tries = 0; spots.length < OFFSETS.length; tries++) {
+  for (let tries = 0; spots.length < count && tries < 600; tries++) {
     const size = 0.55 + rng() ** 2 * 1.1;
-    const clump = clumps[Math.floor(rng() * clumps.length)];
-    let x = SEA.west + rng() * (SEA.east - SEA.west);
-    let y = SEA.north + rng() * (SEA.south - SEA.north);
-    // Most land near a shoal; once the shoals are full, the open sea takes the rest.
-    if (clump && tries < 300 && rng() < 0.65) {
-      const along = (rng() + rng() - 1) * 36;
-      const across = (rng() + rng() - 1) * 11;
-      x = clump.x + Math.cos(clump.lean) * along - Math.sin(clump.lean) * across;
-      y = clump.y + Math.sin(clump.lean) * along + Math.cos(clump.lean) * across;
+    const chain = chains[Math.floor(rng() * chains.length)];
+    let x = left + rng() * width;
+    let y = top + rng() * height;
+    if (chain && rng() < 0.6) {
+      const along = (rng() + rng() - 1) * 34;
+      const across = (rng() + rng() - 1) * 10;
+      x = chain.x + Math.cos(chain.lean) * along - Math.sin(chain.lean) * across;
+      y = chain.y + Math.sin(chain.lean) * along + Math.cos(chain.lean) * across;
     }
-    if (x < SEA.west || x > SEA.east || y < SEA.north || y > SEA.south) continue;
-    if (x < BUTTON_CORNER.x && y > BUTTON_CORNER.y) continue;
+    if (x < left || x > left + width || y < top || y > top + height) continue;
     const spot = { x, y, size };
     if (Math.hypot(x, y) < HOME_CLEAR + islandRadius(size)) continue;
     if (spots.every((s) => apart(s, spot))) spots.push(spot);
@@ -94,22 +137,51 @@ function scatter(rng: () => number): Spot[] {
   return spots;
 }
 
-const NAMES = [
-  "Skull Rock",
-  "Rusty Atoll",
-  "Coconut Key",
-  "Blackwater Cay",
-  "Gull Point",
-  "Iron Lagoon",
-  "Smuggler's Reef",
-  "Fort Barnacle",
-  "Crab Island",
-  "Lonely Palm",
-  "Cutlass Bay",
-  "Dead Man's Shoal",
-  "Pelican Spit",
-  "Mangrove Hold",
+const NAME_START = [
+  "Skull",
+  "Rusty",
+  "Coconut",
+  "Blackwater",
+  "Gull",
+  "Iron",
+  "Smuggler's",
+  "Barnacle",
+  "Crab",
+  "Lonely",
+  "Cutlass",
+  "Dead Man's",
+  "Pelican",
+  "Mangrove",
+  "Shark",
+  "Thunder",
+  "Parrot",
+  "Sunken",
+  "Powder",
+  "Coral",
 ] as const;
+
+const NAME_END = [
+  "Rock",
+  "Atoll",
+  "Key",
+  "Cay",
+  "Point",
+  "Lagoon",
+  "Reef",
+  "Island",
+  "Bay",
+  "Shoal",
+  "Spit",
+  "Hold",
+  "Sands",
+  "Fort",
+] as const;
+
+function islandName(rng: () => number): string {
+  const start = NAME_START[Math.floor(rng() * NAME_START.length)];
+  const end = NAME_END[Math.floor(rng() * NAME_END.length)];
+  return `${start} ${end}`;
+}
 
 const DEFENSES: readonly BuildingType[] = (Object.keys(BUILDINGS) as BuildingType[]).filter(
   (t) => BUILDINGS[t].attack,
@@ -127,30 +199,165 @@ function difficultyOf(hq: number, yourHq: number): Difficulty {
   return gap <= 3 ? "Hard" : "Deadly";
 }
 
-/** The islands in reach today of a crew with this headquarters level. */
-export function worldIslands(yourHq: number, day: number): MapIsland[] {
-  const names = [...NAMES];
-  const rng = createRng(day * 7919 + 13);
-  // Danger grows with distance, roughly: a little luck keeps it from reading as rings.
-  const spots = scatter(rng)
-    .map((spot) => ({ spot, reach: Math.hypot(spot.x, spot.y) * (0.75 + rng() * 0.5) }))
-    .sort((a, b) => a.reach - b.reach);
-  return spots.map(({ spot }, id) => {
-    const hq = Math.max(1, Math.min(20, yourHq + (OFFSETS[id] ?? 0)));
-    const tier = islandTier(hq);
-    const name = names.splice(Math.floor(rng() * names.length), 1)[0] ?? "Unknown isle";
-    return {
-      id,
-      name,
-      x: spot.x,
-      y: spot.y,
-      size: spot.size,
-      seed: Math.floor(rng() * 2 ** 31),
-      hq,
-      tier,
-      difficulty: difficultyOf(hq, yourHq),
-      defenses: DEFENSES.reduce((sum, t) => sum + allowedCount(t, hq), 0),
-      reward: raidReward(true, 100, tier),
-    };
+interface Charted {
+  id: string;
+  name: string;
+  region: string;
+  x: number;
+  y: number;
+  size: number;
+  seed: number;
+  /** Its headquarters level before anyone has touched it. */
+  hq: number;
+}
+
+const charted = new Map<string, Charted[]>();
+
+/** Every island in a region, the same on every phone. */
+function chartRegion(column: number, row: number): Charted[] {
+  const region = regionKey(column, row);
+  const made = charted.get(region);
+  if (made) return made;
+  const rng = createRng(regionSeed(column, row));
+  const islands = scatter(rng, column, row).map((spot, i) => ({
+    ...spot,
+    id: `${region}:${i}`,
+    name: islandName(rng),
+    region,
+    seed: Math.floor(rng() * 2 ** 31),
+    // Danger grows with distance, roughly: a little luck keeps it from reading as rings.
+    hq: Math.max(1, Math.floor(Math.hypot(spot.x, spot.y * 1.5) / UNITS_PER_LEVEL + rng() * 1.5)),
+  }));
+  charted.set(region, islands);
+  return islands;
+}
+
+function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland {
+  const raised = world.retaken[island.id];
+  const hq = raised ?? island.hq;
+  const tier = islandTier(hq);
+  const rated = Math.min(hq, MAX_HQ_LEVEL);
+  return {
+    ...island,
+    hq,
+    // A rebuilt base is a new layout, not the old one with its levels raised.
+    seed: raised ? island.seed + raised : island.seed,
+    tier,
+    difficulty: difficultyOf(hq, yourHq),
+    defenses: DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
+    reward: raidReward(true, 100, tier),
+    taken: world.taken.includes(island.id),
+    retaken: raised !== undefined,
+  };
+}
+
+/** One island, from its id. */
+function chartedIsland(id: string): Charted | undefined {
+  const [region = HOME_REGION] = id.split(":");
+  const { column, row } = parseRegion(region);
+  return chartRegion(column, row).find((i) => i.id === id);
+}
+
+export function isOpen(world: WorldProgress, region: string): boolean {
+  return region === HOME_REGION || world.opened.includes(region);
+}
+
+const NEIGHBORS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
+
+/** Every open region and the ones beside it, which show as banks of cloud. */
+export function chartedRegions(world: WorldProgress): { open: string[]; cloud: string[] } {
+  const open = [HOME_REGION, ...world.opened];
+  const cloud = new Set<string>();
+  for (const key of open) {
+    const { column, row } = parseRegion(key);
+    for (const [dx, dy] of NEIGHBORS) {
+      const next = regionKey(column + dx, row + dy);
+      if (!open.includes(next)) cloud.add(next);
+    }
+  }
+  return { open, cloud: [...cloud] };
+}
+
+/** Every island in the open regions. */
+export function worldIslands(world: WorldProgress, yourHq: number): MapIsland[] {
+  return chartedRegions(world).open.flatMap((key) => {
+    const { column, row } = parseRegion(key);
+    return chartRegion(column, row).map((island) => dress(island, world, yourHq));
   });
+}
+
+/** How many islands to take in a region before the cloud beside it lifts. */
+export function islandsToOpen(region: string): number {
+  const { column, row } = parseRegion(region);
+  return Math.ceil(chartRegion(column, row).length / 2);
+}
+
+/** Islands still to take before a clouded region opens, by the cheapest way in. */
+export function islandsLeftFor(world: WorldProgress, region: string): number {
+  const { column, row } = parseRegion(region);
+  let fewest = Number.POSITIVE_INFINITY;
+  for (const [dx, dy] of NEIGHBORS) {
+    const beside = regionKey(column + dx, row + dy);
+    if (!isOpen(world, beside)) continue;
+    const held = world.taken.filter((id) => id.startsWith(`${beside}:`)).length;
+    fewest = Math.min(fewest, islandsToOpen(beside) - held);
+  }
+  return Math.max(0, fewest);
+}
+
+/** The crew wins an island: it's theirs, and enough of them lift the cloud next door. */
+export function takeIsland(world: WorldProgress, id: string): WorldProgress {
+  const retaken = { ...world.retaken };
+  delete retaken[id];
+  const taken = world.taken.includes(id) ? world.taken : [...world.taken, id];
+  const next: WorldProgress = { taken, retaken, opened: world.opened };
+  // Taken islands open the way for good: losing one later won't bring the cloud back.
+  const opened = chartedRegions(next).cloud.filter((key) => islandsLeftFor(next, key) === 0);
+  return opened.length > 0 ? { ...next, opened: [...world.opened, ...opened] } : next;
+}
+
+/**
+ * The night's move: raiders retake none, one or two of the crew's islands. Each comes back with
+ * a stronger headquarters, built up to everything that level allows.
+ */
+export function retakeIslands(
+  world: WorldProgress,
+  night: number,
+  yourHq: number,
+): { world: WorldProgress; lost: string[] } {
+  const rng = createRng(Math.imul(night, 6151) + 97);
+  const roll = rng();
+  const count = roll < 0.3 ? 0 : roll < 0.75 ? 1 : 2;
+  const taken = [...world.taken];
+  const retaken = { ...world.retaken };
+  const lost: string[] = [];
+  for (let i = 0; i < count && taken.length > 0; i++) {
+    const [id] = taken.splice(Math.floor(rng() * taken.length), 1);
+    const island = id ? chartedIsland(id) : undefined;
+    if (!id || !island) continue;
+    const before = world.retaken[id] ?? island.hq;
+    retaken[id] = Math.max(before + 1, yourHq) + Math.floor(rng() * 2);
+    lost.push(island.name);
+  }
+  return { world: { ...world, taken, retaken }, lost };
+}
+
+/** Reads untrusted saved progress, keeping only what still makes sense. */
+export function sanitizeWorld(value: unknown): WorldProgress {
+  const v = value as Partial<WorldProgress> | null | undefined;
+  const ids = (list: unknown): string[] =>
+    Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+  const retaken: Record<string, number> = {};
+  const raw = v?.retaken;
+  if (raw && typeof raw === "object") {
+    for (const [id, hq] of Object.entries(raw)) {
+      if (Number.isInteger(hq) && (hq as number) > 0) retaken[id] = hq as number;
+    }
+  }
+  return { taken: ids(v?.taken), retaken, opened: ids(v?.opened) };
 }

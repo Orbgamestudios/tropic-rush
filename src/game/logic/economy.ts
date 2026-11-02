@@ -167,6 +167,19 @@ const scale = (cost: Partial<Purse>, factor: number): Partial<Purse> => {
   return out;
 };
 
+/** What the next level of a building adds, in a few words. */
+export function nextLevelGain(type: BuildingType, level: number): string {
+  if (type === "headquarters") return "more of everything";
+  if (PRODUCERS[type]) {
+    const gain = productionPerHour(level + 1) - productionPerHour(level);
+    return `+${formatAmount(gain)} an hour`;
+  }
+  if (STORAGES[type]) {
+    return `+${formatAmount(storageCapacity(level + 1) - storageCapacity(level))} storage`;
+  }
+  return `+${Math.round((buildingPower(level + 1) / buildingPower(level) - 1) * 100)}% strength`;
+}
+
 /** Cost to bring a building to `level` (level 1 is building it). */
 export function costFor(type: BuildingType, level: number): Partial<Purse> {
   if (type === "headquarters") {
@@ -177,6 +190,37 @@ export function costFor(type: BuildingType, level: number): Partial<Purse> {
     return cost;
   }
   return scale(PROGRESSION[type].cost, 1.45 ** (level - 1));
+}
+
+/** Minutes of work to bring a building to a level, from 1 upward; level 1 is building it. */
+const BUILD_MINUTES = [1, 1, 5, 10, 30, 60, 120, 240, 480, 720] as const;
+/** The same for the headquarters, which starts in the hours from its first upgrade. */
+const HQ_MINUTES = [
+  0, 30, 60, 120, 180, 240, 360, 480, 600, 720, 960, 1200, 1440, 1800, 2160, 2520, 2880, 3240, 3600,
+  4320,
+] as const;
+
+const MINUTE_MS = 60_000;
+
+/** Milliseconds of work to bring a building to `level`. */
+export function buildTime(type: BuildingType, level: number): number {
+  const table = type === "headquarters" ? HQ_MINUTES : BUILD_MINUTES;
+  const minutes = table[Math.max(0, Math.min(table.length, level) - 1)] ?? 0;
+  return minutes * MINUTE_MS;
+}
+
+/** What breaking a mill pays, and how many times that a full storage pays. */
+const LOOT_PER_MILL = 120;
+const STORAGE_LOOT = 2.5;
+
+/** What's left to carry off when a mill or a storage is destroyed in a raid. */
+export function lootFor(type: BuildingType, level: number): Partial<Purse> {
+  const mill = PRODUCERS[type];
+  const store = STORAGES[type];
+  const resource = mill ?? store;
+  if (!resource) return {};
+  const amount = LOOT_PER_MILL * 1.3 ** (Math.max(1, level) - 1) * (store ? STORAGE_LOOT : 1);
+  return { [resource]: Math.round(amount / 5) * 5 };
 }
 
 /** What the headquarters itself can hold of each resource. */
@@ -202,6 +246,11 @@ export function spend(purse: Purse, cost: Partial<Purse>): Purse {
   const out = { ...purse };
   for (const r of RESOURCES) out[r] -= cost[r] ?? 0;
   return out;
+}
+
+/** A purse with nothing in it. */
+export function emptyPurse(): Purse {
+  return { gold: 0, timber: 0, stone: 0, scrap: 0 };
 }
 
 /** Short text for a cost, e.g. "🪙 300  🪵 200". */

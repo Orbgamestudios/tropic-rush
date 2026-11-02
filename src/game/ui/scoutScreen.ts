@@ -27,6 +27,7 @@ const HINT = "Drag to look round, pinch to zoom. Red ground is in range of a def
 const TAP_SLOP = 8;
 
 export class ScoutScreen {
+  private readonly attack: HTMLButtonElement;
   readonly root = el("div", "scout");
   private readonly name = el("div", "scout-name");
   private readonly rating = el("div", "scout-rating");
@@ -53,7 +54,7 @@ export class ScoutScreen {
       onClick: () => handlers.onBack(),
     });
     back.append(el("span", "map-return-label", "Back to map"));
-    const attack = button({
+    this.attack = button({
       label: "Attack",
       icon: "sword2",
       variant: "red",
@@ -63,7 +64,7 @@ export class ScoutScreen {
         if (this.island) handlers.onAttack(this.island);
       },
     });
-    const bars = [title, this.tally, back, attack];
+    const bars = [title, this.tally, back, this.attack];
     for (const bar of bars) bar.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.root.append(this.info, ...bars);
 
@@ -83,8 +84,10 @@ export class ScoutScreen {
     parent.append(this.root);
   }
 
-  show(island: MapIsland, report: readonly ScoutRow[]): void {
+  /** `canAttack` is false for a hero who can't take an island alone: a look is still free. */
+  show(island: MapIsland, report: readonly ScoutRow[], canAttack = true): void {
     this.island = island;
+    this.attack.disabled = !canAttack;
     this.pointers.clear();
     this.name.textContent = island.name;
     this.rating.className = `scout-rating map-${island.difficulty.toLowerCase()}`;

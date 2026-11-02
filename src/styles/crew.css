@@ -51,7 +51,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px 5px 6px;
+  padding: 5px 8px;
   border-radius: 10px;
   border: 2px solid var(--brass-mid);
   background: linear-gradient(180deg, rgb(7 14 27 / 0.92), rgb(19 34 59 / 0.92));
@@ -61,66 +61,40 @@
     0 3px 6px rgb(0 0 0 / 0.35);
 }
 
-.crew-card-icon {
-  display: none;
-}
-
 .crew-avatars {
   display: flex;
 }
 
 .crew-avatar {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  margin-left: -7px;
-  font-family: var(--display);
-  font-size: 14px;
-  display: grid;
-  place-items: center;
+  margin-left: 6px;
+  overflow: hidden;
+  background: var(--navy-700);
   border: 2px solid var(--brass);
   box-shadow: 0 0 0 1.5px var(--ink);
-  text-shadow: var(--outline-thin);
-  opacity: 0.6;
+  filter: saturate(0.5) brightness(0.75);
+}
+
+.crew-avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .crew-avatar:first-child {
   margin-left: 0;
 }
 
+/* Online: the border glows green. */
 .crew-avatar.online {
-  opacity: 1;
-  box-shadow: 0 0 0 2px #5fd67f;
-}
-
-.crew-code .ui-btn-label {
-  letter-spacing: 1.5px;
-}
-
-/* Connection status as a glowing dot (the words are kept for screen readers). */
-.crew-status {
-  display: block;
-  font-size: 0;
-  color: #6fe08f;
-}
-
-.crew-status::before {
-  content: "";
-  display: block;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: currentColor;
+  border-color: #6dff94;
   box-shadow:
-    0 0 0 2px var(--ink),
-    0 0 8px currentColor;
-}
-
-.crew-status[data-status="offline"],
-.crew-status[data-status="solo"],
-.crew-status[data-status="full"],
-.crew-status[data-status="connecting"] {
-  color: #ffd25e;
+    0 0 0 1.5px var(--ink),
+    0 0 10px 3px rgb(95 240 130 / 0.85);
+  filter: none;
 }
 
 .crew-top-right {
@@ -299,6 +273,12 @@
 }
 
 /* The round Build button bottom-left opens the drawer beside it. */
+.crew-map {
+  position: absolute;
+  right: 14px;
+  bottom: 22px;
+}
+
 .crew-build {
   position: absolute;
   left: 14px;
@@ -317,6 +297,12 @@
   color: #fff;
   text-shadow: var(--outline-thin);
   pointer-events: none;
+}
+
+.crew-map {
+  position: absolute;
+  right: 14px;
+  bottom: 22px;
 }
 
 .crew-build {
@@ -915,6 +901,8 @@
   align-items: center;
   justify-content: center;
   background: rgb(8 14 26 / 0.55);
+  /* The shadow carries the dimming on past the safe area, to the edges of the screen. */
+  box-shadow: 0 0 0 100vmax rgb(8 14 26 / 0.55);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }

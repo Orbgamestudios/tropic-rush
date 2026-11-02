@@ -1,8 +1,9 @@
 // The phone's connection to its crew island server. Reconnects on its own; while there's no
 // connection the island keeps working on this phone, and the server's copy wins on reconnect.
 
+import type { Avatar } from "../logic/avatars";
 import type { CrewLayout, LayoutOp } from "../logic/crewIsland";
-import type { ClientMessage, Hold, Member, ServerMessage } from "./protocol";
+import type { ClientMessage, Hold, Member, RaidMessage, ServerMessage } from "./protocol";
 
 export type ConnectionStatus = "connecting" | "online" | "offline" | "full";
 
@@ -16,6 +17,15 @@ export interface CrewClientEvents {
   ): void;
   onReject(reason: string): void;
   onStatus(status: ConnectionStatus): void;
+  /** Something a crewmate's phone sent this one, for raiding together. */
+  onRelay?(from: string, data: RaidMessage): void;
+}
+
+/** Keeps raid snapshots small: nothing on screen needs more than two decimal places. */
+function shorten(_key: string, value: unknown): unknown {
+  return typeof value === "number" && !Number.isInteger(value)
+    ? Math.round(value * 100) / 100
+    : value;
 }
 
 /** Asks the server for a new crew code; null when there's no server (offline or dev). */
@@ -42,6 +52,7 @@ export class CrewClient {
     private readonly code: string,
     private readonly memberId: string,
     private readonly name: string,
+    private readonly avatar: Avatar,
     private readonly events: CrewClientEvents,
   ) {
     this.connect();
@@ -65,7 +76,7 @@ export class CrewClient {
     this.socket = socket;
     socket.addEventListener("open", () => {
       this.retry = 0;
-      this.send({ t: "hello", memberId: this.memberId, name: this.name });
+      this.send({ t: "hello", memberId: this.memberId, name: this.name, avatar: this.avatar });
     });
     socket.addEventListener("message", (event) => {
       let message: ServerMessage;
@@ -85,6 +96,8 @@ export class CrewClient {
         );
       } else if (message.t === "reject") {
         this.events.onReject(message.reason);
+      } else if (message.t === "relay") {
+        this.events.onRelay?.(message.from, message.data);
       } else if (message.t === "full") {
         this.closed = true;
         this.setStatus("full");
@@ -111,8 +124,12 @@ export class CrewClient {
 
   private send(message: ClientMessage): boolean {
     if (this.socket?.readyState !== WebSocket.OPEN) return false;
-    this.socket.send(JSON.stringify(message));
+    this.socket.send(JSON.stringify(message, message.t === "relay" ? shorten : undefined));
     return true;
+  }
+
+  relay(data: RaidMessage, to?: string): void {
+    this.send({ t: "relay", data, to });
   }
 
   sendOp(op: LayoutOp): boolean {

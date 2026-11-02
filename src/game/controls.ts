@@ -86,6 +86,7 @@ export class Controls {
   private pendingLock: Vec2 | null = null;
   private lastHero: Vec2 | null = null;
   private pendingBoat = false;
+  private heldMove = vec(0, 0);
   private pendingAbility: { ability: Ability; target: Vec2 } | null = null;
   private readonly leftVisual: { base: HTMLElement; knob: HTMLElement };
   private readonly rightVisual: { base: HTMLElement; knob: HTMLElement };
@@ -169,13 +170,18 @@ export class Controls {
     return length(d) > 0.01 ? normalize(d) : null;
   }
 
+  /** Holds the move stick over from code, for tests. */
+  holdMove(x: number, y: number): void {
+    this.heldMove = vec(x, y);
+  }
+
   /** Builds this frame's input for the hero, then clears one-shot presses. */
   read(heroPos: Vec2 | null): HeroInput {
     this.lastHero = heroPos;
     let move = vec(0, 0);
     const radius = this.stickRadius(this.layout.move.size);
     if (this.left) move = clampLength(vec(this.left.dx / radius, this.left.dy / radius), 1);
-    else move = this.keyboardMove();
+    else move = length(this.heldMove) > 0 ? this.heldMove : this.keyboardMove();
     move = this.toWorld(move);
 
     const input: HeroInput = {

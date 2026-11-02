@@ -11,6 +11,12 @@ interface Bar {
   seen: boolean;
   fraction: number;
   lagFraction: number;
+  /** What's already on the element: phones redraw for every style written, changed or not. */
+  shownX: number;
+  shownY: number;
+  shownFill: number;
+  shownLag: number;
+  visible: boolean;
   pending: number;
   pendingSince: number;
 }
@@ -54,6 +60,11 @@ export class WorldLabels {
         seen: false,
         fraction: f,
         lagFraction: f,
+        shownX: Number.NaN,
+        shownY: Number.NaN,
+        shownFill: -1,
+        shownLag: -1,
+        visible: false,
         pending: 0,
         pendingSince: 0,
       };
@@ -71,10 +82,34 @@ export class WorldLabels {
     bar.fraction = f;
     bar.lagFraction = Math.max(f, bar.lagFraction - 0.012);
     bar.seen = true;
-    bar.root.style.display = "block";
-    bar.root.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
-    bar.fill.style.width = `${f * 100}%`;
-    bar.lag.style.width = `${bar.lagFraction * 100}%`;
+    if (!bar.visible) {
+      bar.visible = true;
+      bar.root.style.display = "block";
+    }
+    if (Math.abs(x - bar.shownX) >= 0.5 || Math.abs(y - bar.shownY) >= 0.5 || !bar.shownX) {
+      bar.shownX = x;
+      bar.shownY = y;
+      bar.root.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+    if (f !== bar.shownFill) {
+      bar.shownFill = f;
+      bar.fill.style.width = `${f * 100}%`;
+    }
+    if (bar.lagFraction !== bar.shownLag) {
+      bar.shownLag = bar.lagFraction;
+      bar.lag.style.width = `${bar.lagFraction * 100}%`;
+    }
+  }
+
+  /** Words that rise off something and fade, like the materials a broken mill gives up. */
+  note(x: number, y: number, text: string): void {
+    const n = document.createElement("div");
+    n.className = "dmg dmg-loot";
+    n.textContent = text;
+    n.style.left = `${x.toFixed(1)}px`;
+    n.style.top = `${y.toFixed(1)}px`;
+    this.layer.append(n);
+    setTimeout(() => n.remove(), 950);
   }
 
   /** A damage number that jumps up and fades. */
@@ -90,7 +125,11 @@ export class WorldLabels {
   }
 
   end(): void {
-    for (const bar of this.bars.values()) if (!bar.seen) bar.root.style.display = "none";
+    for (const bar of this.bars.values()) {
+      if (bar.seen || !bar.visible) continue;
+      bar.visible = false;
+      bar.root.style.display = "none";
+    }
   }
 
   clear(): void {

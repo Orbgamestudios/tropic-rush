@@ -26,21 +26,20 @@ Gemini prompts for every non-character model in the game, written to feed an ima
 
 For scaling the models in game. A hero is about 1.8 m tall.
 
-| Object               | Size                         |
-| -------------------- | ---------------------------- |
-| Palm tree            | 6–9 m tall                   |
-| Bush                 | 1–1.6 m                      |
-| Boulder (cover)      | 1.5–3.5 m across             |
-| Sandbag wall segment | 1.4 m long, 0.9 m tall       |
-| Gun turret           | 4.5 m tall                   |
-| Mortar, harpoon      | 3.6 m tall                   |
-| Flamethrower tower   | 4 m tall                     |
-| Watchtower           | 9 m tall                     |
-| Resource buildings   | about 3–4 m tall, 6 m across |
-| Refinery             | 6.5 m tall (chimney)         |
-| Headquarters         | about 14 m tall, 12 m across |
-| Beach mine           | 0.9 m across                 |
-| Gunboat              | about 6.5 m long             |
+| Object             | Size                         |
+| ------------------ | ---------------------------- |
+| Palm tree          | 6–9 m tall                   |
+| Bush               | 1–1.6 m                      |
+| Boulder (cover)    | 1.5–3.5 m across             |
+| Gun turret         | 4.5 m tall                   |
+| Mortar, harpoon    | 3.6 m tall                   |
+| Flamethrower tower | 4 m tall                     |
+| Watchtower         | 9 m tall                     |
+| Resource buildings | about 3–4 m tall, 6 m across |
+| Refinery           | 6.5 m tall (chimney)         |
+| Headquarters       | about 14 m tall, 12 m across |
+| Beach mine         | 0.9 m across                 |
+| Gunboat            | about 6.5 m long             |
 
 ## Nature
 
@@ -146,17 +145,7 @@ Use the attached image as the style reference. Polished stylized 3D mobile-game 
 
 **Attach:** `docs/concept/raid-topdown-crew.jpeg` (its sandbag walls, crates and barrels).
 
-### sandbags-straight: sandbag wall segment
 
-```text
-Use the sandbag walls in the attached image as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid beige color with soft gradients and one simple seam line per bag, no grit or fine patterns. Not clay, not low poly, not realistic. One single object: a short straight sandbag wall, two rows high and three bags long, with plump rounded bags neatly stacked in a brick pattern. Three-quarter view from slightly above, centered, the whole wall in frame with space around it, plain white background, even flat lighting, no shadows, no text.
-```
-
-### sandbags-corner: sandbag wall corner
-
-```text
-Use the sandbag walls in the attached image as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid beige color with soft gradients and one simple seam line per bag, no grit or fine patterns. Not clay, not low poly, not realistic. One single object: an L-shaped corner piece of sandbag wall, two rows high, with plump rounded bags neatly stacked. Three-quarter view from slightly above, centered, the whole piece in frame with space around it, plain white background, even flat lighting, no shadows, no text.
-```
 
 ### crates-1: crate stack
 
@@ -181,19 +170,19 @@ bamboo and tin roofs, and never blue. That's why each prompt repeats "painted" a
 ### hq: headquarters fort
 
 ```text
-Use the enemy fort in the attached images as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid painted colors with soft gradients, no rust spots, cracks, grit or fine patterns. Not clay, not low poly, not realistic. One single object: a big chunky military headquarters fort painted charcoal with burnt-orange trim and no blue: a square two-level keep with a wide wooden gate, four round corner towers with burnt-orange roofs, sandbags along the base, a ladder on one side, and a flagpole with a plain burnt-orange flag on top. It should look like the most important building on the island. Three-quarter view from slightly above, centered, the whole fort in frame with space around it, plain white background, even flat lighting, no shadows, no text.
+Use the enemy fort in the attached images as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid painted colors with soft gradients, no rust spots, cracks, grit or fine patterns. Not clay, not low poly, not realistic. One single object: a big chunky military headquarters fort painted charcoal with burnt-orange trim and no blue: a square two-level keep with a wide wooden gate, four round corner towers with burnt-orange roofs, a ladder on one side, and a flagpole with a plain burnt-orange flag on top. It should look like the most important building on the island. Three-quarter view from slightly above, centered, the whole fort in frame with space around it, plain white background, even flat lighting, no shadows, no text.
 ```
 
 ### gun-turret: gun turret
 
 ```text
-Use the gun turrets in the attached images as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid painted colors, no rust spots, grit or fine patterns. Not clay, not low poly, not realistic. One single object: a chunky gun turret with a twin-barrel gun on a rotating housing, mounted on a round metal base, inside a low ring of plump sandbags, painted charcoal and burnt-orange with no blue. Three-quarter view from slightly above, centered, the whole turret in frame with space around it, plain white background, even flat lighting, no shadows, no text.
+Use the gun turrets in the attached images as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid painted colors, no rust spots, grit or fine patterns. Not clay, not low poly, not realistic. One single object: a chunky gun turret with a twin-barrel gun on a rotating housing, mounted on a round metal base, painted charcoal and burnt-orange with no blue. Three-quarter view from slightly above, centered, the whole turret in frame with space around it, plain white background, even flat lighting, no shadows, no text.
 ```
 
 ### mortar: mortar pit
 
 ```text
-Use the mortars in the attached images as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid painted colors, no rust spots, grit or fine patterns. Not clay, not low poly, not realistic. One single object: a mortar pit: a short fat mortar tube angled up at the sky on a sturdy base, inside a low round wall of plump sandbags, with a small ammo crate beside it, painted charcoal and burnt-orange with no blue. Three-quarter view from slightly above, centered, the whole pit in frame with space around it, plain white background, even flat lighting, no shadows, no text.
+Use the mortars in the attached images as the style reference. Polished stylized 3D mobile-game render: smooth surfaces with crisp, clean edges, simple painted shading, soft even lighting. Simple textures: smooth solid painted colors, no rust spots, grit or fine patterns. Not clay, not low poly, not realistic. One single object: a mortar pit: a short fat mortar tube angled up at the sky on a sturdy base, with a small ammo crate beside it, painted charcoal and burnt-orange with no blue. Three-quarter view from slightly above, centered, the whole pit in frame with space around it, plain white background, even flat lighting, no shadows, no text.
 ```
 
 ### harpoon: harpoon launcher

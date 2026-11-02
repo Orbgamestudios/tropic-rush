@@ -1,12 +1,15 @@
 // Little touches that make the UI feel alive: synthesized UI sounds (no audio files needed) and
-// sparkle bursts. Sounds start only after the first touch, as iOS requires.
+// sparkle bursts, and the one audio system the recorded sounds and music play through too. Sounds
+// start only after the first touch, as iOS requires.
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let muted = false;
+/** The synthesized sounds stay as loud as they were before recorded ones raised the master. */
+const SYNTH_LEVEL = 0.6;
 
-function audio(): AudioContext | null {
-  if (muted) return null;
+/** The audio system, made on first use. */
+export function audioContext(): AudioContext | null {
   if (!ctx) {
     const Ctor =
       window.AudioContext ??
@@ -15,14 +18,28 @@ function audio(): AudioContext | null {
     try {
       ctx = new Ctor();
       master = ctx.createGain();
-      master.gain.value = 0.35;
+      master.gain.value = 0.6;
       master.connect(ctx.destination);
     } catch {
       return null;
     }
   }
-  if (ctx.state === "suspended") void ctx.resume();
+  // iPhones also report "interrupted" after a call or an alarm, so anything but running counts.
+  if (ctx.state !== "running") void ctx.resume();
   return ctx;
+}
+
+/** Where everything is mixed to. */
+export function audioDestination(): AudioNode | null {
+  return master;
+}
+
+export function isMuted(): boolean {
+  return muted;
+}
+
+function audio(): AudioContext | null {
+  return muted ? null : audioContext();
 }
 
 function tone(
@@ -39,7 +56,7 @@ function tone(
   osc.frequency.setValueAtTime(freq, t0);
   if (options.to) osc.frequency.exponentialRampToValueAtTime(options.to, t0 + duration);
   gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.exponentialRampToValueAtTime(options.gain ?? 0.5, t0 + 0.012);
+  gain.gain.exponentialRampToValueAtTime((options.gain ?? 0.5) * SYNTH_LEVEL, t0 + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
   osc.connect(gain).connect(master);
   osc.start(t0);
@@ -62,7 +79,7 @@ function noise(
   filter.type = "bandpass";
   filter.frequency.value = options.freq ?? 1200;
   const gain = a.createGain();
-  gain.gain.value = options.gain ?? 0.3;
+  gain.gain.value = (options.gain ?? 0.3) * SYNTH_LEVEL;
   src.connect(filter).connect(gain).connect(master);
   src.start(t0);
 }

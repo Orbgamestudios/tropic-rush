@@ -1,11 +1,10 @@
-// Everything that grows or lies on the raid island: the rules' palms, boulders and sandbag walls,
+// Everything that grows or lies on the raid island: the rules' palms and boulders,
 // plus a dense jungle around the base's clearing (broadleaf trees, palms, elephant-ear plants),
 // ferns, flowers and grass across the open ground, and driftwood, starfish and shells on the
 // beach. Each kind is one merged geometry drawn with instancing, so thousands of plants cost a
 // couple of dozen draw calls on the phone. Plants sway in the wind in the vertex shader.
 
 import * as THREE from "three";
-import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { beachWidth, type IslandLayout, shoreDistance, terrainHeight } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
@@ -20,12 +19,17 @@ import { merge, painted, vertexColored } from "./shapes";
 const wind = { value: 0 };
 /** The hero the camera follows; plants between them and the camera dissolve. */
 const focus = { value: new THREE.Vector3(0, -100, 0) };
-let swayMaterial: THREE.MeshStandardMaterial | null = null;
+const swayMaterials = new Map<boolean, THREE.MeshLambertMaterial>();
 
-/** Like vertexColored(), but the higher a vertex sits, the more it sways in the wind. */
-export function swaying(): THREE.MeshStandardMaterial {
-  if (swayMaterial) return swayMaterial;
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+/**
+ * Like vertexColored(), but the higher a vertex sits, the more it sways in the wind. With
+ * `dissolve`, plants between the camera and the hero fade away; that uses `discard`, which stops
+ * an iPhone's graphics chip skipping hidden surfaces, so it's only for plants tall enough to need it.
+ */
+export function swaying(dissolve = true): THREE.MeshLambertMaterial {
+  const made = swayMaterials.get(dissolve);
+  if (made) return made;
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uWind = wind;
     shader.uniforms.uFocus = focus;
@@ -56,6 +60,7 @@ export function swaying(): THREE.MeshStandardMaterial {
         #endif
         vSwayWorld = (modelMatrix * swayWorld).xyz;`,
       );
+    if (!dissolve) return;
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
@@ -73,8 +78,8 @@ export function swaying(): THREE.MeshStandardMaterial {
         if (noiseCut < cut * 0.85) discard;`,
       );
   };
-  m.customProgramCacheKey = () => "tropic-sway";
-  swayMaterial = m;
+  m.customProgramCacheKey = () => `tropic-sway-${dissolve}`;
+  swayMaterials.set(dissolve, m);
   return m;
 }
 
@@ -214,8 +219,8 @@ export function elephantEarGeometry(): THREE.BufferGeometry {
 
 export function fernGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2 + (i % 2) * 0.25;
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + (i % 2) * 0.25;
     const frond = blade(0.95 + (i % 3) * 0.15, 0.24, i % 2 ? 0x4ea83f : 0x62bd4c);
     frond.rotateZ(0.65 - (i % 2) * 0.2);
     frond.rotateY(angle);
@@ -336,20 +341,6 @@ export function pebblesGeometry(): THREE.BufferGeometry {
     g.translate(x, r * 0.3, z);
     parts.push(g);
   });
-  return merge(parts);
-}
-
-export function sandbagPileGeometry(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  // Four courses, chest-high on a hero, offset like brickwork.
-  for (let course = 0; course < 4; course++) {
-    const shift = course % 2 ? 0.1 : -0.1;
-    for (const x of [-0.42, 0.42]) {
-      const bag = new RoundedBoxGeometry(0.88, 0.42, 0.6, 2, 0.17);
-      bag.translate(x + shift, 0.21 + course * 0.38, 0);
-      parts.push(painted(bag, course % 2 ? 0xd8c498 : COLORS.sandbag));
-    }
-  }
   return merge(parts);
 }
 
@@ -476,10 +467,9 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
   const root = new THREE.Group();
   const rng = createRng(layout.seed + 17);
 
-  // The rules' own obstacles: palms (walk-through), boulders and sandbags (cover).
+  // The rules' own obstacles: palms (walk-through) and boulders (cover).
   const palms: PropInstance[] = [];
   const rocks: PropInstance[] = [];
-  const sandbags: PropInstance[] = [];
   for (const o of layout.obstacles) {
     const base = {
       x: o.pos.x,
@@ -490,7 +480,6 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     if (o.kind === "palm") palms.push({ ...base, scale: new THREE.Vector3().setScalar(o.scale) });
     if (o.kind === "rock")
       rocks.push({ ...base, scale: new THREE.Vector3(o.scale * 1.1, o.scale, o.scale * 0.95) });
-    if (o.kind === "sandbag") sandbags.push({ ...base, rotation: -o.rotation });
   }
   const bushes = layout.decor.map((d) => ({
     x: d.pos.x,
@@ -533,19 +522,19 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
   });
 
   const sway = swaying();
+  const low = swaying(false);
   root.add(
     chunked(palmGeometry(), palms, true, sway),
     chunked(jungleTreeGeometry(), trees, true, sway),
     chunked(elephantEarGeometry(), ears, false, sway),
     instanced(rockGeometry(), rocks),
     instanced(pebblesGeometry(), pebbles),
-    instanced(bushGeometry(), bushes, true, sway),
-    instanced(sandbagPileGeometry(), sandbags),
-    chunked(fernGeometry(), ferns, false, sway),
-    chunked(flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], false, sway),
-    chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, sway),
-    chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, sway),
-    chunked(tuftGeometry(), tufts, false, sway),
+    instanced(bushGeometry(), bushes, true, low),
+    chunked(fernGeometry(), ferns, false, low),
+    chunked(flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], false, low),
+    chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, low),
+    chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, low),
+    chunked(tuftGeometry(), tufts, false, low),
     buildShore(layout.seed, map, layout.spawn),
   );
   return root;
@@ -589,7 +578,7 @@ export function buildShore(
   const root = new THREE.Group();
   const still = vertexColored();
   root.add(
-    chunked(palmGeometry(), palms, true, swaying(), ground),
+    chunked(palmGeometry(), palms, true, swaying(false), ground),
     instanced(driftwoodGeometry(), driftwood, true, still, ground),
     instanced(starfishGeometry(0xff7a45), stars[0] ?? [], false, still, ground),
     instanced(starfishGeometry(0xe85a9a), stars[1] ?? [], false, still, ground),

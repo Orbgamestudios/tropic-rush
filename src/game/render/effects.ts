@@ -343,6 +343,11 @@ class Layer {
   }
 
   update(dt: number): void {
+    // Nothing alive and nothing drawn last frame: no work, and no draw call.
+    if (this.live.length === 0 && this.geometry.instanceCount === 0) {
+      this.mesh.visible = false;
+      return;
+    }
     const pos = this.pos.array as Float32Array;
     const color = this.color.array as Float32Array;
     const shape = this.shape.array as Float32Array;
@@ -399,10 +404,13 @@ class Layer {
     }
     this.live.length = kept;
     this.geometry.instanceCount = drawn;
-    this.pos.needsUpdate = true;
-    this.color.needsUpdate = true;
-    this.shape.needsUpdate = true;
-    this.motion.needsUpdate = true;
+    this.mesh.visible = drawn > 0;
+    // Only what's in use goes up to the graphics chip, not the whole pool.
+    for (const attribute of [this.pos, this.color, this.shape, this.motion]) {
+      attribute.clearUpdateRanges();
+      attribute.addUpdateRange(0, drawn * attribute.itemSize);
+      attribute.needsUpdate = true;
+    }
   }
 
   dispose(): void {
@@ -433,7 +441,7 @@ class Debris {
   constructor(private readonly capacity: number) {
     this.mesh = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.1 }),
+      new THREE.MeshLambertMaterial(),
       capacity,
     );
     this.mesh.frustumCulled = false;
@@ -460,6 +468,10 @@ class Debris {
   }
 
   update(dt: number): void {
+    if (this.chunks.length === 0 && this.mesh.count === 0) {
+      this.mesh.visible = false;
+      return;
+    }
     let n = 0;
     for (let i = 0; i < this.chunks.length; i++) {
       const c = this.chunks[i] as Chunk;
@@ -489,6 +501,9 @@ class Debris {
     }
     this.chunks.length = n;
     this.mesh.count = n;
+    this.mesh.visible = n > 0;
+    this.mesh.instanceMatrix.clearUpdateRanges();
+    this.mesh.instanceMatrix.addUpdateRange(0, n * 16);
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -766,6 +781,15 @@ export class Effects {
         ramp: HEALING,
         rise: 0.2,
       });
+    }
+  }
+
+  /** A healing bottle bursting: a spray of green crosses over everyone it reaches. */
+  healBurst(pos: THREE.Vector3, radius: number): void {
+    for (let i = 0; i < 14; i++) {
+      const a = between(0, Math.PI * 2);
+      const r = radius * Math.sqrt(between(0, 1));
+      this.heal(new THREE.Vector3(pos.x + Math.cos(a) * r, pos.y, pos.z + Math.sin(a) * r));
     }
   }
 

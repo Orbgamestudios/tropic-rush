@@ -1,7 +1,7 @@
 // The enemy camp's clutter, so the base looks lived in: steel tank traps on the landing beach,
 // wooden barricades, crate stacks and oil drums beside the buildings, canvas tents in the
 // clearing and enemy flags flying by the headquarters. Scenery only: heroes walk through it and
-// it never blocks shots (the rules' own cover is the rocks and sandbags in props.ts).
+// it never blocks shots (the rules' own cover is the rocks in props.ts).
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -226,7 +226,7 @@ export function buildCamp(layout: IslandLayout, map: SceneryMap): THREE.Group {
     instanced(crateGeometry(), crates),
     instanced(drumsGeometry(), drums),
     instanced(tentGeometry(), tents),
-    instanced(flagGeometry(), flags, true, swaying()),
+    instanced(flagGeometry(), flags, true, swaying(false)),
   );
   return root;
 }

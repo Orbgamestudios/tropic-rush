@@ -12,6 +12,7 @@ import {
   footprint,
   GRID_ORIGIN,
   type Obstacle,
+  obstacleById,
   obstacles,
   TILE,
 } from "../logic/crewIsland";
@@ -140,6 +141,7 @@ interface Chip {
 }
 
 const SHADE_SIZE = 128;
+const DETAIL_DISTANCE = 95;
 
 function disposeInstances(group: THREE.Group): void {
   group.traverse((o) => {
@@ -153,12 +155,14 @@ export class OvergrowthView {
   readonly shade: THREE.DataTexture;
   private readonly shadeData = new Uint8Array(SHADE_SIZE * SHADE_SIZE * 4);
   private readonly plants = new THREE.Group();
+  /** The small plants, which a zoomed-out camera can't make out anyway. */
+  private readonly detail = new THREE.Group();
   private key = "";
   private readonly mark: THREE.Mesh;
   private readonly chips: Chip[] = [];
   private readonly chipGeometry = new THREE.BoxGeometry(0.22, 0.22, 0.08);
-  private readonly leafMaterial = new THREE.MeshStandardMaterial({ color: 0x5cbb4c });
-  private readonly stoneMaterial = new THREE.MeshStandardMaterial({ color: 0xa8a293 });
+  private readonly leafMaterial = new THREE.MeshLambertMaterial({ color: 0x5cbb4c });
+  private readonly stoneMaterial = new THREE.MeshLambertMaterial({ color: 0xa8a293 });
 
   constructor(private readonly map: SceneryMap) {
     this.shade = new THREE.DataTexture(this.shadeData, SHADE_SIZE, SHADE_SIZE, THREE.RGBAFormat);
@@ -178,7 +182,7 @@ export class OvergrowthView {
     );
     this.mark.renderOrder = 2;
     this.mark.visible = false;
-    this.root.add(this.plants, this.mark);
+    this.root.add(this.plants, this.detail, this.mark);
   }
 
   /** Redraws the plants and shade when obstacles are cleared or buildings change. */
@@ -190,7 +194,9 @@ export class OvergrowthView {
     if (key === this.key) return;
     this.key = key;
     disposeInstances(this.plants);
+    disposeInstances(this.detail);
     this.plants.clear();
+    this.detail.clear();
 
     const done = new Set(cleared);
     const out = Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as Record<
@@ -219,22 +225,30 @@ export class OvergrowthView {
     this.growOpenGround(covered, out);
 
     const g = shapes();
-    const sway = swaying();
+    // Nothing here hides a hero, so none of it needs the dissolve.
+    const sway = swaying(false);
     const still = vertexColored();
-    const add = (kind: Kind, shadow: boolean, material: THREE.Material) =>
-      this.plants.add(chunked(g[kind], out[kind], shadow, material, homeHeight));
+    const add = (kind: Kind, shadow: boolean, material: THREE.Material, small = false) =>
+      (small ? this.detail : this.plants).add(
+        chunked(g[kind], out[kind], shadow, material, homeHeight),
+      );
     // Only the tall plants cast shadows: the rest would double their cost for little you can see.
     add("palm", true, sway);
     add("tree", true, sway);
     add("ear", false, sway);
-    add("fern", false, sway);
     add("bush", false, sway);
     add("rock", false, still);
-    add("pebbles", false, still);
-    add("tuft", false, sway);
-    add("red", false, sway);
-    add("yellow", false, sway);
-    add("white", false, sway);
+    add("fern", false, sway, true);
+    add("pebbles", false, still, true);
+    add("tuft", false, sway, true);
+    add("red", false, sway, true);
+    add("yellow", false, sway, true);
+    add("white", false, sway, true);
+  }
+
+  /** Leaves out the smallest plants once the camera is this far back. */
+  setDistance(distance: number): void {
+    this.detail.visible = distance < DETAIL_DISTANCE;
   }
 
   private paintShade(tx: number, ty: number, channel: number, amount: number): void {
@@ -270,7 +284,7 @@ export class OvergrowthView {
 
   /** Outlines the obstacle whose clearing panel is open. */
   highlight(id: string | null): void {
-    const o = id ? obstacles().find((x) => x.id === id) : undefined;
+    const o = id ? obstacleById(id) : undefined;
     this.mark.visible = !!o;
     if (!o) return;
     const cx = GRID_ORIGIN.x + (o.x + o.w / 2) * TILE;
@@ -327,6 +341,7 @@ export class OvergrowthView {
 
   dispose(): void {
     disposeInstances(this.plants);
+    disposeInstances(this.detail);
     this.shade.dispose();
     this.chipGeometry.dispose();
     this.leafMaterial.dispose();

@@ -12,6 +12,15 @@ import { COLORS } from "./palette";
 
 const BLOOM = { strength: 0.3, radius: 0.55, threshold: 0.92 };
 
+/** Sharpest the picture starts: more than this only costs battery on a phone-sized screen. */
+const START_PIXEL_RATIO = 1.75;
+/** Frames slower than this count against the current quality. */
+const SLOW_FRAME = 1 / 40;
+/** Quality steps down after this many seconds of slow frames. */
+const SLOW_SECONDS = 1.5;
+/** A single frame counts for at most this long, so one hitch can't cost a whole quality step. */
+const WORST_FRAME = 0.1;
+
 const FINISH = {
   uniforms: { tDiffuse: { value: null } },
   vertexShader: /* glsl */ `
@@ -48,13 +57,17 @@ export class Stage {
   holdQuality = false;
 
   constructor(private readonly container: HTMLElement) {
+    // The finishing passes do their own antialiasing, so the canvas doesn't need any.
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, START_PIXEL_RATIO));
+    this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Redrawn every few frames: nothing casting a shadow moves fast enough to notice.
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
@@ -66,7 +79,7 @@ export class Stage {
     this.scene.add(new THREE.HemisphereLight(0xe4f6ff, 0xd2c08f, 1.25));
     this.sun = new THREE.DirectionalLight(0xfff0d4, 2.3);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1536, 1536);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.04;
     this.sun.shadow.radius = 3;
@@ -84,7 +97,7 @@ export class Stage {
     const { extensions } = this.renderer;
     if (!extensions.has("EXT_color_buffer_float") && !extensions.has("EXT_color_buffer_half_float"))
       return null;
-    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
     const composer = new EffectComposer(this.renderer, target);
     composer.addPass(new RenderPass(this.scene, this.camera));
     const bloom = new UnrealBloomPass(
@@ -132,38 +145,76 @@ export class Stage {
   }
 
   /**
-   * Lowers quality step by step if frames stay slow (older phones): first resolution, then the
-   * shadow map, then the finishing passes. Never raises it again, so the picture doesn't keep
-   * flickering between levels.
+   * Lowers quality step by step if frames stay slow (older phones, or newer ones running hot):
+   * resolution, then the shadow map, then the finishing passes, then shadows altogether. Never
+   * raises it again, so the picture doesn't keep flickering between levels.
    */
   adaptQuality(dt: number): void {
     this.elapsed += dt;
-    if (this.holdQuality || this.elapsed < 3 || this.quality >= 3) return; // skip start-up compiling
-    this.slowSeconds = dt > 1 / 24 ? this.slowSeconds + dt : Math.max(0, this.slowSeconds - dt);
-    if (this.slowSeconds < 2) return;
+    if (this.holdQuality || this.elapsed < 3 || this.quality >= 4) return; // skip start-up compiling
+    const frame = Math.min(dt, WORST_FRAME);
+    this.slowSeconds =
+      dt > SLOW_FRAME ? this.slowSeconds + frame : Math.max(0, this.slowSeconds - frame);
+    if (this.slowSeconds < SLOW_SECONDS) return;
     this.slowSeconds = 0;
     this.quality++;
-    if (this.quality === 3) {
-      this.composer?.dispose();
-      this.composer = null;
-    } else if (this.quality === 1) {
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    } else {
-      this.renderer.setPixelRatio(1);
+    if (this.quality === 1) {
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.4));
+    } else if (this.quality === 2) {
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.15));
+      this.shadowEvery = 3;
       this.sun.shadow.mapSize.set(1024, 1024);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
+      this.shadowsStale = true;
+    } else if (this.quality === 3) {
+      this.composer?.dispose();
+      this.composer = null;
+    } else {
+      this.sun.castShadow = false;
     }
     this.resize();
+  }
+
+  /** Draws shadows on the next frame: for when a light that casts them has just appeared. */
+  refreshShadows(): void {
+    this.shadowsStale = true;
+  }
+
+  /** Forgets slow frames so far: for just after a heavy scene has loaded. */
+  ignoreSlowFrames(): void {
+    this.elapsed = 0;
+    this.slowSeconds = 0;
   }
 
   private elapsed = 0;
   private slowSeconds = 0;
   private quality = 0;
   private composer: EffectComposer | null = null;
+  private frameNumber = 0;
+  private shadowEvery = 2;
+  /** A light has no shadow map yet: draw them this frame, whichever frame it is. */
+  private shadowsStale = true;
 
   render(): void {
+    this.frameNumber++;
+    if (this.shadowsStale || this.frameNumber % this.shadowEvery === 0) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowsStale = false;
+    }
+    this.renderer.info.reset();
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** Draw calls and triangles in the last frame, shadows and finishing passes included. */
+  frameCost(): { calls: number; triangles: number; programs: number; geometries: number } {
+    const { render, memory, programs } = this.renderer.info;
+    return {
+      calls: render.calls,
+      triangles: render.triangles,
+      programs: programs?.length ?? 0,
+      geometries: memory.geometries,
+    };
   }
 }

@@ -118,31 +118,48 @@ export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return merged;
 }
 
-/** A ring of sandbags around a building, as one mesh. */
-export function sandbagRing(radius: number, layers: number, color: number): THREE.Mesh {
-  const parts: THREE.BufferGeometry[] = [];
-  for (let layer = 0; layer < layers; layer++) {
-    const count = Math.max(6, Math.round((Math.PI * 2 * radius) / 0.85));
-    for (let i = 0; i < count; i++) {
-      const angle = ((i + layer * 0.5) / count) * Math.PI * 2;
-      const bag = new RoundedBoxGeometry(0.9, 0.42, 0.55, 2, 0.17);
-      bag.rotateY(-angle + Math.PI / 2);
-      bag.translate(Math.cos(angle) * radius, 0.21 + layer * 0.38, Math.sin(angle) * radius);
-      parts.push(painted(bag, color));
-    }
-  }
-  const m = new THREE.Mesh(merge(parts), vertexColored());
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
-}
-
-let vertexColorMaterial: THREE.MeshStandardMaterial | null = null;
+let vertexColorMaterial: THREE.MeshLambertMaterial | null = null;
 
 /** The one material shared by every merged, vertex-colored prop. */
-export function vertexColored(): THREE.MeshStandardMaterial {
-  vertexColorMaterial ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+export function vertexColored(): THREE.MeshLambertMaterial {
+  vertexColorMaterial ??= new THREE.MeshLambertMaterial({ vertexColors: true });
   return vertexColorMaterial;
+}
+
+/**
+ * Bakes the plain meshes under an object into one vertex-colored mesh, so a model of dozens of
+ * parts is a single draw call. Skips `keep` (a part that moves by itself), anything see-through
+ * or glowing, and two-sided parts.
+ */
+export function flatten(root: THREE.Object3D, keep: THREE.Object3D | null = null): void {
+  root.updateMatrixWorld(true);
+  const toRoot = root.matrixWorld.clone().invert();
+  const parts: THREE.BufferGeometry[] = [];
+  const baked: THREE.Mesh[] = [];
+  const visit = (o: THREE.Object3D) => {
+    if (o === keep) return;
+    if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshLambertMaterial) {
+      const m = o.material;
+      if (!m.transparent && m.side === THREE.FrontSide && m.emissive.getHex() === 0) {
+        const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+        g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, o.matrixWorld));
+        // Something already baked keeps its colors.
+        parts.push(g.getAttribute("color") ? g : painted(g, m.color.getHex()));
+        baked.push(o);
+      }
+    }
+    for (const child of o.children) visit(child);
+  };
+  visit(root);
+  if (parts.length === 0) return;
+  for (const m of baked) {
+    m.removeFromParent();
+    m.geometry.dispose();
+  }
+  const whole = new THREE.Mesh(merge(parts), vertexColored());
+  whole.castShadow = true;
+  whole.receiveShadow = true;
+  root.add(whole);
 }
 
 /** Frees the geometries under an object (materials are shared and kept). */

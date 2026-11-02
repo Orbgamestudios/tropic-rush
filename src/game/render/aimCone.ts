@@ -5,7 +5,7 @@
 
 import * as THREE from "three";
 import { HEROES, type HeroKind, shotSpread } from "../logic/heroes";
-import { lockCandidate, type RaidHero, type RaidState } from "../logic/raid";
+import { lockCandidate, patientCandidate, type RaidHero, type RaidState } from "../logic/raid";
 import { angleOf, type Vec2 } from "../logic/vec";
 
 /** The cone never draws narrower than this either side, so a precise rifle still shows. */
@@ -131,6 +131,10 @@ export class AimView {
       }
     }
 
+    if (HEROES[hero.kind].attack.kind === "heal") {
+      this.markPatients(state, hero, preview, ground, time);
+      return;
+    }
     // Which building letting go would lock onto.
     const next = preview ? lockCandidate(state, hero, preview) : null;
     this.place(this.candidate, next, ground, time, false);
@@ -138,6 +142,23 @@ export class AimView {
       hero.targetId === null ? null : state.buildings.find((b) => b.id === hero.targetId);
     this.place(this.locked, target && !target.destroyed ? target : null, ground, time, true);
     if (next && target && next.id === target.id) this.candidate.visible = false;
+  }
+
+  /** The same two rings for a medic, on crewmates instead of buildings. */
+  private markPatients(
+    state: RaidState,
+    hero: RaidHero,
+    preview: Vec2 | null,
+    ground: (x: number, y: number) => number,
+    time: number,
+  ): void {
+    const ringFor = (h: RaidHero | null | undefined) =>
+      h ? { pos: h.pos, radius: HEROES[h.kind].radius } : null;
+    const next = preview ? patientCandidate(state, hero, preview) : null;
+    this.place(this.candidate, ringFor(next), ground, time, false);
+    const patient = state.heroes.find((h) => h.id === hero.patientId && h.alive);
+    this.place(this.locked, ringFor(patient), ground, time, true);
+    if (next && next === patient) this.candidate.visible = false;
   }
 
   private place(

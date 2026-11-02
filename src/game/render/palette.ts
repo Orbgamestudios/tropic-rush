@@ -14,7 +14,6 @@ export const COLORS = {
 
   enemyDark: 0x3d4149,
   enemyRust: 0xc4582c,
-  sandbag: 0xcdb78a,
   bamboo: 0xcdb36b,
   tin: 0xa9b1b6,
   wood: 0x8b5a3c,
@@ -50,22 +49,22 @@ export const COLORS = {
 } as const;
 
 export interface MaterialOptions {
-  roughness?: number;
-  metalness?: number;
   emissive?: number;
 }
 
-const cache = new Map<string, THREE.MeshStandardMaterial>();
+const cache = new Map<string, THREE.MeshLambertMaterial>();
 
-/** Shared matte materials, one per color, reused across raids (never disposed). */
-export function material(color: number, options: MaterialOptions = {}): THREE.MeshStandardMaterial {
-  const roughness = options.roughness ?? 0.85;
-  const metalness = options.metalness ?? 0;
+/**
+ * Shared matte materials, one per color, reused across raids (never disposed). Lambert rather than
+ * physically based: nothing here is shiny enough to show it, and a phone fills the screen far
+ * faster without it.
+ */
+export function material(color: number, options: MaterialOptions = {}): THREE.MeshLambertMaterial {
   const emissive = options.emissive ?? 0x000000;
-  const key = `${color}|${roughness}|${metalness}|${emissive}`;
+  const key = `${color}|${emissive}`;
   let m = cache.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, roughness, metalness, emissive });
+    m = new THREE.MeshLambertMaterial({ color, emissive });
     cache.set(key, m);
   }
   return m;

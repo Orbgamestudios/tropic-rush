@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
 import { COLORS, material } from "./palette";
-import { at, ball, barrel, cone, cyl, mesh, rbox, sandbagRing } from "./shapes";
+import { at, ball, barrel, cone, cyl, flatten, mesh, rbox } from "./shapes";
 
 export interface BuildingModel {
   root: THREE.Group;
@@ -24,10 +24,10 @@ export const CREW_PAINT = new Map<number, number>([
 ]);
 
 /** Repaints a building in crew colors. */
-export function paintCrew(root: THREE.Object3D): void {
+function paintCrew(root: THREE.Object3D): void {
   root.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
-    const paint = CREW_PAINT.get((o.material as THREE.MeshStandardMaterial).color?.getHex());
+    const paint = CREW_PAINT.get((o.material as THREE.MeshLambertMaterial).color?.getHex());
     if (paint !== undefined) o.material = material(paint);
   });
 }
@@ -49,53 +49,98 @@ function flameCone(length: number): THREE.Mesh {
   return m;
 }
 
-export function buildingModel(type: BuildingType): BuildingModel {
+/** Widens a model to its footprint, and how much of that height it takes on: [across, up]. */
+const STRETCH: Partial<Record<BuildingType, readonly [number, number]>> = {
+  goldMine: [1.55, 1.2],
+  lumberCamp: [1.6, 1.2],
+  quarry: [1.7, 1.2],
+  scrapYard: [1.7, 1.2],
+  refinery: [1.6, 1],
+  storehouse: [1.2, 1],
+  goldVault: [1.2, 1],
+  timberShed: [1.2, 1],
+  stoneYard: [1.2, 1],
+  scrapBin: [1.2, 1],
+};
+
+function stretch(root: THREE.Object3D, across: number, up: number): void {
+  const wrap = new THREE.Group();
+  wrap.scale.set(across, up, across);
+  wrap.add(...root.children);
+  root.add(wrap);
+}
+
+const templates = new Map<string, BuildingModel>();
+
+/**
+ * A building, in enemy paint or the crew's. Each one is baked into a mesh or two the first time
+ * it's asked for and shared from then on, so a whole base draws in a handful of calls.
+ */
+export function buildingModel(type: BuildingType, crew = false): BuildingModel {
+  const key = `${type}|${crew}`;
+  let template = templates.get(key);
+  if (!template) {
+    template = makeBuilding(type);
+    const stretched = STRETCH[type];
+    if (stretched) stretch(template.root, stretched[0], stretched[1]);
+    if (crew) paintCrew(template.root);
+    flatten(template.root, template.head);
+    if (template.head) flatten(template.head, template.flame);
+    templates.set(key, template);
+  }
+  const root = template.root.clone(true);
+  return {
+    root,
+    head: root.getObjectByName("head") ?? null,
+    flame: root.getObjectByName("flame") ?? null,
+  };
+}
+
+function makeBuilding(type: BuildingType): BuildingModel {
   const root = new THREE.Group();
   let head: THREE.Object3D | null = null;
   let flame: THREE.Object3D | null = null;
   switch (type) {
     case "headquarters": {
-      root.add(at(rbox(9, 7.5, 9, C.enemyDark), 0, 3.75, 0));
-      root.add(at(rbox(9.4, 0.8, 9.4, C.enemyRust), 0, 5.6, 0));
-      root.add(at(rbox(6, 3.2, 6, C.enemyDark), 0, 9.1, 0));
-      root.add(at(rbox(6.3, 0.6, 6.3, C.enemyRust), 0, 10.4, 0));
+      root.add(at(rbox(7.4, 3.2, 7.4, C.enemyDark), 0, 1.6, 0));
+      root.add(at(rbox(7.8, 0.6, 7.8, C.enemyRust), 0, 2.7, 0));
+      root.add(at(rbox(4.8, 1.6, 4.8, C.enemyDark), 0, 3.7, 0));
+      root.add(at(rbox(5.1, 0.4, 5.1, C.enemyRust), 0, 4.6, 0));
       for (const [x, z] of [
-        [4.3, 4.3],
-        [-4.3, 4.3],
-        [4.3, -4.3],
-        [-4.3, -4.3],
+        [3.5, 3.5],
+        [-3.5, 3.5],
+        [3.5, -3.5],
+        [-3.5, -3.5],
       ] as const) {
-        root.add(at(cyl(1.4, 1.6, 10, C.enemyDark, 14), x, 5, z));
-        root.add(at(cone(1.85, 1.8, C.enemyRust, 14), x, 10.9, z));
+        root.add(at(cyl(1.15, 1.3, 4.6, C.enemyDark, 14), x, 2.3, z));
+        root.add(at(cone(1.4, 1.2, C.enemyRust, 14), x, 5.2, z));
       }
-      root.add(at(rbox(3, 3.6, 0.6, C.woodDark), 0, 1.8, 4.55));
+      root.add(at(rbox(2.4, 2.4, 0.5, C.woodDark), 0, 1.2, 3.75));
       // A railing round the roof deck.
       for (let i = -2; i <= 2; i++) {
         for (const side of [-1, 1]) {
-          root.add(at(cyl(0.05, 0.05, 0.9, C.metal, 6), i * 1.35, 11.1, side * 2.9));
-          root.add(at(cyl(0.05, 0.05, 0.9, C.metal, 6), side * 2.9, 11.1, i * 1.35));
+          root.add(at(cyl(0.04, 0.04, 0.5, C.metal, 6), i * 1.1, 5.05, side * 2.35));
+          root.add(at(cyl(0.04, 0.04, 0.5, C.metal, 6), side * 2.35, 5.05, i * 1.1));
         }
       }
       for (const side of [-1, 1]) {
-        root.add(at(rbox(5.9, 0.08, 0.08, C.metal), 0, 11.55, side * 2.9));
-        root.add(at(rbox(0.08, 0.08, 5.9, C.metal), side * 2.9, 11.55, 0));
+        root.add(at(rbox(4.8, 0.07, 0.07, C.metal), 0, 5.3, side * 2.35));
+        root.add(at(rbox(0.07, 0.07, 4.8, C.metal), side * 2.35, 5.3, 0));
       }
       // The radar dish on its mast, tipped to the sky, and a radio mast beside it.
-      root.add(at(cyl(0.22, 0.3, 1.6, C.metal, 10), -0.9, 11.4, -0.6));
-      const dish = mesh(new THREE.SphereGeometry(1.5, 18, 8, 0, Math.PI * 2, 0, 1.1), C.tin);
-      dish.material = material(C.tin, { metalness: 0.5, roughness: 0.4 });
-      (dish.material as THREE.Material).side = THREE.DoubleSide;
-      root.add(at(dish, -0.9, 13.7, -0.6, Math.PI - 0.6, 0, 0.4));
-      root.add(at(cyl(0.07, 0.07, 0.9, C.darkMetal, 6), -0.9, 13, -0.6));
-      root.add(at(cyl(0.08, 0.08, 4, C.metal, 8), 1.5, 12.6, 1.2));
-      root.add(at(rbox(1.6, 1, 0.08, C.enemyRust), 2.35, 13.9, 1.2));
+      root.add(at(cyl(0.18, 0.24, 0.6, C.metal, 10), -0.7, 5.05, -0.5));
+      const dish = mesh(new THREE.SphereGeometry(0.9, 18, 8, 0, Math.PI * 2, 0, 1.1), C.tin);
+      dish.material = new THREE.MeshLambertMaterial({ color: C.tin, side: THREE.DoubleSide });
+      root.add(at(dish, -0.7, 6.05, -0.5, Math.PI - 0.6, 0, 0.4));
+      root.add(at(cyl(0.06, 0.06, 0.5, C.darkMetal, 6), -0.7, 5.5, -0.5));
+      root.add(at(cyl(0.07, 0.07, 1.8, C.metal, 8), 1.2, 5.6, 1));
+      root.add(at(rbox(1.2, 0.6, 0.07, C.enemyRust), 1.85, 6.15, 1));
       // Supplies by the door.
-      root.add(at(rbox(1, 1, 1, C.woodLight), 2.9, 0.5, 5.2));
-      root.add(at(cyl(0.42, 0.42, 1.1, C.enemyRust, 12), -2.8, 0.55, 5.2));
+      root.add(at(rbox(0.8, 0.8, 0.8, C.woodLight), 2.3, 0.4, 4.3));
+      root.add(at(cyl(0.34, 0.34, 0.9, C.enemyRust, 12), -2.2, 0.45, 4.3));
       break;
     }
     case "gunTurret": {
-      root.add(sandbagRing(1.95, 3, C.sandbag));
       root.add(at(cyl(1.05, 1.3, 2.6, C.enemyDark), 0, 1.3, 0));
       head = at(new THREE.Group(), 0, 3.15, 0);
       head.add(rbox(1.8, 1.25, 1.6, C.enemyRust));
@@ -106,7 +151,6 @@ export function buildingModel(type: BuildingType): BuildingModel {
       break;
     }
     case "mortar": {
-      root.add(sandbagRing(2.05, 3, C.sandbag));
       root.add(at(cyl(1.6, 1.6, 0.12, C.woodDark, 20), 0, 0.06, 0));
       head = at(new THREE.Group(), 0, 0.5, 0);
       head.add(cyl(0.55, 0.7, 0.4, C.enemyDark));
@@ -134,7 +178,7 @@ export function buildingModel(type: BuildingType): BuildingModel {
       root.add(at(ball(0.95, C.enemyRust), 0, 3.4, 0));
       head = at(new THREE.Group(), 0, 2.9, 0);
       head.add(at(barrel(0.18, 1.7, C.darkMetal), 0.4, 0, 0));
-      flame = at(flameCone(7), 2.1, 0, 0);
+      flame = at(flameCone(9.5), 2.1, 0, 0);
       head.add(flame);
       root.add(head);
       break;
@@ -182,7 +226,7 @@ export function buildingModel(type: BuildingType): BuildingModel {
       for (let i = 0; i < 6; i++) {
         root.add(
           at(
-            ball(0.32, C.gold, 10, { roughness: 0.4, metalness: 0.3 }),
+            ball(0.32, C.gold, 10),
             1.6 + (i % 3) * 0.45,
             0.3 + Math.floor(i / 3) * 0.35,
             2 + (i % 2) * 0.3,
@@ -330,6 +374,8 @@ export function buildingModel(type: BuildingType): BuildingModel {
       break;
     }
   }
+  if (head) head.name = "head";
+  if (flame) flame.name = "flame";
   return { root, head, flame };
 }
 
@@ -353,6 +399,7 @@ export function rubbleModel(radius: number): THREE.Group {
       ),
     );
   }
+  flatten(g);
   return g;
 }
 
@@ -400,6 +447,8 @@ export function gunboatModel(): { root: THREE.Group; cannon: THREE.Object3D } {
   cannon.add(at(barrel(0.32, 2.4, C.darkMetal, 16), -0.4, 0, 0));
   cannon.add(at(ball(0.42, C.darkMetal, 14), -0.4, 0, 0));
   root.add(cannon);
+  flatten(root, cannon);
+  flatten(cannon);
   return { root, cannon };
 }
 
@@ -430,9 +479,8 @@ export function crewTurretModel(): { root: THREE.Group; head: THREE.Object3D } {
 export function mineModel(): THREE.Mesh {
   const m = new THREE.Mesh(
     new THREE.CylinderGeometry(0.4, 0.45, 0.12, 14),
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshLambertMaterial({
       color: 0x3a3a34,
-      roughness: 0.7,
       transparent: true,
       opacity: 0.35,
     }),

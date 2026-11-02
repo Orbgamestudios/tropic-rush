@@ -18,7 +18,7 @@ or UI.
 
 Crews of up to 5 friends share one tropical island and build it up together. They raid nearby
 enemy islands together in real time. Each player steers one hero on the beach, Brawl Stars style,
-and one player at a time can run back to the gunboat to fire its weapons from a targeting view.
+and one player at a time can call in the gunboat to fire its weapons from a targeting view.
 
 ## Out of scope for version 1
 
@@ -41,13 +41,14 @@ Raids are what matter most. If a co-op raid is fun, everything else builds on it
      hero's shot spread and as long as their range, with a crosshair on the tower it will lock
      onto. It doesn't fire yet. Letting go locks on, and the hero keeps firing at that tower
      until it's destroyed or the hero walks out of range. Dragging to another tower retargets.
-     A quick tap locks onto the nearest tower in range; tapping again stops. Heroes move at 60%
-     speed while aiming or shooting.
-3. **Gunboat.** **Decided:**
+     A quick tap locks onto the nearest tower in range; tapping again stops. Heroes slow to 20%
+     speed while aiming or shooting (**Decided 2026-11-01**, owner's request).
+3. **Gunboat.** **Decided (changed 2026-11-01, owner's request):**
    - It pulls up next to the beach where the crew landed.
-   - It has one seat, so only one player can use it at a time.
-   - To use it, a player walks their hero back to the boat and boards. The view switches to a
-     targeting camera where they can aim anywhere on the island and fire abilities. They step out to
+   - Only one player can use it at a time.
+   - A player opens its view from wherever they are, with no walk back. The view switches to a
+     targeting camera where they can aim anywhere on the island and fire abilities. Their hero
+     stands still where they left them, and can still be shot and killed. They close the view to
      rejoin the fight.
 4. Gunboat energy is shared by the crew and earned by destroying buildings. Each ability costs
    energy. **Proposed**
@@ -57,14 +58,13 @@ Raids are what matter most. If a co-op raid is fun, everything else builds on it
 7. The raid is won by destroying the headquarters. It's lost when every hero is down or time runs
    out (about 5 minutes). Loot scales with how much was destroyed. **Proposed**
 
-The core team decision is who goes back to the gunboat, and when. Every trip takes a hero out of
-the fight and costs walking time. A solo player is always choosing between fighting and firing.
+The core team decision is who works the gunboat, and when. It leaves a hero standing helpless
+in the line of fire. A solo player is always choosing between fighting and firing.
 
 **Proposed** details:
 
 - Defenses can't damage the gunboat in version 1.
-- There's no cooldown on re-boarding for now; the no-respawn rule may be enough to stop players
-  camping in the boat.
+- There's no cooldown on reopening the view for now.
 
 **Open:**
 
@@ -133,15 +133,15 @@ meter or a Super button. The Super column below is kept as a record of what they
 was last in commit `9727b4e`, if they come back. Each hero's signature move (below) is now what
 sets them apart, and the Tank's Aftershock moved from the end of a ram to whatever they destroy.
 
-| Hero      | Health    | Speed   | Range          | Attack                                   | Super                                  | Job                                               |
-| --------- | --------- | ------- | -------------- | ---------------------------------------- | -------------------------------------- | ------------------------------------------------- |
-| Rifleman  | Medium    | Fast    | Medium         | 3-shot burst                             | Sprint, taking less damage             | All-rounder; best at running back to the boat     |
-| Heavy     | High      | Slow    | Short          | Minigun, more damage the longer it fires | Drops a sandbag wall that blocks shots | Soaks fire up front                               |
-| Tank      | Very high | Slowest | Medium-long    | Cannon shell, splash, bonus vs buildings | Ram                                    | Breaks buildings; only the Engineer can repair it |
-| Bazooka   | Low       | Medium  | Long           | One rocket, huge damage, slow reload     | Three-rocket volley                    | Kills key defenses from behind the Heavy          |
-| Grenadier | Med-low   | Medium  | Medium, lobbed | Grenade that arcs over cover             | Smoke: defenses can't target inside it | Hits defenses behind walls; sets off beach mines  |
-| Medic     | Med-low   | Medium  | Short          | Healing spray, light damage to buildings | Area heal over time                    | Keeps the crew alive (heals people, not the Tank) |
-| Engineer  | Medium    | Medium  | Medium         | Rivet gun                                | Builds an auto-turret                  | Damage without standing in fire; repairs the Tank |
+| Hero      | Health    | Speed   | Range          | Attack                                                                      | Super                                  | Job                                               |
+| --------- | --------- | ------- | -------------- | --------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
+| Rifleman  | Medium    | Fast    | Medium         | 3-shot burst                                                                | Sprint, taking less damage             | All-rounder; best at running back to the boat     |
+| Heavy     | High      | Slow    | Short          | Minigun, more damage the longer it fires                                    | (supers removed)                       | Soaks fire up front                               |
+| Tank      | Very high | Slowest | Medium-long    | Cannon shell, splash, bonus vs buildings                                    | Ram                                    | Breaks buildings; only the Engineer can repair it |
+| Bazooka   | Low       | Medium  | Long           | One rocket, huge damage, slow reload                                        | Three-rocket volley                    | Kills key defenses from behind the Heavy          |
+| Grenadier | Med-low   | Medium  | Medium, lobbed | Grenade that arcs over cover                                                | Smoke: defenses can't target inside it | Hits defenses behind walls; sets off beach mines  |
+| Medic     | Med-low   | Medium  | Long, lobbed   | Throws healing bottles at allies; can't hurt buildings (Decided 2026-11-01) | Area heal over time                    | Keeps the crew alive (heals people, not the Tank) |
+| Engineer  | Medium    | Medium  | Medium         | Rivet gun                                                                   | Builds an auto-turret                  | Damage without standing in fire; repairs the Tank |
 
 **Proposed:**
 
@@ -207,7 +207,6 @@ Starting size ratios, in hero heights:
   - a harpoon launcher (slow, extra damage to Heavy and Tank)
   - a flamethrower tower (short range)
   - hidden beach mines
-  - sandbag walls
 
 ## Home island and crew
 
@@ -272,7 +271,7 @@ Starting size ratios, in hero heights:
 
 **Proposed** (defaults, not yet confirmed by the owner):
 
-- Joining uses a nickname and a 6-character crew code, with no accounts or passwords. On iPhone,
+- Joining uses a nickname and a 6-character crew code. Accounts are optional (see below). On iPhone,
   Safari and the Home Screen app keep separate storage, so they count as two players.
 - Crewmates show only as name tags on the buildings they're moving, not as walking characters.
 - Clearing numbers are a first draft (`src/game/logic/crewIsland.ts`): costs from brush 15 gold to
@@ -294,7 +293,6 @@ Starting size ratios, in hero heights:
 
 - the world map with other crews' islands
 - leaving or switching crews
-- build timers
 - the refinery's processed materials
 
 **Decided** (from the original brief):
@@ -313,7 +311,22 @@ Starting size ratios, in hero heights:
   - a Harbor that upgrades the gunboat's energy and abilities
   - a Lookout Tower that sets how far you can see on the map
   - a Barracks for heroes
-- Short build timers, since friends play together.
+- **Build timers (Decided 2026-11-01, owner's request):** building and upgrading take real time.
+  Upgrades take 1, 5, 10 and 30 minutes, then 1, 2, 4, 8 and 12 hours. The headquarters starts at
+  30 minutes for level 2 and climbs to 3 days. **Proposed:** a new building takes 1 minute, tools
+  30 minutes to 2 days, and builders (2, and 1 more every 5 HQ levels, up to 5) limit how much runs
+  at once, apart from the workers clearing ground. Hero levels stay instant. A building goes on
+  working while it's upgraded, at its old level; a new one does nothing until it's up.
+- **Building sizes (Decided 2026-11-01, owner's request):** the headquarters is 5x5 tiles and about
+  4 heroes tall, storages 3x3, and mills 5x5 (**Proposed:** so is the refinery). Buildings already
+  on an island move to the nearest free spot if they no longer fit.
+- **Buildings stand on the grass (Decided 2026-11-01, owner's request):** no pad or dirt under them,
+  on the crew's island or an enemy's.
+- **Showing range (Decided 2026-11-01, owner's request):** tapping a defense on your island shows
+  its range. In a raid, a thin line fades in for the stretch of a defense's range near your hero,
+  so it warns without covering the base.
+- **Upgrade signs (Decided 2026-11-01, owner's request):** anything that can be upgraded right now
+  has a tiny 3D signboard with a green up arrow at its near corner.
 - An idea: AI raider fleets sometimes attack the home island, and whoever is online defends it
   together.
 
@@ -343,7 +356,7 @@ like theme but polished and simple"):
 - **Hero select:** "Personnel" roster, a radar sweeping behind the hero on a navy steel pedestal
   with a grated top, "Technical specs" on cream paper, the signature move in a hazard-striped plate, and
   SELECT.
-- **Raid HUD:** a navy hero card, the squad in a column down the left, a PAUSE plate and a
+- **Raid HUD:** a navy hero card, crewmates in a column down the left, a PAUSE plate and a
   brass-rimmed minimap.
 - **Text:** bold outlined lettering, gold or cream.
 - **Currency:** navy wells in a brass rim with a big icon on the end.
@@ -372,18 +385,16 @@ like theme but polished and simple"):
   - the hero's signature move
   - the hero's perk track
   - LEVEL UP (gold) or UNLOCK (medals), and RAID, which opens the world map
-  - a SQUAD column: tap + to bring up to 4 unlocked heroes as AI squadmates, tap one to drop it.
-    Choosing a squadmate as your hero swaps the two.
 - **Raid HUD:**
   - a portrait card with a health bar
-  - the squad's portraits under it, with health bars and a KO mark when one falls
+  - crewmates' portraits under it, with health bars and a KO mark when one falls
   - a timer and destruction plate
   - pause, a live minimap, and energy and loot pills
   - a move stick and a FIRE pad, resting where the controls editor puts them
-  - the gunboat button
-  - the gunboat ability tray, only while on the gunboat
+  - the gunboat button, always there, which opens and closes its view
+  - the gunboat ability tray, only in that view
   - damage numbers over hits
-  - a glowing ring under your hero (green) and each squadmate (blue)
+  - a glowing ring under your hero (green) and each crewmate (blue)
 - **Raid scenery:** the island looks like the jungle and beach mockups:
   - a dirt trail from the landing beach up to the HQ
   - dense jungle (broadleaf trees, palms, elephant-ear plants) crowding in around the base's
@@ -425,15 +436,32 @@ like theme but polished and simple"):
   - Mr. Pemberton (Grenadier)
   - Gus (Engineer)
 - Stars: 1 for 50% destroyed, 1 for the HQ (the win), and 1 for 100%.
-- **AI squadmates** (built as a draft, 2026-10-30, after the mockups showed a squad): when you
-  raid without friends, AI heroes fill the other crew seats. They are whole heroes at their own
-  level, not the troop squads listed as out of scope.
-  - They follow you, fight buildings near you (defenses first), and side-step cover. The Medic heals whoever is hurt.
-  - They never board the gunboat.
-  - If you go down, the camera follows a squadmate and the raid goes on until they all fall.
-  - They count as crew for the rules, so a full squad makes islands easier. Nothing scales the
-    loot down for it yet.
-  - Open: should real crewmates replace them seat by seat once co-op raids exist?
+- **Crewmates are real people (Decided 2026-11-01, owner's request):** there are no AI allies. The
+  AI squad that was drafted on 2026-10-30 is gone; the only allies on a raid are other players.
+  - Tap an island on the map and choose Team up. Crewmates who are online get a banner wherever they
+    are in the game, join with the hero they used last, and wait in a lobby until the host attacks.
+  - **Proposed:** one phone, the host, runs the rules and the others follow it (see Multiplayer).
+    Only one crew's members can team up, so a raid is up to 5 people. Everyone gets the win, the
+    island and the loot on their own phone.
+  - A Medic can't take an island alone, so Attack waits for a teammate who can hurt buildings.
+
+## Hero upgrade trees
+
+**Proposed, planned 2026-11-01, not built yet:** a tree for each hero, paid in gold and four
+crystals, with a reward that changes every two weeks beyond it. The full plan is in
+`docs/HERO_TREES.md`.
+
+## Accounts and profiles
+
+**Decided 2026-11-01 (owner's request):** players can create an account and a profile.
+
+- The profile opens from the crew bar: a player icon (14 to choose from), a name, stats, the crew
+  and its invite code, and the account.
+- The crew bar only shows everyone's pictures. A picture's border glows green while they're online.
+
+**Proposed:** an account is a username and password with no email, so a lost password can't be
+recovered. It's optional, and it holds the player's save, so logging in on another phone brings
+their progress with them. If one account is used on two phones at once, the last to save wins.
 
 ## World map
 
@@ -456,8 +484,21 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
   numbers. From there it's Attack or Back to map. **Proposed:** mines look as faint as they do in
   a raid, not hidden and not highlighted.
 
-**Proposed:** a new scatter every day, with harder bases generally further from home. An island
-beaten today shows as Beaten until tomorrow's map.
+**Decided 2026-11-01 (owner's request): the world never ends.**
+
+- It's one fixed sea of islands, and you drag and pinch round it. Only the waters round home start
+  in the clear. Everything else lies under cloud, and each bank of cloud says how many more
+  islands to take.
+- Take half the islands of a region and the cloud lifts from the regions beside it, for good.
+- Islands get harder with distance, past the top headquarters level and on forever: beyond HQ 20 a
+  base can't grow, so its buildings keep gaining levels instead.
+- A beaten island is yours until raiders retake it. Each night they retake 0, 1 or 2 of your
+  islands. It comes back stronger than it was and at least as strong as your own HQ, with every
+  building its headquarters allows, all at full level.
+
+**Proposed:** one world for every crew, regions of 6 to 8 islands, roughly one more HQ level every
+34 map units from home, and progress kept on each phone, not on the crew server. A lost raid can
+be tried again as often as you like, and materials are kept win or lose.
 
 ## Art direction
 
@@ -541,8 +582,11 @@ Reference images in [concept/](concept/):
 - **What to expect:** in game, the look can get close to the top-down concept images. Poster-level
   cinematic lighting is beyond real time on a phone.
 - **Multiplayer:** Cloudflare Durable Objects:
-  - One per raid. It runs the authoritative simulation at 15–20 ticks per second over WebSockets.
-  - One per crew island. It saves the base and its timers.
+  - One per crew island. It saves the base and its timers, and passes raid messages between phones.
+  - **Proposed (built 2026-11-01):** the host's phone runs a raid's rules. Guests send controls 20
+    times a second and get snapshots 12 times a second, moving their own hero at once. The original
+    plan was a raid server of its own, which is still the way to stop a host cheating or a raid
+    ending when the host's phone drops out.
 - **Shared rules:** game rules stay pure functions (as in `src/game/logic/`) shared by the server
   and the client.
 - **Offline:** raids need a connection; the home island can still open offline.
@@ -559,6 +603,10 @@ Each step should be playable on the owner's iPhone before the next one starts.
 5. **Home island:** building on tiles, resources, the refinery, HQ limits, and a shared save.
 6. **World map:** clouds, island ratings, and rewards.
 7. **Content and polish:** balance, events, and sound.
+
+**Sound (Decided 2026-11-01, owner's request):** recorded effects and a different track for home,
+heroes, the map, scouting, raids and night raids, all CC0 (`public/audio/CREDITS.md`). Haptics are
+on where the phone allows: see `src/game/audio/haptics.ts`.
 
 ### Draft status (2026-10-29)
 
@@ -582,16 +630,14 @@ Choices made while building the draft. All are **Proposed**:
 - **Island difficulty:** the hero-select screen offers HQ levels 1–3, named Outpost, Fort and
   Stronghold, shown with 1–3 stars. Rifleman, Heavy and Medic are open from the start; the others
   unlock with medals (see UI and menus).
-- **Cover:** rocks and sandbags block shots both ways. Short sandbag walls stand in front of gun
-  turrets and harpoons, facing the beach, so attackers have to flank them.
+- **Cover:** rocks block shots both ways. Sandbags are gone from the game (Decided 2026-11-01).
 - **Non-attacking buildings:** the watchtower doesn't attack, and neither does the headquarters.
-- **Gunboat boarding:** a hero can board from up to 6.5 m away (the boat is about 6.5 m long).
 - **Starting energy:** the crew starts with 10 gunboat energy. Defenses give 4–5 when destroyed,
   other buildings 3.
 - **Firing:** holding the aim fires continuously, and a quick tap fires at the nearest building
   for a moment.
-- **Medic playing solo:** the Medic heals teammates in a cone and herself a little, so a solo
-  Medic isn't helpless.
+- **The Medic's bottles (Decided 2026-11-01):** she locks onto crewmates, not buildings: drag to
+  pick one, or tap for whoever's worst hurt. A bottle heals everyone where it lands, herself too.
 - **Enemy bases are crew bases (Decided 2026-10-30):** an enemy base is generated by the crew
   island's own rules: buildings on 2 m tiles, as many of each as its headquarters level allows,
   upgraded within the same level caps. Outpost is HQ 1, Fort HQ 6, Stronghold HQ 12. Each level
@@ -603,8 +649,15 @@ Choices made while building the draft. All are **Proposed**:
   last result, with Raid now to trigger one and Watch replay.
   - **Proposed:** raiders are 1 + HQ/3 heroes at 0.3 + 0.055 × HQ strength; there's no penalty
     for losing yet; each phone runs its own raid, not the crew server.
+- **Defense reach (raised 2026-11-01, owner's request):** gun turret 21 m, harpoon 25 m, mortar 34 m
+  with a 5.5 m blast, flamethrower 9.5 m. Most heroes are now outranged.
+- **Base layout (Decided 2026-11-01, owner's request):** the headquarters stands in the middle with
+  defenses in rings all round it, so every way in is under fire. Mills and storages lie outside.
+- **Loot (Decided 2026-11-01, owner's request):** breaking a mill or a storage pays out that
+  material, on top of a raid's gold. **Proposed:** a storage pays 2.5 times a mill, and both rise
+  30% a level.
 - **Defense strength (raised 2026-10-30, owner's request, for more strategy):** gun turret 50
   damage every 0.42 s, mortar 220 every 3.6 s, harpoon 230 every 2.6 s, flamethrower 28 every 0.13
   s. That's about 65% more damage per second than the first draft.
 - **Balance check:** a unit test makes sure a bot rifleman can usually beat a level-1 island solo
-  (in tuning it won 4 of 8, and with a squad 8 of 8). Nothing else is balanced yet.
+  (in tuning it won 4 of 8). Nothing else is balanced yet.

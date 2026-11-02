@@ -83,7 +83,7 @@ export const PERKS: Record<HeroKind, readonly Perk[]> = {
     },
   ],
   medic: [
-    { level: 3, name: "Bigger tank", text: "2 m more spray range.", mods: { range: 2 } },
+    { level: 3, name: "Good arm", text: "3 m more throwing range.", mods: { range: 3 } },
     {
       level: 5,
       name: "Guardian angel",
@@ -94,7 +94,7 @@ export const PERKS: Record<HeroKind, readonly Perk[]> = {
     {
       level: 10,
       name: "Miracle worker",
-      text: "Guardian angel works twice a raid, and sprays 25% faster.",
+      text: "Guardian angel works twice a raid, and throws 25% faster.",
       mods: { signature: 1, reload: 0.75 },
     },
   ],
@@ -231,8 +231,8 @@ export function damagePerSecond(attack: HeroAttack): number {
     case "shell":
     case "lob":
       return attack.damage / attack.reload;
-    case "spray":
-      return attack.damage / attack.reload;
+    case "heal":
+      return attack.heal / attack.reload;
   }
 }
 

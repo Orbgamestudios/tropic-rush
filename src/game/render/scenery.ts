@@ -24,8 +24,6 @@ export interface SceneryMap {
   room(x: number, y: number): number;
   /** 0 on sand, 1 on grass. */
   grass(x: number, y: number): number;
-  /** 1 on the packed dirt under and around a building, 0 away from it. */
-  pad(x: number, y: number): number;
 }
 
 function segmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
@@ -61,7 +59,6 @@ export function homeScenery(hq: Vec2): SceneryMap {
     jungle: () => 0,
     room: () => Infinity,
     grass: grassAmount,
-    pad: () => 0,
   };
 }
 
@@ -103,15 +100,5 @@ export function sceneryMap(layout: IslandLayout): SceneryMap {
     return outside * offTrail * offLanding * grass(x, y);
   };
 
-  const pads = layout.buildings.map((b) => ({ pos: b.pos, radius: BUILDINGS[b.type].radius }));
-  const pad = (x: number, y: number) => {
-    let most = 0;
-    for (const b of pads) {
-      const d = Math.hypot(x - b.pos.x, y - b.pos.y) + Math.sin(x * 1.3 + y * 0.9) * 0.4;
-      most = Math.max(most, smoothstep(b.radius + 2.4, b.radius + 0.9, d));
-    }
-    return most;
-  };
-
-  return { trail, jungle, room, grass, pad };
+  return { trail, jungle, room, grass };
 }
