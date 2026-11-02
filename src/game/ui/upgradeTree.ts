@@ -2,7 +2,7 @@
 // by lines of small checkpoints, which light up gold as they're bought, the chosen one on a cream
 // spec card at the right, and the wallet in the corner. Bought with personal gold and crystals.
 
-import { CRYSTAL_KINDS, payCrystals } from "../logic/crystals";
+import { CRYSTAL_KINDS } from "../logic/crystals";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES } from "../logic/heroProgress";
 import {
@@ -32,7 +32,10 @@ import { LevelUpReveal } from "./levelUp";
 
 export interface UpgradeTreeHost {
   save(): SaveData;
-  update(changes: Partial<SaveData>): void;
+  /** The island's gold, which pays for upgrades. */
+  gold(): number;
+  /** False if the crew's island turned it down. */
+  buy(kind: HeroKind, upgrade: TreeUpgrade): boolean;
   onBack(): void;
 }
 
@@ -194,7 +197,7 @@ export class UpgradeTree {
     const save = this.host.save();
     const kind = this.hero;
     const owned = save.upgrades[kind];
-    this.gold.set(save.gold);
+    this.gold.set(this.host.gold());
     this.wallet.set(save.crystals);
     for (const u of heroTree(kind)) {
       const node = this.nodes.get(u.id);
@@ -202,7 +205,7 @@ export class UpgradeTree {
       const has = owned.includes(u.id);
       node.classList.toggle("owned", has);
       node.classList.toggle("open", !has && lockedBy(kind, u, owned) === null);
-      node.classList.toggle("ready", canBuy(kind, u, owned, save.gold, save.crystals));
+      node.classList.toggle("ready", canBuy(kind, u, owned, this.host.gold(), save.crystals));
       node.classList.toggle("selected", u === this.selected);
       const shut = !u.line && !has && lockedBy(kind, u, owned) !== null;
       const lock = node.querySelector(".tree-node-lock");
@@ -237,7 +240,7 @@ export class UpgradeTree {
         : (u.path ?? "First upgrade");
     this.specText.textContent = u.text;
     const coin = el("span", "tree-coin");
-    coin.classList.toggle("short", save.gold < u.gold);
+    coin.classList.toggle("short", this.host.gold() < u.gold);
     coin.append(icon("coin", "tree-coin-icon"), el("span", "", formatNumber(u.gold)));
     this.specCost.replaceChildren(
       coin,
@@ -253,11 +256,11 @@ export class UpgradeTree {
       ? "Owned"
       : blocked
         ? "First buy what comes before it"
-        : canBuy(kind, u, owned, save.gold, save.crystals)
+        : canBuy(kind, u, owned, this.host.gold(), save.crystals)
           ? ""
           : "Win more raids for gold and crystals";
     this.buy.style.display = has ? "none" : "";
-    this.buy.disabled = !canBuy(kind, u, owned, save.gold, save.crystals);
+    this.buy.disabled = !canBuy(kind, u, owned, this.host.gold(), save.crystals);
     setLabel(this.buy, "Upgrade");
   }
 
@@ -267,15 +270,14 @@ export class UpgradeTree {
     const save = this.host.save();
     const kind = this.hero;
     const owned = save.upgrades[kind];
-    if (!canBuy(kind, u, owned, save.gold, save.crystals)) {
+    if (!canBuy(kind, u, owned, this.host.gold(), save.crystals)) {
       sfx.error();
       return;
     }
-    this.host.update({
-      gold: save.gold - u.gold,
-      crystals: payCrystals(save.crystals, u.crystals),
-      upgrades: { ...save.upgrades, [kind]: [...owned, u.id] },
-    });
+    if (!this.host.buy(kind, u)) {
+      sfx.error();
+      return;
+    }
     const node = this.nodes.get(u.id);
     if (u.line) {
       sfx.coin();

@@ -14,12 +14,12 @@ import { passwordProblem, usernameProblem } from "./logic/account";
 import { BUILDINGS, type BuildingType } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
 import { hqLevel, type LayoutOp } from "./logic/crewIsland";
-import { addCrystals, type CrystalKind } from "./logic/crystals";
+import { addCrystals, type CrystalKind, payCrystals } from "./logic/crystals";
 import { allowedCount, emptyPurse, type Purse, RESOURCES } from "./logic/economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
-import type { HeroKind } from "./logic/heroes";
+import { HERO_KINDS, type HeroKind } from "./logic/heroes";
 import { raidReward } from "./logic/heroProgress";
-import { heroMods } from "./logic/heroTrees";
+import { heroMods, noUpgrades, readOwned, type TreeUpgrade } from "./logic/heroTrees";
 import { BASE_CENTER, HOME_SHAPE } from "./logic/island";
 import { archetypeFor } from "./logic/islandShapes";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
@@ -52,9 +52,11 @@ import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
 import { fetchRivals, reportRaid } from "./net/world";
 import { CameraRig } from "./render/cameraRig";
+import { AT_EASE, type HeroMove } from "./render/heroAnimator";
 import { updateWind } from "./render/props";
 import { RaidView } from "./render/raidView";
 import { RangeRings } from "./render/rangeRings";
+import { loadRigs } from "./render/riggedHeroes";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
 import { heroPortrait } from "./render/thumbnails";
@@ -63,6 +65,7 @@ import {
   type AccountSession,
   clearPhone,
   loadAccount,
+  loadOtherAccounts,
   loadPlace,
   loadSave,
   resetGame,
@@ -71,6 +74,7 @@ import {
   type Settings,
   saveBundle,
   writeAccount,
+  writeOtherAccounts,
   writePlace,
   writeSave,
 } from "./save";
@@ -143,6 +147,9 @@ const FRAME_SLACK_MS = 2;
 /** How long after the last touch a screen counts as sitting still. */
 const CALM_AFTER_MS = 1500;
 
+/** Set while a phone restarts to add an account, so it opens on the sign-in screen. */
+const OPEN_PROFILE_KEY = "tropic-rush:open-profile";
+
 /** The HUD updates once in this many frames. */
 const HUD_EVERY = 3;
 
@@ -205,6 +212,8 @@ export class Game {
   private syncedBundle = saveBundle();
   private syncIn = SYNC_SECONDS;
   private syncing = false;
+  /** What the crew's server last said its heroes have, while there's a crew. */
+  private crewUpgrades: Record<HeroKind, string[]> | null = null;
   /** This phone's game is being swapped for another. */
   private leaving = false;
   /** When the screen was last touched. */
@@ -257,6 +266,7 @@ export class Game {
     this.showcase = new Showcase(this.stage);
     this.heroes = new HeroSelect(screens, this.showcase, {
       save: () => this.save,
+      gold: () => this.crew.gold(),
       update: (changes) => this.updateSave(changes),
       onBack: () => this.go(() => this.goHome()),
       onStart: (hero) => this.go(() => this.showMap(hero)),
@@ -264,7 +274,8 @@ export class Game {
     });
     this.tree = new UpgradeTree(screens, {
       save: () => this.save,
-      update: (changes) => this.updateSave(changes),
+      gold: () => this.crew.gold(),
+      buy: (kind, upgrade) => this.buyUpgrade(kind, upgrade),
       onBack: () => this.go(() => this.showHeroes(this.treeHero)),
     });
     this.results = new ResultsScreen(screens, {
@@ -350,6 +361,9 @@ export class Game {
       onSignUp: (username, password) => this.createAccount(username, password),
       onLogIn: (username, password) => this.signIn(username, password),
       onLogOut: () => this.signOut(),
+      otherAccounts: () => loadOtherAccounts().map((s) => s.username),
+      onSwitch: (username) => this.switchAccount(username),
+      onAddAccount: () => this.addAccount(),
       onShare: () => this.crew.shareCode(),
       onCrew: () => {
         this.profile.show(false);
@@ -382,6 +396,7 @@ export class Game {
             this.showMap(unlocked.includes(hero) ? hero : "rifleman");
           }),
         onHero: (kind) => this.go(() => this.showHeroes(kind)),
+        sendOp: (op) => this.link?.sendOp(op),
         onReplay: (raid) => this.go(() => this.startReplay(raid)),
       },
     );
@@ -397,6 +412,10 @@ export class Game {
     window.addEventListener("pointerdown", startAudio);
     this.syncLink();
     void this.pullAccount();
+    if (sessionStorage.getItem(OPEN_PROFILE_KEY)) {
+      sessionStorage.removeItem(OPEN_PROFILE_KEY);
+      this.profile.show(true);
+    }
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) void this.pushAccount();
     });
@@ -407,6 +426,7 @@ export class Game {
     if (loadPlace() === undefined && !params.has("testhooks")) this.offerSkyCard();
     if (params.has("testhooks")) this.installTestHooks();
     this.stage.holdQuality = params.has("fullquality");
+    void loadRigs();
     for (const type of ["pointerdown", "pointermove", "wheel"]) {
       window.addEventListener(type, () => (this.touched = performance.now()), {
         capture: true,
@@ -481,14 +501,20 @@ export class Game {
       /** Points the home island's camera at a spot. */
       crewLook: (x: number, y: number, distance: number) => this.crew.lookForTest(x, y, distance),
       /** Scouts any island there is, for looking at how it comes out. */
-      visit: (seed: number, hq: number) => {
+      visit: (seed: number, hq: number, standIn = false) => {
         const hero = this.save.hero;
         this.mapHero = hero;
-        const [any] = worldIslands(this.save.world, hq).filter((i) => !i.rival);
+        const [any] = worldIslands(this.save.world, hq).filter((i) => !i.rival === !standIn);
         if (!any) return;
-        const rated = { ...any, seed, hq, archetype: archetypeFor(seed, hq) };
+        const rival = any.rival && { ...any.rival, hq };
+        const rated = { ...any, seed, hq, rival, archetype: archetypeFor(seed, hq) };
         if (this.crew.active) this.crew.exit();
         this.startScout(rated);
+      },
+      /** Has the hero on the pedestal run, aim or fall, for looking at how they move. */
+      heroPose: (move: Partial<HeroMove>, closeUp = true) => {
+        this.showcase.move = { ...AT_EASE, ...move };
+        this.showcase.closeUp = closeUp;
       },
       /** Wins the raid at once, for looking at what a win gives. */
       win: () => {
@@ -597,6 +623,7 @@ export class Game {
     const result = await logIn(username, password);
     if (!result.ok) return result.error;
     this.setAccount({ token: result.token, username: result.username, syncedAt: result.savedAt });
+    writeOtherAccounts(loadOtherAccounts().filter((s) => s.username !== result.username));
     // The account's progress takes over this phone, so start again from it.
     this.stopWriting();
     if (!result.save || !restoreBundle(result.save)) clearPhone(this.save.settings);
@@ -630,19 +657,62 @@ export class Game {
     location.reload();
   }
 
-  /**
-   * Stores the game on the account, then clears it off this phone, so whoever plays here next
-   * starts fresh. Without a connection it stays signed in: clearing now would lose progress.
-   */
-  private async signOut(): Promise<string | null> {
+  /** Puts the game away on its account before it leaves this phone. Without a connection it can't. */
+  private async storeGame(): Promise<string | null> {
     const { account } = this;
     if (!account) return null;
     const result = await pushSave(account.token, saveBundle());
-    if (!result.ok) return "Can't save your game right now. Try again when you're online.";
+    return result.ok ? null : "Can't save your game right now. Try again when you're online.";
+  }
+
+  /** Clears the game off this phone, so whoever plays here next starts fresh. */
+  private async signOut(): Promise<string | null> {
+    const { account } = this;
+    if (!account) return null;
+    const problem = await this.storeGame();
+    if (problem) return problem;
     void logOut(account.token);
     this.setAccount(null);
     this.stopWriting();
     clearPhone(this.save.settings);
+    location.reload();
+    return null;
+  }
+
+  /** Sets this account aside, still signed in, and leaves the phone ready for another. */
+  private async addAccount(): Promise<string | null> {
+    const { account } = this;
+    if (!account) return null;
+    const problem = await this.storeGame();
+    if (problem) return problem;
+    writeOtherAccounts([...loadOtherAccounts(), account]);
+    this.setAccount(null);
+    this.stopWriting();
+    clearPhone(this.save.settings);
+    sessionStorage.setItem(OPEN_PROFILE_KEY, "1");
+    location.reload();
+    return null;
+  }
+
+  /** Stores this account's game and takes up another's, with no password. */
+  private async switchAccount(username: string): Promise<string | null> {
+    const others = loadOtherAccounts();
+    const target = others.find((s) => s.username === username);
+    if (!target) return null;
+    const rest = others.filter((s) => s !== target);
+    const problem = await this.storeGame();
+    if (problem) return problem;
+    const result = await pullSave(target.token);
+    if (!result.ok) {
+      if (result.offline) return "Can't reach the server right now.";
+      writeOtherAccounts(rest);
+      return `Log in to ${username} again: it's been a while.`;
+    }
+    const { account } = this;
+    writeOtherAccounts(account ? [...rest, account] : rest);
+    this.setAccount({ ...target, syncedAt: result.savedAt });
+    this.stopWriting();
+    if (!result.save || !restoreBundle(result.save)) clearPhone(this.save.settings);
     location.reload();
     return null;
   }
@@ -688,13 +758,47 @@ export class Game {
     this.crewMembers = [];
     if (!wanted) return;
     this.link = new CrewClient(crewCode, memberId, nickname, avatar, {
-      onState: (_layout, members) => {
+      onState: (layout, members, _holds, _by, serverNow) => {
         this.crewMembers = members;
+        this.crewUpgrades = layout.upgrades;
+        this.crew.heard(layout, serverNow);
+        this.shareUpgrades();
       },
       onReject: () => {},
       onStatus: () => {},
       onRelay: (from, data) => this.onRelay(from, data),
     });
+  }
+
+  /**
+   * A crew's heroes are everyone's: this phone takes on what the others have bought, and the crew
+   * gets anything it's bought itself, or brought along from before joining.
+   */
+  private shareUpgrades(): void {
+    const crew = this.crewUpgrades;
+    if (!crew) return;
+    const { upgrades } = this.save;
+    const shared = noUpgrades();
+    for (const kind of HERO_KINDS) {
+      shared[kind] = readOwned(kind, [...crew[kind], ...upgrades[kind]]);
+      for (const id of shared[kind]) {
+        if (!crew[kind].includes(id)) this.link?.sendOp({ kind: "heroUpgrade", hero: kind, id });
+      }
+    }
+    if (HERO_KINDS.some((k) => shared[k].length !== upgrades[k].length)) {
+      this.updateSave({ upgrades: shared });
+    }
+  }
+
+  /** The island pays, for the crew's hero; crystals come from whoever's buying. */
+  private buyUpgrade(kind: HeroKind, upgrade: TreeUpgrade): boolean {
+    if (!this.crew.payForUpgrade(kind, upgrade.id)) return false;
+    const { upgrades, crystals } = this.save;
+    this.updateSave({
+      crystals: payCrystals(crystals, upgrade.crystals),
+      upgrades: { ...upgrades, [kind]: [...upgrades[kind], upgrade.id] },
+    });
+    return true;
   }
 
   private crewOnline(): number {
@@ -1562,13 +1666,14 @@ export class Game {
     this.carried = carried;
     const spoils = won && target ? this.rollWin(target, state, luck) : null;
     this.spoils = spoils;
+    // Everything a raid pays goes to the island, the only gold there is.
+    loot.gold = (loot.gold ?? 0) + reward.gold + (spoils?.chest ?? 0);
     const prints = spoils?.blueprint ? [...this.save.blueprints, spoils.blueprint] : null;
     this.updateSave({
       world,
       loot,
       wins: this.save.wins + (won ? 1 : 0),
       bestDestruction: Math.max(this.save.bestDestruction, percent),
-      gold: this.save.gold + reward.gold + (spoils?.chest ?? 0),
       crystals: spoils ? addCrystals(this.save.crystals, spoils.crystals) : this.save.crystals,
       blueprints: prints ?? this.save.blueprints,
       blueprintDrought: won

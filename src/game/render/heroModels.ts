@@ -5,42 +5,67 @@
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
+import {
+  AT_EASE,
+  BOTTLE_POSES,
+  GRENADE_POSES,
+  HeroAnimator,
+  type HeroPoses,
+  MINIGUN_POSES,
+  POSED_SHOULDER,
+  RIFLE_POSES,
+  TUBE_POSES,
+  WRENCH_POSES,
+} from "./heroAnimator";
 import { COLORS as C, material } from "./palette";
-import { AT_EASE, RiflemanAnimator } from "./riflemanAnimator";
+import { riggedBody } from "./riggedHeroes";
 import { at, ball, barrel, capsule, cone, cyl, mesh, rbox } from "./shapes";
 
 type Pair = [THREE.Object3D, THREE.Object3D];
 
-/** One of the Rifleman's arms: the shoulder is fixed, the rest is laid out by inverse kinematics. */
-export interface RifleArm {
+/** One of a hero's arms: the shoulder is fixed, the rest is laid out by inverse kinematics. */
+export interface HeroArm {
   shoulder: THREE.Vector3;
   upper: THREE.Object3D;
   fore: THREE.Object3D;
   hand: THREE.Object3D;
   upperLength: number;
   foreLength: number;
-  /** Where the hand ends up when he's down. */
+  /** Where the hand ends up when they're down. */
   rest: THREE.Vector3;
+  /** On a skinned model the arm is bones, and these are the ways they lie at rest. */
+  bones: { upperRest: THREE.Vector3; foreRest: THREE.Vector3 } | null;
+  /** The bone that closes the hand round what it's holding, on a skinned model. */
+  fingers: THREE.Object3D | null;
+  /** From the wrist to the middle of the palm. */
+  palm: number;
+  /** 1 on the hero's right, -1 on their left. */
+  side: number;
 }
 
-/** The joints riflemanAnimator.ts moves. */
-export interface RifleRig {
-  outer: THREE.Group;
+/** The joints heroAnimator.ts moves. */
+export interface HeroRig {
+  outer: THREE.Object3D;
   /** Hips and legs, which turn towards the way he's going. */
-  lower: THREE.Group;
+  lower: THREE.Object3D;
   /** Chest, head and arms, which stay on his aim. */
-  upper: THREE.Group;
+  upper: THREE.Object3D;
   /** How high the waist is. */
   spine: number;
-  head: THREE.Group;
+  head: THREE.Object3D;
   legs: Pair;
   knees: Pair;
   feet: Pair;
   rifle: THREE.Group;
   /** The end of the barrel. */
   muzzle: THREE.Object3D;
-  right: RifleArm;
-  left: RifleArm;
+  right: HeroArm;
+  left: HeroArm;
+  poses: HeroPoses;
+  /** How much higher than the poses say this body's shoulders are. */
+  lift: number;
+  /** How much further out to hold things, for arms longer than the poses expect. */
+  stretch: number;
 }
 
 export interface HeroModel {
@@ -48,8 +73,8 @@ export interface HeroModel {
   /** Bobs and leans while moving. */
   body: THREE.Group;
   legs: Pair | null;
-  /** Only the Rifleman has a full rig so far. */
-  rig: RifleRig | null;
+  /** Everyone on foot has a full rig; the Tank just rolls. */
+  rig: HeroRig | null;
   /** Height of the top of the model, for health bars. */
   height: number;
 }
@@ -224,17 +249,12 @@ interface Built {
   grip: THREE.Vector3;
   headRadius: number;
   look: Look;
-  /** Right, then left: only when the arms are left loose for animation. */
-  arms: RifleArm[];
+  /** Right, then left. */
+  arms: HeroArm[];
 }
 
 /** The shared body: boots, legs, belt, torso, neck, head with a face, arms reaching the grip. */
-function person(
-  kind: Human,
-  grip: THREE.Vector3,
-  faceOptions: Parameters<typeof face>[3],
-  loose = false,
-): Built {
+function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof face>[3]): Built {
   const look = LOOKS[kind];
   const k = look.bulk;
   const outer = new THREE.Group();
@@ -294,38 +314,32 @@ function person(
 
   // Arms from the shoulders to the hands on the weapon.
   const sleeve = look.bareArms ? look.skin : look.shirt;
-  const arms: RifleArm[] = [];
+  const arms: HeroArm[] = [];
   for (const side of [1, -1]) {
     const shoulder = v(0, hip + 0.64, side * 0.36 * k);
-    const hand = v(grip.x + (side > 0 ? 0.12 : -0.12), grip.y, grip.z + side * 0.08);
-    const elbow = v(0.06, hip + 0.32, side * 0.4 * k);
     body.add(at(ball(0.13 * Math.sqrt(k), look.shirt, 12), shoulder.x, shoulder.y, shoulder.z));
-    if (loose) {
-      // Upright capsules the animator lays along each arm bone, and a hand it moves.
-      const upperLength = 0.34;
-      const foreLength = 0.36;
-      const upperArm = capsule(0.09 * Math.sqrt(k), upperLength, sleeve);
-      const fore = capsule(0.085 * Math.sqrt(k), foreLength, sleeve);
-      fore.add(at(capsule(0.1, 0.05, look.shirt), 0, -foreLength * 0.26, 0));
-      const palm = ball(0.1, 0x4a3a2c, 10);
-      body.add(upperArm, fore, palm);
-      const rest = v(0.02, hip - 0.02, side * 0.46 * k);
-      arms.push({ shoulder, upper: upperArm, fore, hand: palm, upperLength, foreLength, rest });
-      continue;
-    }
-    body.add(limb(shoulder, elbow, 0.09 * Math.sqrt(k), sleeve));
-    body.add(limb(elbow, hand, 0.085 * Math.sqrt(k), look.bareArms ? look.skin : sleeve));
-    if (!look.bareArms) {
-      // A rolled cuff at the wrist.
-      const cuff = limb(
-        hand.clone().lerp(elbow, 0.32),
-        hand.clone().lerp(elbow, 0.2),
-        0.1,
-        look.shirt,
-      );
-      body.add(cuff);
-    }
-    body.add(at(ball(0.1, 0x4a3a2c, 10), hand.x, hand.y, hand.z));
+    // Upright capsules the animator lays along each arm bone, and a hand it moves.
+    const upperLength = 0.34;
+    const foreLength = 0.36;
+    const upperArm = capsule(0.09 * Math.sqrt(k), upperLength, sleeve);
+    const fore = capsule(0.085 * Math.sqrt(k), foreLength, sleeve);
+    if (!look.bareArms) fore.add(at(capsule(0.1, 0.05, look.shirt), 0, -foreLength * 0.26, 0));
+    const palm = ball(0.1, 0x4a3a2c, 10);
+    body.add(upperArm, fore, palm);
+    const rest = v(0.02, hip - 0.02, side * 0.46 * k);
+    arms.push({
+      shoulder,
+      upper: upperArm,
+      fore,
+      hand: palm,
+      upperLength,
+      foreLength,
+      rest,
+      bones: null,
+      fingers: null,
+      palm: 0,
+      side,
+    });
   }
   const knees: Pair = [right.knee, left.knee];
   const feet: Pair = [right.foot, left.foot];
@@ -459,10 +473,9 @@ function grenade(color = 0x6d7a45): THREE.Group {
 
 function human(kind: Human): HeroModel {
   let built: Built;
-  let gun: THREE.Group | null = null;
   switch (kind) {
     case "rifleman": {
-      built = person(kind, v(0.42, 1.0, 0.02), { brows: "stern", mouth: "line" }, true);
+      built = person(kind, v(0.42, 1.0, 0.02), { brows: "stern", mouth: "line" });
       const { head, headRadius: r, body } = built;
       head.add(at(helmet(r, C.crewBlue, C.crewBlueDark), 0, 0, 0));
       // A grey moustache and stubbly chin.
@@ -470,8 +483,6 @@ function human(kind: Human): HeroModel {
       head.add(at(tache, r * 0.98, -r * 0.24, 0, Math.PI / 2, 0, 0));
       bandolier(built, 0x5a4030, C.gold);
       backpack(built, 0x58704a, 0x8a7a5a);
-      gun = rifle();
-      body.add(gun);
       // Dog tags.
       body.add(at(rbox(0.02, 0.07, 0.05, 0xd8dde3), 0.24, 1.3, 0.05));
       break;
@@ -507,7 +518,6 @@ function human(kind: Human): HeroModel {
       pack.add(at(rbox(0.02, 0.06, 0.18, 0xe5503a), -0.14, 0.02, 0));
       pack.add(at(cyl(0.1, 0.1, 0.5, 0x7dc98a, 12), -0.02, 0.05, 0.22));
       body.add(limb(v(-0.3, 1.0, 0.25), v(0.3, 0.95, 0.1), 0.025, 0x3a3e44));
-      body.add(at(healingBottle(), built.grip.x, built.grip.y, built.grip.z));
       break;
     }
     case "heavy": {
@@ -528,12 +538,11 @@ function human(kind: Human): HeroModel {
       const pack = backpack(built, 0x3a3e44, null);
       pack.add(at(cyl(0.24, 0.24, 0.3, 0x55595f, 16), -0.05, -0.1, 0, Math.PI / 2, 0, 0));
       body.add(limb(v(-0.3, 0.95, -0.2), v(0.3, 0.86, -0.12), 0.04, C.gold));
-      body.add(at(minigun(), built.grip.x, built.grip.y, built.grip.z));
       break;
     }
     case "bazooka": {
       built = person(kind, v(0.2, 1.42, 0.24), { brows: "stern", mouth: "smile", brow: 0x1b1b1b });
-      const { head, headRadius: r, body } = built;
+      const { head, headRadius: r } = built;
       // Backwards cap over dark hair, and aviator shades.
       const hair = ball(r * 1.04, C.hairBlack, 16);
       hair.scale.set(1, 0.9, 1.04);
@@ -549,8 +558,6 @@ function human(kind: Human): HeroModel {
         head.add(at(lens, r * 0.98, r * 0.1, z));
       }
       head.add(at(rbox(0.02, 0.02, 0.1, 0xc9a040), r * 1.01, r * 0.14, 0));
-      // The tube rides on his right shoulder, aimed forward.
-      body.add(at(bazookaTube(), 0.0, 1.5, 0.3));
       const pack = backpack(built, 0x6f7a4a, null);
       for (const z of [0.12, -0.12]) pack.add(at(cone(0.08, 0.3, 0xe5503a, 10), -0.02, 0.36, z));
       break;
@@ -576,9 +583,8 @@ function human(kind: Human): HeroModel {
       // A monocle.
       const mono = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.012, 6, 16), material(C.gold));
       head.add(at(mono, r * 1.0, r * 0.08, r * 0.36, 0, Math.PI / 2, 0));
-      // Grenades on the belt and one in hand.
+      // Grenades on the belt.
       for (const z of [-0.26, -0.1, 0.1, 0.26]) body.add(at(grenade(), 0.28, 0.86, z));
-      body.add(at(grenade(), built.grip.x + 0.1, built.grip.y + 0.06, built.grip.z - 0.1));
       backpack(built, 0x7a6a48, 0xb59f6a);
       break;
     }
@@ -601,42 +607,118 @@ function human(kind: Human): HeroModel {
       beard.scale.set(0.65, 0.7, 1.05);
       head.add(at(beard, r * 0.5, -r * 0.5, 0));
       head.add(at(rbox(r * 0.08, r * 0.08, r * 0.36, WHITE), r * 0.98, -r * 0.3, 0));
-      // Overall straps, a toolbox backpack with an antenna, and a wrench.
+      // Overall straps, and a toolbox backpack with an antenna.
       for (const z of [0.18, -0.18]) body.add(at(rbox(0.04, 0.5, 0.08, C.denim), 0.24, 1.2, z));
       const pack = backpack(built, 0x587a99, null);
       pack.add(at(rbox(0.3, 0.2, 0.5, 0xe5503a), -0.02, 0.32, 0));
       pack.add(at(cyl(0.012, 0.012, 0.8, 0x3a3e44, 5), 0, 0.7, 0.18));
       pack.add(at(ball(0.04, 0xe5503a, 8), 0, 1.1, 0.18));
-      body.add(at(wrench(), built.grip.x, built.grip.y, built.grip.z, 0, 0, 0.5));
       break;
     }
   }
   const root = new THREE.Group();
   root.add(built.outer);
   const [right, left] = built.arms;
-  const rig: RifleRig | null =
-    gun && right && left
-      ? {
-          outer: built.outer,
-          lower: built.lower,
-          upper: built.upper,
-          spine: built.spine,
-          head: built.head,
-          legs: built.legs,
-          knees: built.knees,
-          feet: built.feet,
-          rifle: gun,
-          muzzle: at(new THREE.Object3D(), 0.86, 0.04, 0),
-          right,
-          left,
-        }
-      : null;
-  if (rig) {
-    gun?.add(rig.muzzle);
-    // Stand him at ease, for anything that never animates him (portraits, say).
-    new RiflemanAnimator(rig).update(0, AT_EASE);
-  }
+  if (!right || !left) throw new Error("A hero needs two arms");
+  const { gun, poses, muzzle } = WEAPONS[kind]();
+  built.body.add(gun);
+  const rig: HeroRig = {
+    outer: built.outer,
+    lower: built.lower,
+    upper: built.upper,
+    spine: built.spine,
+    head: built.head,
+    legs: built.legs,
+    knees: built.knees,
+    feet: built.feet,
+    rifle: gun,
+    muzzle: at(new THREE.Object3D(), muzzle, 0.04, 0),
+    right,
+    left,
+    poses,
+    lift: 0,
+    stretch: 1,
+  };
+  gun.add(rig.muzzle);
+  // Stand them at ease, for anything that never animates them (portraits, say).
+  new HeroAnimator(rig).update(0, AT_EASE);
   return { root, body: built.outer, legs: built.legs, rig, height: 2.35 };
+}
+
+/** What each hero carries, how they carry it, and how far along it the shots start. */
+const WEAPONS: Record<Human, () => { gun: THREE.Group; poses: HeroPoses; muzzle: number }> = {
+  rifleman: () => ({ gun: rifle(), poses: RIFLE_POSES, muzzle: 0.86 }),
+  medic: () => ({ gun: healingBottle(), poses: BOTTLE_POSES, muzzle: 0.5 }),
+  heavy: () => ({ gun: minigun(), poses: MINIGUN_POSES, muzzle: 1.05 }),
+  bazooka: () => ({ gun: bazookaTube(), poses: TUBE_POSES, muzzle: 1.1 }),
+  grenadier: () => ({ gun: grenade(), poses: GRENADE_POSES, muzzle: 0.1 }),
+  engineer: () => ({ gun: wrench(), poses: WRENCH_POSES, muzzle: 0.5 }),
+};
+
+/** How long the poses expect a hero's arms to be. */
+const POSED_ARM = 0.7;
+/** The models' hands are big enough to look wrong holding anything. */
+const HAND_SIZE = 0.78;
+
+/** A TRELLIS model with a skeleton in place of the block figure, moved by the same animator. */
+function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
+  const model = riggedBody(kind, detailed);
+  if (!model) return null;
+  const { scene, bone } = model;
+  const upper = bone("upper");
+  const spine = upper.position.y;
+  const body = at(new THREE.Group(), 0, -spine, 0);
+  upper.add(body);
+  const { gun, poses, muzzle } = WEAPONS[kind]();
+  body.add(gun);
+  const arm = (suffix: "R" | "L", side: number): HeroArm => {
+    const shoulderBone = bone(`arm${suffix}`);
+    const foreBone = bone(`fore${suffix}`);
+    const handBone = bone(`hand${suffix}`);
+    handBone.scale.setScalar(HAND_SIZE);
+    const shoulder = shoulderBone.position.clone();
+    shoulder.y += spine;
+    return {
+      shoulder,
+      upper: shoulderBone,
+      fore: foreBone,
+      hand: handBone,
+      upperLength: foreBone.position.length(),
+      foreLength: handBone.position.length(),
+      rest: v(0.02, bone(`leg${suffix}`).position.y - 0.02, side * 0.46),
+      fingers: bone(`tips${suffix}`),
+      palm: bone(`tips${suffix}`).position.length() * HAND_SIZE,
+      side,
+      bones: {
+        upperRest: foreBone.position.clone().normalize(),
+        foreRest: handBone.position.clone().normalize(),
+      },
+    };
+  };
+  const right = arm("R", 1);
+  const left = arm("L", -1);
+  const rig: HeroRig = {
+    outer: bone("root"),
+    lower: bone("lower"),
+    upper,
+    spine,
+    head: bone("head"),
+    legs: [bone("legR"), bone("legL")],
+    knees: [bone("kneeR"), bone("kneeL")],
+    feet: [bone("footR"), bone("footL")],
+    rifle: gun,
+    muzzle: at(new THREE.Object3D(), muzzle, 0.04, 0),
+    right,
+    left,
+    poses,
+    lift: right.shoulder.y - POSED_SHOULDER,
+    stretch: (right.upperLength + right.foreLength) / POSED_ARM,
+  };
+  gun.add(rig.muzzle);
+  new HeroAnimator(rig).update(0, AT_EASE);
+  const root = new THREE.Group();
+  root.add(scene);
+  return { root, body: root, legs: null, rig, height: 2.45 };
 }
 
 function tank(): HeroModel {
@@ -694,6 +776,7 @@ function tank(): HeroModel {
   return { root, body, legs: null, rig: null, height: 2.9 };
 }
 
-export function heroModel(kind: HeroKind): HeroModel {
-  return kind === "tank" ? tank() : human(kind);
+export function heroModel(kind: HeroKind, detailed = false): HeroModel {
+  if (kind === "tank") return tank();
+  return skinnedHero(kind, detailed) ?? human(kind);
 }

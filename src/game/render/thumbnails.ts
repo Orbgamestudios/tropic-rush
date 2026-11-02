@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
 import type { HeroKind } from "../logic/heroes";
-import { menuHeroModel, visibleBox } from "./heroAssets";
+import { menuHero, visibleBox } from "./heroAssets";
 import { buildingModel } from "./models";
 
 const SIZE = 256;
@@ -56,7 +56,7 @@ const icons = new Map<BuildingType, string>();
 export function heroPortrait(kind: HeroKind): Promise<string> {
   let pending = portraits.get(kind);
   if (!pending) {
-    pending = menuHeroModel(kind).then((model) => {
+    pending = menuHero(kind).then(({ holder: model }) => {
       // Turn to a three-quarter view, facing the camera.
       model.rotation.y = -Math.PI / 2 + 0.45;
       const box = visibleBox(model);

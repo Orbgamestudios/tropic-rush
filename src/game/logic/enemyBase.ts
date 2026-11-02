@@ -10,6 +10,7 @@ import {
   footprint,
   GRID_ORIGIN,
   gridTiles,
+  HOME_START,
   onHomeCliff,
   TILE,
   type PlacedBuilding as TileBuilding,
@@ -26,7 +27,7 @@ import {
 } from "./island";
 import { islandShape } from "./islandShapes";
 import { between, createRng } from "./rng";
-import { add, distance, fromAngle, type Vec2, vec } from "./vec";
+import { add, distance, fromAngle, lerp, type Vec2, vec } from "./vec";
 
 /** Defenses first so they get the ground round the headquarters, then everything else. */
 const BUILD_ORDER: readonly BuildingType[] = [
@@ -75,6 +76,19 @@ export interface BaseOptions {
   maxed?: boolean;
 }
 
+/** The headquarters level a base on the crew's island has grown all the way inland by. */
+const FULLY_INLAND_HQ = 16;
+
+/**
+ * A base on the crew's island grows the way a crew's does: it starts in the same first clearing
+ * near the beach, and works further in as the forest comes down.
+ */
+function homeBaseAnchor(hq: number, beach: number): Vec2 {
+  const grown = Math.min(1, (hq - 1) / (FULLY_INLAND_HQ - 1));
+  const inland = add(BASE_CENTER, fromAngle(beach + Math.PI, 6));
+  return vec(lerp(HOME_START.x, inland.x, grown), lerp(HOME_START.y, inland.y, grown));
+}
+
 /** Every defense in the base, so they can share out the ground round the headquarters evenly. */
 function defensesOf(hq: number): number {
   return BUILD_ORDER.filter((t) => BUILDINGS[t].attack).reduce(
@@ -120,8 +134,8 @@ export function enemyBase(
   const rated = Math.min(hq, MAX_HQ_LEVEL);
   const extra = hq - rated;
   const tiles = shapeTiles(shape);
-  const anchor =
-    shape === HOME_SHAPE ? add(BASE_CENTER, fromAngle(beach + Math.PI, 6)) : shape.base;
+  const home = shape === HOME_SHAPE;
+  const anchor = home ? homeBaseAnchor(rated, beach) : shape.base;
   const center = add(anchor, vec(between(rng, -3, 3), between(rng, -3, 3)));
   const buildings: TileBuilding[] = [];
   const clearance = (c: TileBuilding, gap: number) => {
@@ -142,7 +156,7 @@ export function enemyBase(
   // Defenses go round the circle in turn, each a share of the way on from the last.
   const defenses = defensesOf(rated);
   const step = Math.PI * 2 * 0.382;
-  const tight = Math.min(1, 0.68 + rated * 0.022);
+  const tight = Math.min(1, home ? 0.5 + rated * 0.03 : 0.68 + rated * 0.022);
   let turn = rng() * Math.PI * 2;
   for (const type of BUILD_ORDER) {
     const cap = type === "headquarters" ? rated : levelCap(type, rated);
@@ -249,13 +263,16 @@ export function generateIsland(seed: number, hq: number, options?: BaseOptions):
   return { ...island, mines: [...buried, ...minesOf(base)] };
 }
 
-/** A rival crew's own base, on the island every crew's home is built on. */
+/**
+ * A rival crew's own base, on the island every crew's home is built on. Like at home the forest
+ * stands everywhere until it's been cleared, so all that's open is the ground round the base.
+ */
 export function rivalIsland(seed: number, buildings: readonly TileBuilding[]): IslandLayout {
   const standing = buildings
     .filter((b) => b.level > 0 && b.type !== "landmine")
     .map(toRaidBuilding);
   const hq = buildings.find((b) => b.type === "headquarters")?.level ?? 1;
-  const island = dressIsland(seed, 1 + Math.floor(hq / 5), standing, HOME_SHAPE, forestCover(hq));
+  const island = dressIsland(seed, 1 + Math.floor(hq / 5), standing, HOME_SHAPE, 1);
   return { ...island, mines: [...island.mines, ...minesOf(buildings)] };
 }
 

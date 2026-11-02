@@ -414,6 +414,14 @@ function lineBlocked(state: RaidState, from: Vec2, to: Vec2): boolean {
 // stepping sideways around cover that blocks its shots, the way a player would.
 function botInput(state: RaidState): HeroInput {
   const h = hero(state);
+  // Anything about to land nearby comes first, the way a player would run from it.
+  const shell = state.projectiles.find(
+    (p) => p.team === "enemy" && p.lob && distance(p.lob.to, h.pos) < 6.5,
+  );
+  if (shell?.lob) {
+    const close = distance(shell.lob.to, h.pos) < 0.2;
+    return input({ move: close ? vec(1, 0) : normalize(sub(h.pos, shell.lob.to)) });
+  }
   const alive = state.buildings.filter((b) => !b.destroyed);
   const defenses = alive.filter((b) => BUILDINGS[b.type].attack);
   const others = alive.filter((b) => !BUILDINGS[b.type].attack && b.type !== "headquarters");

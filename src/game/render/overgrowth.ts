@@ -230,7 +230,7 @@ export class OvergrowthView {
     const still = vertexColored();
     const add = (kind: Kind, shadow: boolean, material: THREE.Material, small = false) =>
       (small ? this.detail : this.plants).add(
-        chunked(g[kind], out[kind], shadow, material, homeHeight),
+        chunked(g[kind], out[kind], shadow, material, homeHeight, !shadow),
       );
     // Only the tall plants cast shadows: the rest would double their cost for little you can see.
     add("palm", true, sway);

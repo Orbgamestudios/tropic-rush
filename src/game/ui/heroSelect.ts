@@ -34,6 +34,8 @@ import { icon } from "./kit/icons";
 
 export interface HeroSelectHost {
   save(): SaveData;
+  /** The island's gold, shown the same everywhere. */
+  gold(): number;
   update(changes: Partial<SaveData>): void;
   onBack(): void;
   /** Raid with this hero: on to the world map. */
@@ -166,7 +168,7 @@ export class HeroSelect {
   /** Opens on a hero: the one tapped on the island, or the last one used. */
   show(kind?: HeroKind): void {
     const save = this.host.save();
-    this.gold.set(save.gold, false);
+    this.gold.set(this.host.gold(), false);
     this.root.style.display = "grid";
     this.showcase.show(true);
     this.choose(kind ?? (save.unlocked.includes(save.hero) ? save.hero : "rifleman"), true);
@@ -227,7 +229,7 @@ export class HeroSelect {
     setLabel(this.upgrades, unlocked ? "Upgrades" : "Locked");
     this.upgradeCount.textContent = unlocked ? treeProgress(owned) : `HQ ${HERO_UNLOCK_HQ[kind]}`;
     this.start.disabled = !unlocked;
-    this.gold.set(save.gold);
+    this.gold.set(this.host.gold());
     this.crystals.set(save.crystals);
   }
 

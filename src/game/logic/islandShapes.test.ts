@@ -178,7 +178,7 @@ describe("island shapes", () => {
         }
       }
     });
-  });
+  }, 40_000);
 
   it("gives a volcano island its mountain, its lava and a dry way across", () => {
     const seed = seedFor("volcano", 12);

@@ -10,6 +10,7 @@ import { HOME_CLIFFS } from "../logic/crewIsland";
 import { HOME_SHAPE, homeHeight, type IslandLayout, type IslandShape } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
 import type { Vec2 } from "../logic/vec";
+import { meadowTint } from "./meadow";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
 import { merge, painted, vertexColored } from "./shapes";
@@ -474,9 +475,11 @@ export function instanced(
   castShadow = true,
   material: THREE.Material = vertexColored(),
   ground: (x: number, y: number) => number = homeHeight,
+  blend = false,
 ): THREE.InstancedMesh {
   const meshes = new THREE.InstancedMesh(geometry, material, Math.max(1, items.length));
   meshes.count = items.length;
+  const tint = new THREE.Color();
   const matrix = new THREE.Matrix4();
   const quat = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
@@ -486,6 +489,7 @@ export function instanced(
     at.set(item.x, Math.max(-0.4, ground(item.x, item.y)) + (item.sink ?? 0), item.y);
     matrix.compose(at, quat, item.scale);
     meshes.setMatrixAt(i, matrix);
+    if (blend) meshes.setColorAt(i, meadowTint(item.x, item.y, tint));
   });
   meshes.instanceMatrix.needsUpdate = true;
   meshes.castShadow = castShadow;
@@ -498,13 +502,17 @@ const ISLAND_EXTENT = 112;
 /** Plants are split into square chunks this wide, so the ones off screen aren't drawn. */
 const CHUNK = 40;
 
-/** Like instanced(), but one mesh per chunk of the island, each culled on its own. */
+/**
+ * Like instanced(), but one mesh per chunk of the island, each culled on its own. With `blend`,
+ * each plant takes on the color of the swathe of grass it stands in.
+ */
 export function chunked(
   geometry: THREE.BufferGeometry,
   items: readonly PropInstance[],
   castShadow: boolean,
   material: THREE.Material,
   ground: (x: number, y: number) => number = homeHeight,
+  blend = false,
 ): THREE.Group {
   const cells = new Map<string, PropInstance[]>();
   for (const it of items) {
@@ -514,7 +522,9 @@ export function chunked(
     cells.set(key, list);
   }
   const g = new THREE.Group();
-  for (const list of cells.values()) g.add(instanced(geometry, list, castShadow, material, ground));
+  for (const list of cells.values()) {
+    g.add(instanced(geometry, list, castShadow, material, ground, blend));
+  }
   return g;
 }
 
@@ -636,12 +646,12 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     instanced(rockGeometry(), rocks, true, vertexColored(), ground),
     instanced(cliffGeometry(), cliffs, true, swaying(true, true), ground),
     instanced(pebblesGeometry(), pebbles, true, vertexColored(), ground),
-    instanced(bushGeometry(), bushes, true, low, ground),
-    chunked(fernGeometry(), ferns, false, low, ground),
+    instanced(bushGeometry(), bushes, true, low, ground, true),
+    chunked(fernGeometry(), ferns, false, low, ground, true),
     chunked(flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], false, low, ground),
     chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, low, ground),
     chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, low, ground),
-    chunked(tuftGeometry(), tufts, false, low, ground),
+    chunked(tuftGeometry(), tufts, false, low, ground, true),
     buildShore(layout.seed, map, layout.spawn, ground, 5, shape),
   );
   return root;

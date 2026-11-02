@@ -1,11 +1,12 @@
 // The hero-select stage, in the navy theme: the chosen hero on a navy steel pedestal with a
 // grated top and a brass rim, under a spotlight, in front of riveted navy plating with a radar
-// sweeping behind them. The hero breathes, turns slowly, and can be spun with a drag. Swapping
+// sweeping behind them. The hero stands at ease, turns slowly, and can be spun with a drag. Swapping
 // heroes plays a quick drop-in.
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
-import { menuHeroModel } from "./heroAssets";
+import { AT_EASE, type HeroAnimator, type HeroMove } from "./heroAnimator";
+import { menuHero } from "./heroAssets";
 import type { Stage } from "./stage";
 
 function backdropTexture(): THREE.CanvasTexture {
@@ -226,6 +227,11 @@ export class Showcase {
   private readonly spot: THREE.SpotLight;
   private readonly floor: THREE.Mesh;
   private hero: THREE.Object3D | null = null;
+  private animator: HeroAnimator | null = null;
+  /** What the hero on the pedestal is doing: standing at ease, unless a test says otherwise. */
+  move: HeroMove = AT_EASE;
+  /** Brings the camera in, for a test to look at the hero. */
+  closeUp = false;
   private kind: HeroKind | null = null;
   private spin = 0;
   private spinVelocity = 0;
@@ -287,9 +293,10 @@ export class Showcase {
     if (kind === this.kind) return;
     this.kind = kind;
     const token = ++this.token;
-    const model = await menuHeroModel(kind);
+    const { holder: model, animator } = await menuHero(kind, true);
     if (token !== this.token) return;
     if (this.hero) this.turntable.remove(this.hero);
+    this.animator = animator;
     // Face the camera (models face +x; the camera looks along -z).
     model.rotation.y = -Math.PI / 2;
     if (kind === "tank") model.scale.multiplyScalar(0.55);
@@ -335,8 +342,7 @@ export class Showcase {
       const bounce = Math.sin(t * Math.PI * 2.2) * (1 - t) * 0.08;
       this.leap = Math.max(0, this.leap - dt * 1.4);
       this.hero.position.y = fall + bounce + Math.sin(this.leap * Math.PI) * 0.9;
-      const breathe = 1 + Math.sin(time * 2.2) * 0.012;
-      this.hero.scale.y = this.hero.scale.x * breathe;
+      this.animator?.update(dt, this.move);
     }
     (this.radar.material.uniforms.uTime as THREE.IUniform<number>).value = time;
     const pulse = 0.65 + Math.sin(time * 2.4) * 0.25 + this.leap;
@@ -354,9 +360,9 @@ export class Showcase {
     // Camera: a little below eye level, hero framed a touch high so the name plate fits below.
     const cam = this.stage.camera;
     const aspect = this.stage.width / this.stage.height;
-    const distance = aspect > 1.6 ? 5.3 : 6.4;
+    const distance = this.closeUp ? 3.1 : aspect > 1.6 ? 5.3 : 6.4;
     cam.position.set(0, 1.75, distance);
-    cam.lookAt(0, 1.38, 0);
+    cam.lookAt(0, this.closeUp ? 1.55 : 1.38, 0);
     this.stage.focusShadows(new THREE.Vector3(0, 0, 0), 6);
   }
 }

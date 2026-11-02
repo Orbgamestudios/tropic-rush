@@ -30,9 +30,14 @@ export const HERO_UNLOCK_HQ: Record<HeroKind, number> = {
   tank: 18,
 };
 
-/** Who a headquarters of this level adds to `unlocked`: heroes are never taken away again. */
+/** The heroes a headquarters of this level has: only the level counts, whatever a save says. */
+export function heroesAt(hq: number): HeroKind[] {
+  return HERO_KINDS.filter((k) => HERO_UNLOCK_HQ[k] <= hq);
+}
+
+/** Who a headquarters of this level adds to `unlocked`. */
 export function heroesJoining(unlocked: readonly HeroKind[], hq: number): HeroKind[] {
-  return HERO_KINDS.filter((k) => HERO_UNLOCK_HQ[k] <= hq && !unlocked.includes(k));
+  return heroesAt(hq).filter((k) => !unlocked.includes(k));
 }
 
 export function isStarter(kind: HeroKind): boolean {

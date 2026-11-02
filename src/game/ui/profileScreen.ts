@@ -17,6 +17,10 @@ export interface ProfileHandlers {
   onLogIn(username: string, password: string): Promise<string | null>;
   /** Null once it's done, or what's stopping it. */
   onLogOut(): Promise<string | null>;
+  /** The other accounts this phone can switch to. */
+  otherAccounts(): string[];
+  onSwitch(username: string): Promise<string | null>;
+  onAddAccount(): Promise<string | null>;
   onShare(): void;
   onCrew(): void;
   onClose(): void;
@@ -37,6 +41,8 @@ export class ProfileScreen {
   private readonly password = el("input", "crew-input");
   private readonly error = el("div", "crew-join-error");
   private readonly logOutError = el("div", "crew-join-error");
+  private readonly switchRows = el("div", "profile-switch");
+  private readonly switchRowsOut = el("div", "profile-switch");
   private readonly tiles = new Map<Avatar, HTMLButtonElement>();
   private busy = false;
 
@@ -115,6 +121,7 @@ export class ProfileScreen {
       this.error,
       actions,
       el("div", "profile-note", "Keeps your progress on any phone. There's no password reset."),
+      this.switchRowsOut,
     );
     this.signedIn.append(
       this.who,
@@ -123,15 +130,27 @@ export class ProfileScreen {
         "profile-note",
         "Your progress is saved to your account. Logging out takes it off this phone.",
       ),
+      this.switchRows,
       this.logOutError,
+    );
+    const signedInActions = el("div", "profile-actions");
+    signedInActions.append(
+      button({
+        label: "Add account",
+        icon: "crew",
+        variant: "blue",
+        size: "sm",
+        onClick: () => void this.run(handlers.onAddAccount),
+      }),
       button({
         label: "Log out",
         icon: "close",
         variant: "steel",
         size: "sm",
-        onClick: () => void this.logOut(),
+        onClick: () => void this.run(handlers.onLogOut),
       }),
     );
+    this.signedIn.append(signedInActions);
     account.append(el("div", "profile-label", "Account"), this.signedOut, this.signedIn);
     side.append(crew, account);
 
@@ -181,14 +200,34 @@ export class ProfileScreen {
     this.refresh();
   }
 
-  private async logOut(): Promise<void> {
+  /** An account action with no form: the game restarts if it works. */
+  private async run(action: () => Promise<string | null>): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     this.logOutError.textContent = "";
-    const problem = await this.handlers.onLogOut();
+    const problem = await action();
     this.busy = false;
     this.logOutError.textContent = problem ?? "";
     if (problem) sfx.error();
+    this.refresh();
+  }
+
+  /** A button for each other account on this phone, in whichever list is showing. */
+  private drawSwitchRows(): void {
+    const names = this.handlers.otherAccounts();
+    const rows = names.map((name) =>
+      button({
+        label: name,
+        icon: "up",
+        variant: "steel",
+        size: "sm",
+        onClick: () => void this.run(() => this.handlers.onSwitch(name)),
+      }),
+    );
+    const list = this.handlers.username() ? this.switchRows : this.switchRowsOut;
+    this.switchRows.replaceChildren();
+    this.switchRowsOut.replaceChildren();
+    if (rows.length > 0) list.append(el("div", "profile-note", "Switch to:"), ...rows);
   }
 
   show(on: boolean): void {
@@ -224,5 +263,6 @@ export class ProfileScreen {
     this.signedOut.style.display = name ? "none" : "flex";
     this.signedIn.style.display = name ? "flex" : "none";
     this.who.textContent = name ? `Signed in as ${name}` : "";
+    this.drawSwitchRows();
   }
 }

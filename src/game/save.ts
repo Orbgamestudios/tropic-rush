@@ -27,7 +27,7 @@ export interface SaveData {
   crewCode: string;
   /** Random id that tells the crew server this phone is the same player next time. */
   memberId: string;
-  /** Personal gold, won on raids and spent on hero upgrades. */
+  /** Gold from when each player had their own, moving onto the island as it finds room. */
   gold: number;
   /** Personal crystals, won from enemy headquarters. */
   crystals: Crystals;
@@ -153,7 +153,7 @@ const DEFAULT_SAVE: SaveData = {
   avatar: DEFAULT_AVATAR,
   crewCode: "",
   memberId: "",
-  gold: 300,
+  gold: 0,
   crystals: noCrystals(),
   upgrades: noUpgrades(),
   blueprints: [],
@@ -296,6 +296,8 @@ export function clearPhone(
 
 const LAYOUT_KEY = "tropic-rush:crew-layout:v1";
 const ACCOUNT_KEY = "tropic-rush:account:v1";
+const OTHER_ACCOUNTS_KEY = "tropic-rush:other-accounts:v1";
+const MOST_OTHER_ACCOUNTS = 5;
 const PLACE_KEY = "tropic-rush:place:v1";
 
 /** Who's signed in on this phone. Kept apart from the save, so it never leaves the phone with it. */
@@ -348,6 +350,32 @@ export function writeAccount(
     else storage.removeItem(ACCOUNT_KEY);
   } catch {
     // Storage full or blocked: they'll just need to log in again next time.
+  }
+}
+
+/** The other accounts this phone is signed in to, ready to switch to without a password. */
+export function loadOtherAccounts(storage: Storage = localStorage): AccountSession[] {
+  try {
+    const value: unknown = JSON.parse(storage.getItem(OTHER_ACCOUNTS_KEY) ?? "[]");
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((s) =>
+      typeof s?.token === "string" && typeof s.username === "string"
+        ? [{ token: s.token, username: s.username, syncedAt: count(s.syncedAt) }]
+        : [],
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function writeOtherAccounts(
+  sessions: readonly AccountSession[],
+  storage: Storage = localStorage,
+): void {
+  try {
+    storage.setItem(OTHER_ACCOUNTS_KEY, JSON.stringify(sessions.slice(-MOST_OTHER_ACCOUNTS)));
+  } catch {
+    // Storage full or blocked: they'll just need to log in to the others again.
   }
 }
 

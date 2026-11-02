@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { HOME_SHAPE, type IslandShape, lavaWidth, shoreRadius } from "../logic/island";
 import { smoothstep, type Vec2 } from "../logic/vec";
+import { bladeTexture, swathes } from "./meadow";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
@@ -16,6 +17,8 @@ import { SKY } from "./sky";
 const RINGS = 84;
 const SEGMENTS = 200;
 const SEA_MARGIN = 26;
+/** How many meters one tile of the blade texture covers on the lawn. */
+const BLADE_METERS = 7;
 /** Enemy islands can be any shape, so their ground is a square grid this fine, in meters. */
 const GRID_STEP = 2;
 /** The shore-distance texture covers this square around the middle (meters each way). */
@@ -43,6 +46,7 @@ const DEEP_SEABED = new THREE.Color(COLORS.deepSeabed);
 const GRASS = new THREE.Color(COLORS.grass);
 const GRASS_LUSH = new THREE.Color(0x5fb247);
 const GRASS_SUN = new THREE.Color(0x9bd660);
+const GRASS_DEEP = new THREE.Color(0x3f9440);
 const JUNGLE_FLOOR = new THREE.Color(0x3f8a3a);
 const DIRT = new THREE.Color(0xc79a62);
 const DIRT_DARK = new THREE.Color(0xa77a4a);
@@ -79,11 +83,14 @@ function groundColor(
   const grass = map.grass(x, y);
   if (grass <= 0) return out;
 
-  // Grass drifting between sunlit and lush patches, darkening into the jungle.
+  // Big swathes of sunlit and deep grass, smaller lush patches within them, darkening into the
+  // jungle.
   const n = noise(x, y);
+  const { sun, deep } = swathes(x, y);
   const lawn = GRASS.clone()
-    .lerp(GRASS_LUSH, smoothstep(-0.1, 0.6, n))
-    .lerp(GRASS_SUN, smoothstep(0.1, 0.7, -n) * 0.6);
+    .lerp(GRASS_LUSH, smoothstep(-0.1, 0.6, n) * 0.6)
+    .lerp(GRASS_SUN, sun * 0.75)
+    .lerp(GRASS_DEEP, deep * 0.8);
   lawn.lerp(JUNGLE_FLOOR, map.jungle(x, y) * 0.85);
 
   // Bare rock where the hills get steep.
@@ -322,49 +329,75 @@ function buildLava(
   return { mesh, time };
 }
 
+/** One texture for every island, made the first time it's needed. */
+let blades: THREE.Texture | null = null;
+
 function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   const shape = options.shape ?? HOME_SHAPE;
   const height = options.height ?? shape.height;
   const { xs, ys, indices } = shape === HOME_SHAPE ? polarGround() : gridGround(shape, height);
   const positions: number[] = [];
   const colors: number[] = [];
+  const lawns: number[] = [];
   const color = new THREE.Color();
   xs.forEach((x, i) => {
     const y = ys[i] ?? 0;
     positions.push(x, height(x, y), y);
     groundColor(map, shape, height, x, y, color);
     colors.push(color.r, color.g, color.b);
+    lawns.push(Math.max(0, map.grass(x, y)) * smoothstep(1.4, 2.8, map.trail(x, y)));
   });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute("aLawn", new THREE.Float32BufferAttribute(lawns, 1));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
   const { shade } = options;
-  if (shade) {
-    material.onBeforeCompile = (program) => {
-      program.uniforms.uShade = { value: shade };
-      program.vertexShader = program.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec2 vShadeUv;")
-        .replace(
-          "#include <begin_vertex>",
-          `#include <begin_vertex>\nvShadeUv = position.xz / ${(SHADE_HALF * 2).toFixed(1)} + 0.5;`,
-        );
-      program.fragmentShader = program.fragmentShader
-        .replace(
-          "#include <common>",
-          "#include <common>\nuniform sampler2D uShade;\nvarying vec2 vShadeUv;",
-        )
-        .replace(
-          "#include <color_fragment>",
-          /* glsl */ `#include <color_fragment>
-          vec4 shade = texture2D(uShade, vShadeUv);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.25, 0.04), shade.r * 0.8);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.23), shade.g * 0.7);`,
-        );
-    };
-  }
+  blades ??= bladeTexture();
+  const bladeMap = blades;
+  material.onBeforeCompile = (program) => {
+    program.uniforms.uBlades = { value: bladeMap };
+    if (shade) program.uniforms.uShade = { value: shade };
+    program.vertexShader = program.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        attribute float aLawn;
+        varying float vLawn;
+        varying vec2 vGroundUv;`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        vLawn = aLawn;
+        vGroundUv = position.xz;`,
+      );
+    program.fragmentShader = program.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform sampler2D uBlades;
+        ${shade ? "uniform sampler2D uShade;" : ""}
+        varying float vLawn;
+        varying vec2 vGroundUv;`,
+      )
+      .replace(
+        "#include <color_fragment>",
+        /* glsl */ `#include <color_fragment>
+        float blade = texture2D(uBlades, vGroundUv / ${BLADE_METERS.toFixed(1)}).r;
+        diffuseColor.rgb *= 1.0 + (blade - 0.5) * 0.7 * vLawn;
+        ${
+          shade
+            ? /* glsl */ `vec4 shade = texture2D(uShade, vGroundUv / ${(SHADE_HALF * 2).toFixed(1)} + 0.5);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.25, 0.04), shade.r * 0.8);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.23), shade.g * 0.7);`
+            : ""
+        }`,
+      );
+  };
+  material.customProgramCacheKey = () => `tropic-ground-${shade ? "shaded" : "plain"}`;
   const ground = new THREE.Mesh(geometry, material);
   ground.receiveShadow = true;
   return ground;

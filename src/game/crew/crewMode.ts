@@ -59,7 +59,7 @@ import {
   RESOURCES,
 } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
-import { HERO_NAMES, heroesJoining } from "../logic/heroProgress";
+import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import { needsBlueprint } from "../logic/spoils";
@@ -121,6 +121,8 @@ export interface CrewModeHost {
   onMap(): void;
   /** A hero was tapped: open them up. */
   onHero(kind: HeroKind): void;
+  /** Sends a change to the crew's server, while the island isn't open to do it. */
+  sendOp(op: LayoutOp): void;
   onReplay(raid: NightRaid): void;
 }
 
@@ -304,13 +306,53 @@ export class CrewMode {
     this.bankLoot();
   }
 
-  /** New heroes join as soon as the crew's headquarters reaches their level. */
+  /**
+   * Who's available goes by the crew's headquarters and nothing else: new heroes join as soon as
+   * it reaches their level, and a hero it hasn't reached yet isn't kept, whatever a save says.
+   */
   private welcomeHeroes(save: SaveData): void {
-    const joining = heroesJoining(save.unlocked, hqLevel(this.layout));
+    const hq = hqLevel(this.layout);
+    const available = heroesAt(hq);
+    if (available.length === save.unlocked.length && heroesJoining(save.unlocked, hq).length === 0)
+      return;
+    const joining = heroesJoining(save.unlocked, hq);
+    const hero = available.includes(save.hero) ? save.hero : "rifleman";
+    this.host.updateSave({ unlocked: available, hero });
     if (joining.length === 0) return;
-    this.host.updateSave({ unlocked: [...save.unlocked, ...joining] });
     this.ui.flash(`${joining.map((k) => HERO_NAMES[k]).join(" and ")} joined the crew!`);
     sfx.levelUp();
+  }
+
+  /**
+   * Gold from when every player had their own moves onto the island, as much as there's room for
+   * each time, so none of it's lost to a small store.
+   */
+  private bankOldGold(): void {
+    const { gold } = this.host.save();
+    if (gold <= 0) return;
+    const stock = settle(this.layout, this.now()).resources.gold;
+    const room = Math.floor(capacity(this.layout).gold - stock);
+    const moved = Math.min(gold, room);
+    if (moved <= 0 || !this.commit({ kind: "loot", purse: { gold: moved } })) return;
+    this.host.updateSave({ gold: gold - moved });
+  }
+
+  /** The island's gold, which is everyone's. */
+  gold(): number {
+    return Math.floor(settle(this.layout, this.now()).resources.gold);
+  }
+
+  /** Buys a hero upgrade with the island's gold, for the whole crew. */
+  payForUpgrade(hero: HeroKind, id: string): boolean {
+    return this.commit({ kind: "heroUpgrade", hero, id, pay: true });
+  }
+
+  /** The crew's island as the server last said, for while the island itself isn't on screen. */
+  heard(layout: CrewLayout, serverNow: number): void {
+    if (this.client) return;
+    this.clockOffset = serverNow - Date.now();
+    this.layout = sanitizeLayout(layout, this.now());
+    writeLocalLayout(this.layout);
   }
 
   /** Each night since the last look, raiders may have retaken some of the crew's islands. */
@@ -332,7 +374,8 @@ export class CrewMode {
    * Hands what's been brought back from raids over to the crew: materials into their stock, as much
    * as it'll hold, and blueprints into what the whole crew knows.
    */
-  private bankLoot(): void {
+  bankLoot(): void {
+    this.bankOldGold();
     const { loot, blueprints } = this.host.save();
     for (const type of blueprints) this.commit({ kind: "blueprint", type });
     if (blueprints.length > 0) this.host.updateSave({ blueprints: [] });
@@ -466,7 +509,7 @@ export class CrewMode {
     const hidden = this.drag?.kind === "move" ? this.drag.building.id : null;
     this.view.sync(this.layout, hidden, others);
     this.welcomeHeroes(save);
-    this.view.syncHeroes(save.unlocked, this.layout);
+    this.view.syncHeroes(this.host.save().unlocked, this.layout);
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
     this.view.update(dt, time);
@@ -698,7 +741,8 @@ export class CrewMode {
     if (!next) return false;
     this.layout = next;
     writeLocalLayout(next);
-    this.client?.sendOp(op);
+    if (this.client) this.client.sendOp(op);
+    else this.host.sendOp(op);
     return true;
   }
 

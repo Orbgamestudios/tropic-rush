@@ -27,6 +27,8 @@ import {
   spend,
   storageCapacity,
 } from "./economy";
+import { HERO_KINDS, type HeroKind } from "./heroes";
+import { heroTree, lockedBy, noUpgrades, readOwned } from "./heroTrees";
 import { isOnGrass, landingPoints, trailPoints } from "./island";
 import { createRng } from "./rng";
 import { BLUEPRINT_TYPES, needsBlueprint } from "./spoils";
@@ -178,6 +180,8 @@ export interface CrewLayout {
   stamp: number;
   /** Defenses the crew has discovered how to build, from blueprints won on raids. */
   blueprints: BuildingType[];
+  /** Every hero's upgrades, which the whole crew shares: one person buys, everyone has it. */
+  upgrades: Record<HeroKind, string[]>;
   /** The island's ancient statues. */
   statues: Statues;
   /** Decides which patches hide the statues, so every crew's island hides them differently. */
@@ -221,6 +225,9 @@ export type LayoutOp =
   | { kind: "loot"; purse: Partial<Purse> }
   /** A blueprint won on a raid: the whole crew learns it. */
   | { kind: "blueprint"; type: BuildingType }
+  /** A hero upgrade for the whole crew. `pay` takes its gold from the island; without it, it's one
+   * a crewmate brought along from before they joined. */
+  | { kind: "heroUpgrade"; hero: HeroKind; id: string; pay?: boolean }
   /** Crystals given to a statue by whoever's holding them. */
   | { kind: "offer"; statue: CrystalKind; crystals: number }
   /** Starts a statue's restoration, once it has its crystals. */
@@ -914,6 +921,18 @@ export function tryOp(
       if (layout.blueprints.includes(op.type)) return { layout };
       return { layout: { ...layout, blueprints: [...layout.blueprints, op.type] } };
     }
+    case "heroUpgrade": {
+      const upgrade = heroTree(op.hero).find((u) => u.id === op.id);
+      if (!upgrade) return { error: "Unknown upgrade" };
+      const owned = layout.upgrades[op.hero];
+      if (owned.includes(op.id)) return { layout };
+      if (lockedBy(op.hero, upgrade, owned)) return { error: "Buy what comes before it first" };
+      const upgrades = { ...layout.upgrades, [op.hero]: [...owned, op.id] };
+      if (!op.pay) return { layout: { ...layout, upgrades } };
+      if (layout.resources.gold < upgrade.gold) return { error: "Not enough gold" };
+      const resources = { ...layout.resources, gold: layout.resources.gold - upgrade.gold };
+      return { layout: { ...layout, upgrades, resources } };
+    }
     case "offer": {
       if (!CRYSTAL_KINDS.includes(op.statue)) return { error: "Unknown statue" };
       const statue = layout.statues[op.statue];
@@ -1055,6 +1074,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     resources: { ...START_RESOURCES },
     stamp: now,
     blueprints: [],
+    upgrades: noUpgrades(),
     statues: newStatues(),
     relicSeed: Math.floor(now / 1000) % 2 ** 31,
     lastNight: 0,
@@ -1103,6 +1123,12 @@ export function buildingAtTile(
  * buildings that don't fit or that the headquarters' level doesn't allow, and levels above its
  * caps. It never charges for anything.
  */
+function readUpgrades(value: Partial<Record<HeroKind, unknown>> | undefined) {
+  const upgrades = noUpgrades();
+  for (const kind of HERO_KINDS) upgrades[kind] = readOwned(kind, value?.[kind]);
+  return upgrades;
+}
+
 export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const data = value as {
     buildings?: unknown;
@@ -1113,6 +1139,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     resources?: unknown;
     stamp?: unknown;
     blueprints?: unknown;
+    upgrades?: Partial<Record<HeroKind, unknown>>;
     statues?: unknown;
     relicSeed?: unknown;
     lastNight?: unknown;
@@ -1229,6 +1256,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     resources,
     stamp,
     blueprints,
+    upgrades: readUpgrades(data?.upgrades),
     statues: readStatues(data?.statues),
     relicSeed,
     lastNight,

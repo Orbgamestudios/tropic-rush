@@ -15,6 +15,8 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 - **Building sizes:** the owner said "mines and refinery 4x4". The refinery is still a Proposed
   building, and "mines" was read as all the producers, so confirm both if they come up.
 - **Tides:** the two-week abilities in `docs/HERO_TREES.md` aren't built.
+- **Tank model:** it's still the block model. TRELLIS.2 can model it, but its turret needs rigging
+  differently from a person.
 - **Balance:** tree prices, checkpoint sizes, the watchtower's numbers and blueprint odds are first
   passes.
 
@@ -25,6 +27,10 @@ enemy islands with volcanoes and cliffs, player islands and rival raids, night l
 HQ-only storage, raid notifications, statues, sniper watchtowers, scouting and readying up as a
 team, and accounts that stay apart.
 
+After that: all six heroes on foot have real TRELLIS.2 models with skeletons, moved by one animator,
+a shared grass pattern, one island gold, crew-shared upgrades, heroes tied to the headquarters,
+account switching, 15% weaker starting heroes, and the cleaned-up map tags.
+
 For battery, screens nobody's touching run at 30 frames, shadows redraw less often, nothing draws
 behind the tree screen, the picture starts a little softer, and there are fewer clouds.
 
@@ -32,8 +38,13 @@ behind the tree screen, the picture starts a little softer, and there are fewer 
 
 - Battery use hasn't been measured on a phone. One frame costs about 125,000 triangles in a raid
   and 430,000 on the crew island, whose forest is the heavy part.
-- Team-up and rival raids were run on `npx wrangler dev` with two pages, not on the live site.
-- Personal gold isn't capped by storage: only the island's stock is.
+- Team-up, rival raids, account switching and shared upgrades were run on `npx wrangler dev` with
+  two pages, not on the live site.
+- Hero animation has only been seen in a desktop browser, so check it on a phone. The running and
+  aiming poses were looked at on the Rifleman and Heavy, but the others only standing.
+- 15% weaker heroes were tried on a bot, not by a person: a bot that dodges mortars wins 16 of 24
+  first islands with about 19% health left.
+- Gold from before there was one pool sits in the save and moves onto the island as it finds room.
 - Rival crews stand in until real ones are in the directory, so a live world starts mostly with
   stand-ins.
 - An account that already picked up another account's progress keeps it: only "Reset game" clears
@@ -79,6 +90,20 @@ cost quality. Battery matters: keep Lambert materials, baked models and few draw
   because its zip said CC-BY although its page said CC0.
 - Run `npm run check` before every commit.
 
+## Making hero models
+
+TRELLIS.2 needs about 24 GB of graphics memory, so it can't run on the owner's computer. Use the
+hosted `Upsampler/trellis-2` Space, which asks for only 45 seconds of GPU a run. Anonymous use stops
+after a run or so a day. Signed in on huggingface.co, the Space page's own `zerogpu-headers` message
+gives headers that count against the owner's free allowance: that's how the five latest were made.
+Never buy anything there.
+
+Save the output in `models-wip/`, which is never committed, then add the joints to
+`scripts/rig-hero.mjs` and run `node scripts/rig-hero.mjs <hero>`. Joints are shares of the model's
+height: measure them, because TRELLIS leaves each body at a different offset. Rig from T-poses: a
+model with lowered arms bends badly. The script writes a light copy for raids and a detailed one for
+the hero screen. Their hands are large in the art, so the game scales them down and curls the fingers.
+
 ## Testing tips
 
 - Software browsers run at a few frames a second, so the full browser test run takes about 16
@@ -87,6 +112,8 @@ cost quality. Battery matters: keep Lambert materials, baked models and few draw
 - `tropicRush.sky(hour, place, date)` shows any time and day, such as a new moon. `hour` is local
   time, and `place` is `{ lat, lon }`. Pass `null` to go back to the clock.
 - `tropicRush.syncNow(changes)` changes the save, which is how a test unlocks a hero.
+- `tropicRush.heroPose(move)` has the hero on the pedestal run, aim or fall, close up. Hide
+  `.screen-heroes` to see them properly.
 - `tropicRush.visit(seed, hq)` scouts any island, `findStatue(kind)` brings a statue to light,
   `crewLook(x, y, distance)` points the home camera, and `win()` ends a raid in victory.
 - Two pages on one crew need different origins, or they'd share a save: use `localhost:8787` and

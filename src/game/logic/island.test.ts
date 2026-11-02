@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { BUILDINGS, type BuildingType } from "./buildings";
-import { type CrewLayout, fits, hqLevel, obstacles } from "./crewIsland";
+import {
+  buildingCenter,
+  type CrewLayout,
+  fits,
+  GRID_ORIGIN,
+  HOME_START,
+  hqLevel,
+  obstacles,
+  TILE,
+} from "./crewIsland";
 import { allowedCount, levelCap } from "./economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./enemyBase";
 import { HOME_SHAPE } from "./island";
@@ -36,6 +45,36 @@ describe("enemy base layout", () => {
         expect(sides.size).toBeGreaterThanOrEqual(2);
       }
     }
+  });
+
+  it("grows a base on the crew's island inland from the beach, like a crew's", () => {
+    const hqAt = (seed: number, level: number) => {
+      const hq = enemyBase(seed, level).find((b) => b.type === "headquarters");
+      if (!hq) throw new Error("no headquarters");
+      return hq;
+    };
+    const landing = rivalIsland(1, enemyBase(1, 1)).spawn;
+    const fromBeach = (level: number) =>
+      SEEDS.reduce((sum, seed) => {
+        const { x, y } = hqAt(seed, level);
+        const at = vec(GRID_ORIGIN.x + x * TILE, GRID_ORIGIN.y + y * TILE);
+        return sum + distance(at, landing);
+      }, 0) / SEEDS.length;
+    expect(fromBeach(1)).toBeLessThan(fromBeach(8));
+    expect(fromBeach(8)).toBeLessThan(fromBeach(16));
+    expect(distance(buildingCenter(hqAt(1, 1)), HOME_START)).toBeLessThan(6);
+  });
+
+  it("keeps a small base small: the forest stands everywhere it hasn't been cleared", () => {
+    const spread = (level: number) => {
+      const base = enemyBase(3, level);
+      const hq = base.find((b) => b.type === "headquarters");
+      if (!hq) throw new Error("no headquarters");
+      return Math.max(...base.map((b) => Math.hypot(b.x - hq.x, b.y - hq.y))) * TILE;
+    };
+    expect(spread(1)).toBeLessThan(spread(16));
+    expect(rivalIsland(1, enemyBase(1, 1)).cover).toBe(1);
+    expect(rivalIsland(1, enemyBase(1, 18)).cover).toBe(1);
   });
 
   it("rings the headquarters on every side, given the room", () => {

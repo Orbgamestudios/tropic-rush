@@ -4,6 +4,7 @@ import { HERO_KINDS } from "./heroes";
 import {
   HERO_NAMES,
   HERO_UNLOCK_HQ,
+  heroesAt,
   heroesJoining,
   heroStats,
   isStarter,
@@ -22,6 +23,13 @@ describe("hero progress", () => {
       expect(HERO_UNLOCK_HQ[kind] === 1).toBe(isStarter(kind));
     }
     expect(HERO_KINDS.filter(isStarter)).toEqual(["rifleman"]);
+  });
+
+  it("has only the heroes the headquarters has reached", () => {
+    expect(heroesAt(1)).toEqual(["rifleman"]);
+    expect(heroesAt(3)).toEqual(expect.arrayContaining(["rifleman", "heavy"]));
+    expect(heroesAt(3)).toHaveLength(2);
+    expect(heroesAt(MAX_HQ_LEVEL)).toHaveLength(HERO_KINDS.length);
   });
 
   it("brings in a hero every few headquarters levels", () => {

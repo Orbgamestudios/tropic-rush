@@ -29,6 +29,7 @@ import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
+import { HeroAnimator } from "./heroAnimator";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import {
   type BuildingModel,
@@ -45,7 +46,6 @@ import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
 import { buildProps, buildShore, homeCliffs, updateWind } from "./props";
 import { crystalGem } from "./relics";
-import { RiflemanAnimator } from "./riflemanAnimator";
 import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
 import { buildTerrain, type TerrainView } from "./terrain";
@@ -63,7 +63,7 @@ interface BuildingView {
 interface HeroView {
   model: HeroModel;
   /** Moves the full rig, for the heroes that have one. */
-  animator: RiflemanAnimator | null;
+  animator: HeroAnimator | null;
   /** Where the hero was last frame and how much health they had, to see what changed. */
   last: Vec2;
   lastHp: number;
@@ -310,7 +310,7 @@ export class RaidView {
       this.root.add(model.root, ring);
       this.heroes.set(h.id, {
         model,
-        animator: model.rig && new RiflemanAnimator(model.rig),
+        animator: model.rig && new HeroAnimator(model.rig),
         last: { ...h.pos },
         lastHp: h.hp,
         speed: 0,
@@ -645,7 +645,7 @@ export class RaidView {
         }
       }
       if (view.animator) {
-        this.animateRifleman(view, view.animator, h, state, dt);
+        this.animateHero(view, view.animator, h, state, dt);
         continue;
       }
       if (!h.alive) {
@@ -667,9 +667,9 @@ export class RaidView {
     }
   }
 
-  private animateRifleman(
+  private animateHero(
     view: HeroView,
-    animator: RiflemanAnimator,
+    animator: HeroAnimator,
     h: RaidHero,
     state: RaidState,
     dt: number,
@@ -681,14 +681,14 @@ export class RaidView {
     view.last = { ...h.pos };
     if (h.hp < view.lastHp - 0.5 && h.alive) animator.flinch();
     view.lastHp = h.hp;
-    const { attack } = HEROES.rifleman;
+    const { attack } = HEROES[h.kind];
     const reloadTime = (attack.kind === "burst" ? attack.reload : 1) * h.mods.reload;
     animator.update(dt, {
       moving: h.moving,
       speed: view.speed,
       heading,
       aiming: h.firing || (this.aim !== null && h === state.heroes[this.seat]),
-      reload: h.burstLeft === 0 ? Math.min(1, h.reload / reloadTime) : 0,
+      reload: attack.kind === "burst" && h.burstLeft === 0 ? Math.min(1, h.reload / reloadTime) : 0,
       down: !h.alive,
       cheering: state.status === "won",
     });

@@ -76,11 +76,7 @@ export class DefenseReach {
   private readonly dim = { value: 1 };
 
   constructor(state: RaidState) {
-    // Not snipers: they reach so far that it'd be red everywhere, and they show their own aim.
-    const defenses = state.buildings.filter((b) => {
-      const attack = BUILDINGS[b.type].attack;
-      return attack && attack.kind !== "sniper";
-    });
+    const defenses = state.buildings.filter((b) => BUILDINGS[b.type].attack);
     const geometry = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
     this.fades = new Float32Array(defenses.length);
     this.fadeAttribute = new THREE.InstancedBufferAttribute(this.fades, 1);

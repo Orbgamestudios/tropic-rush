@@ -39,6 +39,9 @@ count double, because they do less. All 42 together come to about +20% on a hero
 | 4            | 2,000 | 5        |
 | 5 (capstone) | 4,000 | 8        |
 
+Gold comes from the island, the crew's only gold, and upgrades are shared by the whole crew.
+Crystals come from whoever's buying.
+
 - **Nature** buys health and healing.
 - **Fire** buys damage, fire rate and range.
 - **Ice** buys speed: moving, moving while firing, and how fast shots fly.

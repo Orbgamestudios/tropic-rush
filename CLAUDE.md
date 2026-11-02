@@ -50,13 +50,15 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
     in the night or under cloud. Progress is `WorldProgress` in the save.
 - `src/game/render/`: Three.js. It draws the state and never changes it.
   - `raidView.ts` mirrors a raid into the scene and turns events into effects.
-  - `models.ts` holds the placeholder building models; `heroModels.ts` the hero models (swap
-    these for GLBs). `riflemanAnimator.ts` moves the Rifleman's rig procedurally: arms follow
-    the rifle by inverse kinematics, so there are no animation clips.
+  - `models.ts` holds the placeholder building models; `heroModels.ts` the hero models, skinned where one's
+    loaded and blocks otherwise. `heroAnimator.ts` moves every hero on foot procedurally: arms follow
+    the weapon by inverse kinematics, so there are no animation clips.
   - `sky.ts` follows the real sun (`logic/sun.ts`, placed by `location.ts`): the scene's lights,
     fog and dome, and the shared `SKY` values that unlit materials multiply by, updated every few
     seconds. `lightPool.ts` fakes lamps and flashes after dark with soft discs, so nothing adds a
     real light. Anything unlit that should dim at night needs `SKY.unlit`.
+  - `meadow.ts` is the swathes of light and deep grass that the ground and its plants share, baked
+    when an island is built, and the small blade texture over them.
   - `effects.ts` is every short-lived effect: instanced quads from one generated texture atlas,
     plus instanced debris. Colours above 1 glow through the bloom, so keep them modest.
   - `scenery.ts` maps the trail, the base's clearing and the jungle; `terrain.ts` (ground and
@@ -111,8 +113,12 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   unlocks and raid rewards. `upgradeTree.ts` is the tree screen. `worker/world.ts` is the world's
   directory of crews, one SQLite Durable Object.
 - `public/avatars/` holds the player icons (the list is `logic/avatars.ts`).
-- Real models live in `public/models/` (meshopt-compressed GLB; `render/heroAssets.ts` loads
-  them). Raw TRELLIS outputs stay in the untracked `models-wip/`.
+- Real models live in `public/models/` (meshopt-compressed, skinned GLB; `scripts/rig-hero.mjs`
+  makes them, `render/riggedHeroes.ts` loads them, and `render/heroAssets.ts` puts them on menus).
+  Each hero has two: `-rig.glb`, light, for raids, and `-hi.glb`, detailed, for the hero screen and
+  left out of the offline cache.
+  Raw TRELLIS outputs stay in the untracked `models-wip/`. See "Making hero models" in
+  `docs/HANDOFF.md`.
 - To test the crew server or raiding together locally, run `npx wrangler dev`. It builds, then serves the game and
   runs the Durable Object. `npm run dev` and `npm run phone` have no crew server, so the crew
   island falls back to offline mode there.

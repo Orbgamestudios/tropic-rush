@@ -35,6 +35,7 @@ import {
   upgradeBlocker,
 } from "./crewIsland";
 import { buildTime, costFor, nextLevelGain, START_RESOURCES } from "./economy";
+import { heroTree } from "./heroTrees";
 import { isOnGrass } from "./island";
 import { nightIsland } from "./nightRaid";
 import { BLUEPRINT_TYPES } from "./spoils";
@@ -109,6 +110,43 @@ function finishWork(layout: CrewLayout): CrewLayout {
   const last = Math.max(layout.stamp, ...layout.builds.map((j) => j.doneAt));
   return settle(layout, last + 1);
 }
+
+describe("sharing heroes", () => {
+  it("pays for an upgrade from the island's gold, once", () => {
+    const start = starterLayout(NOW);
+    const [first] = heroTree("rifleman");
+    if (!first) throw new Error("missing upgrades");
+    const pay = { kind: "heroUpgrade", hero: "rifleman", id: first.id, pay: true } as const;
+    const paid = applyOp(start, pay, NOW);
+    if (!paid) throw new Error("refused");
+    expect(paid.resources.gold).toBe(start.resources.gold - first.gold);
+    const broke = { ...start, resources: { ...start.resources, gold: first.gold - 1 } };
+    expect(applyOp(broke, pay, NOW)).toBeNull();
+    const brought = applyOp(broke, { ...pay, pay: false }, NOW);
+    expect(brought?.upgrades.rifleman).toEqual([first.id]);
+    expect(brought?.resources.gold).toBe(first.gold - 1);
+  });
+
+  it("gives the whole crew a hero upgrade, in order", () => {
+    const start = starterLayout(NOW);
+    expect(start.upgrades.rifleman).toEqual([]);
+    const [first, second] = heroTree("rifleman");
+    if (!first || !second) throw new Error("missing upgrades");
+    const op = (id: string) => ({ kind: "heroUpgrade", hero: "rifleman", id }) as const;
+    expect(applyOp(start, op(second.id), NOW)).toBeNull();
+    expect(applyOp(start, op("made-up"), NOW)).toBeNull();
+    const one = applyOp(start, op(first.id), NOW);
+    if (!one) throw new Error("refused");
+    expect(one.upgrades.rifleman).toEqual([first.id]);
+    expect(applyOp(one, op(first.id), NOW)?.upgrades.rifleman).toEqual([first.id]);
+    expect(sanitizeLayout(JSON.parse(JSON.stringify(one)), NOW).upgrades.rifleman).toEqual([
+      first.id,
+    ]);
+    expect(sanitizeLayout({ upgrades: { rifleman: ["made-up"] } }, NOW).upgrades.rifleman).toEqual(
+      [],
+    );
+  });
+});
 
 describe("crew island ground", () => {
   it("is the raid island's grass: everything from the top of the beach inland", () => {

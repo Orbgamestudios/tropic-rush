@@ -7,6 +7,7 @@ import {
   DEFAULT_CONTROLS,
   DEFAULT_SETTINGS,
   loadAccount,
+  loadOtherAccounts,
   loadPlace,
   loadSave,
   resetGame,
@@ -14,6 +15,7 @@ import {
   type SaveData,
   saveBundle,
   writeAccount,
+  writeOtherAccounts,
   writePlace,
   writeSave,
 } from "./save";
@@ -37,7 +39,7 @@ const DEFAULTS: SaveData = {
   avatar: "rifleman-1",
   crewCode: "",
   memberId: "",
-  gold: 300,
+  gold: 0,
   crystals: noCrystals(),
   upgrades: noUpgrades(),
   blueprints: [],
@@ -106,6 +108,44 @@ describe("accounts on this phone", () => {
     expect(phone.items.has("tropic-rush:crew-layout:v1")).toBe(false);
   });
 
+  it("keeps the other accounts on a phone apart from any save", () => {
+    const phone = memoryStorage();
+    expect(loadOtherAccounts(phone)).toEqual([]);
+    const ann = { token: "ann.abc", username: "Ann", syncedAt: 5 };
+    const bob = { token: "bob.def", username: "Bob", syncedAt: 6 };
+    writeOtherAccounts([ann, bob], phone);
+    expect(loadOtherAccounts(phone)).toEqual([ann, bob]);
+    expect(saveBundle(phone)).not.toContain("ann.abc");
+    clearPhone(loadSave(phone).settings, phone);
+    expect(loadOtherAccounts(phone)).toEqual([ann, bob]);
+    phone.items.set("tropic-rush:other-accounts:v1", "not json");
+    expect(loadOtherAccounts(phone)).toEqual([]);
+    phone.items.set("tropic-rush:other-accounts:v1", '[{"token":1},{"token":"a","username":"A"}]');
+    expect(loadOtherAccounts(phone)).toEqual([{ token: "a", username: "A", syncedAt: 0 }]);
+  });
+
+  it("gives one account's heroes nothing to pass on to the next", () => {
+    const phone = memoryStorage();
+    writeSave(
+      {
+        ...loadSave(phone),
+        upgrades: { ...noUpgrades(), rifleman: ["rifleman-basic-training"] },
+        unlocked: ["rifleman", "heavy"],
+        hero: "heavy",
+        crystals: { nature: 3, fire: 0, ice: 0, dark: 0 },
+        blueprints: ["mortar"],
+      },
+      phone,
+    );
+    clearPhone(loadSave(phone).settings, phone);
+    const after = loadSave(phone);
+    expect(after.upgrades).toEqual(noUpgrades());
+    expect(after.unlocked).toEqual(["rifleman"]);
+    expect(after.hero).toBe("rifleman");
+    expect(after.crystals).toEqual(noCrystals());
+    expect(after.blueprints).toEqual([]);
+  });
+
   it("clears everything but the phone's settings when someone logs out", () => {
     const phone = memoryStorage();
     const settings = { ...DEFAULT_SETTINGS, zoom: 0.9 };
@@ -125,7 +165,7 @@ describe("accounts on this phone", () => {
     clearPhone(loadSave(phone).settings, phone);
     const after = loadSave(phone);
     expect(after.world).toEqual(NEW_WORLD);
-    expect(after.gold).toBe(300);
+    expect(after.gold).toBe(0);
     expect(after.nickname).toBe("");
     expect(after.memberId).toBe("");
     expect(after.crewCode).toBe("");
@@ -158,7 +198,7 @@ describe("resetting the game", () => {
     const before = loadSave(storage);
     resetGame(before, storage);
     const after = loadSave(storage);
-    expect(after.gold).toBe(300);
+    expect(after.gold).toBe(0);
     expect(after.wins).toBe(0);
     expect(after.crystals).toEqual(noCrystals());
     expect(after.unlocked).not.toContain("tank");

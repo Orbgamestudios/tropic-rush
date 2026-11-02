@@ -495,19 +495,9 @@
   right: 14px;
 }
 
-.map-pin-title {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.map-pin-crystal {
-  width: 15px;
-  height: 15px;
-}
-
-.map-pin.rival {
-  border-color: #8fd4ff;
+.map-home-pin {
+  border-color: var(--brass-hi);
+  pointer-events: none;
 }
 
 .map-pin.crew-here {

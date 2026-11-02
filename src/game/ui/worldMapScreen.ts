@@ -3,7 +3,7 @@
 // island is tapped (what's there, what it pays, Scout, Team up and Attack), and one way out:
 // Return to island.
 
-import { CRYSTAL_LABELS, type Crystals } from "../logic/crystals";
+import type { Crystals } from "../logic/crystals";
 import {
   archetypeLabel,
   archetypeTip,
@@ -12,7 +12,7 @@ import {
   type MapIsland,
   type WorldProgress,
 } from "../logic/worldMap";
-import { button, CrystalWallet, crystalIcon, el, layerPlacer } from "./kit/dom";
+import { button, CrystalWallet, el, layerPlacer } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
 
@@ -60,9 +60,13 @@ interface Pin {
 const OFF_SCREEN = 0.2;
 const DRAG_DISTANCE = 8;
 
+/** How big the crew's own island is drawn. */
+const HOME_SIZE = 1;
+
 export class WorldMapScreen {
   readonly root = el("div", "map-screen");
   private readonly pinLayer = el("div", "map-pins");
+  private readonly homePin = el("div", "map-pin map-home-pin");
   private readonly card = el("div", "map-card");
   private readonly cardName = el("div", "map-card-name");
   private readonly cardKind = el("div", "map-card-kind");
@@ -171,6 +175,7 @@ export class WorldMapScreen {
       e.preventDefault();
       handlers.onZoom(e.deltaY > 0 ? 1.1 : 0.9);
     });
+    this.homePin.append(el("span", "map-pin-title", "Home"));
     this.root.style.display = "none";
     parent.append(this.root);
   }
@@ -186,15 +191,9 @@ export class WorldMapScreen {
       pin.classList.toggle("done", island.taken);
       pin.classList.toggle("retaken", island.retaken);
       pin.classList.toggle("rival", island.rival !== null);
-      const title = island.taken
-        ? "Yours"
-        : island.retaken
-          ? "Retaken!"
-          : (island.rival?.name ?? "Raid");
-      const head = el("span", "map-pin-title", title);
-      if (!island.taken) head.prepend(crystalIcon(island.crystal, "map-pin-crystal"));
+      const title = island.taken ? "Yours" : island.retaken ? "Retaken!" : "Raid";
       pin.append(
-        head,
+        el("span", "map-pin-title", title),
         el(
           "span",
           "map-pin-rating",
@@ -219,7 +218,7 @@ export class WorldMapScreen {
       };
     });
     this.pins = pins;
-    this.pinLayer.replaceChildren(...pins.map((p) => p.node));
+    this.pinLayer.replaceChildren(this.homePin, ...pins.map((p) => p.node));
     const left = islandsToNextCloud(world);
     this.progress.textContent = `Take ${left} more ${left === 1 ? "island" : "islands"} to lift a cloud`;
     this.drawnMoves = -1;
@@ -254,12 +253,7 @@ export class WorldMapScreen {
     loot.append(icon("coin", "map-fact-icon"), el("span", "", String(island.reward.gold)));
     const guns = el("span", "map-fact");
     guns.append(icon("shield", "map-fact-icon"), el("span", "", `${island.defenses} defenses`));
-    const gem = el("span", "map-fact");
-    gem.append(
-      crystalIcon(island.crystal, "map-fact-icon"),
-      el("span", "", CRYSTAL_LABELS[island.crystal]),
-    );
-    this.cardFacts.replaceChildren(guns, loot, gem);
+    this.cardFacts.replaceChildren(guns, loot);
     this.cardTip.textContent = archetypeTip(island);
     const blocker = this.handlers.soloBlocker();
     const crew = this.handlers.crewOnline();
@@ -331,7 +325,8 @@ export class WorldMapScreen {
     if (moves === this.drawnMoves) return;
     this.drawnMoves = moves;
     const place = layerPlacer(this.root);
-    for (const { x, y, node } of this.pins) {
+    const home = { x: 0, y: -islandRadius(HOME_SIZE) * 0.7, node: this.homePin };
+    for (const { x, y, node } of [home, ...this.pins]) {
       const p = this.handlers.screen(x, y);
       const off =
         p.x < -OFF_SCREEN || p.x > 1 + OFF_SCREEN || p.y < -OFF_SCREEN || p.y > 1 + OFF_SCREEN;

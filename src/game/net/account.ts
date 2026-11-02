@@ -10,7 +10,10 @@ interface AccountReply {
 
 export type AccountResponse = ({ ok: true } & AccountReply) | { ok: false; error: string };
 
-export type SyncResponse = { ok: true; save: string | null; savedAt: number } | { ok: false };
+export type SyncResponse =
+  | { ok: true; save: string | null; savedAt: number }
+  /** `offline` means the server was never reached, so the session may well still be good. */
+  | { ok: false; offline?: boolean };
 
 async function post<T>(path: string, body: unknown, fallback: T): Promise<T> {
   try {
@@ -36,11 +39,11 @@ export function logIn(username: string, password: string): Promise<AccountRespon
 }
 
 export function pullSave(token: string): Promise<SyncResponse> {
-  return post("pull", { token }, { ok: false });
+  return post("pull", { token }, { ok: false, offline: true });
 }
 
 export function pushSave(token: string, save: string): Promise<SyncResponse> {
-  return post("push", { token, save }, { ok: false });
+  return post("push", { token, save }, { ok: false, offline: true });
 }
 
 /** Checks a signed-in player's password, before something that can't be undone. */

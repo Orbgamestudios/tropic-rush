@@ -35,8 +35,7 @@ export interface ScoutTeam {
   waiting: string | null;
 }
 
-const HINT =
-  "Drag to look round, pinch to zoom. Red ground is under fire, and snipers reach to their rings.";
+const HINT = "Drag to look round, pinch to zoom. Red is under fire, and snipers reach their rings.";
 
 /** Further than this and a touch counts as a drag, not a tap. */
 const TAP_SLOP = 8;

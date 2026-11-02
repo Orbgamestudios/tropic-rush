@@ -15,8 +15,8 @@ import {
 import type { HeroKind } from "../logic/heroes";
 import { homeHeight } from "../logic/island";
 import { angleDiff, type Vec2, vec } from "../logic/vec";
+import { AT_EASE, HeroAnimator } from "./heroAnimator";
 import { type HeroModel, heroModel } from "./models";
-import { AT_EASE, RiflemanAnimator } from "./riflemanAnimator";
 
 /** Meters per second: a stroll, not a march. */
 const WALK_SPEED = 1.5;
@@ -32,7 +32,7 @@ interface Walker {
   target: Vec2 | null;
   rest: number;
   walk: number;
-  animator: RiflemanAnimator | null;
+  animator: HeroAnimator | null;
   facing: number;
 }
 
@@ -73,7 +73,7 @@ export class HomeHeroes {
         target: null,
         rest: Math.random() * 3,
         walk: 0,
-        animator: model.rig && new RiflemanAnimator(model.rig),
+        animator: model.rig && new HeroAnimator(model.rig),
         facing: Math.random() * Math.PI * 2,
       });
     }

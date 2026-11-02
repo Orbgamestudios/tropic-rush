@@ -55,6 +55,25 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Crew screen:** Tools and Statues live in the Build drawer, a Heroes button sits by the Map
   button, and the cleared bar has gone.
 - **Accounts:** logging out takes the game off the phone, so nothing carries into the next account.
+  A phone can stay signed in to several accounts and switch between them from the profile.
+- **One gold:** there's only the island's gold. Raids and chests pay into it, and it pays for hero
+  upgrades, so every screen shows the same number. Crystals are still each player's own.
+- **Shared heroes:** a crew shares its hero upgrades. One person buys, everyone has it, and upgrades
+  a player already owned join the crew's when they do.
+- **Heroes go by the headquarters:** a hero is available only once the crew's headquarters has
+  reached their level, whatever an old save says.
+- **Starting strength:** every hero starts at 85% of the old health and damage, so first islands
+  take some care. The upgrades and checkpoints earn it back.
+- **Hero models:** all six heroes on foot use real TRELLIS.2 models with skeletons, in menus and in
+  raids: about 32,000 triangles on the hero screen and 7,000 in a raid. The Tank is still the block
+  model.
+- **Grass:** big swathes of light and deep green, shared by the ground and the plants on it, with
+  fine blades in a small texture. The swathes are baked when an island is built.
+- **Bases on the crew island's shape** grow the way a crew's does: a small camp in the first clearing
+  near the beach, with forest standing everywhere else, working further inland as the headquarters
+  levels up. It reaches its deepest spot by headquarters 16.
+- **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
+  and the crew's own island has a Home tag.
 ## Raids (the core of the game)
 
 Raids are what matter most. If a co-op raid is fun, everything else builds on it.
@@ -174,7 +193,7 @@ sets them apart, and the Tank's Aftershock moved from the end of a ram to whatev
 - **Unlocks (Decided 2026-11-01, for now, until a story arc brings heroes in):** everyone starts
   with the Rifleman alone. A new hero joins every three HQ levels: Heavy at 3, Medic at 6, Grenadier
   at 9, Bazooka at 12, Engineer at 15 and Tank at 18. Medals are gone from the game.
-- Hero levels are personal to each player.
+- Hero upgrades are shared by the crew (see "Added 2026-11-02").
 - As heroes level up, their outfits gain pieces, but silhouettes and headgear stay the same.
 - **Perks (Decided 2026-10-30):** levelling a hero is an event, not just bigger numbers. Each hero
   has four perks of their own, earned at levels 3, 5, 7 and 10, shown as a locked track on the
@@ -456,7 +475,7 @@ like theme but polished and simple"):
 
 - Players earn gold from raids: destruction × 2 × island level, plus 150 × level for a win.
 - Gold levels heroes up, from 1 to 10. Each level adds 8% health and damage.
-- Hero levels and gold are personal, not shared with the crew.
+- Hero upgrades and gold are shared by the crew; only crystals are personal.
 - Hero names on the cards:
   - Sgt. Steele (Rifleman)
   - Doc Penny (Medic)
