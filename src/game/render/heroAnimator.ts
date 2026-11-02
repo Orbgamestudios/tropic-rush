@@ -34,6 +34,27 @@ export const AT_EASE: HeroMove = {
 /** Where a weapon sits on the body: position, then rotation. */
 type WeaponPose = readonly [number, number, number, number, number, number];
 
+/** How a hand takes hold of something, in the held thing's own axes. */
+export interface Grip {
+  /** The point the palm closes on. */
+  at: THREE.Vector3;
+  /** The way the hand reaches it, from wrist to knuckles. */
+  along: THREE.Vector3;
+  /** The way the palm faces. */
+  palm: THREE.Vector3;
+}
+
+const grip = (at: readonly number[], along: readonly number[], palm: readonly number[]): Grip => ({
+  at: new THREE.Vector3(at[0], at[1], at[2]),
+  along: new THREE.Vector3(along[0], along[1], along[2]).normalize(),
+  palm: new THREE.Vector3(palm[0], palm[1], palm[2]).normalize(),
+});
+
+/** A pistol grip, in the right hand: thumb up, palm against its side. */
+const PISTOL_GRIP = (at: readonly number[]) => grip(at, [0.8, 0.45, -0.4], [0, -0.1, -1]);
+/** A hand under a barrel, reaching across from the left: palm up, thumb forward. */
+const UNDERHAND = (at: readonly number[]) => grip(at, [0.3, 0.15, 0.94], [0, 1, 0]);
+
 /** How a hero carries what they carry. */
 export interface HeroPoses {
   low: WeaponPose;
@@ -43,9 +64,9 @@ export interface HeroPoses {
   working: WeaponPose;
   cheering: WeaponPose;
   dropped: WeaponPose;
-  /** Where each hand holds it. Null leaves the left hand free, swinging at the hero's side. */
-  rightHand: THREE.Vector3;
-  leftHand: THREE.Vector3 | null;
+  /** How each hand holds it. Null leaves the left hand free, swinging at the hero's side. */
+  rightHand: Grip;
+  leftHand: Grip | null;
   bolt: THREE.Vector3;
   /** Overhead, for a hero who throws it rather than fires it. */
   thrown: WeaponPose | null;
@@ -61,8 +82,8 @@ export const RIFLE_POSES: HeroPoses = {
   working: [0.3, 1.12, 0.16, 0.3, 0.2, 0.45],
   cheering: [0.04, 1.98, 0.78, 0.5, 0.1, 1.25],
   dropped: DROPPED,
-  rightHand: new THREE.Vector3(0.1, -0.2, 0.02),
-  leftHand: new THREE.Vector3(0.42, -0.08, -0.03),
+  rightHand: PISTOL_GRIP([0.1, -0.13, 0.02]),
+  leftHand: UNDERHAND([0.5, -0.06, 0]),
   bolt: new THREE.Vector3(-0.02, 0.12, 0.08),
   thrown: null,
 };
@@ -74,23 +95,23 @@ export const MINIGUN_POSES: HeroPoses = {
   working: [0.5, 0.98, 0.02, 0, 0, 0.03],
   cheering: [0.16, 2.0, 0.72, 0.35, 0, 1.15],
   dropped: [0.3, 0.5, 0.4, 1.2, 0.4, -1.2],
-  rightHand: new THREE.Vector3(-0.24, -0.06, 0.13),
-  leftHand: new THREE.Vector3(-0.05, 0.24, -0.02),
+  rightHand: PISTOL_GRIP([-0.2, -0.2, 0]),
+  leftHand: grip([-0.02, 0.26, 0], [0.25, 0.1, 0.96], [0, -1, 0]),
   bolt: NO_BOLT,
   thrown: null,
 };
 
 export const BOTTLE_POSES: HeroPoses = {
-  low: [0.26, 0.98, 0.42, 0, 0, -0.25],
-  running: [0.3, 1.14, 0.24, 0, 0, 0.6],
-  aimed: [0.4, 1.2, 0.26, 0, 0, 0.2],
-  working: [0.4, 1.2, 0.26, 0, 0, 0.2],
-  cheering: [0.1, 1.95, 0.78, 0.25, 0, 1.3],
+  low: [0.26, 1.0, 0.42, 0, 0, 0],
+  running: [0.3, 1.14, 0.28, 0, 0, 0.15],
+  aimed: [0.4, 1.2, 0.3, 0, 0, 0.1],
+  working: [0.4, 1.2, 0.3, 0, 0, 0.1],
+  cheering: [0.1, 1.95, 0.78, 0.2, 0, -0.1],
   dropped: DROPPED,
-  rightHand: new THREE.Vector3(-0.04, -0.12, 0),
+  rightHand: grip([0, 0, 0], [0.85, 0.15, -0.5], [-0.5, 0, -0.85]),
   leftHand: null,
   bolt: NO_BOLT,
-  thrown: [-0.12, 1.86, 0.26, 0, 0, 1.7],
+  thrown: [-0.12, 1.86, 0.26, 0, 0, 0.5],
 };
 
 export const TUBE_POSES: HeroPoses = {
@@ -100,8 +121,8 @@ export const TUBE_POSES: HeroPoses = {
   working: [0.02, 1.47, 0.3, 0, 0, -0.1],
   cheering: [0.06, 1.76, 0.72, 0.3, 0, 0.95],
   dropped: [0.1, 0.5, 0.45, 1.2, 0.4, -1.2],
-  rightHand: new THREE.Vector3(0.05, -0.2, 0),
-  leftHand: new THREE.Vector3(0.28, -0.16, -0.1),
+  rightHand: PISTOL_GRIP([0.05, -0.2, 0]),
+  leftHand: PISTOL_GRIP([0.42, -0.2, 0]),
   bolt: NO_BOLT,
   thrown: null,
 };
@@ -113,26 +134,28 @@ export const GRENADE_POSES: HeroPoses = {
   working: [0.2, 1.46, 0.3, 0, 0, 0],
   cheering: [0.1, 1.98, 0.8, 0, 0, 0],
   dropped: DROPPED,
-  rightHand: new THREE.Vector3(-0.04, -0.08, 0),
+  rightHand: grip([0, -0.06, 0], [0.8, 0.15, -0.55], [0, 1, 0]),
   leftHand: null,
   bolt: NO_BOLT,
   thrown: [-0.14, 1.9, 0.26, 0, 0, 0.8],
 };
 
 export const WRENCH_POSES: HeroPoses = {
-  low: [0.26, 0.96, 0.44, 0, 0, -0.5],
-  running: [0.28, 1.14, 0.26, 0, 0, 0.7],
-  aimed: [0.44, 1.2, 0.26, 0, 0, 0.1],
-  working: [0.44, 1.2, 0.26, 0, 0, 0.1],
+  low: [0.26, 0.96, 0.44, 0, 0, 1.15],
+  running: [0.28, 1.14, 0.3, 0, 0, 1.3],
+  aimed: [0.44, 1.2, 0.3, 0, 0, 0.75],
+  working: [0.44, 1.2, 0.3, 0, 0, 0.75],
   cheering: [0.1, 1.95, 0.78, 0.25, 0, 1.3],
   dropped: DROPPED,
-  rightHand: new THREE.Vector3(-0.1, 0, 0),
+  rightHand: grip([-0.1, 0, 0], [0, -1, -0.2], [0, 0, -1]),
   leftHand: null,
   bolt: NO_BOLT,
   thrown: null,
 };
 
 const FIST_UP = new THREE.Vector3(0.1, 1.95, -0.8);
+/** The way a free palm faces: in towards the leg, and the same at rest in either hand. */
+const PALM_IN = [new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 1)] as const;
 /** How high the poses expect a hero's shoulders to be. */
 export const POSED_SHOULDER = 1.38;
 /** How far the fingers curl, holding something and with nothing to hold. */
@@ -163,7 +186,25 @@ const fist = new THREE.Vector3();
 const elbow = new THREE.Vector3();
 const bone = new THREE.Vector3();
 const side = new THREE.Vector3();
-const turn = new THREE.Quaternion();
+const wrist = new THREE.Vector3();
+const toKnuckles = new THREE.Vector3();
+const palmFaces = new THREE.Vector3();
+const thumbSide = new THREE.Vector3();
+const restSide = new THREE.Vector3();
+const restPalm = new THREE.Vector3();
+const basis = new THREE.Matrix4();
+const upperTurn = new THREE.Quaternion();
+const foreTurn = new THREE.Quaternion();
+const handTurn = new THREE.Quaternion();
+const restTurn = new THREE.Quaternion();
+const twist = new THREE.Quaternion();
+const undo = new THREE.Quaternion();
+const hands = {
+  right: { along: new THREE.Vector3(), palm: new THREE.Vector3() },
+  left: { along: new THREE.Vector3(), palm: new THREE.Vector3() },
+};
+/** How much of a hand's turn the forearm takes, which spares the wrist from wringing. */
+const FOREARM_TWIST = 0.55;
 
 /** Exponential smoothing that doesn't depend on the frame rate. */
 const ease = (dt: number, rate: number) => 1 - Math.exp(-dt * rate);
@@ -195,11 +236,19 @@ function strideAt(at: number, planted: number, bend: number): void {
 }
 
 /** Two-bone IK: bends the arm from its shoulder so the hand lands on a point, or as near as it reaches. */
-function reach(arm: HeroArm, target: THREE.Vector3, pole: THREE.Vector3): void {
-  const { shoulder, upperLength, foreLength } = arm;
-  bone.copy(target).sub(shoulder);
-  // The target is where the palm goes, a little past the wrist these bones end at.
-  const gap = clamp(bone.length() - arm.palm, 0.08, upperLength + foreLength - 0.002);
+function reach(
+  arm: HeroArm,
+  target: THREE.Vector3,
+  pole: THREE.Vector3,
+  along: THREE.Vector3 | null,
+  palm: THREE.Vector3,
+): void {
+  const { shoulder, upperLength, foreLength, bones } = arm;
+  // The target is where the palm goes, so the wrist stops short of it on the way the hand comes in.
+  wrist.copy(target);
+  if (along) wrist.addScaledVector(along, -arm.palm);
+  bone.copy(wrist).sub(shoulder);
+  const gap = clamp(bone.length() - (along ? 0 : arm.palm), 0.08, upperLength + foreLength - 0.002);
   bone.normalize();
   const a = (upperLength ** 2 - foreLength ** 2 + gap ** 2) / (2 * gap);
   const h = Math.sqrt(Math.max(0, upperLength ** 2 - a ** 2));
@@ -207,13 +256,12 @@ function reach(arm: HeroArm, target: THREE.Vector3, pole: THREE.Vector3): void {
   elbow.copy(shoulder).addScaledVector(bone, a).addScaledVector(side, h);
   hand.copy(shoulder).addScaledVector(bone, gap);
 
-  const { bones } = arm;
   if (bones) {
     bone.copy(elbow).sub(shoulder).normalize();
-    arm.upper.quaternion.setFromUnitVectors(bones.upperRest, bone);
+    upperTurn.setFromUnitVectors(bones.upperRest, bone);
     bone.copy(hand).sub(elbow).normalize();
-    turn.setFromUnitVectors(bones.foreRest, bone);
-    arm.fore.quaternion.copy(arm.upper.quaternion).invert().multiply(turn);
+    foreTurn.setFromUnitVectors(bones.foreRest, bone);
+    turnHand(arm, bones, along ?? bone, palm);
     return;
   }
 
@@ -224,6 +272,49 @@ function reach(arm: HeroArm, target: THREE.Vector3, pole: THREE.Vector3): void {
   bone.copy(hand).sub(elbow).normalize();
   arm.fore.quaternion.setFromUnitVectors(Y_AXIS, bone);
   arm.hand.position.copy(hand);
+}
+
+/** Brings what's held nearer, if a hand can't reach its grip from where it is. */
+function pullIn(rig: HeroRig, arm: HeroArm, at: THREE.Vector3, along: THREE.Vector3): void {
+  wrist.copy(at).applyMatrix4(rig.rifle.matrix).addScaledVector(along, -arm.palm);
+  const over = wrist.distanceTo(arm.shoulder) - (arm.upperLength + arm.foreLength - 0.01);
+  if (over <= 0) return;
+  bone.copy(arm.shoulder).sub(wrist).normalize();
+  rig.rifle.position.addScaledVector(bone, over);
+  rig.rifle.updateMatrix();
+}
+
+/**
+ * Lines a hand up: its knuckles the way it's reaching and its palm the way it should face. A hand
+ * can only roll so far before the wrist wrings like a cloth, so the forearm takes a share of it.
+ */
+function turnHand(
+  arm: HeroArm,
+  bones: NonNullable<HeroArm["bones"]>,
+  along: THREE.Vector3,
+  palm: THREE.Vector3,
+): void {
+  toKnuckles.copy(along).normalize();
+  palmFaces.copy(palm).addScaledVector(toKnuckles, -palm.dot(toKnuckles)).normalize();
+  thumbSide.crossVectors(toKnuckles, palmFaces);
+  basis.makeBasis(toKnuckles, palmFaces, thumbSide);
+  handTurn.setFromRotationMatrix(basis);
+  // In the T-pose the models were made in, palms face the ground.
+  restPalm.set(0, -1, 0).addScaledVector(bones.handRest, bones.handRest.y).normalize();
+  restSide.crossVectors(bones.handRest, restPalm);
+  basis.makeBasis(bones.handRest, restPalm, restSide);
+  restTurn.setFromRotationMatrix(basis).invert();
+  handTurn.multiply(restTurn);
+  // Whatever of that is a roll about the forearm itself, the forearm shares.
+  undo.copy(foreTurn).invert().multiply(handTurn);
+  const axis = bones.foreRest;
+  const roll = undo.x * axis.x + undo.y * axis.y + undo.z * axis.z;
+  twist.set(axis.x * roll, axis.y * roll, axis.z * roll, undo.w).normalize();
+  twist.slerp(undo.identity(), 1 - FOREARM_TWIST);
+  foreTurn.multiply(twist);
+  arm.upper.quaternion.copy(upperTurn);
+  arm.fore.quaternion.copy(upperTurn).invert().multiply(foreTurn);
+  arm.hand.quaternion.copy(foreTurn).invert().multiply(handTurn);
 }
 
 export class HeroAnimator {
@@ -375,10 +466,27 @@ export class HeroAnimator {
     );
     rig.rifle.updateMatrix();
 
-    // The arms follow it.
-    this.rightHand.copy(poses.rightHand).applyMatrix4(rig.rifle.matrix);
+    // Falling, they let go. A free hand simply carries on from the forearm.
+    const gripping = fall < 0.5;
+    const leftHold = poses.leftHand !== null && gripping && cheer < 0.5;
+    const { quaternion } = rig.rifle;
+    hands.right.along.copy(poses.rightHand.along).applyQuaternion(quaternion);
+    hands.right.palm.copy(poses.rightHand.palm).applyQuaternion(quaternion);
     if (poses.leftHand) {
-      this.leftHand.copy(poses.leftHand).lerp(poses.bolt, this.bolt).applyMatrix4(rig.rifle.matrix);
+      hands.left.along.copy(poses.leftHand.along).applyQuaternion(quaternion);
+      hands.left.palm.copy(poses.leftHand.palm).applyQuaternion(quaternion);
+    }
+    // Heroes' arms are short and all different: what's held out too far comes back to the hands.
+    if (poses.leftHand && leftHold) pullIn(rig, rig.left, poses.leftHand.at, hands.left.along);
+    pullIn(rig, rig.right, poses.rightHand.at, hands.right.along);
+
+    // The arms follow it, and the hands close on it.
+    this.rightHand.copy(poses.rightHand.at).applyMatrix4(rig.rifle.matrix);
+    if (poses.leftHand) {
+      this.leftHand
+        .copy(poses.leftHand.at)
+        .lerp(poses.bolt, this.bolt)
+        .applyMatrix4(rig.rifle.matrix);
     } else {
       const { shoulder, upperLength, foreLength, palm } = rig.left;
       const arm = upperLength + foreLength;
@@ -396,8 +504,20 @@ export class HeroAnimator {
     this.leftHand.lerp(fist, cheer * (0.9 + Math.sin(time * 6.5) * 0.1));
     this.leftHand.lerp(rig.left.rest, fall);
     this.rightHand.lerp(rig.right.rest, fall);
-    reach(rig.right, this.rightHand, RIGHT_ELBOW);
-    reach(rig.left, this.leftHand, LEFT_ELBOW);
+    reach(
+      rig.right,
+      this.rightHand,
+      RIGHT_ELBOW,
+      gripping ? hands.right.along : null,
+      gripping ? hands.right.palm : (PALM_IN[0] as THREE.Vector3),
+    );
+    reach(
+      rig.left,
+      this.leftHand,
+      LEFT_ELBOW,
+      leftHold ? hands.left.along : null,
+      leftHold ? hands.left.palm : (PALM_IN[1] as THREE.Vector3),
+    );
     if (rig.right.fingers) rig.right.fingers.rotation.x = GRIP * rig.right.side;
     if (rig.left.fingers) {
       const curl = lerp(poses.leftHand ? GRIP : RELAXED, GRIP, cheer);

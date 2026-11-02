@@ -4,7 +4,6 @@
 // calls, and splotches of cloud lift as the crew earns its way out.
 
 import * as THREE from "three";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HOME_SHAPE, type IslandShape } from "../logic/island";
 import { islandShape } from "../logic/islandShapes";
 import { createRng } from "../logic/rng";
@@ -19,6 +18,7 @@ import {
 import { cloudTexture } from "./clouds";
 import { type Lamp, LightPool } from "./lightPool";
 import { MapClouds } from "./mapClouds";
+import { MapShallows } from "./mapShallows";
 import { buildingModel, gunboatModel } from "./models";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
@@ -44,12 +44,16 @@ const PAN_MARGIN = 26;
 /** Regions are built once they're this near the middle of the view, in regions. */
 const BUILD_REACH = { x: 1.4, y: 1.5 } as const;
 const SMOKE_STEPS = 4;
+/** How big the crew's own island is drawn. */
+const HOME_RADIUS = 6.5;
 const CREW_LIGHT = 0xffc680;
 const RAIDER_LIGHT = 0xff6a3c;
 
 const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform vec3 uUnlit;
+  uniform sampler2D uShallows;
+  uniform vec4 uBox;
   varying vec3 vWorld;
   uniform sampler2D uNoise;
   float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
@@ -57,6 +61,11 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec2 p = vWorld.xz;
     // Slow patches of lighter and darker water, then a few thin wave crests.
     vec3 color = vec3(0.01, 0.11, 0.33) * (0.82 + noise(p * 0.06 + uTime * 0.012) * 0.4);
+    // The shelf round the islands, its edge wandering with the noise, and the sandbanks on it.
+    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(noise(p * 0.1), noise(p * 0.1 + 9.0)) - 0.5) * 0.018;
+    float shelf = texture2D(uShallows, uv).r + (noise(p * 0.2) - 0.5) * 0.1;
+    color = mix(color, vec3(0.05, 0.5, 0.62), smoothstep(0.2, 0.42, shelf) * 0.9);
+    color = mix(color, vec3(0.3, 0.84, 0.76), smoothstep(0.5, 0.82, shelf) * 0.85);
     float a = noise(p * 0.22 + vec2(uTime * 0.08, 0.0));
     float b = noise(p * 0.55 - vec2(0.0, uTime * 0.06));
     color += vec3(0.5, 0.75, 0.95) * smoothstep(0.66, 0.74, a * 0.55 + b * 0.45) * 0.035;
@@ -65,26 +74,6 @@ const OCEAN_FRAGMENT = /* glsl */ `
     #include <colorspace_fragment>
   }
 `;
-
-function shallowsTexture(): THREE.CanvasTexture {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const g = canvas.getContext("2d");
-  if (g) {
-    const c = size / 2;
-    const grad = g.createRadialGradient(c, c, c * 0.45, c, c, c);
-    grad.addColorStop(0, "rgba(150, 240, 225, 0.95)");
-    grad.addColorStop(0.6, "rgba(90, 215, 215, 0.5)");
-    grad.addColorStop(1, "rgba(60, 190, 210, 0)");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, size, size);
-  }
-  const t = new THREE.CanvasTexture(canvas);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
 
 let shapes: {
   palm: THREE.BufferGeometry;
@@ -119,7 +108,6 @@ function sharedShapes(): NonNullable<typeof shapes> {
 /** Everything drawn on the islands of one region, gathered up to go into a few meshes. */
 interface Batch {
   land: THREE.BufferGeometry[];
-  shallows: THREE.BufferGeometry[];
   palms: PropInstance[];
   trees: PropInstance[];
   bushes: PropInstance[];
@@ -131,7 +119,6 @@ interface Batch {
 function newBatch(): Batch {
   return {
     land: [],
-    shallows: [],
     palms: [],
     trees: [],
     bushes: [],
@@ -182,11 +169,6 @@ function addLand(
     x: x + (wx - mx) * scale,
     y: z + (wz - mz) * scale,
   });
-  const shelf = new THREE.PlaneGeometry(radius * 4.4, radius * 4.4);
-  shelf.rotateX(-Math.PI / 2);
-  shelf.translate(x, 0.05, z);
-  batch.shallows.push(shelf);
-
   const sand = new THREE.Color(shape.blackSand ? 0x4a4648 : COLORS.sand);
   const grass = new THREE.Color(0x6fbf4c);
   const rock = new THREE.Color(0x6d6358);
@@ -277,13 +259,9 @@ function addIsland(batch: Batch, island: MapIsland): void {
   }
 }
 
-function buildBatch(batch: Batch, shallows: THREE.Material): THREE.Group {
+function buildBatch(batch: Batch): THREE.Group {
   const group = new THREE.Group();
-  if (batch.land.length > 0) {
-    group.add(new THREE.Mesh(merge(batch.land), vertexColored()));
-    const glow = mergeGeometries(batch.shallows, false);
-    if (glow) group.add(new THREE.Mesh(glow, shallows));
-  }
+  if (batch.land.length > 0) group.add(new THREE.Mesh(merge(batch.land), vertexColored()));
   const s = sharedShapes();
   const sway = swaying(false);
   const still = vertexColored();
@@ -321,11 +299,7 @@ export class WorldMapView {
   private readonly regions = new Map<string, RegionView>();
   private readonly regionRoot = new THREE.Group();
   private readonly clouds = new MapClouds();
-  private readonly shallows = new THREE.MeshBasicMaterial({
-    map: shallowsTexture(),
-    transparent: true,
-    depthWrite: false,
-  });
+  private readonly shallows = new MapShallows();
   private readonly boat = gunboatModel();
   private readonly lights = new LightPool();
   /** One per step of the rising loop, so each puff can fade as it goes. */
@@ -342,7 +316,13 @@ export class WorldMapView {
 
   constructor(private readonly stage: Stage) {
     this.ocean = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uNoise: { value: noiseTexture() }, uUnlit: SKY.unlit },
+      uniforms: {
+        uTime: { value: 0 },
+        uNoise: { value: noiseTexture() },
+        uUnlit: SKY.unlit,
+        uShallows: { value: this.shallows.texture },
+        uBox: { value: this.shallows.box },
+      },
       vertexShader: /* glsl */ `
         varying vec3 vWorld;
         void main() {
@@ -359,19 +339,18 @@ export class WorldMapView {
     sea.rotateX(-Math.PI / 2);
     this.sea = new THREE.Mesh(sea, this.ocean);
     this.sea.renderOrder = -1;
-    this.shallows.color = SKY.unlit.value;
     this.root.add(this.sea, this.regionRoot, this.clouds.mesh, this.lights.root);
 
     // Home in the middle, and the gunboat at anchor beside it.
     const home = newBatch();
-    addLand(home, 5, 0, 0, 6.5, HOME_SHAPE);
+    addLand(home, 5, 0, 0, HOME_RADIUS, HOME_SHAPE);
     home.crewHqs.push({
       x: 0,
       y: 0,
       rotation: 0,
       scale: new THREE.Vector3().setScalar(0.32),
     });
-    this.root.add(buildBatch(home, this.shallows));
+    this.root.add(buildBatch(home));
     this.boat.root.scale.setScalar(0.5);
     this.root.add(this.boat.root);
 
@@ -397,6 +376,10 @@ export class WorldMapView {
       south: Math.max(...sky.map((h) => h.y + h.radius)) + PAN_MARGIN,
     };
     this.clouds.setSky(sky, lifting);
+    this.shallows.paint([
+      { x: 0, y: 0, radius: HOME_RADIUS },
+      ...islands.map((i) => ({ x: i.x, y: i.y, radius: islandRadius(i.size) })),
+    ]);
     // Regions rebuild only when something on them has changed.
     for (const [key, view] of this.regions) {
       if (view.look === this.lookOf(key)) continue;
@@ -424,7 +407,7 @@ export class WorldMapView {
   private buildRegion(key: string): void {
     const batch = newBatch();
     for (const island of this.islands) if (island.region === key) addIsland(batch, island);
-    const group = buildBatch(batch, this.shallows);
+    const group = buildBatch(batch);
     this.regionRoot.add(group);
     this.regions.set(key, { group, look: this.lookOf(key) });
   }

@@ -1,7 +1,9 @@
 // The cloud over the world map: one sheet, drawn in a single call however far the crew has come.
-// Where the sky is clear is painted once into a small mask, and the shader tears the edges of it
-// with noise, so splotches of open sea have soft, wandering coasts of cloud rather than corners.
-// A new splotch dissolves open from the old mask to the new one.
+// Where the sky is clear is painted once into a small mask. Every patch is painted oversized and
+// joined to its neighbor, then the mask is blurred and the shader draws the edge further in than
+// it was painted: gaps too narrow to survive that close up, so the clear sky is one open stretch of
+// sea with a smooth shore of cloud, not patches with strands of cloud left between islands. A new
+// splotch dissolves open from the old mask to the new one.
 
 import * as THREE from "three";
 import type { SkyHole } from "../logic/worldMap";
@@ -12,6 +14,10 @@ const MASK_WIDTH = 512;
 const MASK_HEIGHT = 340;
 /** How much sky the mask covers past the furthest splotch, in map units. */
 const MASK_MARGIN = 70;
+/** How far past its true edge each patch of sky is painted, and so the widest gap that closes. */
+const GROW = 16;
+/** Patches are joined by a band this wide at most, either side, in map units. */
+const JOIN_WIDTH = 15;
 /** The sheet follows the camera, and is always bigger than the view. */
 const SHEET = { width: 1100, depth: 800, height: 6 } as const;
 const LIFT_SECONDS = 2.6;
@@ -41,12 +47,13 @@ const FRAGMENT = /* glsl */ `
     float middle = noise(p * 0.13 - vec2(0.0, uTime * 0.016));
     float small = noise(p * 0.34 + vec2(uTime * 0.02, -uTime * 0.01));
     float billow = large * 0.5 + middle * 0.33 + small * 0.17;
-    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(middle, large) - 0.5) * 0.035;
+    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(large, middle) - 0.5) * 0.012;
     float before = texture2D(uBefore, uv).r;
     float now = texture2D(uMask, uv).r;
     // A new splotch tears open from its thin spots first.
     float clear = mix(before, now, smoothstep(billow - 0.25, billow + 0.25, uLift * 1.5 - 0.25));
-    float alpha = 1.0 - smoothstep(0.3, 0.62, clear + (billow - 0.5) * 0.7);
+    // The painted patches ran past their true edge, so the shore is drawn well inside them.
+    float alpha = 1.0 - smoothstep(0.62, 0.86, clear + (billow - 0.5) * 0.14);
     if (alpha < 0.004) discard;
     // Bright where it billows up, blue-grey in the folds.
     float light = smoothstep(0.3, 0.68, billow) * 0.7 + smoothstep(0.42, 0.62, small) * 0.3;
@@ -67,6 +74,36 @@ function maskCanvas(): { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   return { canvas, texture };
+}
+
+/** The nearest patch to this one that's closer to home. */
+function nearerHome(hole: SkyHole, holes: readonly SkyHole[]): SkyHole | null {
+  const away = Math.hypot(hole.x, hole.y);
+  let best: SkyHole | null = null;
+  let gap = Number.POSITIVE_INFINITY;
+  for (const other of holes) {
+    if (Math.hypot(other.x, other.y) >= away) continue;
+    const d = Math.hypot(other.x - hole.x, other.y - hole.y);
+    if (d < gap) {
+      best = other;
+      gap = d;
+    }
+  }
+  return best;
+}
+
+/** Blurs a canvas by shrinking it and bringing it back: canvas filters don't work on iPhones. */
+function soften(canvas: HTMLCanvasElement, by: number): void {
+  const small = document.createElement("canvas");
+  small.width = Math.ceil(canvas.width / by);
+  small.height = Math.ceil(canvas.height / by);
+  const s = small.getContext("2d");
+  const g = canvas.getContext("2d");
+  if (!s || !g) return;
+  s.imageSmoothingQuality = "high";
+  g.imageSmoothingQuality = "high";
+  s.drawImage(canvas, 0, 0, small.width, small.height);
+  g.drawImage(small, 0, 0, canvas.width, canvas.height);
 }
 
 export class MapClouds {
@@ -111,26 +148,27 @@ export class MapClouds {
     const { x, y, z, w } = this.box;
     const sx = MASK_WIDTH / z;
     const sy = MASK_HEIGHT / w;
-    g.globalCompositeOperation = "source-over";
     g.fillStyle = "#000";
     g.fillRect(0, 0, MASK_WIDTH, MASK_HEIGHT);
-    g.globalCompositeOperation = "lighter";
-    for (const hole of holes) {
-      const cx = (hole.x - x) * sx;
-      const cy = (hole.y - y) * sy;
-      // Drawn as a circle and stretched, since the mask isn't square to the map.
-      g.save();
-      g.translate(cx, cy);
-      g.scale(sx, sy);
-      const glow = g.createRadialGradient(0, 0, hole.radius * 0.6, 0, 0, hole.radius * 1.12);
-      glow.addColorStop(0, "#fff");
-      glow.addColorStop(1, "#000");
-      g.fillStyle = glow;
+    g.fillStyle = "#fff";
+    const spot = (cx: number, cy: number, radius: number) => {
       g.beginPath();
-      g.arc(0, 0, hole.radius * 1.12, 0, Math.PI * 2);
+      g.ellipse((cx - x) * sx, (cy - y) * sy, radius * sx, radius * sy, 0, 0, Math.PI * 2);
       g.fill();
-      g.restore();
+    };
+    for (const hole of holes) spot(hole.x, hole.y, hole.radius + GROW);
+    // Each patch reaches back towards home, so none is left cut off behind a band of cloud.
+    for (const hole of holes) {
+      const towards = nearerHome(hole, holes);
+      if (!towards) continue;
+      const gap = Math.hypot(towards.x - hole.x, towards.y - hole.y);
+      const width = Math.min(JOIN_WIDTH, hole.radius, towards.radius) + GROW;
+      for (let along = 0; along < gap; along += width / 2) {
+        const t = along / gap;
+        spot(hole.x + (towards.x - hole.x) * t, hole.y + (towards.y - hole.y) * t, width);
+      }
     }
+    soften(canvas, Math.max(2, Math.round(GROW * sx)));
   }
 
   /** Paints the sky as it stands. With `animate`, whatever's new dissolves open. */

@@ -5,7 +5,7 @@
 
 import { audioContext, audioDestination } from "../ui/kit/fx";
 
-export type Track = "home" | "map" | "scout" | "raid" | "night" | "win";
+export type Track = "heroes" | "map" | "scout" | "raid" | "night" | "win";
 
 const FADE_SECONDS = 1.2;
 /** How loud each track plays: the same level for all, under the sound effects. */
@@ -13,9 +13,8 @@ const LEVEL = 0.5;
 const ONCE: readonly Track[] = ["win"];
 /** How long the exact loops are. Their files carry this many seconds more of it at either end. */
 const LOOPS: Partial<Record<Track, number>> = {
-  home: 77.142857,
-  scout: 20.869569,
-  raid: 6.857143,
+  scout: 85.333333,
+  raid: 64,
 };
 const LOOP_PADDING = 0.25;
 

@@ -19,7 +19,7 @@ import {
 } from "./heroAnimator";
 import { COLORS as C, material } from "./palette";
 import { riggedBody } from "./riggedHeroes";
-import { at, ball, barrel, capsule, cone, cyl, mesh, rbox } from "./shapes";
+import { at, ball, barrel, capsule, cone, cyl, flatten, mesh, rbox } from "./shapes";
 
 type Pair = [THREE.Object3D, THREE.Object3D];
 
@@ -34,7 +34,7 @@ export interface HeroArm {
   /** Where the hand ends up when they're down. */
   rest: THREE.Vector3;
   /** On a skinned model the arm is bones, and these are the ways they lie at rest. */
-  bones: { upperRest: THREE.Vector3; foreRest: THREE.Vector3 } | null;
+  bones: { upperRest: THREE.Vector3; foreRest: THREE.Vector3; handRest: THREE.Vector3 } | null;
   /** The bone that closes the hand round what it's holding, on a skinned model. */
   fingers: THREE.Object3D | null;
   /** From the wrist to the middle of the palm. */
@@ -387,77 +387,196 @@ function backpack(built: Built, color: number, roll: number | null): THREE.Group
   return g;
 }
 
+/** A flat outline with thickness and softened edges: the shapes guns are cut from. */
+function cutOut(points: readonly (readonly [number, number])[], thick: number, color: number) {
+  const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(x, y)));
+  const bevel = 0.008;
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: thick - bevel * 2,
+    bevelEnabled: true,
+    bevelSize: bevel,
+    bevelThickness: bevel,
+    bevelSegments: 1,
+  });
+  g.translate(0, 0, -(thick - bevel * 2) / 2);
+  return mesh(g, color);
+}
+
+/** A round shape turned from its profile, about the y axis: bottles, drums and the like. */
+function turned(profile: readonly (readonly [number, number])[], color: number, segments = 14) {
+  const points = profile.map(([r, y]) => new THREE.Vector2(r, y));
+  return mesh(new THREE.LatheGeometry(points, segments), color);
+}
+
+const GUNMETAL = 0x2f3338;
+const BLUED = 0x1c1f23;
+const STEEL = 0x8d969f;
+
+/** Bakes a weapon's parts into one mesh, so carrying it costs a single draw call. */
+function baked(weapon: THREE.Group): THREE.Group {
+  flatten(weapon);
+  // Small parts this close together only ever shadow each other in blotches.
+  weapon.traverse((o) => {
+    o.receiveShadow = false;
+  });
+  return weapon;
+}
+
 function rifle(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(rbox(0.34, 0.12, 0.08, C.wood), -0.22, -0.03, 0));
-  g.add(at(rbox(0.42, 0.11, 0.09, 0x2f3338), 0.12, 0.02, 0));
-  g.add(at(barrel(0.026, 0.52, 0x24272b, 8), 0.32, 0.04, 0));
-  g.add(at(rbox(0.18, 0.06, 0.08, C.wood), 0.42, -0.01, 0));
-  g.add(at(rbox(0.07, 0.2, 0.06, 0x2f3338), 0.12, -0.12, 0, 0, 0, -0.2));
-  g.add(at(cyl(0.035, 0.035, 0.2, 0x1b1d20, 10), 0.08, 0.12, 0, 0, 0, Math.PI / 2));
-  g.add(at(rbox(0.04, 0.05, 0.03, 0x2f3338), 0.78, 0.06, 0));
-  return g;
+  const stock = [
+    [-0.4, -0.12],
+    [-0.4, 0.045],
+    [-0.35, 0.055],
+    [-0.08, 0.04],
+    [-0.04, -0.03],
+    [-0.14, -0.05],
+    [-0.36, -0.13],
+  ] as const;
+  g.add(cutOut(stock, 0.07, C.wood));
+  g.add(at(rbox(0.46, 0.11, 0.07, GUNMETAL), 0.16, 0.02, 0));
+  g.add(at(rbox(0.3, 0.018, 0.045, BLUED), 0.16, 0.085, 0));
+  const pistolGrip = [
+    [0.05, -0.03],
+    [0.15, -0.03],
+    [0.12, -0.2],
+    [0.02, -0.19],
+  ] as const;
+  g.add(cutOut(pistolGrip, 0.06, C.wood));
+  const magazine = [
+    [0.22, -0.03],
+    [0.31, -0.03],
+    [0.36, -0.22],
+    [0.27, -0.24],
+  ] as const;
+  g.add(cutOut(magazine, 0.045, BLUED));
+  const handguard = [
+    [0.38, 0.05],
+    [0.64, 0.035],
+    [0.64, -0.04],
+    [0.38, -0.06],
+  ] as const;
+  g.add(cutOut(handguard, 0.075, C.wood));
+  g.add(at(barrel(0.02, 0.3, BLUED, 10), 0.6, 0.015, 0));
+  g.add(at(barrel(0.011, 0.24, GUNMETAL, 6), 0.4, 0.062, 0));
+  g.add(at(barrel(0.03, 0.07, GUNMETAL, 10), 0.83, 0.015, 0));
+  g.add(at(rbox(0.03, 0.06, 0.02, GUNMETAL), 0.78, 0.06, 0));
+  g.add(at(rbox(0.04, 0.045, 0.03, GUNMETAL), 0.02, 0.09, 0));
+  return baked(g);
 }
 
 function minigun(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(rbox(0.5, 0.26, 0.26, 0x3a3e44), 0, 0, 0));
-  g.add(at(cyl(0.2, 0.2, 0.18, 0x55595f, 14), -0.28, -0.1, 0.16, Math.PI / 2, 0, 0));
+  // The motor housing, with a grip at the back and a carrying handle on top.
+  g.add(at(barrel(0.15, 0.56, 0x3a3e44, 14), -0.34, 0, 0));
+  g.add(at(barrel(0.17, 0.08, 0x55595f, 14), -0.34, 0, 0));
+  g.add(at(barrel(0.17, 0.05, 0x55595f, 14), 0.2, 0, 0));
+  const rearGrip = [
+    [-0.26, -0.12],
+    [-0.14, -0.12],
+    [-0.16, -0.32],
+    [-0.28, -0.3],
+  ] as const;
+  g.add(cutOut(rearGrip, 0.07, 0x2a2d31));
+  g.add(at(rbox(0.2, 0.03, 0.05, 0x2a2d31), -0.04, 0.26, 0));
+  for (const x of [-0.12, 0.04]) g.add(at(rbox(0.03, 0.12, 0.04, 0x2a2d31), x, 0.2, 0));
+  // Six barrels, held by three clamps.
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
-    g.add(at(barrel(0.035, 0.85, 0x24272b, 8), 0.2, Math.cos(a) * 0.09, Math.sin(a) * 0.09));
+    g.add(at(barrel(0.03, 0.84, BLUED, 8), 0.22, Math.cos(a) * 0.085, Math.sin(a) * 0.085));
   }
-  g.add(at(cyl(0.14, 0.14, 0.05, 0x55595f, 14), 0.6, 0, 0, 0, 0, Math.PI / 2));
-  g.add(at(cyl(0.14, 0.14, 0.05, 0x55595f, 14), 1.0, 0, 0, 0, 0, Math.PI / 2));
-  g.add(at(rbox(0.1, 0.24, 0.06, 0x2a2d31), -0.05, 0.22, 0, 0, 0, 0.4));
-  return g;
+  for (const x of [0.42, 0.68, 0.94]) g.add(at(barrel(0.135, 0.04, 0x55595f, 14), x, 0, 0));
+  // The ammunition drum, on the left, away from the hand.
+  g.add(at(cyl(0.2, 0.2, 0.16, 0x55595f, 16), -0.08, -0.12, -0.2, Math.PI / 2, 0, 0));
+  g.add(at(cyl(0.12, 0.12, 0.17, 0x3a3e44, 12), -0.08, -0.12, -0.2, Math.PI / 2, 0, 0));
+  return baked(g);
 }
 
 function bazookaTube(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(barrel(0.15, 1.6, 0x6f7a4a, 16), -0.7, 0, 0));
-  g.add(at(cyl(0.2, 0.15, 0.22, 0x5d6640, 16), -0.78, 0, 0, 0, 0, Math.PI / 2));
-  g.add(at(cyl(0.17, 0.17, 0.1, C.crewBlue, 16), 0.86, 0, 0, 0, 0, Math.PI / 2));
-  g.add(at(cyl(0.17, 0.17, 0.08, C.crewBlue, 16), -0.2, 0, 0, 0, 0, Math.PI / 2));
-  g.add(at(rbox(0.12, 0.16, 0.06, 0x2f3338), 0.25, 0.2, 0));
-  g.add(at(rbox(0.06, 0.22, 0.06, 0x2f3338), 0.05, -0.2, 0));
+  g.add(at(barrel(0.14, 1.6, 0x6f7a4a, 16), -0.7, 0, 0));
+  // The flared blast cone at the back, and the blue bands.
+  const flare = turned(
+    [
+      [0.14, 0],
+      [0.15, 0.05],
+      [0.21, 0.2],
+      [0.19, 0.2],
+      [0.13, 0.05],
+    ],
+    0x5d6640,
+  );
+  g.add(at(flare, -0.7, 0, 0, 0, 0, Math.PI / 2));
+  for (const [x, wide] of [
+    [0.82, 0.09],
+    [-0.2, 0.07],
+    [0.3, 0.05],
+  ] as const) {
+    g.add(at(barrel(0.155, wide, C.crewBlue, 16), x, 0, 0));
+  }
+  // Two grips under it, a shoulder pad and a flip-up sight.
+  for (const x of [0.05, 0.42]) {
+    const handle = [
+      [x - 0.05, -0.13],
+      [x + 0.05, -0.13],
+      [x + 0.03, -0.28],
+      [x - 0.07, -0.27],
+    ] as const;
+    g.add(cutOut(handle, 0.05, GUNMETAL));
+  }
+  g.add(at(rbox(0.3, 0.04, 0.16, 0x4a3a2a), -0.1, 0.15, 0));
+  g.add(at(rbox(0.05, 0.13, 0.015, GUNMETAL), 0.3, 0.2, 0.06));
+  g.add(at(rbox(0.1, 0.02, 0.07, GUNMETAL), 0.3, 0.145, 0.06));
   // A rocket peeking out of the front.
-  g.add(at(cone(0.1, 0.24, 0xe5503a, 12), 0.98, 0, 0, 0, 0, -Math.PI / 2));
-  return g;
+  g.add(at(cone(0.11, 0.26, 0xe5503a, 14), 1.0, 0, 0, 0, 0, -Math.PI / 2));
+  return baked(g);
 }
 
 function healingBottle(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(rbox(0.32, 0.14, 0.12, 0x3fa34d), 0, 0, 0));
-  g.add(at(barrel(0.04, 0.36, 0x9aa3ad, 10), 0.14, 0.02, 0));
-  g.add(
-    at(
-      cyl(0.07, 0.05, 0.08, 0x7dff9a, 12, { emissive: 0x2a8a45 }),
-      0.52,
-      0.02,
-      0,
-      0,
-      0,
-      Math.PI / 2,
-    ),
+  const flask = turned(
+    [
+      [0.001, -0.14],
+      [0.09, -0.14],
+      [0.115, -0.11],
+      [0.115, 0.05],
+      [0.085, 0.11],
+      [0.04, 0.14],
+      [0.038, 0.21],
+      [0.001, 0.21],
+    ],
+    0x4fd070,
+    16,
   );
-  g.add(at(rbox(0.06, 0.16, 0.08, 0xd8dde3), -0.04, -0.12, 0, 0, 0, -0.2));
-  // A white plus on the side.
-  g.add(at(rbox(0.12, 0.04, 0.01, WHITE), 0, 0, 0.065));
-  g.add(at(rbox(0.04, 0.12, 0.01, WHITE), 0, 0, 0.065));
-  return g;
+  g.add(flask);
+  g.add(at(cyl(0.045, 0.04, 0.05, 0x8a6a48, 10), 0, 0.225, 0));
+  // A white label with a red cross, facing out of her hand.
+  g.add(at(cyl(0.118, 0.118, 0.1, WHITE, 16), 0, -0.03, 0));
+  for (const [w, h] of [
+    [0.09, 0.03],
+    [0.03, 0.09],
+  ] as const) {
+    g.add(at(rbox(0.012, h, w, 0xd8362a), 0.118, -0.03, 0));
+  }
+  return baked(g);
 }
 
 function wrench(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(rbox(0.5, 0.07, 0.05, 0x9aa3ad), 0.1, 0, 0));
-  const jaw = new THREE.Mesh(
-    new THREE.TorusGeometry(0.08, 0.035, 6, 12, Math.PI * 1.4),
-    material(0x9aa3ad),
-  );
-  g.add(at(jaw, 0.4, 0, 0, 0, 0, -0.7));
-  g.add(at(rbox(0.2, 0.1, 0.07, 0xe5503a), -0.08, 0, 0));
-  return g;
+  const head = [
+    [0.3, -0.05],
+    [0.42, -0.1],
+    [0.54, -0.09],
+    [0.48, -0.035],
+    [0.48, 0.035],
+    [0.54, 0.09],
+    [0.42, 0.1],
+    [0.3, 0.05],
+  ] as const;
+  g.add(cutOut(head, 0.05, STEEL));
+  g.add(at(rbox(0.46, 0.06, 0.04, STEEL), 0.1, 0, 0));
+  g.add(at(rbox(0.26, 0.085, 0.06, 0xe5503a), -0.09, 0, 0));
+  return baked(g);
 }
 
 function grenade(color = 0x6d7a45): THREE.Group {
@@ -465,10 +584,12 @@ function grenade(color = 0x6d7a45): THREE.Group {
   const body = ball(0.1, color, 12);
   body.scale.set(1, 1.15, 1);
   g.add(body);
-  g.add(at(cyl(0.04, 0.05, 0.06, 0x9aa3ad, 8), 0, 0.12, 0));
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.01, 5, 10), material(0xd8dde3));
-  g.add(at(ring, 0.04, 0.16, 0, Math.PI / 2, 0, 0));
-  return g;
+  for (const y of [-0.05, 0, 0.05]) g.add(at(cyl(0.103, 0.103, 0.006, 0x56623a, 12), 0, y, 0));
+  g.add(at(cyl(0.04, 0.05, 0.06, STEEL, 8), 0, 0.12, 0));
+  g.add(at(rbox(0.1, 0.012, 0.03, STEEL), 0.04, 0.155, 0, 0, 0, -0.35));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 5, 10), material(0xd8dde3));
+  g.add(at(ring, -0.04, 0.15, 0.03, Math.PI / 2, 0, 0));
+  return baked(g);
 }
 
 function human(kind: Human): HeroModel {
@@ -692,6 +813,7 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
       bones: {
         upperRest: foreBone.position.clone().normalize(),
         foreRest: handBone.position.clone().normalize(),
+        handRest: bone(`tips${suffix}`).position.clone().normalize(),
       },
     };
   };

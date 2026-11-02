@@ -130,7 +130,7 @@ const HEROES = {
 
 /** The two copies written: light for raids, detailed for the hero screen. */
 const COPIES = [
-  { suffix: "rig", triangles: 7000, texture: 512, quality: 80 },
+  { suffix: "rig", triangles: 5000, texture: 512, quality: 80 },
   { suffix: "hi", triangles: 32000, texture: 1024, quality: 90 },
 ];
 const HERO_HEIGHT = 2.25;
@@ -360,6 +360,7 @@ function reduced(mesh, skin, triangles) {
     [0.6, 0.6, 0.6],
     null,
     triangles * 3,
+    // Never past this, or across a seam in the texture: its patches would smear into each other.
     0.1,
     [],
   );

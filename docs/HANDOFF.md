@@ -18,9 +18,10 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 - **Balance:** tree prices, checkpoint sizes, the watchtower's numbers and blueprint odds are first
   passes. So are the second batch's: production, what the headquarters asks for, the sprint, and
   the chip each building takes off the headquarters.
-- **Music:** the scouting, victory and crew island tracks are synthesized, and Claude can only
+- **Music:** the scouting, raid and victory tracks are made by a script, and Claude can only
   measure them, not hear them. Ask how they sound. To change one, edit `scripts/make-music.mjs`,
-  run it, and copy any new loop length it prints into `LOOPS` in `src/game/audio/music.ts`.
+  run it, and copy any new loop length it prints into `LOOPS` in `src/game/audio/music.ts`. Keep them
+  at 112 kbps or more: below that the encoder quietly drops to 32 kHz.
 
 ## Last finished
 
@@ -112,6 +113,17 @@ the hero screen. Their hands are large in the art, so the game scales them down 
 
 The Tank goes through the same script but lists a height and a middle instead of joints, so it comes
 out as one solid piece with no skeleton. Its turret doesn't turn on its own.
+
+Don't turn on the simplifier's `Permissive` flag to get raid models smaller. It reaches 5,000
+triangles easily, but TRELLIS textures are many small patches, and collapsing across their seams
+smears them into streaks all over the hero. The models that stop short of the target stop there
+because of those seams.
+
+How a hero holds something is a `Grip` in `heroAnimator.ts`: where the palm goes, the way the hand
+reaches it, and the way the palm faces, all in the weapon's own axes. Heroes' arms are short and all
+different, so a weapon that's held out too far pulls in until both hands reach it. Weapons are built
+in `heroModels.ts` and baked into one mesh. `tropicRush.heroLook(distance, height)` puts the camera
+right up to the hero on the pedestal, and `tropicRush.heroCost(kind)` says what they take to draw.
 
 ## Testing tips
 

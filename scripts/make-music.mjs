@@ -1,7 +1,10 @@
-// Writes the game's own music, all of it synthesized here, so it's free of anyone else's rights:
-// the scouting drums, the victory fanfare and the crew island's calypso. It also cuts the raid
-// track down to a clean four bars. Run it again after changing anything here; the tracks come out
-// exactly the same every time.
+// Writes the music the game makes for itself: riffs on the crew island's song for scouting and
+// raids, and a bugle and drum fanfare for winning. The song is exactly 32 bars at 90 beats a minute
+// and starts on a beat, so anything can be locked to it. Scouting is the song far off and muffled
+// under a field drum corps. A raid is the song sped up to 120, which also lifts it a fourth, over
+// the attack drum loop slowed to match, ducking out of the way of each kick. Everything drawn on is
+// CC0, and what's synthesized here is free of anyone else's rights. Run it again after changing
+// anything here; the tracks come out exactly the same every time.
 //
 //   node scripts/make-music.mjs
 //
@@ -9,14 +12,21 @@
 // game can jump between two points in the middle of a repeating wave. However much silence the
 // MP3 format adds at the ends, the join can't be heard. See LOOPS in src/game/audio/music.ts.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { Mp3Encoder } from "@breezystack/lamejs";
 import { MPEGDecoder } from "mpg123-decoder";
 
 const SR = 44100;
 const PADDING = 0.25;
 const OUT = "public/audio/music";
-const RAID_SOURCE = "models-wip/scout-original.mp3";
+const SONG = "public/audio/music/heroes.mp3";
+/** "Tense bass boost drum loop" as downloaded: four bars at 140, and 18 ms of the next bar. */
+const DRUM_LOOP = "scripts/audio/raid-drums.mp3";
+const SONG_BARS = 32;
+const SONG_TEMPO = 90;
+const RAID_TEMPO = 120;
+/** How loud the song sits against the drums while scouting. */
+const SONG_BEHIND_DRUMS = 0.75;
 
 /** The same noise every run. */
 function rng(seed) {
@@ -140,7 +150,13 @@ function crashHit() {
 
 const BASS = bassHit();
 const CRASH = crashHit();
-const TOMS = { high: tomHit(196), mid: tomHit(147), low: tomHit(110), timpani: tomHit(58, 0.42) };
+// Tuned to the song: the fifth, third and root of B minor, and a low B on the timpani.
+const TOMS = {
+  high: tomHit(185),
+  mid: tomHit(147),
+  low: tomHit(123.5),
+  timpani: tomHit(61.7, 0.42),
+};
 
 // ---------------------------------------------------------------------------------------------
 // Tuned instruments
@@ -166,106 +182,6 @@ function brassNote(midi, seconds, bright, seed) {
     let sum = 0;
     for (let k = 1; k <= most; k++) sum += Math.sin(phase * k) * k ** -tilt;
     out[i] = sum * attack * release * (0.86 + 0.14 * Math.exp(-t / 0.12));
-  }
-  return out;
-}
-
-/** One steel pan note: a soft strike and a long shimmering ring. */
-function steelNote(midi, seconds) {
-  const out = samples(seconds + 0.9);
-  const f = hz(midi);
-  const partials = [
-    [1, 1, 0.75],
-    [2, 0.6, 0.5],
-    [3, 0.24, 0.3],
-    [4.02, 0.12, 0.2],
-    [5.1, 0.05, 0.12],
-  ];
-  for (let i = 0; i < out.length; i++) {
-    const t = i / SR;
-    let sum = 0;
-    for (const [ratio, level, decay] of partials) {
-      sum += Math.sin(2 * Math.PI * f * ratio * t) * level * Math.exp(-t / decay);
-    }
-    const shimmer = 1 + 0.08 * Math.sin(2 * Math.PI * 6.2 * t);
-    out[i] = sum * shimmer * Math.min(1, t / 0.004);
-  }
-  return out;
-}
-
-function marimbaNote(midi) {
-  const out = samples(0.9);
-  const f = hz(midi);
-  for (let i = 0; i < out.length; i++) {
-    const t = i / SR;
-    out[i] =
-      (Math.sin(2 * Math.PI * f * t) * Math.exp(-t / 0.26) +
-        Math.sin(2 * Math.PI * f * 4 * t) * Math.exp(-t / 0.06) * 0.32 +
-        Math.sin(2 * Math.PI * f * 9.8 * t) * Math.exp(-t / 0.02) * 0.1) *
-      Math.min(1, t / 0.002);
-  }
-  return out;
-}
-
-/** A plucked string, ringing down the way a real one does (Karplus-Strong). */
-function pluck(midi, seconds, seed, damping = 0.994) {
-  const random = rng(seed);
-  const period = Math.round(SR / hz(midi));
-  const loop = lowpass(
-    Float32Array.from({ length: period }, () => random() * 2 - 1),
-    3800,
-  );
-  const out = samples(seconds);
-  for (let i = 0; i < out.length; i++) {
-    const at = i % period;
-    out[i] = loop[at];
-    loop[at] = (loop[at] + loop[(at + 1) % period]) * 0.5 * damping;
-  }
-  return out;
-}
-
-function bassNote(midi) {
-  const out = samples(1.1);
-  const f = hz(midi);
-  for (let i = 0; i < out.length; i++) {
-    const t = i / SR;
-    out[i] =
-      (Math.sin(2 * Math.PI * f * t) +
-        Math.sin(4 * Math.PI * f * t) * 0.32 * Math.exp(-t / 0.2) +
-        Math.sin(6 * Math.PI * f * t) * 0.12 * Math.exp(-t / 0.1)) *
-      Math.exp(-t / 0.42) *
-      Math.min(1, t / 0.005);
-  }
-  return out;
-}
-
-function congaHit(freq, slap) {
-  const random = rng(Math.round(freq) + (slap ? 1 : 0));
-  const out = samples(0.45);
-  const skin = highpass(
-    out.map(() => random() * 2 - 1),
-    700,
-  );
-  for (let i = 0; i < out.length; i++) {
-    const t = i / SR;
-    out[i] =
-      Math.sin(2 * Math.PI * freq * t * (1 + 0.12 * Math.exp(-t / 0.012))) *
-        Math.exp(-t / (slap ? 0.05 : 0.13)) +
-      skin[i] * Math.exp(-t / (slap ? 0.02 : 0.007)) * (slap ? 0.9 : 0.35);
-  }
-  return out;
-}
-
-function shakerHit(seed) {
-  const random = rng(seed);
-  const out = samples(0.1);
-  const grains = highpass(
-    out.map(() => random() * 2 - 1),
-    5200,
-  );
-  for (let i = 0; i < out.length; i++) {
-    const t = i / SR;
-    out[i] = grains[i] * Math.min(1, t / 0.012) * Math.exp(-t / 0.028);
   }
   return out;
 }
@@ -312,6 +228,42 @@ class Mix {
   }
 }
 
+/** Decodes an MP3 to its two channels. */
+async function decode(path) {
+  const decoder = new MPEGDecoder();
+  await decoder.ready;
+  const { channelData } = decoder.decode(readFileSync(path));
+  decoder.free();
+  return channelData;
+}
+
+/** A wave played `speed` times as fast, wrapping round as a loop does. */
+function resampled(input, speed, length) {
+  const n = input.length;
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const at = i * speed;
+    const k = Math.floor(at);
+    const t = at - k;
+    const a = input[(k - 1 + n) % n];
+    const b = input[k % n];
+    const c = input[(k + 1) % n];
+    const d = input[(k + 2) % n];
+    // A smooth curve through the four samples round the point wanted.
+    out[i] = b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+  }
+  return out;
+}
+
+/** Rounds off the peaks and sets the level, ready to encode. */
+function master(channels, loudest = 0.9) {
+  let peak = 0;
+  for (const channel of channels) for (const v of channel) peak = Math.max(peak, Math.abs(v));
+  const drive = 1.25 / peak;
+  const level = loudest / Math.tanh(1.25);
+  return channels.map((channel) => channel.map((v) => Math.tanh(v * drive) * level));
+}
+
 /** One side of a short open-air echo. */
 function room(input, seconds, loop) {
   const combs = [0.0297, 0.0371, 0.0411, 0.0437].map((d) => Math.round(d * SR * seconds.spread));
@@ -339,15 +291,11 @@ function finish(mix, { decay, wet }) {
     const echo = c === 0 ? left : right;
     return dry.map((v, i) => v + echo[i] * wet);
   });
-  let peak = 0;
-  for (const channel of out) for (const v of channel) peak = Math.max(peak, Math.abs(v));
-  const drive = 1.25 / peak;
-  const level = 0.9 / Math.tanh(1.25);
-  return out.map((channel) => channel.map((v) => Math.tanh(v * drive) * level));
+  return master(out);
 }
 
-function encode(left, right, name) {
-  const encoder = new Mp3Encoder(2, SR, 128);
+function encode(left, right, name, rate = 128) {
+  const encoder = new Mp3Encoder(2, SR, rate);
   const pcm = (data) => Int16Array.from(data, (v) => Math.round(v * 32767));
   const [l, r] = [pcm(left), pcm(right)];
   const chunks = [];
@@ -361,7 +309,7 @@ function encode(left, right, name) {
 }
 
 /** Writes a loop with a little of its own end before it and its own start after it. */
-function writeLoop(left, right, name) {
+function writeLoop(left, right, name, rate) {
   const pad = Math.round(PADDING * SR);
   const padded = (channel) => {
     const out = new Float32Array(channel.length + pad * 2);
@@ -370,27 +318,49 @@ function writeLoop(left, right, name) {
     out.set(channel.subarray(0, pad), pad + channel.length);
     return out;
   };
-  encode(padded(left), padded(right), name);
+  encode(padded(left), padded(right), name, rate);
   console.log(`  loop ${(left.length / SR).toFixed(6)} s`);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Attacking: the old scouting loop, cut to its true four bars
+// Attacking: the song sped up, over the attack drum loop
 
 async function raidTrack() {
-  // The original as downloaded, kept out of the repo with the other raw files.
-  if (!existsSync(RAID_SOURCE)) return;
-  const decoder = new MPEGDecoder();
-  await decoder.ready;
-  const source = decoder.decode(readFileSync(RAID_SOURCE));
-  decoder.free();
-  // Four bars at 140 beats a minute. The file ran 18 ms over, into the next bar's first kick.
-  const bars = Math.round((4 * 4 * 60 * SR) / 140);
-  writeLoop(source.channelData[0].slice(0, bars), source.channelData[1].slice(0, bars), "raid");
+  const song = await decode(SONG);
+  const drums = await decode(DRUM_LOOP);
+  const beats = SONG_BARS * 4;
+  const length = Math.round((beats * 60 * SR) / RAID_TEMPO);
+  // Four bars of drums at 140, and no further: the file ran on into the next bar's first kick.
+  const drumBars = Math.round((4 * 4 * 60 * SR) / 140);
+  const slowed = drums.map((channel) =>
+    resampled(channel.slice(0, drumBars), 140 / RAID_TEMPO, length),
+  );
+  const kick = lowpass(
+    slowed[0].map((v, i) => (v + (slowed[1]?.[i] ?? v)) / 2),
+    130,
+  );
+  // How hard the kick is hitting right now: at once on the way up, easing off after.
+  let peak = 0;
+  for (const v of kick) peak = Math.max(peak, Math.abs(v));
+  const release = Math.exp(-1 / (0.16 * SR));
+  let hit = 0;
+  const duck = kick.map((v) => {
+    hit = Math.max(Math.abs(v) / peak, hit * release);
+    return 1 - 0.5 * hit;
+  });
+  const [left, right] = song.map((channel, c) => {
+    // The song leaves the bottom end to the drums.
+    const sped = highpass(resampled(channel, RAID_TEMPO / SONG_TEMPO, length), 170);
+    const beat = slowed[c] ?? slowed[0];
+    return sped.map((v, i) => v * 1.5 * duck[i] + beat[i] * 0.85);
+  });
+  // Drums this dense read loud: this brings it level with the other tracks.
+  const [l, r] = master([left, right], 0.58);
+  writeLoop(l, r, "raid");
 }
 
 // ---------------------------------------------------------------------------------------------
-// Scouting: a tense field drum corps, no tune to it
+// Scouting: a tense field drum corps, with the song far off behind it
 
 /** Plays one bar from strings of sixteenth notes. */
 function drumBar(mix, at, step, parts) {
@@ -422,8 +392,9 @@ function drumBar(mix, at, step, parts) {
   });
 }
 
-function scoutTrack() {
-  const beat = 60 / 92;
+async function scoutTrack() {
+  const song = await decode(SONG);
+  const beat = 60 / SONG_TEMPO;
   const step = beat / 4;
   const barTime = beat * 4;
   const cadence = {
@@ -451,13 +422,22 @@ function scoutTrack() {
       timpani: "T.T.T.T.T.T.T.TT",
     },
   };
-  const song = "aabacabd";
-  const mix = new Mix(barTime * song.length, true);
-  [...song].forEach((name, i) => {
-    drumBar(mix, mix.length ? i * barTime : 0, step, cadence[name]);
+  const verse = "aabacabd";
+  const mix = new Mix(barTime * SONG_BARS, true);
+  for (let bar = 0; bar < SONG_BARS; bar++) {
+    drumBar(mix, bar * barTime, step, cadence[verse[bar % verse.length]]);
+  }
+  // Heard through the trees: nothing of it above the middle of a piano. How loud goes by how
+  // loud the drums came out, so it stays clearly there behind them.
+  const rms = (wave) => Math.sqrt(wave.reduce((sum, v) => sum + v * v, 0) / wave.length);
+  song.forEach((channel, c) => {
+    const far = lowpass(lowpass(channel, 1000), 1000);
+    const out = c === 0 ? mix.left : mix.right;
+    const gain = (SONG_BEHIND_DRUMS * rms(out)) / rms(far);
+    for (let i = 0; i < out.length; i++) out[i] += far[i] * gain;
   });
   const [left, right] = finish(mix, { decay: 0.9, wet: 0.5 });
-  writeLoop(left, right, "scout");
+  writeLoop(left, right, "scout", 112);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -536,233 +516,6 @@ function winTrack() {
   encode(left, right, "win");
 }
 
-// ---------------------------------------------------------------------------------------------
-// The crew island: an easy calypso in F, and every so often the drum corps goes past
-
-const CHORD = {
-  F: { strum: [69, 60, 65, 69], root: 41, fifth: 48, arp: [65, 69, 72, 77] },
-  Bb: { strum: [70, 62, 65, 70], root: 46, fifth: 41, arp: [62, 65, 70, 74] },
-  C: { strum: [67, 60, 64, 72], root: 48, fifth: 43, arp: [64, 67, 72, 76] },
-  Dm: { strum: [69, 62, 65, 69], root: 50, fifth: 45, arp: [62, 65, 69, 74] },
-  Gm: { strum: [67, 62, 65, 70], root: 43, fifth: 50, arp: [62, 67, 70, 74] },
-};
-
-/** The tune: [beat, length, note], a bar at a time. */
-const VERSE = [
-  [
-    [0, 0.5, 72],
-    [0.5, 0.5, 74],
-    [1, 1, 72],
-    [2.5, 0.5, 69],
-    [3, 1, 72],
-  ],
-  [
-    [0, 1.5, 77],
-    [1.5, 0.5, 76],
-    [2, 0.5, 74],
-    [2.5, 1.5, 72],
-  ],
-  [
-    [0, 0.5, 74],
-    [0.5, 0.5, 77],
-    [1, 1, 74],
-    [2.5, 0.5, 70],
-    [3, 1, 74],
-  ],
-  [
-    [0, 1, 76],
-    [1, 0.5, 74],
-    [1.5, 0.5, 72],
-    [2, 0.5, 70],
-    [2.5, 0.5, 69],
-    [3, 1, 67],
-  ],
-  [
-    [0, 0.5, 72],
-    [0.5, 0.5, 74],
-    [1, 1, 72],
-    [2.5, 0.5, 69],
-    [3, 1, 72],
-  ],
-  [
-    [0, 1, 77],
-    [1, 0.5, 81],
-    [1.5, 0.5, 77],
-    [2, 1.5, 74],
-  ],
-  [
-    [0, 0.5, 79],
-    [0.5, 0.5, 77],
-    [1, 1, 74],
-    [2, 0.5, 76],
-    [2.5, 0.5, 74],
-    [3, 0.5, 72],
-    [3.5, 0.5, 70],
-  ],
-  [
-    [0, 1.5, 69],
-    [2, 1, 65],
-  ],
-];
-const CHORUS = [
-  [
-    [0, 1.5, 77],
-    [1.5, 0.5, 74],
-    [2, 1, 70],
-    [3, 1, 74],
-  ],
-  [
-    [0, 1.5, 72],
-    [1.5, 0.5, 69],
-    [2, 1, 65],
-    [3, 1, 69],
-  ],
-  [
-    [0, 0.5, 70],
-    [0.5, 0.5, 74],
-    [1, 1, 79],
-    [2, 0.5, 77],
-    [2.5, 0.5, 74],
-    [3, 1, 70],
-  ],
-  [
-    [0, 1.5, 76],
-    [1.5, 0.5, 72],
-    [2, 1, 67],
-    [3, 0.5, 70],
-    [3.5, 0.5, 72],
-  ],
-  [
-    [0, 1.5, 77],
-    [1.5, 0.5, 74],
-    [2, 1, 70],
-    [3, 1, 74],
-  ],
-  [
-    [0, 1, 81],
-    [1, 0.5, 77],
-    [1.5, 0.5, 72],
-    [2, 1, 69],
-    [3, 1, 72],
-  ],
-  [
-    [0, 0.5, 74],
-    [0.5, 0.5, 72],
-    [1, 0.5, 70],
-    [1.5, 0.5, 69],
-    [2, 1, 67],
-    [3, 1, 76],
-  ],
-  [[0, 2, 77]],
-];
-const VERSE_CHORDS = ["F", "F", "Bb", "C", "F", "Dm", "Gm", "F"];
-const CHORUS_CHORDS = ["Bb", "F", "Gm", "C", "Bb", "F", "C", "F"];
-
-function homeTrack() {
-  const beat = 60 / 112;
-  const bar = beat * 4;
-  // Verse, chorus and a march past, twice: the second time round with more going on.
-  const sections = [
-    [VERSE, VERSE_CHORDS, 0],
-    [CHORUS, CHORUS_CHORDS, 0],
-    [null, ["F", "F"], 0],
-    [VERSE, VERSE_CHORDS, 1],
-    [CHORUS, CHORUS_CHORDS, 1],
-    [null, ["C", "F"], 1],
-  ];
-  const bars = sections.reduce((sum, [, chords]) => sum + chords.length, 0);
-  const mix = new Mix(bar * bars, true);
-  const strums = new Map();
-  const strum = (name, up, seed) => {
-    const key = `${name}${up}${seed}`;
-    if (!strums.has(key)) {
-      const voices = CHORD[name].strum.map((midi, s) => pluck(midi, 0.8, seed + s * 7));
-      const sound = samples(0.9);
-      const order = up ? [3, 2, 1, 0] : [0, 1, 2, 3];
-      order.forEach((v, i) => {
-        const at = Math.round(i * 0.009 * SR);
-        voices[v].forEach((s, k) => {
-          sound[at + k] += s * 0.3;
-        });
-      });
-      strums.set(key, sound);
-    }
-    return strums.get(key);
-  };
-  let at = 0;
-  for (const [tune, chords, round] of sections) {
-    chords.forEach((name, b) => {
-      const start = at + b * bar;
-      const chord = CHORD[name];
-      const quiet = tune ? 1 : 0.6;
-      // The island strum: down, down-up, up, down-up.
-      for (const [offset, up, gain] of [
-        [0, false, 0.5],
-        [1, false, 0.42],
-        [1.5, true, 0.32],
-        [2.5, true, 0.34],
-        [3, false, 0.42],
-        [3.5, true, 0.3],
-      ]) {
-        mix.hit(strum(name, up, b % 3), start + offset * beat, gain * quiet, -0.22, 0.14);
-      }
-      for (const [offset, midi, gain] of [
-        [0, chord.root, 0.8],
-        [1.5, chord.fifth, 0.55],
-        [2, chord.root, 0.65],
-        [3.5, chord.fifth, 0.5],
-      ]) {
-        mix.hit(bassNote(midi - 0), start + offset * beat, gain * 0.62, 0, 0.05);
-      }
-      for (let s = 0; s < 8; s++) {
-        mix.hit(shakerHit(s), start + (s * beat) / 2, s % 2 ? 0.1 : 0.06, 0.34, 0.05);
-      }
-      for (const [offset, freq, slap, gain] of [
-        [0.5, 330, false, 0.22],
-        [1, 262, true, 0.26],
-        [2.5, 330, false, 0.22],
-        [3, 262, true, 0.26],
-        [3.5, 220, false, 0.2],
-      ]) {
-        mix.hit(congaHit(freq, slap), start + offset * beat, gain, 0.4, 0.1);
-      }
-      if (tune) {
-        // Marimba rippling round the chord, more of it the second time.
-        const notes = round ? [0, 2, 3, 1, 2, 3, 1, 2] : [0, 2, 1, 3];
-        notes.forEach((n, i) => {
-          const offset = (i * 4) / notes.length + (round ? 0 : 0.5);
-          mix.hit(marimbaNote(chord.arp[n] - 12), start + offset * beat, 0.16, -0.42, 0.2);
-        });
-        for (const [offset, length, midi] of tune[b] ?? []) {
-          mix.hit(steelNote(midi, length * beat), start + offset * beat, 0.4, 0.14, 0.3);
-          if (round) {
-            mix.hit(steelNote(midi - 5, length * beat), start + offset * beat, 0.16, 0.34, 0.3);
-          }
-        }
-      }
-    });
-    if (tune) {
-      // A rat-a-tat from somewhere up the beach as the verse turns over.
-      const riff = at + (tune.length - 1) * bar;
-      drumBar(mix, riff, beat / 4, { snare: "........f.xxf.f." });
-    } else {
-      const step = beat / 4;
-      drumBar(mix, at, step, {
-        snare: round ? "f..xx.x.f.xxrrrA" : "f.x.x.f.f.x.x.f.",
-        bass: "B.......B.......",
-      });
-      drumBar(mix, at + bar, step, {
-        snare: round ? "rrrrRRRRRRRRA.A." : "f..xx.x.f.xxrrrA",
-        bass: "B...b...B...B.B.",
-      });
-    }
-    at += chords.length * bar;
-  }
-  const [left, right] = finish(mix, { decay: 0.8, wet: 0.42 });
-  writeLoop(left, right, "home");
-}
-
 await raidTrack();
-scoutTrack();
+await scoutTrack();
 winTrack();
-homeTrack();

@@ -25,7 +25,7 @@ import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
 import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
-import { DefenseReach } from "./defenseReach";
+import { DangerMap } from "./dangerMap";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
@@ -232,7 +232,7 @@ export class RaidView {
   private readonly mines = new Map<number, THREE.Mesh>();
   private readonly boat: { root: THREE.Group; cannon: THREE.Object3D };
   /** Fading circles for how far defenses shoot; not on the crew's own island. */
-  private readonly reach: DefenseReach | null;
+  private readonly reach: DangerMap | null;
   private readonly boatHeading: number;
   private cannonAim: number;
   private ringPulse = 0;
@@ -334,8 +334,8 @@ export class RaidView {
       this.mines.set(m.id, mesh);
     }
 
-    this.reach = home ? null : new DefenseReach(state);
-    if (this.reach) this.root.add(this.reach.mesh);
+    this.reach = home ? null : new DangerMap(state, "raid");
+    if (this.reach) this.root.add(this.reach.root);
 
     this.boat = gunboatModel();
     const toLand = sub(layout.spawn, layout.boat);
@@ -514,7 +514,7 @@ export class RaidView {
     );
     updateWind(time, watched && !watched.inBoat && this.showBars ? this.focus : null);
     this.effects.update(dt);
-    this.reach?.update(this.showBars && state.conquest === null ? leader : undefined, dt);
+    this.reach?.update(this.showBars && state.conquest === null ? leader : undefined);
     const aiming = this.showBars && !this.defending ? leader : undefined;
     this.aimView.update(state, aiming, this.aim, this.ground, time);
     this.overgrowth?.update(dt);
@@ -796,8 +796,9 @@ export class RaidView {
           depthWrite: false,
           depthTest: false,
         });
-      const ring = new THREE.Mesh(ringGeometry, overlay(0.85));
-      const fill = new THREE.Mesh(fillGeometry, overlay(0.25));
+      // Several shells can land on one spot, so the fill is faint enough to overlap.
+      const ring = new THREE.Mesh(ringGeometry, overlay(0.7));
+      const fill = new THREE.Mesh(fillGeometry, overlay(0.13));
       ring.renderOrder = 2;
       fill.renderOrder = 2;
       const y = this.ground(p.lob.to.x, p.lob.to.y) + 0.12;
@@ -972,9 +973,12 @@ export class RaidView {
     )?.pos;
     for (const b of state.buildings) {
       if (b.destroyed) continue;
+      // A dense base would be all bars: only what's been hit nearby, what the hero's firing at,
+      // and the headquarters.
       const damaged = b.hp < b.maxHp;
       const near = focus ? distance(focus, b.pos) < 22 : false;
-      if (!damaged && !near && b.type !== "headquarters") continue;
+      const aimedAt = state.heroes[this.seat]?.targetId === b.id;
+      if (!(damaged && near) && !aimedAt && b.type !== "headquarters") continue;
       const p = this.screenPosition(b.pos, BUILDINGS[b.type].height + 0.9, camera, width, height);
       if (!p.inFront) continue;
       // Off screen a bar means nothing, unless it's the headquarters taking damage.

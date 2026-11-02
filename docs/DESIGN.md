@@ -65,8 +65,9 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Starting strength:** every hero starts at 85% of the old health and damage, so first islands
   take some care. The upgrades and checkpoints earn it back.
 - **Hero models:** all seven heroes use real TRELLIS.2 models, in menus and in raids: about 32,000
-  triangles on the hero screen and 7,000 to 8,600 in a raid. The six on foot have skeletons. The
-  Tank is one solid piece.
+  triangles on the hero screen and 5,000 to 9,000 in a raid. The six on foot have skeletons. The
+  Tank is one solid piece. Hands close on what they hold, each weapon is one mesh, and a hero costs
+  two draw calls however detailed their gear.
 - **Grass:** big swathes of light and deep green, shared by the ground and the plants on it, with
   fine blades in a small texture. The swathes are baked when an island is built.
 - **Bases on the crew island's shape** grow the way a crew's does: a small camp in the first clearing
@@ -81,6 +82,10 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Sprint:** a button above and to the right of the fire pad, or Shift. 70% faster for 2.5 seconds,
   even while firing, then 20 seconds to recharge. Those numbers were Claude's choice.
 - **Gunboat:** a hero keeps firing at what they're locked onto while their player is on the boat.
+- **Danger on the ground:** every defense's reach is merged into one shape with one outline, red
+  for guns and amber for snipers, so a big base no longer disappears under rings. Tapping a defense
+  while scouting still shows its own reach. Health bars now only show on what's been hit nearby,
+  what the hero's firing at, and the headquarters.
 - **Taking a base:** each building that falls takes 4% off the headquarters, but never below 10% of
   its health, so the last blow is the player's. When the headquarters falls the base is taken: the
   guns stop, the crew can't be hurt or lose, and every building left explodes one at a time outward
@@ -93,12 +98,13 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Crystal trade:** three of one crystal and 1,000 of the island's gold buy one of another, from a
   Trade button on the hero and upgrade screens.
 - **Checkpoints:** see "Checkpoints" in `docs/HERO_TREES.md`.
-- **Music:** the old scouting drum loop is now the raid track, cut to a true four bars. It used to
-  run 18 ms over, into the next bar's first kick, which sounded as a stutter every seven seconds.
-  The crew island, its tropical calypso with a drum corps going past now and then, also plays on
-  the hero screens, without restarting. Scouting is field drums, and winning is bugles and drums.
-  These three are synthesized by `scripts/make-music.mjs`, and nobody has listened to them yet but
-  the owner: Claude can only measure them.
+- **Music:** the crew island and the hero screens share the old hero screen song, which the owner
+  likes best, and it carries on without restarting between them. Scouting and raids are riffs on
+  it: scouting has it muffled under a field drum corps, and a raid has it sped up to 120 over the
+  old scouting drum loop. That loop used to run 18 ms over, into the next bar's first kick, which
+  sounded as a stutter every seven seconds; it's now a true four bars. Winning is bugles and drums.
+  All three are made by `scripts/make-music.mjs`, and nobody has listened to them yet but the
+  owner: Claude can only measure them.
 
 ## Raids (the core of the game)
 
@@ -566,10 +572,15 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
 - It's one fixed sea of islands, and you drag and pinch round it. Only a splotch of sky round home
   starts clear, and everything else lies under cloud. The map always says how many more islands
   it'll take to lift the next splotch.
-- One splotch of cloud lifts for good every 3 islands won (**changed 2026-11-02**, owner's request).
-  Splotches are irregular, not a grid, and each clears the nearest hidden island to home, leaning
-  away from whichever side has seen the most, so the map grows evenly wherever the fighting is.
-  Saves from before this keep the regions they'd opened.
+- One small splotch of cloud lifts for good every 3 islands won (**changed 2026-11-02**, owner's
+  request). Splotches are irregular, not a grid, and each clears the nearest hidden island to home,
+  leaning away from whichever side has seen the most, so the map grows evenly wherever the fighting
+  is. Half the charted islands are left out as open sea, the map opens more slowly than a crew
+  conquers it, and more cloud only lifts early if they'd have fewer than two islands to raid.
+  Islands a crew holds keep a small clearing each. Older maps shrink to match when they load: each
+  region they'd opened becomes one splotch. Clear sky is drawn as one joined stretch with a smooth
+  shore, so no strands of cloud are left between islands, and the shallows of islands close together
+  run into each other.
 - Islands get harder with distance, past the top headquarters level and on forever: beyond HQ 20 a
   base can't grow, so its buildings keep gaining levels instead.
 - A beaten island is yours until raiders retake it. Each night they retake 0, 1 or 2 of your

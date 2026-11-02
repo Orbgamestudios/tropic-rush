@@ -2,6 +2,7 @@
 // hero on a pedestal) and the raid itself (HUD, pause, results), and back home again. Each frame
 // it reads the controls, advances the rules in fixed steps, and draws the result.
 
+import * as THREE from "three";
 import { haptic, setHaptics } from "./audio/haptics";
 import { music, type Track } from "./audio/music";
 import { playRaidEvents } from "./audio/raidSounds";
@@ -52,10 +53,11 @@ import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
 import { fetchRivals, reportRaid } from "./net/world";
 import { CameraRig } from "./render/cameraRig";
+import { DangerMap } from "./render/dangerMap";
 import { AT_EASE, type HeroMove } from "./render/heroAnimator";
+import { heroModel } from "./render/models";
 import { updateWind } from "./render/props";
 import { RaidView } from "./render/raidView";
-import { RangeRings } from "./render/rangeRings";
 import { loadRigs } from "./render/riggedHeroes";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
@@ -170,7 +172,7 @@ export class Game {
   private readonly mapView: WorldMapView;
   private readonly mapScreen: WorldMapScreen;
   private readonly scout: ScoutScreen;
-  private rangeRings: RangeRings | null = null;
+  private dangerMap: DangerMap | null = null;
   private mapHero: HeroKind = "rifleman";
   private treeHero: HeroKind = "rifleman";
   private raidTarget: MapIsland | null = null;
@@ -531,6 +533,22 @@ export class Game {
         this.showcase.move = { ...AT_EASE, ...move };
         this.showcase.closeUp = closeUp;
       },
+      /** Brings the camera right up to the hero on the pedestal: how far off, and how high. */
+      heroLook: (distance: number, height: number) => {
+        this.showcase.look = { distance, height };
+      },
+      /** What a hero takes to draw in a raid, before shadows double it. */
+      heroCost: (kind: HeroKind) => {
+        let calls = 0;
+        let triangles = 0;
+        heroModel(kind).root.traverse((o) => {
+          if (!(o instanceof THREE.Mesh)) return;
+          const { index, attributes } = o.geometry as THREE.BufferGeometry;
+          calls++;
+          triangles += (index?.count ?? attributes.position?.count ?? 0) / 3;
+        });
+        return { calls, triangles };
+      },
       /** Has the hero on the pedestal fire or throw once. */
       heroShot: () => this.showcase.shot(),
       /** Wins the raid at once, for looking at what a win gives. */
@@ -586,10 +604,9 @@ export class Game {
   private trackForPhase(): Track | null {
     switch (this.phase) {
       case "crew":
-        return "home";
       case "heroes":
       case "tree":
-        return "home";
+        return "heroes";
       case "map":
         return "map";
       case "scout":
@@ -1323,8 +1340,8 @@ export class Game {
       this.view.dispose();
       this.view = null;
     }
-    this.rangeRings?.dispose();
-    this.rangeRings = null;
+    this.dangerMap?.dispose();
+    this.dangerMap = null;
     this.labels.clear();
     this.state = null;
     this.rig.shape = HOME_SHAPE;
@@ -1365,9 +1382,9 @@ export class Game {
     this.endRaidWorld();
     this.hideScreens();
     const { layout, state } = this.loadRaid(this.mapHero, target);
-    this.rangeRings = new RangeRings(state);
+    this.dangerMap = new DangerMap(state, "scout");
     if (this.view) {
-      this.view.root.add(this.rangeRings.root);
+      this.view.root.add(this.dangerMap.root);
       this.view.showBars = false;
     }
     // Start over the middle of the base, so its whole spread is in view.
@@ -1393,7 +1410,7 @@ export class Game {
     const found =
       point &&
       this.state?.buildings.find((b) => distance(b.pos, point) < BUILDINGS[b.type].radius + 1.5);
-    this.rangeRings?.select(found ? found.id : null);
+    this.dangerMap?.select(found ? found.id : null);
     return found || null;
   }
 

@@ -305,6 +305,9 @@ export class Showcase {
     this.drop = 0;
   }
 
+  /** Puts the camera somewhere else, for a test to look closely. */
+  look: { distance: number; height: number } | null = null;
+
   /** Has the hero fire or throw once, for a test to look at. */
   shot(): void {
     this.animator?.shot();
@@ -366,8 +369,8 @@ export class Showcase {
     const cam = this.stage.camera;
     const aspect = this.stage.width / this.stage.height;
     const distance = this.closeUp ? 3.1 : aspect > 1.6 ? 5.3 : 6.4;
-    cam.position.set(0, 1.75, distance);
-    cam.lookAt(0, this.closeUp ? 1.55 : 1.38, 0);
+    cam.position.set(0, this.look ? this.look.height : 1.75, this.look?.distance ?? distance);
+    cam.lookAt(0, this.look?.height ?? (this.closeUp ? 1.55 : 1.38), 0);
     this.stage.focusShadows(new THREE.Vector3(0, 0, 0), 6);
   }
 }

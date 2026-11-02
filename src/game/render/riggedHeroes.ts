@@ -19,6 +19,9 @@ const MODELED: readonly HeroKind[] = [
   "tank",
 ];
 
+/** Everywhere a hero's body can get to, from the ground between their feet. */
+const REACH = new THREE.Sphere(new THREE.Vector3(0, 1.1, 0), 2.4);
+
 const raidBodies = new Map<HeroKind, THREE.Object3D>();
 const menuBodies = new Map<HeroKind, THREE.Object3D>();
 
@@ -42,8 +45,9 @@ function dress(scene: THREE.Object3D, detailed: boolean): void {
     o.castShadow = true;
     // The art has its own shading, and a skinned body shadowing itself only ever makes blotches.
     o.receiveShadow = false;
-    // The skeleton swings the mesh about, away from where its bounds were worked out.
-    o.frustumCulled = !(o instanceof THREE.SkinnedMesh);
+    // The skeleton swings the mesh about, away from where its bounds were worked out, so it gets
+    // a sphere big enough for any pose. A hero off the screen then costs nothing to draw.
+    if (o instanceof THREE.SkinnedMesh) o.boundingSphere = REACH.clone();
   });
 }
 
