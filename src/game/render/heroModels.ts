@@ -721,10 +721,15 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
   return { root, body: root, legs: null, rig, height: 2.45 };
 }
 
-function tank(): HeroModel {
+function tank(detailed: boolean): HeroModel {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
+  const baked = riggedBody("tank", detailed);
+  if (baked) {
+    body.add(baked.scene);
+    return { root, body, legs: null, rig: null, height: 2.6 };
+  }
   // Hull with a sloped front and side skirts.
   body.add(at(rbox(2.6, 0.82, 1.7, C.tankSand), 0, 0.88, 0));
   body.add(at(rbox(0.7, 0.5, 1.6, C.tankSand), 1.25, 0.95, 0, 0, 0, -0.5));
@@ -777,6 +782,6 @@ function tank(): HeroModel {
 }
 
 export function heroModel(kind: HeroKind, detailed = false): HeroModel {
-  if (kind === "tank") return tank();
+  if (kind === "tank") return tank(detailed);
   return skinnedHero(kind, detailed) ?? human(kind);
 }

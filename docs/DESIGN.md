@@ -64,9 +64,9 @@ These were explicitly left out to keep the first version to a basic structure:
   reached their level, whatever an old save says.
 - **Starting strength:** every hero starts at 85% of the old health and damage, so first islands
   take some care. The upgrades and checkpoints earn it back.
-- **Hero models:** all six heroes on foot use real TRELLIS.2 models with skeletons, in menus and in
-  raids: about 32,000 triangles on the hero screen and 7,000 in a raid. The Tank is still the block
-  model.
+- **Hero models:** all seven heroes use real TRELLIS.2 models, in menus and in raids: about 32,000
+  triangles on the hero screen and 7,000 to 8,600 in a raid. The six on foot have skeletons. The
+  Tank is one solid piece.
 - **Grass:** big swathes of light and deep green, shared by the ground and the plants on it, with
   fine blades in a small texture. The swathes are baked when an island is built.
 - **Bases on the crew island's shape** grow the way a crew's does: a small camp in the first clearing

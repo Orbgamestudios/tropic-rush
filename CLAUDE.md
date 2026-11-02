@@ -113,8 +113,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   unlocks and raid rewards. `upgradeTree.ts` is the tree screen. `worker/world.ts` is the world's
   directory of crews, one SQLite Durable Object.
 - `public/avatars/` holds the player icons (the list is `logic/avatars.ts`).
-- Real models live in `public/models/` (meshopt-compressed, skinned GLB; `scripts/rig-hero.mjs`
-  makes them, `render/riggedHeroes.ts` loads them, and `render/heroAssets.ts` puts them on menus).
+- Real models live in `public/models/` (meshopt-compressed GLB, skinned for everyone on foot;
+  `scripts/rig-hero.mjs` makes them, `render/riggedHeroes.ts` loads them, and `render/heroAssets.ts` puts them on menus).
   Each hero has two: `-rig.glb`, light, for raids, and `-hi.glb`, detailed, for the hero screen and
   left out of the offline cache.
   Raw TRELLIS outputs stay in the untracked `models-wip/`. See "Making hero models" in

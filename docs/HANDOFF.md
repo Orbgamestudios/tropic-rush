@@ -15,8 +15,6 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 - **Building sizes:** the owner said "mines and refinery 4x4". The refinery is still a Proposed
   building, and "mines" was read as all the producers, so confirm both if they come up.
 - **Tides:** the two-week abilities in `docs/HERO_TREES.md` aren't built.
-- **Tank model:** it's still the block model. TRELLIS.2 can model it, but its turret needs rigging
-  differently from a person.
 - **Balance:** tree prices, checkpoint sizes, the watchtower's numbers and blueprint odds are first
   passes.
 
@@ -104,6 +102,9 @@ height: measure them, because TRELLIS leaves each body at a different offset. Ri
 model with lowered arms bends badly. The script writes a light copy for raids and a detailed one for
 the hero screen. Their hands are large in the art, so the game scales them down and curls the fingers.
 
+The Tank goes through the same script but lists a height and a middle instead of joints, so it comes
+out as one solid piece with no skeleton. Its turret doesn't turn on its own.
+
 ## Testing tips
 
 - Software browsers run at a few frames a second, so the full browser test run takes about 16
@@ -112,6 +113,7 @@ the hero screen. Their hands are large in the art, so the game scales them down 
 - `tropicRush.sky(hour, place, date)` shows any time and day, such as a new moon. `hour` is local
   time, and `place` is `{ lat, lon }`. Pass `null` to go back to the clock.
 - `tropicRush.syncNow(changes)` changes the save, which is how a test unlocks a hero.
+- `tropicRush.heroShot()` has the hero on the pedestal fire or throw once.
 - `tropicRush.heroPose(move)` has the hero on the pedestal run, aim or fall, close up. Hide
   `.screen-heroes` to see them properly.
 - `tropicRush.visit(seed, hq)` scouts any island, `findStatue(kind)` brings a statue to light,

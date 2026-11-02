@@ -1,7 +1,8 @@
 // Turns a TRELLIS model into a hero the game can animate: drops stray scraps (TRELLIS models the
 // shadow under the feet), stands it on the ground facing +x, smooths its surface, gives it a
 // skeleton from the joints listed below, works out how much each bone moves each vertex, and writes
-// two copies: a light one for raids and a detailed one for the hero screen.
+// two copies: a light one for raids and a detailed one for the hero screen. The Tank is one solid
+// piece, so it lists a size instead of joints and gets no skeleton.
 //
 //   node scripts/rig-hero.mjs rifleman
 //
@@ -118,6 +119,12 @@ const HEROES = {
       wrist: [0.49, 0.69, 0],
       fingers: [0.67, 0.685, 0],
     },
+  },
+  tank: {
+    source: "models-wip/tank-raw.glb",
+    out: "public/models/tank",
+    height: 2.6,
+    middle: -0.1,
   },
 };
 
@@ -376,10 +383,11 @@ function reduced(mesh, skin, triangles) {
     out.positions.set(positions.subarray(v * 3, v * 3 + 3), i * 3);
     out.normals.set(normals.subarray(v * 3, v * 3 + 3), i * 3);
     out.uvs.set(uvs.subarray(v * 2, v * 2 + 2), i * 2);
+    if (!skin) continue;
     joints.set(skin.joints.subarray(v * 4, v * 4 + 4), i * 4);
     weights.set(skin.weights.subarray(v * 4, v * 4 + 4), i * 4);
   }
-  return { mesh: out, skin: { joints, weights } };
+  return { mesh: out, skin: skin && { joints, weights } };
 }
 
 /** Drops unused vertices, stands the model on the ground and turns it to face +x. */
@@ -405,9 +413,9 @@ function placed(mesh) {
     high = Math.max(high, positions[v * 3 + 1]);
   }
   const height = high - low;
-  const scale = HERO_HEIGHT / height;
+  const scale = (hero.height ?? HERO_HEIGHT) / height;
   // Stood so the feet are under the middle of the hero, wherever TRELLIS left the body.
-  const middle = hero.joints.ankle[2] * height;
+  const middle = (hero.middle ?? hero.joints.ankle[2]) * height;
   for (const [v, i] of map) {
     const [x, y, z] = [positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]];
     out.positions.set([(z - middle) * scale, (y - low) * scale, -x * scale], i * 3);
@@ -556,9 +564,7 @@ async function write(mesh, skin, bones, image) {
     .setIndices(accessor(Uint16Array.from(mesh.indices), "SCALAR"))
     .setAttribute("POSITION", accessor(mesh.positions, "VEC3"))
     .setAttribute("NORMAL", accessor(mesh.normals, "VEC3"))
-    .setAttribute("TEXCOORD_0", accessor(mesh.uvs, "VEC2"))
-    .setAttribute("JOINTS_0", accessor(skin.joints, "VEC4"))
-    .setAttribute("WEIGHTS_0", accessor(skin.weights, "VEC4"));
+    .setAttribute("TEXCOORD_0", accessor(mesh.uvs, "VEC2"));
   const texture = doc.createTexture("skin").setMimeType("image/webp").setImage(image);
   prim.setMaterial(
     doc
@@ -568,6 +574,20 @@ async function write(mesh, skin, bones, image) {
       .setMetallicFactor(0),
   );
 
+  const body = doc.createNode("body").setMesh(doc.createMesh("body").addPrimitive(prim));
+  const scene = doc.createScene("hero").addChild(body);
+  if (skin) {
+    prim
+      .setAttribute("JOINTS_0", accessor(skin.joints, "VEC4"))
+      .setAttribute("WEIGHTS_0", accessor(skin.weights, "VEC4"));
+    scene.addChild(skeletonNodes(doc, bones, body, accessor));
+  }
+  await doc.transform(meshopt({ encoder: MeshoptEncoder, level: "medium" }));
+  return io.writeBinary(doc);
+}
+
+/** The bones as nodes, with the body skinned to them. Returns the root bone. */
+function skeletonNodes(doc, bones, body, accessor) {
   const nodes = new Map();
   const places = new Map();
   const skinNode = doc.createSkin("skeleton");
@@ -587,13 +607,8 @@ async function write(mesh, skin, bones, image) {
   skinNode.setInverseBindMatrices(accessor(inverse, "MAT4"));
   const root = nodes.get("root");
   skinNode.setSkeleton(root);
-  const body = doc
-    .createNode("body")
-    .setMesh(doc.createMesh("body").addPrimitive(prim))
-    .setSkin(skinNode);
-  doc.createScene("hero").addChild(root).addChild(body);
-  await doc.transform(meshopt({ encoder: MeshoptEncoder, level: "medium" }));
-  return io.writeBinary(doc);
+  body.setSkin(skinNode);
+  return root;
 }
 
 const source = await io.read(hero.source);
@@ -601,8 +616,9 @@ const flat = flatMesh(source);
 console.log(`${name}: ${flat.indices.length / 3} triangles`);
 const full = placed(dropScraps(flat));
 smoothNormals(full);
-const bones = skeleton(hero.joints);
-const skin = topFour(smoothWeights(full, skinWeights(full, bones), bones.length), bones.length);
+const bones = hero.joints ? skeleton(hero.joints) : null;
+const skin =
+  bones && topFour(smoothWeights(full, skinWeights(full, bones), bones.length), bones.length);
 for (const copy of COPIES) {
   const made = reduced(full, skin, copy.triangles);
   const image = await sharp(flat.texture.getImage())

@@ -516,6 +516,8 @@ export class Game {
         this.showcase.move = { ...AT_EASE, ...move };
         this.showcase.closeUp = closeUp;
       },
+      /** Has the hero on the pedestal fire or throw once. */
+      heroShot: () => this.showcase.shot(),
       /** Wins the raid at once, for looking at what a win gives. */
       win: () => {
         const hq = this.state?.buildings.find((b) => b.type === "headquarters");

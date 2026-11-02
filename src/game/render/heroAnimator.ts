@@ -59,7 +59,7 @@ export const RIFLE_POSES: HeroPoses = {
   running: [0.38, 1.18, 0.22, 0.35, 0.85, 0.42],
   aimed: [0.3, 1.29, 0.2, 0, 0.1, 0],
   working: [0.3, 1.12, 0.16, 0.3, 0.2, 0.45],
-  cheering: [0.04, 1.98, 0.22, 0.5, 0.1, 1.25],
+  cheering: [0.04, 1.98, 0.78, 0.5, 0.1, 1.25],
   dropped: DROPPED,
   rightHand: new THREE.Vector3(0.1, -0.2, 0.02),
   leftHand: new THREE.Vector3(0.42, -0.08, -0.03),
@@ -72,7 +72,7 @@ export const MINIGUN_POSES: HeroPoses = {
   running: [0.38, 1.0, 0.1, 0, 0.14, 0.14],
   aimed: [0.5, 0.98, 0.02, 0, 0, 0.03],
   working: [0.5, 0.98, 0.02, 0, 0, 0.03],
-  cheering: [0.12, 1.86, 0.1, 0.3, 0, 1.2],
+  cheering: [0.16, 2.0, 0.72, 0.35, 0, 1.15],
   dropped: [0.3, 0.5, 0.4, 1.2, 0.4, -1.2],
   rightHand: new THREE.Vector3(-0.24, -0.06, 0.13),
   leftHand: new THREE.Vector3(-0.05, 0.24, -0.02),
@@ -85,7 +85,7 @@ export const BOTTLE_POSES: HeroPoses = {
   running: [0.3, 1.14, 0.24, 0, 0, 0.6],
   aimed: [0.4, 1.2, 0.26, 0, 0, 0.2],
   working: [0.4, 1.2, 0.26, 0, 0, 0.2],
-  cheering: [0.1, 1.95, 0.24, 0, 0, 1.3],
+  cheering: [0.1, 1.95, 0.78, 0.25, 0, 1.3],
   dropped: DROPPED,
   rightHand: new THREE.Vector3(-0.04, -0.12, 0),
   leftHand: null,
@@ -98,7 +98,7 @@ export const TUBE_POSES: HeroPoses = {
   running: [0.02, 1.48, 0.3, 0, 0, 0.12],
   aimed: [0.1, 1.53, 0.3, 0, 0, 0.03],
   working: [0.02, 1.47, 0.3, 0, 0, -0.1],
-  cheering: [0.02, 1.7, 0.28, 0, 0, 0.9],
+  cheering: [0.06, 1.76, 0.72, 0.3, 0, 0.95],
   dropped: [0.1, 0.5, 0.45, 1.2, 0.4, -1.2],
   rightHand: new THREE.Vector3(0.05, -0.2, 0),
   leftHand: new THREE.Vector3(0.28, -0.16, -0.1),
@@ -111,7 +111,7 @@ export const GRENADE_POSES: HeroPoses = {
   running: [0.3, 1.14, 0.24, 0, 0, 0],
   aimed: [0.2, 1.46, 0.3, 0, 0, 0],
   working: [0.2, 1.46, 0.3, 0, 0, 0],
-  cheering: [0.1, 1.98, 0.24, 0, 0, 0],
+  cheering: [0.1, 1.98, 0.8, 0, 0, 0],
   dropped: DROPPED,
   rightHand: new THREE.Vector3(-0.04, -0.08, 0),
   leftHand: null,
@@ -124,7 +124,7 @@ export const WRENCH_POSES: HeroPoses = {
   running: [0.28, 1.14, 0.26, 0, 0, 0.7],
   aimed: [0.44, 1.2, 0.26, 0, 0, 0.1],
   working: [0.44, 1.2, 0.26, 0, 0, 0.1],
-  cheering: [0.1, 1.95, 0.24, 0, 0, 1.3],
+  cheering: [0.1, 1.95, 0.78, 0.25, 0, 1.3],
   dropped: DROPPED,
   rightHand: new THREE.Vector3(-0.1, 0, 0),
   leftHand: null,
@@ -132,7 +132,7 @@ export const WRENCH_POSES: HeroPoses = {
   thrown: null,
 };
 
-const FIST_UP = new THREE.Vector3(0.1, 1.95, -0.4);
+const FIST_UP = new THREE.Vector3(0.1, 1.95, -0.8);
 /** How high the poses expect a hero's shoulders to be. */
 export const POSED_SHOULDER = 1.38;
 /** How far the fingers curl, holding something and with nothing to hold. */
@@ -147,6 +147,7 @@ const LEFT_ELBOW = new THREE.Vector3(0.1, -0.8, -0.6);
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const hand = new THREE.Vector3();
+const fist = new THREE.Vector3();
 const elbow = new THREE.Vector3();
 const along = new THREE.Vector3();
 const side = new THREE.Vector3();
@@ -329,14 +330,20 @@ export class HeroAnimator {
       this.leftHand.x += sway * 0.32 * run + 0.1 * run;
       this.leftHand.y += rig.lift + 0.12 * run;
     }
-    this.leftHand.lerp(FIST_UP, cheer * (0.9 + Math.sin(time * 6.5) * 0.1));
+    fist.set(
+      FIST_UP.x,
+      shoulder + (FIST_UP.y - POSED_SHOULDER) * rig.stretch,
+      FIST_UP.z * rig.stretch,
+    );
+    this.leftHand.lerp(fist, cheer * (0.9 + Math.sin(time * 6.5) * 0.1));
     this.leftHand.lerp(rig.left.rest, fall);
     this.rightHand.lerp(rig.right.rest, fall);
     reach(rig.right, this.rightHand, RIGHT_ELBOW);
     reach(rig.left, this.leftHand, LEFT_ELBOW);
     if (rig.right.fingers) rig.right.fingers.rotation.x = GRIP * rig.right.side;
     if (rig.left.fingers) {
-      rig.left.fingers.rotation.x = (poses.leftHand ? GRIP : RELAXED) * rig.left.side;
+      const curl = lerp(poses.leftHand ? GRIP : RELAXED, GRIP, cheer);
+      rig.left.fingers.rotation.x = curl * rig.left.side;
     }
   }
 }

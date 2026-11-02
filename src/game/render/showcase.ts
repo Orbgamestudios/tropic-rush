@@ -305,6 +305,11 @@ export class Showcase {
     this.drop = 0;
   }
 
+  /** Has the hero fire or throw once, for a test to look at. */
+  shot(): void {
+    this.animator?.shot();
+  }
+
   /** A level-up: the hero leaps and spins, and the rim flares. */
   celebrate(): void {
     this.leap = 1;
