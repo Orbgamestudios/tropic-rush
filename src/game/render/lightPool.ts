@@ -37,21 +37,21 @@ interface LampSpot {
 
 const BUILDING_LAMPS: Partial<Record<BuildingType, readonly LampSpot[]>> = {
   headquarters: [
-    { across: -0.55, out: 1, up: 0.42, reach: 10, power: 2.6, color: WARM },
-    { across: 0.55, out: 1, up: 0.42, reach: 10, power: 2.6, color: WARM },
+    { across: -0.55, out: 1, up: 0.42, reach: 17, power: 3.6, color: WARM },
+    { across: 0.55, out: 1, up: 0.42, reach: 17, power: 3.6, color: WARM },
   ],
-  gunTurret: [{ across: 0, out: 1, up: 0.5, reach: 6.5, power: 2, color: LANTERN }],
-  mortar: [{ across: 0, out: 1, up: 0.4, reach: 6, power: 2, color: LANTERN }],
-  harpoon: [{ across: 0, out: 1, up: 0.45, reach: 6.5, power: 2, color: LANTERN }],
+  gunTurret: [{ across: 0, out: 1, up: 0.5, reach: 11, power: 2.8, color: LANTERN }],
+  mortar: [{ across: 0, out: 1, up: 0.4, reach: 10, power: 2.8, color: LANTERN }],
+  harpoon: [{ across: 0, out: 1, up: 0.45, reach: 11, power: 2.8, color: LANTERN }],
   flamethrower: [
-    { across: 0, out: 0.9, up: 0.5, reach: 7, power: 2.6, color: FIRE, flicker: true },
+    { across: 0, out: 0.9, up: 0.5, reach: 12, power: 3.4, color: FIRE, flicker: true },
   ],
-  watchtower: [{ across: 0, out: 0.2, up: 1, reach: 14, power: 1.8, color: LANTERN }],
-  goldMine: [{ across: 0, out: 1, up: 0.4, reach: 8, power: 2.4, color: GOLD }],
-  lumberCamp: [{ across: 0.5, out: 1, up: 0.2, reach: 8, power: 2.6, color: FIRE, flicker: true }],
-  quarry: [{ across: 0, out: 1, up: 0.45, reach: 7, power: 2, color: LANTERN }],
-  scrapYard: [{ across: 0, out: 1, up: 0.4, reach: 7, power: 2, color: WARM }],
-  refinery: [{ across: 0, out: 1, up: 0.3, reach: 9.5, power: 3, color: FIRE, flicker: true }],
+  watchtower: [{ across: 0, out: 0.2, up: 1, reach: 22, power: 2.4, color: LANTERN }],
+  goldMine: [{ across: 0, out: 1, up: 0.4, reach: 13, power: 3.2, color: GOLD }],
+  lumberCamp: [{ across: 0.5, out: 1, up: 0.2, reach: 13, power: 3.4, color: FIRE, flicker: true }],
+  quarry: [{ across: 0, out: 1, up: 0.45, reach: 12, power: 2.8, color: LANTERN }],
+  scrapYard: [{ across: 0, out: 1, up: 0.4, reach: 12, power: 2.8, color: WARM }],
+  refinery: [{ across: 0, out: 1, up: 0.3, reach: 15, power: 3.8, color: FIRE, flicker: true }],
 };
 
 export interface Lamp {
@@ -92,6 +92,17 @@ export function buildingLamps(
     height: spot.up * spec.height,
     flicker: spot.flicker ?? false,
   }));
+}
+
+/** Pools multiply where they overlap, so lamps packed close share their light, or they'd blow out. */
+function sharedPower(lamp: Lamp, lamps: readonly Lamp[]): number {
+  let crowd = 0;
+  for (const other of lamps) {
+    if (other === lamp) continue;
+    const near = ((other.x - lamp.x) ** 2 + (other.z - lamp.z) ** 2) / lamp.reach ** 2;
+    if (near < 1) crowd += (1 - near) ** 2;
+  }
+  return lamp.power / (1 + crowd);
 }
 
 const POOL_VERTEX = /* glsl */ `
@@ -245,7 +256,9 @@ export class LightPool {
     );
     this.poolMesh.frustumCulled = false;
     this.haloMesh.frustumCulled = false;
-    this.poolMesh.renderOrder = 3;
+    // First of everything see-through: it lights the ground and models, but multiplying a bright
+    // overlay like a selection square would blow it out.
+    this.poolMesh.renderOrder = -1;
     this.haloMesh.renderOrder = 7;
     this.root.add(this.poolMesh, this.haloMesh);
     this.root.visible = false;
@@ -257,15 +270,10 @@ export class LightPool {
     for (let i = 0; i < count; i++) {
       const lamp = lamps[i] as Lamp;
       const phase = lamp.flicker ? 1 + ((i * 2.4) % 6) : 0;
+      const power = sharedPower(lamp, lamps);
       tint.setHex(lamp.color);
       this.pools.spot.setXYZW(i, lamp.x, lamp.y + 0.2, lamp.z, lamp.reach);
-      this.pools.color.setXYZW(
-        i,
-        tint.r * lamp.power,
-        tint.g * lamp.power,
-        tint.b * lamp.power,
-        phase,
-      );
+      this.pools.color.setXYZW(i, tint.r * power, tint.g * power, tint.b * power, phase);
       this.halos.spot.setXYZW(i, lamp.x, lamp.y + lamp.height, lamp.z, lamp.halo);
       this.halos.color.setXYZW(i, tint.r * 1.3, tint.g * 1.3, tint.b * 1.3, phase);
     }

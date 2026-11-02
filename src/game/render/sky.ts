@@ -33,9 +33,11 @@ const MOON_RISING = [0, 14] as const;
 const MOON_SHADOWS = [0.15, 0.7] as const;
 const MOON_SHADOW_STRENGTH = 0.8;
 /** On the darkest nights, how much of the fill light, sea and sky are left. */
-const DARKEST = { fill: 0.46, unlit: 0.5, sky: 0.45 } as const;
+const DARKEST = { fill: 0.58, unlit: 0.55, sky: 0.45 } as const;
 /** The jungle's own shade at night, under a new moon and a full one (1 is no change). */
 const FOREST_SHADE = [0.13, 0.3] as const;
+/** How much selection squares and range circles fade at night. */
+const OVERLAY_DIMMING = 0.62;
 /** Lamps look stronger the less moon there is to compete with them. */
 const LAMPS_WHEN_DARKEST = 1.7;
 /** How far the sun sits from what it's lighting, in meters. */
@@ -239,6 +241,11 @@ function starTexture(): THREE.CanvasTexture {
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
   return texture;
+}
+
+/** How much of its opacity a bright flat overlay keeps just now, so it won't glare after dark. */
+export function overlayOpacity(): number {
+  return 1 - OVERLAY_DIMMING * Math.min(1, SKY.dark.value);
 }
 
 /** Where a bearing and height point, in scene space: x is east and z is south. */

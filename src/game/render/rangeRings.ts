@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { BUILDINGS } from "../logic/buildings";
 import { terrainHeight } from "../logic/island";
 import type { RaidState } from "../logic/raid";
+import { overlayOpacity } from "./sky";
 
 const DISC_OPACITY = 0.14;
 const EDGE_OPACITY = 0.6;
@@ -15,7 +16,7 @@ function overlay(color: number, opacity: number): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity,
+    opacity: opacity * overlayOpacity(),
     depthTest: false,
     depthWrite: false,
   });

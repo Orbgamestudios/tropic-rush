@@ -34,6 +34,7 @@ import { COLORS, material } from "./palette";
 import { buildShore, updateWind } from "./props";
 import { homeScenery } from "./scenery";
 import { at, barrel, cyl, flatten, rbox, vertexColored } from "./shapes";
+import { overlayOpacity } from "./sky";
 import type { Stage } from "./stage";
 import { buildTerrain, type TerrainView } from "./terrain";
 import { buildTileGrid } from "./tileGrid";
@@ -180,6 +181,9 @@ const HOME_SEED = 7;
 const MIN_DISTANCE = 22;
 const MAX_DISTANCE = 165;
 const PITCH = 0.98; // about 56 degrees
+const SELECTION_OPACITY = 0.4;
+const REACH_FILL_OPACITY = 0.13;
+const REACH_EDGE_OPACITY = 0.75;
 /** How far the camera can pan (meters): the whole island, out to its shores. */
 const PAN_X = 90;
 const PAN_BACK = -82;
@@ -312,8 +316,15 @@ export class CrewIslandView {
   private readonly selection: THREE.Mesh;
   /** How far the selected defense reaches. */
   private readonly reach = new THREE.Group();
-  private readonly reachFill = overlay(0x6fc6ff, 0.13);
-  private readonly reachEdge = overlay(0x9fdcff, 0.75);
+  private readonly reachFill = overlay(0x6fc6ff, REACH_FILL_OPACITY);
+  private readonly reachEdge = overlay(0x9fdcff, REACH_EDGE_OPACITY);
+  private readonly selectionMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffd84a,
+    transparent: true,
+    opacity: SELECTION_OPACITY,
+    depthWrite: false,
+    depthTest: false,
+  });
   private readonly tags = new Map<string, HTMLDivElement>();
   private readonly overgrowth: OvergrowthView;
   private readonly heroes: HomeHeroes;
@@ -354,16 +365,7 @@ export class CrewIslandView {
 
     const ringGeometry = new THREE.PlaneGeometry(1, 1);
     ringGeometry.rotateX(-Math.PI / 2);
-    this.selection = new THREE.Mesh(
-      ringGeometry,
-      new THREE.MeshBasicMaterial({
-        color: 0xffd84a,
-        transparent: true,
-        opacity: 0.4,
-        depthWrite: false,
-        depthTest: false,
-      }),
-    );
+    this.selection = new THREE.Mesh(ringGeometry, this.selectionMaterial);
     this.selection.renderOrder = 2;
     this.selection.visible = false;
     this.root.add(this.selection);
@@ -607,6 +609,10 @@ export class CrewIslandView {
     this.heroes.update(dt);
     this.lights.update(dt, time);
     this.fireflies.update(time);
+    const dim = overlayOpacity();
+    this.selectionMaterial.opacity = SELECTION_OPACITY * dim;
+    this.reachFill.opacity = REACH_FILL_OPACITY * dim;
+    this.reachEdge.opacity = REACH_EDGE_OPACITY * dim;
     updateWind(time, null);
     this.terrain.update(time);
     this.clouds.update(time);
@@ -634,7 +640,7 @@ export class CrewIslandView {
     this.tilesMaterial.dispose();
     this.reachFill.dispose();
     this.reachEdge.dispose();
-    (this.selection.material as THREE.Material).dispose();
+    this.selectionMaterial.dispose();
     this.root.traverse((o) => {
       if (o instanceof THREE.InstancedMesh) o.dispose();
       if (o instanceof THREE.Mesh) o.geometry.dispose();

@@ -8,6 +8,7 @@ import { BUILDINGS } from "../logic/buildings";
 import { terrainHeight } from "../logic/island";
 import type { RaidBuilding, RaidHero, RaidState } from "../logic/raid";
 import { distance } from "../logic/vec";
+import { overlayOpacity } from "./sky";
 
 /** The line starts to show from this far outside a defense's reach, in meters. */
 const FADE_DISTANCE = 8;
@@ -40,6 +41,7 @@ const VERTEX = /* glsl */ `
 `;
 
 const FRAGMENT = /* glsl */ `
+  uniform float uDim;
   uniform vec2 uHero;
   varying vec2 vPlace;
   varying vec2 vWorld;
@@ -56,7 +58,7 @@ const FRAGMENT = /* glsl */ `
     float near = 1.0 - smoothstep(${NEAR_METERS.toFixed(1)}, ${FAR_METERS.toFixed(1)}, length(vWorld - uHero));
     float blind = 1.0 - smoothstep(vInner - 0.012, vInner, r);
     float alpha = (line * 0.5 + glow * 0.1) * near * (1.0 - blind);
-    gl_FragColor = vec4(1.0, 0.3, 0.2, alpha * vFade);
+    gl_FragColor = vec4(1.0, 0.3, 0.2, alpha * vFade * uDim);
   }
 `;
 
@@ -72,6 +74,7 @@ export class DefenseReach {
   private readonly fadeAttribute: THREE.InstancedBufferAttribute;
   private readonly reaches: Reach[] = [];
   private readonly hero = new THREE.Vector2();
+  private readonly dim = { value: 1 };
 
   constructor(state: RaidState) {
     const defenses = state.buildings.filter((b) => BUILDINGS[b.type].attack);
@@ -86,7 +89,7 @@ export class DefenseReach {
       geometry,
       // Laid flat over hills and rooftops alike, so it ignores the depth of what's under it.
       new THREE.ShaderMaterial({
-        uniforms: { uHero: { value: this.hero } },
+        uniforms: { uHero: { value: this.hero }, uDim: this.dim },
         vertexShader: VERTEX,
         fragmentShader: FRAGMENT,
         transparent: true,
@@ -119,6 +122,7 @@ export class DefenseReach {
     let any = false;
     const step = dt / FADE_SECONDS;
     if (hero) this.hero.set(hero.pos.x, hero.pos.y);
+    this.dim.value = overlayOpacity();
     this.reaches.forEach((reach, i) => {
       const { building } = reach;
       let wanted = 0;
