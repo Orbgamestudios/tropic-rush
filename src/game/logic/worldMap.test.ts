@@ -3,7 +3,7 @@ import { CRYSTAL_KINDS } from "./crystals";
 import { ARCHETYPES, type Archetype } from "./islandShapes";
 import {
   beatRival,
-  chartedRegions,
+  clearSky,
   dailyTribute,
   islandRadius,
   islandsToNextCloud,
@@ -20,12 +20,15 @@ import {
   worldIslands,
 } from "./worldMap";
 
-/** Takes the home waters' islands until `clouds` banks of cloud have lifted. */
+/** Takes whatever's nearest until `clouds` splotches of cloud have lifted. */
 function liftClouds(clouds: number): WorldProgress {
   let world = NEW_WORLD;
-  for (const island of worldIslands(NEW_WORLD, 1)) {
-    if (world.opened.length >= clouds) break;
-    world = takeIsland(world, island.id);
+  while (world.opened.length < clouds) {
+    const [next] = worldIslands(world, 1)
+      .filter((island) => !island.taken)
+      .sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y));
+    if (!next) throw new Error("ran out of islands");
+    world = takeIsland(world, next.id);
   }
   return world;
 }
@@ -67,17 +70,17 @@ describe("the world", () => {
     }
   });
 
-  it("starts with only home's waters open and clouds on every side", () => {
-    const { open, cloud } = chartedRegions(NEW_WORLD);
-    expect(open).toEqual(["0,0"]);
-    expect(cloud.sort()).toEqual(["-1,0", "0,-1", "0,1", "1,0"]);
+  it("starts with a splotch of clear sky round home, and cloud past it", () => {
+    expect(NEW_WORLD.opened).toEqual([]);
     expect(islandsToNextCloud(NEW_WORLD)).toBe(3);
+    expect(worldIslands(NEW_WORLD, 1).every((i) => Math.hypot(i.x, i.y) < 110)).toBe(true);
+    // Not a neat box: its edge wanders.
+    const radii = clearSky(NEW_WORLD).map((h) => h.radius);
+    expect(new Set(radii).size).toBeGreaterThan(3);
   });
 
-  it("lifts one bank of cloud at a time, every third island, next to the fighting", () => {
-    const [first, second, third, fourth] = worldIslands(NEW_WORLD, 1)
-      .sort((a, b) => b.x - a.x)
-      .map((island) => island.id);
+  it("lifts one splotch of cloud at a time, every third island", () => {
+    const [first, second, third, fourth] = worldIslands(NEW_WORLD, 1).map((island) => island.id);
     if (!first || !second || !third || !fourth) throw new Error("too few islands");
     let world = takeIsland(NEW_WORLD, first);
     expect(world.opened).toEqual([]);
@@ -85,11 +88,48 @@ describe("the world", () => {
     world = takeIsland(world, second);
     expect(world.opened).toEqual([]);
     world = takeIsland(world, third);
-    // The islands furthest east were last taken, so the cloud lifts on that side.
     expect(world.opened).toHaveLength(1);
+    expect(worldIslands(world, 1).length).toBeGreaterThan(worldIslands(NEW_WORLD, 1).length);
     expect(islandsToNextCloud(world)).toBe(3);
     world = takeIsland(world, fourth);
     expect(world.opened).toHaveLength(1);
+  });
+
+  it("clears the sky evenly round home, however one-sided the fighting", () => {
+    // Always the furthest island to the east: the sky should open up all the same.
+    let world = NEW_WORLD;
+    for (let wins = 0; wins < 45; wins++) {
+      const [next] = worldIslands(world, 1)
+        .filter((i) => !i.taken)
+        .sort((a, b) => b.x - a.x);
+      if (next) world = takeIsland(world, next.id);
+    }
+    const sky = clearSky(world);
+    const reach = (pick: (x: number, y: number) => number) =>
+      Math.max(...sky.map((h) => pick(h.x, h.y)));
+    const east = reach((x) => x);
+    const west = reach((x) => -x);
+    const south = reach((_, y) => y);
+    const north = reach((_, y) => -y);
+    expect(Math.min(east, west) / Math.max(east, west)).toBeGreaterThan(0.55);
+    expect(Math.min(north, south) / Math.max(north, south)).toBeGreaterThan(0.55);
+  });
+
+  it("never runs short of islands to raid", () => {
+    let world = NEW_WORLD;
+    for (let wins = 0; wins < 60; wins++) {
+      const open = worldIslands(world, 1).filter((i) => !i.taken);
+      expect(open.length, `after ${wins} wins`).toBeGreaterThanOrEqual(2);
+      const [next] = open;
+      if (next) world = takeIsland(world, next.id);
+    }
+  });
+
+  it("keeps the regions an old save opened", () => {
+    const old = { ...NEW_WORLD, opened: ["1,0"] };
+    const east = worldIslands(old, 1).filter((i) => i.region === "1,0");
+    expect(east.length).toBeGreaterThanOrEqual(6);
+    expect(worldIslands(NEW_WORLD, 1).some((i) => i.region === "1,0" && i.x > 90)).toBe(false);
   });
 
   it("gives nothing for an island the crew already holds", () => {
@@ -100,18 +140,17 @@ describe("the world", () => {
   });
 
   it("gets harder and harder the further out it goes, with no end", () => {
-    const world = pushOut(70);
+    const world = pushOut(90);
     const islands = worldIslands(world, 1);
     const near = islands.filter((i) => i.region === "0,0");
-    expect(Math.max(...islands.map((i) => i.hq))).toBeGreaterThan(20);
+    expect(Math.max(...islands.map((i) => i.hq))).toBeGreaterThan(5);
     expect(Math.max(...near.map((i) => i.hq))).toBeLessThanOrEqual(4);
   });
 
-  it("keeps a region open after the islands that opened it are lost", () => {
+  it("keeps the sky clear after the islands that opened it are lost", () => {
     const world = liftClouds(1);
     expect(world.opened).toHaveLength(1);
-    const empty = { ...world, taken: [] };
-    expect(chartedRegions(empty).open).toContain(world.opened[0]);
+    expect(clearSky({ ...world, taken: [] })).toEqual(clearSky(world));
   });
 
   it("names and rates islands, and pays more for harder ones", () => {
@@ -122,7 +161,8 @@ describe("the world", () => {
     expect(hard?.hq).toBeGreaterThan(easy?.hq ?? 0);
     expect(hard?.reward.gold).toBeGreaterThan(easy?.reward.gold ?? 0);
     expect(easy?.difficulty).toBe("Easy");
-    expect(worldIslands(NEW_WORLD, 20).every((i) => i.difficulty === "Easy")).toBe(true);
+    const raiders = worldIslands(NEW_WORLD, 20).filter((i) => !i.rival);
+    expect(raiders.every((i) => i.difficulty === "Easy")).toBe(true);
   });
 });
 
@@ -241,7 +281,8 @@ describe("player islands", () => {
     expect(Object.values(world.rivals).map((r) => r.code)).toEqual(["BBBBBB", "CCCCCC"]);
     expect(Object.keys(world.rivals)).toEqual(spots.map((s) => s.id));
     // Nobody's put in two places, or moved once they're there.
-    const again = settleRivals(world, worldIslands(world, 3), [crew("BBBBBB"), crew("DDDDDD")]);
+    const same = worldIslands(world, 3).filter((i) => islands.some((o) => o.id === i.id));
+    const again = settleRivals(world, same, [crew("BBBBBB"), crew("DDDDDD")]);
     expect(again.rivals).toEqual(world.rivals);
   });
 

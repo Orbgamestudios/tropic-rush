@@ -8,8 +8,8 @@
 // Plain rules with no engine imports, shared by the phone and the crew server, which checks
 // every change with the same functions before accepting it.
 
-import type { BuildingType } from "./buildings";
-import { CRYSTAL_KINDS, type CrystalKind } from "./crystals";
+import { BUILDINGS, type BuildingType } from "./buildings";
+import { CRYSTAL_KINDS, CRYSTAL_SWAP, type CrystalKind } from "./crystals";
 import {
   allowedCount,
   buildTime,
@@ -19,6 +19,7 @@ import {
   levelCap,
   MAX_HQ_LEVEL,
   PRODUCERS,
+  PROGRESSION,
   type Purse,
   productionPerHour,
   RESOURCES,
@@ -232,6 +233,8 @@ export type LayoutOp =
   | { kind: "offer"; statue: CrystalKind; crystals: number }
   /** Starts a statue's restoration, once it has its crystals. */
   | { kind: "restore"; statue: CrystalKind }
+  /** The island's gold for a crystal trade; the crystals are whoever's trading's own. */
+  | { kind: "crystalSwap" }
   /** Last night's raid: what the raiders took, and the gold for holding them off. */
   | { kind: "night"; night: number; stolen: Partial<Purse>; reward: number };
 
@@ -782,6 +785,49 @@ export function firstHqAllowing(type: BuildingType, count = 1): number | null {
   return null;
 }
 
+/**
+ * What the headquarters wants standing before it reaches a level: from level `from`, a building
+ * `behind` levels below the one it's going to. Nothing here needs a blueprint, and `behind` is
+ * never less than the level the building unlocks at, so a crew can always get there.
+ */
+const HQ_NEEDS: readonly { type: BuildingType; from: number; behind: number }[] = [
+  { type: "goldMine", from: 2, behind: 2 },
+  { type: "lumberCamp", from: 2, behind: 2 },
+  { type: "quarry", from: 2, behind: 2 },
+  { type: "gunTurret", from: 2, behind: 2 },
+  { type: "scrapYard", from: 3, behind: 3 },
+  { type: "goldVault", from: 6, behind: 5 },
+  { type: "timberShed", from: 7, behind: 5 },
+  { type: "stoneYard", from: 8, behind: 5 },
+];
+/** Hero upgrades the crew needs for each headquarters level past the second. */
+const HERO_UPGRADES_PER_HQ = 2;
+
+export interface HqNeed {
+  /** e.g. "Gold Mine level 3". */
+  text: string;
+  have: number;
+  need: number;
+}
+
+/** Everything a headquarters level asks for, met or not. */
+export function hqNeeds(
+  layout: Pick<CrewLayout, "buildings" | "upgrades">,
+  level: number,
+): HqNeed[] {
+  const needs = HQ_NEEDS.filter((n) => level >= n.from).map(({ type, behind }) => {
+    const need = Math.max(1, Math.min(PROGRESSION[type].maxLevel, level - behind));
+    const levels = layout.buildings.filter((b) => b.type === type).map((b) => b.level);
+    return { text: `${BUILDINGS[type].label} level ${need}`, have: Math.max(0, ...levels), need };
+  });
+  const upgrades = (level - 2) * HERO_UPGRADES_PER_HQ;
+  if (upgrades > 0) {
+    const have = Object.values(layout.upgrades).reduce((sum, owned) => sum + owned.length, 0);
+    needs.push({ text: `${upgrades} hero upgrades`, have, need: upgrades });
+  }
+  return needs;
+}
+
 /** Why a building can't be upgraded right now, or null if it can. */
 export function upgradeBlocker(layout: CrewLayout, b: PlacedBuilding): string | null {
   if (buildJobOn(layout, b.id)) return b.level === 0 ? "Still being built" : "Already upgrading";
@@ -790,6 +836,10 @@ export function upgradeBlocker(layout: CrewLayout, b: PlacedBuilding): string | 
     return b.type === "headquarters" || cap >= levelCap(b.type, MAX_HQ_LEVEL)
       ? "Already at its highest level"
       : "Upgrade the headquarters first";
+  }
+  if (b.type === "headquarters") {
+    const short = hqNeeds(layout, b.level + 1).find((n) => n.have < n.need);
+    if (short) return `Needs ${short.text}`;
   }
   if (layout.builds.length >= builderCount(layout)) return "All your builders are busy";
   if (!canAfford(layout.resources, costFor(b.type, b.level + 1))) return "Not enough resources";
@@ -954,6 +1004,12 @@ export function tryOp(
           resources: spend(layout.resources, { stone: STATUE_STONE }),
           statues: { ...layout.statues, [op.statue]: statue },
         },
+      };
+    }
+    case "crystalSwap": {
+      if (layout.resources.gold < CRYSTAL_SWAP.gold) return { error: "Not enough gold" };
+      return {
+        layout: { ...layout, resources: spend(layout.resources, { gold: CRYSTAL_SWAP.gold }) },
       };
     }
     case "night": {

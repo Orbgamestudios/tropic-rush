@@ -112,7 +112,9 @@ export function startNightRaid(
   seed: number,
 ): RaidState {
   const { kinds, powers } = raiderForce(hqLevel(crew), seed);
-  return createRaid(nightIsland(crew, seed), kinds, powers);
+  const state = createRaid(nightIsland(crew, seed), kinds, powers);
+  state.hitAndRun = true;
+  return state;
 }
 
 /** One step: every raider is an AI, and nobody defends but the buildings. */

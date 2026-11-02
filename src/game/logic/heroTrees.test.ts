@@ -53,12 +53,12 @@ describe("hero trees", () => {
     }
   });
 
-  it("costs 20,550 gold and 53 crystals a tree, and 8,520 gold more for the checkpoints", () => {
+  it("costs 20,550 gold and 53 crystals a tree, and 48,600 gold more for the checkpoints", () => {
     for (const kind of HERO_KINDS) {
       const gold = majorUpgrades(kind).reduce((sum, u) => sum + u.gold, 0);
       expect(gold).toBe(20_550);
       const steps = heroTree(kind).filter((u) => u.line);
-      expect(steps.reduce((sum, u) => sum + u.gold, 0)).toBe(8_520);
+      expect(steps.reduce((sum, u) => sum + u.gold, 0)).toBe(48_600);
       for (const u of steps) expect(u.crystals).toEqual({});
       const total = Object.values(crystalsIn(kind)).reduce((a, b) => a + b, 0);
       expect(total, kind).toBe(53);
@@ -72,7 +72,7 @@ describe("hero trees", () => {
     const path = withPath("rifleman", "Hot Rounds");
     expect(path).toHaveLength(5);
     const steps = tree.filter((u) => path.includes(u.id) && u.line);
-    expect(steps.map((u) => u.gold)).toEqual([40, 40, 40]);
+    expect(steps.map((u) => u.gold)).toEqual([500, 500, 500]);
     for (let have = 0; have < path.length; have++) {
       const next = tree.find((u) => u.id === path[have]);
       if (!next) throw new Error("missing upgrade");
@@ -83,7 +83,11 @@ describe("hero trees", () => {
     expect(heroMods("rifleman", path).hp).toBeGreaterThanOrEqual(1.1);
   });
 
-  it("gives little buffs that add up to less than the upgrades they lead to", () => {
+  it("gives checkpoints a good little buff each, dearer after every upgrade", () => {
+    const steps = heroTree("rifleman").filter((u) => u.line);
+    expect([...new Set(steps.map((u) => u.gold))].sort((a, b) => a - b)).toEqual([
+      500, 800, 1200, 1800,
+    ]);
     for (const kind of HERO_KINDS) {
       const mods = heroMods(
         kind,
@@ -91,12 +95,12 @@ describe("hero trees", () => {
           .filter((u) => u.line)
           .map((u) => u.id),
       );
-      expect(mods.hp, kind).toBeGreaterThan(1.05);
-      expect(mods.hp, kind).toBeLessThan(1.3);
-      expect(mods.damage, kind).toBeLessThan(1.3);
-      expect(mods.heal, kind).toBeLessThan(1.3);
-      expect(mods.reload, kind).toBeGreaterThan(0.8);
-      expect(mods.speed, kind).toBeLessThan(1.2);
+      expect(mods.hp, kind).toBeGreaterThan(1.2);
+      expect(mods.hp, kind).toBeLessThan(2);
+      expect(mods.damage, kind).toBeLessThan(2);
+      expect(mods.heal, kind).toBeLessThan(2);
+      expect(mods.reload, kind).toBeGreaterThan(0.6);
+      expect(mods.speed, kind).toBeLessThan(1.35);
     }
     expect(
       heroMods(

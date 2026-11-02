@@ -107,11 +107,6 @@ export const sfx = {
   error(): void {
     tone(220, 0.16, { type: "sawtooth", to: 160, gain: 0.15 });
   },
-  victory(): void {
-    [392, 523, 659, 784, 659, 784, 1047].forEach((f, i) => {
-      tone(f, 0.3, { type: "triangle", gain: 0.28, delay: i * 0.11 });
-    });
-  },
   defeat(): void {
     [392, 330, 262, 196].forEach((f, i) => {
       tone(f, 0.35, { type: "triangle", gain: 0.22, delay: i * 0.16 });

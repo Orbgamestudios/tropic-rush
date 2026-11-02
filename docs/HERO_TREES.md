@@ -26,10 +26,11 @@ Every hero has the same shape, 13 upgrades in all. An upgrade needs the one befo
 A capstone needs just one of the two lines into it, and everything can be bought in the end.
 
 **Checkpoints (Decided 2026-11-02, owner's request):** three small steps sit on each of the 14 lines
-between two upgrades, 42 for each hero, bought in order with gold alone. Each costs a tenth of the
-upgrade its line leads to, and gives +1% (lines into tiers 2 and 3) or +2% (tiers 4 and 5) to health,
-damage, healing, reload or move speed. How fast a burst unloads and how fast a minigun spins up
-count double, because they do less. All 42 together come to about +20% on a hero's main stats.
+between two upgrades, 42 for each hero, bought in order with gold alone. They're worth having
+(**changed 2026-11-02**, owner's request): each costs 500 gold on the lines into tier 2, then 800,
+1,200 and 1,800 after each major upgrade, 48,600 gold a hero, and gives +3% (tiers 2 and 3) or +4%
+(tiers 4 and 5) to health, damage, healing, reload or move speed. How fast a burst unloads and how
+fast a minigun spins up count double, because they do less.
 
 | Tier         | Gold  | Crystals |
 | ------------ | ----- | -------- |

@@ -21,6 +21,7 @@ import {
   firstHqAllowing,
   fits,
   hqLevel,
+  hqNeeds,
   type LayoutOp,
   MAX_TOOL_LEVEL,
   OBSTACLE_KINDS,
@@ -340,6 +341,11 @@ export class CrewMode {
   /** The island's gold, which is everyone's. */
   gold(): number {
     return Math.floor(settle(this.layout, this.now()).resources.gold);
+  }
+
+  /** Pays for a crystal trade with the island's gold. */
+  payForSwap(): boolean {
+    return this.commit({ kind: "crystalSwap" });
   }
 
   /** Buys a hero upgrade with the island's gold, for the whole crew. */
@@ -863,6 +869,10 @@ export class CrewMode {
         : blocker === "Upgrade the headquarters first"
           ? "Upgrade the HQ first"
           : `Next: ${costText(costFor(b.type, b.level + 1))}`;
+    const needs =
+      b.type === "headquarters" && !job && b.level < max
+        ? hqNeeds(current, b.level + 1).filter((n) => n.have < n.need)
+        : [];
     this.ui.setSelection(
       {
         type: b.type,
@@ -871,6 +881,7 @@ export class CrewMode {
         detail,
         upgrade,
         canUpgrade: blocker === null,
+        needs: needs.map((n) => n.text),
       },
       b.type !== "headquarters",
     );

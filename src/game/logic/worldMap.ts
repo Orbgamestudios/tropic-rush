@@ -1,7 +1,8 @@
 // The world: one endless sea of islands, the same for every crew, laid out in regions from a seed.
 // Each region holds a loose scatter of enemy islands, and the further from home the harder they
-// are, with no end to it. Only the home region starts in the clear: every few islands won blows
-// the cloud off one more region. Islands a crew has taken stay theirs until
+// are, with no end to it. Cloud covers all of it but a splotch of clear sky round home: every few
+// islands won clears another splotch, over the nearest hidden island on whichever side has seen
+// the least, so the crew's world grows outward evenly. Islands a crew has taken stay theirs until
 // raiders retake one in the night, which brings it back stronger. No engine imports.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
@@ -64,7 +65,7 @@ export interface WorldProgress {
   taken: string[];
   /** Islands raiders have taken back, and the headquarters level they rebuilt to. */
   retaken: Record<string, number>;
-  /** Regions out of the cloud, as "column,row". The home region is always open. */
+  /** The islands a splotch of cloud has lifted over, by id. Older saves list regions instead. */
   opened: string[];
   /** Islands won towards lifting the next cloud. */
   progress: number;
@@ -99,8 +100,14 @@ export function tributeFor(hq: number): number {
 export const REGION = { w: 112, h: 66 } as const;
 
 const HOME_REGION = "0,0";
-/** Islands to win for each bank of cloud that lifts. */
+/** Islands to win for each splotch of cloud that lifts. */
 const ISLANDS_PER_CLOUD = 3;
+/** How far each splotch of clear sky reaches, and how far an old save's whole region did. */
+const HOME_REACH = 50;
+const SPLOTCH_REACH = 34;
+const REGION_REACH = 70;
+/** How hard a splotch is pushed away from whichever side has already seen the most. */
+const EVEN_OUT = 0.9;
 const ISLANDS_PER_REGION = [6, 8] as const;
 /** Kept clear round the crew's own island and the gunboat beside it. */
 const HOME_CLEAR = 14;
@@ -395,6 +402,11 @@ export function dailyTribute(world: WorldProgress): number {
   }, 0);
 }
 
+/** Where an island lies, from its id. */
+export function islandSpot(id: string): { x: number; y: number } | null {
+  return chartedIsland(id) ?? null;
+}
+
 /** One island, from its id. */
 function chartedIsland(id: string): Charted | undefined {
   const [region = HOME_REGION] = id.split(":");
@@ -402,63 +414,113 @@ function chartedIsland(id: string): Charted | undefined {
   return chartRegion(column, row).find((i) => i.id === id);
 }
 
-export function isOpen(world: WorldProgress, region: string): boolean {
-  return region === HOME_REGION || world.opened.includes(region);
+/** One circle of clear sky. A splotch is a few of them, so its edge wanders. */
+export interface SkyHole {
+  x: number;
+  y: number;
+  radius: number;
 }
 
-const NEIGHBORS = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-] as const;
+/** A splotch: a big circle, with smaller ones bulging out of it wherever the seed says. */
+function splotch(x: number, y: number, reach: number, seed: number): SkyHole[] {
+  const rng = createRng(seed ^ 0x51e7);
+  const holes: SkyHole[] = [{ x, y, radius: reach * 0.8 }];
+  const lobes = 4 + Math.floor(rng() * 3);
+  const turn = rng() * Math.PI * 2;
+  for (let i = 0; i < lobes; i++) {
+    const angle = turn + ((i + rng() * 0.7) / lobes) * Math.PI * 2;
+    const out = reach * (0.55 + rng() * 0.45);
+    holes.push({
+      // Wider than tall, like the screen.
+      x: x + Math.cos(angle) * out * 1.25,
+      y: y + Math.sin(angle) * out * 0.8,
+      radius: reach * (0.35 + rng() * 0.3),
+    });
+  }
+  return holes;
+}
 
-/** Every open region and the ones beside it, which show as banks of cloud. */
-export function chartedRegions(world: WorldProgress): { open: string[]; cloud: string[] } {
-  const open = [HOME_REGION, ...world.opened];
-  const cloud = new Set<string>();
-  for (const key of open) {
-    const { column, row } = parseRegion(key);
-    for (const [dx, dy] of NEIGHBORS) {
-      const next = regionKey(column + dx, row + dy);
-      if (!open.includes(next)) cloud.add(next);
+/** Every splotch of clear sky on a crew's map. */
+export function clearSky(world: WorldProgress): SkyHole[] {
+  const holes = splotch(0, 0, HOME_REACH, 1);
+  for (const key of world.opened) {
+    const island = key.includes(":") ? chartedIsland(key) : undefined;
+    if (island) {
+      holes.push(...splotch(island.x, island.y, SPLOTCH_REACH, island.seed));
+    } else {
+      const { column, row } = parseRegion(key);
+      holes.push({ x: column * REGION.w, y: row * REGION.h, radius: REGION_REACH });
     }
   }
-  return { open, cloud: [...cloud] };
+  return holes;
 }
 
-/** Every island in the open regions. */
+function underClearSky(island: Spot, sky: readonly SkyHole[]): boolean {
+  return sky.some((h) => Math.hypot(island.x - h.x, island.y - h.y) < h.radius);
+}
+
+/** Every charted island within a region or so of the clear sky. */
+function chartedNear(sky: readonly SkyHole[], margin: number): Charted[] {
+  const edges = (pick: (h: SkyHole) => number, size: number) => {
+    const spots = sky.map(pick);
+    return {
+      low: Math.floor(Math.min(...spots) / size + 0.5) - margin,
+      high: Math.floor(Math.max(...spots) / size + 0.5) + margin,
+    };
+  };
+  const west = edges((h) => h.x - h.radius, REGION.w);
+  const east = edges((h) => h.x + h.radius, REGION.w);
+  const north = edges((h) => h.y - h.radius, REGION.h);
+  const south = edges((h) => h.y + h.radius, REGION.h);
+  const islands: Charted[] = [];
+  for (let column = west.low; column <= east.high; column++) {
+    for (let row = north.low; row <= south.high; row++) {
+      islands.push(...chartRegion(column, row));
+    }
+  }
+  return islands;
+}
+
+/** Every island out from under the cloud. */
 export function worldIslands(world: WorldProgress, yourHq: number): MapIsland[] {
-  return chartedRegions(world).open.flatMap((key) => {
-    const { column, row } = parseRegion(key);
-    return chartRegion(column, row).map((island) => dress(island, world, yourHq));
-  });
+  const sky = clearSky(world);
+  return chartedNear(sky, 0)
+    .filter((island) => underClearSky(island, sky))
+    .map((island) => dress(island, world, yourHq));
 }
 
-/** How many more islands to win before the next bank of cloud lifts. */
+/** How many more islands to win before the next splotch of cloud lifts. */
 export function islandsToNextCloud(world: WorldProgress): number {
   return ISLANDS_PER_CLOUD - world.progress;
 }
 
-/** The clouded region nearest an island, which is the one its capture opens up. */
-function nearestCloud(world: WorldProgress, id: string): string | undefined {
-  const island = chartedIsland(id);
-  let best: string | undefined;
-  let bestGap = Number.POSITIVE_INFINITY;
-  for (const key of chartedRegions(world).cloud) {
-    const { column, row } = parseRegion(key);
-    const gap = Math.hypot(column * REGION.w - (island?.x ?? 0), row * REGION.h - (island?.y ?? 0));
-    if (gap < bestGap) {
-      best = key;
-      bestGap = gap;
+/**
+ * Which hidden island the next splotch clears: the nearest to home, favoring whichever side has
+ * seen the least, so the map never reaches far out one way and stays short the other.
+ */
+function nextSplotch(world: WorldProgress): Charted | undefined {
+  const sky = clearSky(world);
+  const lean = {
+    x: sky.reduce((sum, h) => sum + h.x, 0) / sky.length,
+    y: sky.reduce((sum, h) => sum + h.y, 0) / sky.length,
+  };
+  let best: Charted | undefined;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const island of chartedNear(sky, 1)) {
+    if (underClearSky(island, sky)) continue;
+    const away = Math.hypot(island.x, island.y * 1.4);
+    const score = away + ((island.x * lean.x + island.y * lean.y) / (away || 1)) * EVEN_OUT;
+    if (score < bestScore) {
+      best = island;
+      bestScore = score;
     }
   }
   return best;
 }
 
 /**
- * The crew wins an island: it's theirs, and every few wins lifts one bank of cloud, next to where
- * they're fighting. Won islands open the way for good: losing one later won't bring the cloud back.
+ * The crew wins an island: it's theirs, and every few wins lifts one splotch of cloud. Won islands
+ * open the way for good: losing one later won't bring the cloud back.
  */
 export function takeIsland(world: WorldProgress, id: string): WorldProgress {
   if (world.taken.includes(id)) return world;
@@ -466,8 +528,8 @@ export function takeIsland(world: WorldProgress, id: string): WorldProgress {
   delete retaken[id];
   const next: WorldProgress = { ...world, taken: [...world.taken, id], retaken };
   if (world.progress + 1 < ISLANDS_PER_CLOUD) return { ...next, progress: world.progress + 1 };
-  const cloud = nearestCloud(next, id);
-  return { ...next, progress: 0, opened: cloud ? [...world.opened, cloud] : world.opened };
+  const cleared = nextSplotch(next);
+  return { ...next, progress: 0, opened: cleared ? [...world.opened, cleared.id] : world.opened };
 }
 
 /**

@@ -81,7 +81,7 @@ export const MINIGUN_POSES: HeroPoses = {
 };
 
 export const BOTTLE_POSES: HeroPoses = {
-  low: [0.38, 1.0, 0.16, 0, 0, -0.25],
+  low: [0.26, 0.98, 0.42, 0, 0, -0.25],
   running: [0.3, 1.14, 0.24, 0, 0, 0.6],
   aimed: [0.4, 1.2, 0.26, 0, 0, 0.2],
   working: [0.4, 1.2, 0.26, 0, 0, 0.2],
@@ -107,7 +107,7 @@ export const TUBE_POSES: HeroPoses = {
 };
 
 export const GRENADE_POSES: HeroPoses = {
-  low: [0.34, 1.0, 0.2, 0, 0, 0],
+  low: [0.26, 0.98, 0.44, 0, 0, 0],
   running: [0.3, 1.14, 0.24, 0, 0, 0],
   aimed: [0.2, 1.46, 0.3, 0, 0, 0],
   working: [0.2, 1.46, 0.3, 0, 0, 0],
@@ -120,7 +120,7 @@ export const GRENADE_POSES: HeroPoses = {
 };
 
 export const WRENCH_POSES: HeroPoses = {
-  low: [0.34, 0.98, 0.22, 0, 0, -0.5],
+  low: [0.26, 0.96, 0.44, 0, 0, -0.5],
   running: [0.28, 1.14, 0.26, 0, 0, 0.7],
   aimed: [0.44, 1.2, 0.26, 0, 0, 0.1],
   working: [0.44, 1.2, 0.26, 0, 0, 0.1],
@@ -138,8 +138,20 @@ export const POSED_SHOULDER = 1.38;
 /** How far the fingers curl, holding something and with nothing to hold. */
 const GRIP = 1.5;
 const RELAXED = 0.55;
-/** A free hand, swinging at the hero's side. */
-const LOOSE_HAND = new THREE.Vector3(0.02, 1.0, -0.46);
+/** How far along an arm's length a free hand hangs below the shoulder, at rest and running. */
+const LOOSE_DROP = 0.97;
+const RUNNING_DROP = 0.62;
+/** How far a free arm swings on the run, as a share of its length. */
+const ARM_SWING = 0.5;
+
+/** The share of a stride a foot is on the ground, at a walk and at a full run. */
+const PLANTED_WALKING = 0.62;
+const PLANTED_RUNNING = 0.33;
+/** How far either way a leg swings from the hip, at a slow walk and at a full run. */
+const SWING_WALKING = 0.32;
+const SWING_RUNNING = 0.78;
+/** Legs can only go so fast, however quick the hero's going. */
+const MOST_STRIDE_RATE = 24;
 
 /** Which way each elbow points. */
 const RIGHT_ELBOW = new THREE.Vector3(-0.4, -0.8, 0.5);
@@ -149,7 +161,7 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const hand = new THREE.Vector3();
 const fist = new THREE.Vector3();
 const elbow = new THREE.Vector3();
-const along = new THREE.Vector3();
+const bone = new THREE.Vector3();
 const side = new THREE.Vector3();
 const turn = new THREE.Quaternion();
 
@@ -160,35 +172,57 @@ function blend(a: WeaponPose, b: WeaponPose, t: number, out: number[]): void {
   for (let i = 0; i < 6; i++) out[i] = lerp(a[i] ?? 0, b[i] ?? 0, t);
 }
 
+/** Where a leg is in a stride. */
+const stride = { hip: 0, knee: 0, foot: 0 };
+
+/**
+ * One leg through one stride: `at` runs from 0, the foot coming down in front, round to the same
+ * again. On the ground it sweeps back evenly so the foot stays put; off it, the heel kicks up and
+ * the leg swings through to reach for the next step.
+ */
+function strideAt(at: number, planted: number, bend: number): void {
+  if (at < planted) {
+    const t = at / planted;
+    stride.hip = 1 - 2 * t;
+    stride.knee = 0.16 + Math.sin(Math.PI * t) * 0.3;
+    stride.foot = lerp(0.3, -0.85, t * t);
+    return;
+  }
+  const t = (at - planted) / (1 - planted);
+  stride.hip = -Math.cos(Math.PI * t);
+  stride.knee = 0.16 + Math.sin(Math.PI * t ** 0.7) * bend;
+  stride.foot = lerp(-0.85, 0.3, t);
+}
+
 /** Two-bone IK: bends the arm from its shoulder so the hand lands on a point, or as near as it reaches. */
 function reach(arm: HeroArm, target: THREE.Vector3, pole: THREE.Vector3): void {
   const { shoulder, upperLength, foreLength } = arm;
-  along.copy(target).sub(shoulder);
+  bone.copy(target).sub(shoulder);
   // The target is where the palm goes, a little past the wrist these bones end at.
-  const gap = clamp(along.length() - arm.palm, 0.08, upperLength + foreLength - 0.002);
-  along.normalize();
+  const gap = clamp(bone.length() - arm.palm, 0.08, upperLength + foreLength - 0.002);
+  bone.normalize();
   const a = (upperLength ** 2 - foreLength ** 2 + gap ** 2) / (2 * gap);
   const h = Math.sqrt(Math.max(0, upperLength ** 2 - a ** 2));
-  side.copy(pole).addScaledVector(along, -pole.dot(along)).normalize();
-  elbow.copy(shoulder).addScaledVector(along, a).addScaledVector(side, h);
-  hand.copy(shoulder).addScaledVector(along, gap);
+  side.copy(pole).addScaledVector(bone, -pole.dot(bone)).normalize();
+  elbow.copy(shoulder).addScaledVector(bone, a).addScaledVector(side, h);
+  hand.copy(shoulder).addScaledVector(bone, gap);
 
   const { bones } = arm;
   if (bones) {
-    along.copy(elbow).sub(shoulder).normalize();
-    arm.upper.quaternion.setFromUnitVectors(bones.upperRest, along);
-    along.copy(hand).sub(elbow).normalize();
-    turn.setFromUnitVectors(bones.foreRest, along);
+    bone.copy(elbow).sub(shoulder).normalize();
+    arm.upper.quaternion.setFromUnitVectors(bones.upperRest, bone);
+    bone.copy(hand).sub(elbow).normalize();
+    turn.setFromUnitVectors(bones.foreRest, bone);
     arm.fore.quaternion.copy(arm.upper.quaternion).invert().multiply(turn);
     return;
   }
 
   arm.upper.position.copy(shoulder).add(elbow).multiplyScalar(0.5);
-  along.copy(elbow).sub(shoulder).normalize();
-  arm.upper.quaternion.setFromUnitVectors(Y_AXIS, along);
+  bone.copy(elbow).sub(shoulder).normalize();
+  arm.upper.quaternion.setFromUnitVectors(Y_AXIS, bone);
   arm.fore.position.copy(elbow).add(hand).multiplyScalar(0.5);
-  along.copy(hand).sub(elbow).normalize();
-  arm.fore.quaternion.setFromUnitVectors(Y_AXIS, along);
+  bone.copy(hand).sub(elbow).normalize();
+  arm.fore.quaternion.setFromUnitVectors(Y_AXIS, bone);
   arm.hand.position.copy(hand);
 }
 
@@ -209,8 +243,12 @@ export class HeroAnimator {
   private readonly mix: number[] = [0, 0, 0, 0, 0, 0];
   private readonly rightHand = new THREE.Vector3();
   private readonly leftHand = new THREE.Vector3();
+  /** How long their legs are, which sets how far a stride takes them. */
+  private readonly hipHeight: number;
 
-  constructor(private readonly rig: HeroRig) {}
+  constructor(private readonly rig: HeroRig) {
+    this.hipHeight = Math.max(0.5, rig.legs[0].position.y);
+  }
 
   /** A shot left the barrel: the weapon kicks and the shoulder takes it, or the arm comes over. */
   shot(): void {
@@ -239,43 +277,57 @@ export class HeroAnimator {
     this.aim += ((move.aiming && !move.down ? 1 : 0) - this.aim) * ease(dt, 14);
     this.cheer += ((move.cheering && !move.down ? 1 : 0) - this.cheer) * ease(dt, 6);
     this.fallen = move.down ? Math.min(1, this.fallen + dt * 2.2) : 0;
-    this.gait += (clamp(move.speed / 5, 0, 1) - this.gait) * ease(dt, 8);
+    this.gait += (clamp(move.speed / 5, 0, 1.5) - this.gait) * ease(dt, 8);
     const { run, aim, cheer, gait, recoil, flinching } = this;
 
     // Backing away runs the stride in reverse, rather than twisting him right round.
     const backing = Math.abs(move.heading) > Math.PI * 0.6;
     const legsTurn = backing ? angleDiff(move.heading, Math.PI) : move.heading;
-    this.phase += dt * (move.speed * 1.9 + 2) * (backing ? -1 : 1);
+    const legSwing = lerp(SWING_WALKING, SWING_RUNNING, gait);
+    const planted = lerp(PLANTED_WALKING, PLANTED_RUNNING, Math.min(1, gait));
+    // The legs go as fast as it takes for a planted foot to keep up with the ground going by.
+    const perStride = (2 * this.hipHeight * Math.sin(Math.min(legSwing, 1.1))) / planted;
+    const strideRate = (move.speed / perStride) * Math.PI * 2;
+    this.phase +=
+      dt * (Math.min(strideRate, MOST_STRIDE_RATE) + 2 * (1 - run)) * (backing ? -1 : 1);
     this.hips += ((move.moving ? clamp(legsTurn, -1, 1) : 0) - this.hips) * ease(dt, 12);
-    rig.lower.rotation.y = -this.hips;
 
     const sway = Math.sin(this.phase);
     const swing = Math.cos(this.phase);
-    const stride = lerp(0.42, 0.85, gait);
-    const bend = lerp(0.65, 1.35, gait);
+    // The pelvis turns with the leading leg, against the chest.
+    rig.lower.rotation.y = -this.hips + sway * 0.16 * run;
+    const bend = lerp(0.65, 1.5, Math.min(1, gait));
     const stance = aim * (1 - run);
     const fall = this.fallen * this.fallen * (3 - 2 * this.fallen);
     const buckle = Math.min(1, this.fallen * 2.4) * (1 - fall);
 
-    const leg = (i: 0 | 1, sign: number, planted: number, planted2: number) => {
-      const hip = sign * sway * stride * run + planted * stance + 0.04 * sign * (1 - run);
-      const knee =
-        -(0.1 + bend * Math.max(0, sign * swing)) * run - planted2 * stance - 1.1 * buckle;
+    // Each leg is half a stride behind the other, with the right one forward as `sway` peaks.
+    const along = this.phase / (Math.PI * 2) - 0.25;
+    const leg = (i: 0 | 1, sign: number, ready: number, ready2: number) => {
+      strideAt(along + i * 0.5 - Math.floor(along + i * 0.5), planted, bend);
+      const hip = stride.hip * legSwing * run + ready * stance + 0.04 * sign * (1 - run);
+      const knee = -stride.knee * run - ready2 * stance - 1.1 * buckle;
       const thigh = rig.legs[i];
       thigh.rotation.z = hip + 0.55 * buckle;
       const shin = rig.knees[i];
       shin.rotation.z = knee;
       const foot = rig.feet[i];
-      foot.rotation.z = -(hip + knee) * 0.55;
+      foot.rotation.z = -(hip + knee) + stride.foot * run;
     };
     leg(0, 1, -0.16, 0.14);
     leg(1, -1, 0.22, 0.24);
 
     const hop = Math.abs(Math.sin(time * 6.5)) * 0.14 * cheer;
+    // Lowest with a foot under them, highest in the air between steps.
+    const flight = 0.5 - 0.5 * Math.cos((along - planted / 2) * Math.PI * 4);
     rig.outer.position.y =
-      run * Math.abs(sway) * 0.07 * (0.5 + gait) - 0.03 * stance - 0.3 * buckle + hop + fall * 0.22;
+      run * (flight * 0.11 * (0.5 + Math.min(1, gait)) - 0.05) -
+      0.03 * stance -
+      0.3 * buckle +
+      hop +
+      fall * 0.22;
     rig.outer.rotation.x = run * sway * 0.05;
-    rig.outer.rotation.z = fall * 1.5;
+    rig.outer.rotation.z = fall * 1.5 - run * 0.09 * Math.min(1, gait);
 
     // The chest leans into the run and twists against the legs, unless it's holding an aim.
     const free = 1 - aim;
@@ -287,7 +339,9 @@ export class HeroAnimator {
 
     // He looks about while nothing's happening, and cheeks the stock to aim.
     const idle = (1 - run) * free * (1 - cheer);
-    rig.head.rotation.y = (Math.sin(time * 0.37) + Math.sin(time * 0.91) * 0.4) * 0.34 * idle;
+    // ... and on the run keeps their eyes ahead while the chest twists under them.
+    rig.head.rotation.y =
+      (Math.sin(time * 0.37) + Math.sin(time * 0.91) * 0.4) * 0.34 * idle + sway * 0.2 * run * free;
     rig.head.rotation.z = -rig.upper.rotation.z * 0.6 - 0.05 * aim + 0.25 * cheer;
     rig.head.rotation.x = 0.13 * aim + sway * 0.03 * run;
 
@@ -326,9 +380,13 @@ export class HeroAnimator {
     if (poses.leftHand) {
       this.leftHand.copy(poses.leftHand).lerp(poses.bolt, this.bolt).applyMatrix4(rig.rifle.matrix);
     } else {
-      this.leftHand.copy(LOOSE_HAND);
-      this.leftHand.x += sway * 0.32 * run + 0.1 * run;
-      this.leftHand.y += rig.lift + 0.12 * run;
+      const { shoulder, upperLength, foreLength, palm } = rig.left;
+      const arm = upperLength + foreLength;
+      this.leftHand.set(
+        shoulder.x + 0.03 + (sway * ARM_SWING + 0.15) * arm * run,
+        shoulder.y - arm * lerp(LOOSE_DROP, RUNNING_DROP, run) - palm,
+        shoulder.z - 0.05,
+      );
     }
     fist.set(
       FIST_UP.x,

@@ -47,12 +47,20 @@ export function holdInput(held: HeroInput, next: HeroInput): HeroInput {
     autoAim: held.autoAim || next.autoAim,
     toggleBoat: held.toggleBoat || next.toggleBoat,
     boatAbility: next.boatAbility ?? held.boatAbility,
+    sprint: held.sprint || next.sprint,
   };
 }
 
 /** What's left of an input once a step has used its one-off presses. */
 export function afterStep(input: HeroInput): HeroInput {
-  return { ...input, lockAt: null, autoAim: false, toggleBoat: false, boatAbility: null };
+  return {
+    ...input,
+    lockAt: null,
+    autoAim: false,
+    toggleBoat: false,
+    boatAbility: null,
+    sprint: false,
+  };
 }
 
 interface HeroSnap {
@@ -69,6 +77,8 @@ interface HeroSnap {
   rage: number;
   haste: number;
   iced: number;
+  sprint: number;
+  sprintIn: number;
 }
 
 type ProjectileSnap = [
@@ -89,6 +99,7 @@ export interface RaidSnapshot {
   time: number;
   status: RaidState["status"];
   lostReason: RaidState["lostReason"];
+  conquest: number | null;
   energy: number;
   uses: RaidState["abilityUses"];
   occupant: number | null;
@@ -145,6 +156,7 @@ export function takeSnapshot(
     time: state.time,
     status: state.status,
     lostReason: state.lostReason,
+    conquest: state.conquest,
     energy: state.energy,
     uses: state.abilityUses,
     occupant: state.boat.occupant,
@@ -161,6 +173,8 @@ export function takeSnapshot(
       rage: h.rage,
       haste: h.haste,
       iced: h.iced,
+      sprint: h.sprint,
+      sprintIn: h.sprintIn,
     })),
     buildings,
     sights,
@@ -218,6 +232,7 @@ export function applySnapshot(
   state.time = snap.time;
   state.status = snap.status;
   state.lostReason = snap.lostReason;
+  state.conquest = snap.conquest;
   state.energy = snap.energy;
   state.abilityUses = snap.uses;
   state.boat.occupant = snap.occupant;
@@ -235,6 +250,8 @@ export function applySnapshot(
     h.rage = s.rage;
     h.haste = s.haste;
     h.iced = s.iced;
+    h.sprint = s.sprint;
+    h.sprintIn = s.sprintIn;
     targets[i] = { x: s.x, y: s.y, facing: s.f };
     if (i === seat) {
       if (distance(h.pos, s) > SNAP_BACK) h.pos = { x: s.x, y: s.y };

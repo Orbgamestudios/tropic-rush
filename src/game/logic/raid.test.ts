@@ -13,6 +13,7 @@ import {
   type HeroInput,
   IDLE_INPUT,
   type RaidState,
+  SPRINT,
   stepRaid,
 } from "./raid";
 import { distance, normalize, scale, sub, type Vec2, vec } from "./vec";
@@ -130,6 +131,22 @@ describe("aiming and locking on", () => {
     expect(hero(state).targetId).toBe(building(state, 1).id);
   });
 
+  it("holds fire when the player lets go with nothing in the arc", () => {
+    const state = raid([{ type: "storehouse", pos: vec(0, -10) }]);
+    stepRaid(state, [input({ lockAt: vec(0, 1) })], DT);
+    expect(hero(state).targetId).toBeNull();
+    run(state, 1);
+    expect(hero(state).firing).toBe(false);
+    expect(state.projectiles).toHaveLength(0);
+  });
+
+  it("still lets a medic throw a bottle at her own feet", () => {
+    const state = raid([], ["medic"]);
+    stepRaid(state, [input({ lockAt: vec(0, -0.1) })], DT);
+    run(state, 0.3);
+    expect(hero(state).firing).toBe(true);
+  });
+
   it("slows heroes to a crawl while they aim or fire", () => {
     const free = raid([]);
     const aiming = raid([]);
@@ -173,11 +190,11 @@ describe("aiming on the move", () => {
     expect(hero(state).unsteady).toBe(0);
   });
 
-  it("spreads shots about a quarter wider on the move", () => {
+  it("spreads shots about two thirds wider on the move", () => {
     const still = strays("heavy", false);
     const moving = strays("heavy", true);
-    expect(moving).toBeGreaterThan(still * 1.1);
-    expect(moving).toBeLessThanOrEqual(0.1 * 1.25 + 1e-6);
+    expect(moving).toBeGreaterThan(still * 1.4);
+    expect(moving).toBeLessThanOrEqual(0.1 * 1.66 + 1e-6);
   });
 
   it("drops a throw on the mark standing still, and scatters it long and wide on the move", () => {
@@ -216,11 +233,11 @@ describe("aiming on the move", () => {
     const rifle = raid([], ["rifleman"]);
     expect(aimStretch(hero(rifle))).toEqual({ width: 1, length: 1 });
     hero(rifle).unsteady = 1;
-    expect(aimStretch(hero(rifle))).toEqual({ width: 1.25, length: 1 });
+    expect(aimStretch(hero(rifle)).width).toBeCloseTo(1.66);
     const grenadier = raid([], ["grenadier"]);
     hero(grenadier).unsteady = 1;
     const { width, length } = aimStretch(hero(grenadier));
-    expect(width).toBeGreaterThan(1.25);
+    expect(width).toBeGreaterThan(1.66);
     expect(length).toBeGreaterThan(1);
   });
 });
@@ -240,6 +257,62 @@ describe("raid combat", () => {
     expect(building(state, 1).destroyed).toBe(true);
     expect(state.status).toBe("won");
     expect(destructionPercent(state)).toBe(100);
+  });
+
+  it("chips the headquarters with each building that falls, but leaves it the last blow", () => {
+    const state = raid([
+      { type: "storehouse", pos: vec(0, -8) },
+      { type: "storehouse", pos: vec(2, -8) },
+      { type: "headquarters", pos: vec(0, -30) },
+    ]);
+    const hq = building(state, 2);
+    building(state, 0).hp = 1;
+    run(state, 2, [input({ aim: vec(0, -1) })]);
+    expect(building(state, 0).destroyed).toBe(true);
+    expect(hq.hp).toBeCloseTo(hq.maxHp * 0.96);
+    hq.hp = hq.maxHp * 0.11;
+    building(state, 1).hp = 1;
+    run(state, 2, [input({ aim: vec(0.2, -1) })]);
+    expect(building(state, 1).destroyed).toBe(true);
+    expect(hq.hp).toBeCloseTo(hq.maxHp * 0.1);
+    expect(hq.destroyed).toBe(false);
+  });
+
+  it("takes the whole base with the headquarters, one building at a time, for its loot", () => {
+    const state = raid([
+      { type: "headquarters", pos: vec(0, -6) },
+      { type: "gunTurret", pos: vec(6, -14) },
+      { type: "goldMine", pos: vec(-6, -14) },
+      { type: "goldVault", pos: vec(0, -22) },
+    ]);
+    const hq = building(state, 0);
+    hq.hp = 1;
+    run(state, 0.6, [input({ aim: vec(0, -1) })]);
+    expect(hq.destroyed).toBe(true);
+    expect(state.status).toBe("playing");
+    expect(state.conquest).not.toBeNull();
+    expect(destructionPercent(state)).toBe(25);
+    // The guns fall silent, and nobody can be hurt now.
+    const { hp } = hero(state);
+    run(state, 1, [input({ move: vec(1, 0) })]);
+    expect(hero(state).hp).toBe(hp);
+    expect(hero(state).moving).toBe(false);
+    for (let t = 0; t < 12 && state.status === "playing"; t += DT) stepRaid(state, [], DT);
+    expect(state.status).toBe("won");
+    expect(destructionPercent(state)).toBe(100);
+    expect(state.loot.gold).toBeGreaterThan(0);
+  });
+
+  it("can't lose once the base is taken", () => {
+    const state = raid([
+      { type: "headquarters", pos: vec(0, -6) },
+      { type: "goldMine", pos: vec(-6, -14) },
+    ]);
+    building(state, 0).hp = 1;
+    state.timeLimit = 0.5;
+    run(state, 0.4, [input({ aim: vec(0, -1) })]);
+    run(state, 12);
+    expect(state.status).toBe("won");
   });
 
   it("has defenses shoot heroes in range, but not out of range", () => {
@@ -294,7 +367,58 @@ describe("raid combat", () => {
   });
 });
 
+describe("sprinting", () => {
+  const north = vec(0, -1);
+
+  it("runs faster for a moment, even through firing, then has to recharge", () => {
+    const walking = raid([]);
+    const sprinting = raid([]);
+    stepRaid(sprinting, [input({ sprint: true })], DT);
+    run(walking, 1, [input({ move: north })]);
+    run(sprinting, 1, [input({ move: north })]);
+    expect(hero(sprinting).pos.y).toBeLessThan(hero(walking).pos.y * 1.5);
+    run(sprinting, SPRINT.seconds, [input({ move: north })]);
+    expect(hero(sprinting).sprint).toBe(0);
+    expect(hero(sprinting).sprintIn).toBeGreaterThan(SPRINT.recharge - 2);
+
+    const shooting = raid([]);
+    const dashing = raid([]);
+    stepRaid(dashing, [input({ sprint: true })], DT);
+    run(shooting, 1, [input({ move: vec(1, 0), aim: north })]);
+    run(dashing, 1, [input({ move: vec(1, 0), aim: north })]);
+    expect(hero(dashing).pos.x).toBeGreaterThan(hero(shooting).pos.x * 3);
+  });
+
+  it("won't start again until it's recharged", () => {
+    const state = raid([]);
+    stepRaid(state, [input({ sprint: true })], DT);
+    run(state, SPRINT.seconds + 1);
+    stepRaid(state, [input({ sprint: true })], DT);
+    expect(hero(state).sprint).toBe(0);
+    run(state, SPRINT.recharge);
+    stepRaid(state, [input({ sprint: true })], DT);
+    expect(hero(state).sprint).toBeGreaterThan(0);
+  });
+});
+
 describe("the gunboat", () => {
+  it("keeps firing at what the hero's locked onto, and takes no new target", () => {
+    const state = raid([
+      { type: "storehouse", pos: vec(0, -10) },
+      { type: "storehouse", pos: vec(10, 0) },
+    ]);
+    const [store, other] = [building(state, 0), building(state, 1)];
+    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
+    stepRaid(state, [input({ toggleBoat: true })], DT);
+    expect(hero(state).inBoat).toBe(true);
+    stepRaid(state, [input({ lockAt: vec(1, 0) })], DT);
+    expect(hero(state).targetId).toBe(store.id);
+    run(state, 3);
+    expect(hero(state).firing).toBe(true);
+    expect(store.hp).toBeLessThan(store.maxHp);
+    expect(other.hp).toBe(other.maxHp);
+  });
+
   it("answers one hero at a time, from anywhere on the island", () => {
     const state = raid([], ["rifleman", "heavy"], { spawn: vec(0, -30) });
     const open = input({ toggleBoat: true });

@@ -229,7 +229,9 @@
 }
 
 /* A checkpoint: a stud on the line, with room round it for a thumb. */
+/* Above the big nodes, whose labels make them wider than they look. */
 .tree-step {
+  z-index: 1;
   justify-content: center;
   width: 42px;
   height: 42px;
@@ -670,4 +672,79 @@
 .results-chest .icon-wrap {
   width: 26px;
   height: 26px;
+}
+
+/* ---------- Trading crystals ---------- */
+
+.swap {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  align-items: center;
+  justify-content: center;
+  background: rgb(5 10 20 / 0.65);
+  pointer-events: auto;
+}
+
+.swap-panel {
+  width: min(380px, 90%);
+}
+
+.swap-label {
+  margin: 6px 0 3px;
+  font-family: var(--display);
+  font-size: 12px;
+  text-transform: uppercase;
+  text-shadow: var(--outline-thin);
+}
+
+.swap-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.swap-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 2px solid var(--brass-mid);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--navy-700), var(--navy-900));
+  color: inherit;
+  font: inherit;
+}
+
+.swap-tile:disabled {
+  opacity: 0.4;
+}
+
+.swap-tile.selected {
+  border-color: var(--brass-hi);
+  box-shadow: 0 0 10px 2px rgb(255 214 106 / 0.55);
+}
+
+.swap-tile .crystal-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.swap-deal {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  color: #ffd25e;
+}
+
+.swap-deal.short {
+  color: #ff9d8a;
+}
+
+.swap-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
 }

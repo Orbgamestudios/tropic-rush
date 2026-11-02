@@ -2,7 +2,7 @@
 // hero on a pedestal) and the raid itself (HUD, pause, results), and back home again. Each frame
 // it reads the controls, advances the rules in fixed steps, and draws the result.
 
-import { setHaptics } from "./audio/haptics";
+import { haptic, setHaptics } from "./audio/haptics";
 import { music, type Track } from "./audio/music";
 import { playRaidEvents } from "./audio/raidSounds";
 import { loadSamples } from "./audio/samples";
@@ -14,7 +14,7 @@ import { passwordProblem, usernameProblem } from "./logic/account";
 import { BUILDINGS, type BuildingType } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
 import { hqLevel, type LayoutOp } from "./logic/crewIsland";
-import { addCrystals, type CrystalKind, payCrystals } from "./logic/crystals";
+import { addCrystals, type CrystalKind, payCrystals, swapCrystals } from "./logic/crystals";
 import { allowedCount, emptyPurse, type Purse, RESOURCES } from "./logic/economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
 import { HERO_KINDS, type HeroKind } from "./logic/heroes";
@@ -40,8 +40,8 @@ import type { Place } from "./logic/sun";
 import { angleOf, distance, lerp, vec } from "./logic/vec";
 import {
   beatRival,
+  islandSpot,
   type MapIsland,
-  REGION,
   settleRivals,
   takeIsland,
   worldIslands,
@@ -79,6 +79,7 @@ import {
   writeSave,
 } from "./save";
 import { ControlsEditor } from "./ui/controlsEditor";
+import { CrystalSwap } from "./ui/crystalSwap";
 import { HeroSelect } from "./ui/heroSelect";
 import { Hud } from "./ui/hud";
 import { audioContext, sfx } from "./ui/kit/fx";
@@ -174,7 +175,7 @@ export class Game {
   private treeHero: HeroKind = "rifleman";
   private raidTarget: MapIsland | null = null;
   /** Regions the last win opened: their cloud lifts next time the map is shown. */
-  private reveal: string[] = [];
+  private reveal: string | null = null;
   /** Which of the raid's heroes is this phone's player. */
   private seat = 0;
   /** The line to the crew's server for teaming up, kept open on every screen. */
@@ -211,6 +212,7 @@ export class Game {
   /** What the account last stored, to send only what's new. */
   private syncedBundle = saveBundle();
   private syncIn = SYNC_SECONDS;
+  private treeIn = 0;
   private syncing = false;
   /** What the crew's server last said its heroes have, while there's a crew. */
   private crewUpgrades: Record<HeroKind, string[]> | null = null;
@@ -220,12 +222,16 @@ export class Game {
   private touched = 0;
   private hudFrames = 0;
   private stopHinted = false;
+  private baseTaken = false;
+  /** What the player's hero was locked onto last frame, to feel a new lock land. */
+  private lockedOn: number | null = null;
   private hudTime = 0;
   private readonly replay: ReplayBar;
   private replaySpeed = 1;
   private readonly hud: Hud;
   private readonly heroes: HeroSelect;
   private readonly tree: UpgradeTree;
+  private readonly crystalSwap: CrystalSwap;
   private readonly results: ResultsScreen;
   private readonly pause: PauseMenu;
   private readonly skyCard: SkyCard;
@@ -259,6 +265,7 @@ export class Game {
     );
     this.hud = new Hud(container, {
       onBoat: () => this.controls.pressBoat(),
+      onSprint: () => this.controls.pressSprint(),
       onAbility: (ability) => this.controls.selectAbility(ability),
       onPause: () => this.setPaused(true),
     });
@@ -271,12 +278,20 @@ export class Game {
       onBack: () => this.go(() => this.goHome()),
       onStart: (hero) => this.go(() => this.showMap(hero)),
       onUpgrades: (hero) => this.go(() => this.showTree(hero)),
+      onTrade: () => this.crystalSwap.show(true),
     });
     this.tree = new UpgradeTree(screens, {
+      onTrade: () => this.crystalSwap.show(true),
       save: () => this.save,
       gold: () => this.crew.gold(),
       buy: (kind, upgrade) => this.buyUpgrade(kind, upgrade),
       onBack: () => this.go(() => this.showHeroes(this.treeHero)),
+    });
+    this.crystalSwap = new CrystalSwap(screens, {
+      save: () => this.save,
+      gold: () => this.crew.gold(),
+      swap: (from, to) => this.swapCrystals(from, to),
+      onTraded: () => (this.phase === "tree" ? this.tree.refresh() : this.heroes.refresh()),
     });
     this.results = new ResultsScreen(screens, {
       onAgain: () => this.go(() => this.showMap(this.save.hero)),
@@ -561,6 +576,7 @@ export class Game {
     this.container.style.setProperty("--ui-scale", String(s.uiScale));
     this.controls.uiScale = s.uiScale;
     this.controls.setLayout(s.controls);
+    this.hud.placeSprint(s.controls.aim);
     sfx.setMuted(s.muted);
     music.setMuted(s.musicMuted);
     setHaptics(s.haptics);
@@ -573,7 +589,7 @@ export class Game {
         return "home";
       case "heroes":
       case "tree":
-        return "heroes";
+        return "home";
       case "map":
         return "map";
       case "scout":
@@ -790,6 +806,14 @@ export class Game {
     if (HERO_KINDS.some((k) => shared[k].length !== upgrades[k].length)) {
       this.updateSave({ upgrades: shared });
     }
+  }
+
+  /** Three crystals and the island's gold for one of another kind. */
+  private swapCrystals(from: CrystalKind, to: CrystalKind): boolean {
+    const crystals = swapCrystals(this.save.crystals, from, to);
+    if (!crystals || !this.crew.payForSwap()) return false;
+    this.updateSave({ crystals });
+    return true;
   }
 
   /** The island pays, for the crew's hero; crystals come from whoever's buying. */
@@ -1214,17 +1238,16 @@ export class Game {
     this.drawMap();
     this.mapView.show(true);
     void this.findRivals();
-    const [opened] = this.reveal;
+    const opened = this.reveal && islandSpot(this.reveal);
     if (opened) {
       // Over to the water that's just opened up.
-      const [column = 0, row = 0] = opened.split(",").map(Number);
-      this.mapView.lookAt(column * REGION.w, row * REGION.h);
+      this.mapView.lookAt(opened.x, opened.y);
       this.mapScreen.announce("The cloud has lifted: new islands ahead!");
     } else if (lostIslands.length > 0) {
       this.mapScreen.announce(`Raiders retook ${lostIslands.join(" and ")}!`);
       this.updateSave({ lostIslands: [] });
     }
-    this.reveal = [];
+    this.reveal = null;
     this.stage.ignoreSlowFrames();
   }
 
@@ -1232,7 +1255,7 @@ export class Game {
   private drawMap(): void {
     const { world, crystals } = this.save;
     const islands = worldIslands(world, hqLevel(this.crew.snapshot().layout));
-    this.mapView.setWorld(islands, world, this.reveal);
+    this.mapView.setWorld(islands, world, this.reveal !== null);
     this.mapScreen.show(islands, world, crystals);
   }
 
@@ -1419,6 +1442,8 @@ export class Game {
     );
     this.playerDown = false;
     this.stopHinted = false;
+    this.baseTaken = false;
+    this.lockedOn = null;
     this.hud.show(true);
     this.hud.flash("Destroy the headquarters!");
   }
@@ -1543,7 +1568,13 @@ export class Game {
     if (this.phase === "crew") this.crew.frame(dt, this.time);
     else if (this.phase === "heroes") this.showcase.update(dt, this.time);
     else if (this.phase === "tree") {
-      // Nothing moves behind the tree's own full-screen backdrop, so nothing needs drawing.
+      // Nothing moves behind the tree's own full-screen backdrop, so nothing needs drawing. Gold
+      // can still come in while it's open, and what can be bought has to keep up with that.
+      this.treeIn -= dt;
+      if (this.treeIn <= 0) {
+        this.treeIn = 1;
+        this.tree.refresh();
+      }
       return;
     } else if (this.phase === "replay") this.replayFrame(dt, now);
     else if (this.phase === "map") {
@@ -1595,7 +1626,19 @@ export class Game {
         BUILDINGS[b.type].attack &&
         distance(b.pos, hero.pos) < COMBAT_ZOOM_DISTANCE,
     );
-    this.rig.zoomOut = lerp(this.rig.zoomOut, fighting ? 1 : 0, Math.min(1, dt * 1.5));
+    const wide = fighting || state.conquest !== null;
+    this.rig.zoomOut = lerp(this.rig.zoomOut, wide ? 1 : 0, Math.min(1, dt * 1.5));
+    if (state.conquest !== null && !this.baseTaken) {
+      this.baseTaken = true;
+      this.hud.flash("Base taken! It's all yours");
+    }
+    if (hero.targetId !== this.lockedOn) {
+      this.lockedOn = hero.targetId;
+      if (hero.targetId !== null) {
+        sfx.tick();
+        haptic("light");
+      }
+    }
     if (this.phase === "raid" && state.status !== "playing") this.endRaid();
     if (this.phase === "ended" && !this.resultShown && now >= this.resultsAt) this.showResults();
 
@@ -1614,7 +1657,10 @@ export class Game {
     const aim = this.phase === "raid" && !this.paused ? this.controls.aimPreview() : null;
     const heading = aim ? angleOf(aim) : watched.moving || watched.firing ? watched.facing : null;
     this.rig.kick(view.takeTremor());
-    this.rig.update(dt, watched.pos, vec(0, -3), heading, watched.firing);
+    // A falling base takes the camera with it, ending back at the headquarters' wreck.
+    const hq = state.buildings.find((b) => b.type === "headquarters");
+    const sweep = state.status === "won" ? hq?.pos : state.conquest !== null && view.lastBlast;
+    this.rig.update(dt, sweep || watched.pos, vec(0, -3), heading, watched.firing);
     view.aim = aim;
     view.update(
       state,
@@ -1657,7 +1703,7 @@ export class Game {
       // Keep a note of who was beaten here: what the island pays goes by their strength.
       world = beatRival({ ...world, rivals: { ...world.rivals, [target.id]: rival } }, rival);
     }
-    this.reveal = world.opened.filter((key) => !before.opened.includes(key));
+    this.reveal = world.opened.find((key) => !before.opened.includes(key)) ?? null;
     const { plunder, luck } = statueBuffs(this.crew.snapshot().layout.statues);
     const carried = emptyPurse();
     const loot: Partial<Purse> = { ...this.save.loot };

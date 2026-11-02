@@ -74,6 +74,32 @@ These were explicitly left out to keep the first version to a basic structure:
   levels up. It reaches its deepest spot by headquarters 16.
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
+## Added 2026-11-02, second batch (owner's requests)
+
+- **Aiming:** letting go with nothing in the arc now does nothing, instead of firing a volley. A
+  Medic can still throw a bottle at the ground, since that's how she heals herself.
+- **Sprint:** a button above and to the right of the fire pad, or Shift. 70% faster for 2.5 seconds,
+  even while firing, then 20 seconds to recharge. Those numbers were Claude's choice.
+- **Gunboat:** a hero keeps firing at what they're locked onto while their player is on the boat.
+- **Taking a base:** each building that falls takes 4% off the headquarters, but never below 10% of
+  its health, so the last blow is the player's. When the headquarters falls the base is taken: the
+  guns stop, the crew can't be hurt or lose, and every building left explodes one at a time outward
+  from it in about 7 seconds, paying its loot. So every win ends at 100% and three stars. Night
+  raids keep the old rules: raiders grab what they can and leave the rest standing.
+- **Production:** down from 900 to 150 an hour at level 1, so raids are the main income.
+- **Headquarters requirements:** each level asks for the mine, camp, quarry and gun turret two
+  levels behind it, the scrap yard three, the storages five, and two hero upgrades a level across
+  the crew. The panel on the headquarters lists what's missing. Nothing asked for needs a blueprint.
+- **Crystal trade:** three of one crystal and 1,000 of the island's gold buy one of another, from a
+  Trade button on the hero and upgrade screens.
+- **Checkpoints:** see "Checkpoints" in `docs/HERO_TREES.md`.
+- **Music:** the old scouting drum loop is now the raid track, cut to a true four bars. It used to
+  run 18 ms over, into the next bar's first kick, which sounded as a stutter every seven seconds.
+  The crew island, its tropical calypso with a drum corps going past now and then, also plays on
+  the hero screens, without restarting. Scouting is field drums, and winning is bugles and drums.
+  These three are synthesized by `scripts/make-music.mjs`, and nobody has listened to them yet but
+  the owner: Claude can only measure them.
+
 ## Raids (the core of the game)
 
 Raids are what matter most. If a co-op raid is fun, everything else builds on it.
@@ -87,7 +113,7 @@ Raids are what matter most. If a co-op raid is fun, everything else builds on it
      A quick tap locks onto the nearest tower in range; tapping again stops. Heroes slow to 20%
      speed while aiming or shooting (**Decided 2026-11-01**, owner's request).
      Moving also costs accuracy (**Decided 2026-11-01**, owner's request): a hero's shot cone eases
-     25% wider as they move and back as they stop. Throwers instead scatter longer and wider.
+     66% wider as they move and back as they stop. Throwers instead scatter longer and wider.
 3. **Gunboat.** **Decided (changed 2026-11-01, owner's request):**
    - It pulls up next to the beach where the crew landed.
    - Only one player can use it at a time.
@@ -328,7 +354,7 @@ Starting size ratios, in hero heights:
 - The progression numbers (costs, production, capacity, which HQ level unlocks what) are a first
   draft, not balanced.
   - Starting stock: 600 gold, 600 timber, 300 stone, 100 scrap.
-  - Producers make 900 per hour at level 1, and 30% more each level.
+  - Producers make 150 per hour at level 1, and 30% more each level.
 - Removing a building gives nothing back.
 - Footprints in tiles:
   - headquarters 6×6
@@ -537,17 +563,20 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
 
 **Decided 2026-11-01 (owner's request): the world never ends.**
 
-- It's one fixed sea of islands, and you drag and pinch round it. Only the waters round home start
-  in the clear, and everything else lies under cloud. The map always says how many more islands
-  it'll take to lift the next bank.
-- One bank of cloud lifts at a time, for good, every 3 islands won, next to where you're fighting.
+- It's one fixed sea of islands, and you drag and pinch round it. Only a splotch of sky round home
+  starts clear, and everything else lies under cloud. The map always says how many more islands
+  it'll take to lift the next splotch.
+- One splotch of cloud lifts for good every 3 islands won (**changed 2026-11-02**, owner's request).
+  Splotches are irregular, not a grid, and each clears the nearest hidden island to home, leaning
+  away from whichever side has seen the most, so the map grows evenly wherever the fighting is.
+  Saves from before this keep the regions they'd opened.
 - Islands get harder with distance, past the top headquarters level and on forever: beyond HQ 20 a
   base can't grow, so its buildings keep gaining levels instead.
 - A beaten island is yours until raiders retake it. Each night they retake 0, 1 or 2 of your
   islands. It comes back stronger than it was and at least as strong as your own HQ, with every
   building its headquarters allows, all at full level.
 
-**Proposed:** one world for every crew, regions of 6 to 8 islands, roughly one more HQ level every
+**Proposed:** one world for every crew, islands charted in regions of 6 to 8, roughly one more HQ level every
 34 map units from home, and progress kept on each phone, not on the crew server. A lost raid can
 be tried again as often as you like, and materials are kept win or lose.
 

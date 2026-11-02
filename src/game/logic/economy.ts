@@ -250,7 +250,7 @@ export function storageCapacity(level: number): number {
 
 /** How much a producer makes per hour at a level. */
 export function productionPerHour(level: number): number {
-  return Math.round(900 * 1.3 ** (level - 1));
+  return Math.round(150 * 1.3 ** (level - 1));
 }
 
 export function canAfford(purse: Purse, cost: Partial<Purse>): boolean {

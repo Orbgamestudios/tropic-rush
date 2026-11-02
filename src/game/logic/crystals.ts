@@ -19,6 +19,9 @@ export const CRYSTAL_LABELS: Record<CrystalKind, string> = {
 export type Crystals = Record<CrystalKind, number>;
 export type CrystalCost = Partial<Crystals>;
 
+/** Three of one crystal and this much gold trade for one of another. */
+export const CRYSTAL_SWAP = { give: 3, gold: 1000 } as const;
+
 export function noCrystals(): Crystals {
   return { nature: 0, fire: 0, ice: 0, dark: 0 };
 }
@@ -56,6 +59,16 @@ export function addCrystals(wallet: Crystals, gained: CrystalCost): Crystals {
   const out = { ...wallet };
   for (const k of CRYSTAL_KINDS) out[k] += gained[k] ?? 0;
   return out;
+}
+
+/** The wallet after a trade, or null if it can't be made. */
+export function swapCrystals(
+  wallet: Crystals,
+  from: CrystalKind,
+  to: CrystalKind,
+): Crystals | null {
+  if (from === to || wallet[from] < CRYSTAL_SWAP.give) return null;
+  return addCrystals(payCrystals(wallet, { [from]: CRYSTAL_SWAP.give }), { [to]: 1 });
 }
 
 /** Reads untrusted saved crystals. */

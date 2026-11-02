@@ -119,6 +119,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   left out of the offline cache.
   Raw TRELLIS outputs stay in the untracked `models-wip/`. See "Making hero models" in
   `docs/HANDOFF.md`.
+- `scripts/make-music.mjs` synthesizes the scouting, victory and crew island music, and
+  `scripts/inspect-audio.mjs` measures a track. Loops play gaplessly from memory in `audio/music.ts`.
 - To test the crew server or raiding together locally, run `npx wrangler dev`. It builds, then serves the game and
   runs the Durable Object. `npm run dev` and `npm run phone` have no crew server, so the crew
   island falls back to offline mode there.

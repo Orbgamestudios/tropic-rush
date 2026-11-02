@@ -1,7 +1,8 @@
 # Audio credits
 
 Everything here is CC0 (public domain dedication): no attribution is required, these are listed
-so anyone can find the originals. All came from OpenGameArt.org and were trimmed and converted.
+so anyone can find the originals. What came from OpenGameArt.org was trimmed and converted. The
+rest was made for this game by `scripts/make-music.mjs`, and is CC0 too.
 
 ## Sound effects
 
@@ -11,14 +12,12 @@ so anyone can find the originals. All came from OpenGameArt.org and were trimmed
 
 ## Music
 
-- `home`: "Tropical Fantasy" by spring-spring: https://opengameart.org/content/tropical-fantasy
+- `home` (and the hero screens): made for this game, a steel pan calypso with a drum corps going
+  past.
 - `map`: "Chest of Adventure" by eldritch-grim:
   https://opengameart.org/content/chest-of-adventure
-- `heroes`: "I think I'd stay (jungle, chill)" by emmntt:
-  https://opengameart.org/content/i-think-id-stay-jungle-chill
-- `raid`: "Krakatoa" by kistol: https://opengameart.org/content/krakatoa
-- `scout`: "Tense bass boost drum loop" by fupi:
+- `raid`: "Tense bass boost drum loop" by fupi, cut to exactly four bars:
   https://opengameart.org/content/tense-bass-boost-drum-loop-140-bpm
+- `scout`: made for this game, a field drum cadence.
 - `night`: "Massive Battle" by eldritch-grim: https://opengameart.org/content/massive-battle
-- `win`: "Victory Fanfare" by aroachifoundonmypillow:
-  https://opengameart.org/content/victory-fanfare
+- `win`: made for this game, a bugle and drum fanfare.

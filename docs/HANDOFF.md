@@ -16,7 +16,11 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
   building, and "mines" was read as all the producers, so confirm both if they come up.
 - **Tides:** the two-week abilities in `docs/HERO_TREES.md` aren't built.
 - **Balance:** tree prices, checkpoint sizes, the watchtower's numbers and blueprint odds are first
-  passes.
+  passes. So are the second batch's: production, what the headquarters asks for, the sprint, and
+  the chip each building takes off the headquarters.
+- **Music:** the scouting, victory and crew island tracks are synthesized, and Claude can only
+  measure them, not hear them. Ask how they sound. To change one, edit `scripts/make-music.mjs`,
+  run it, and copy any new loop length it prints into `LOOPS` in `src/game/audio/music.ts`.
 
 ## Last finished
 
@@ -28,6 +32,10 @@ team, and accounts that stay apart.
 After that: all six heroes on foot have real TRELLIS.2 models with skeletons, moved by one animator,
 a shared grass pattern, one island gold, crew-shared upgrades, heroes tied to the headquarters,
 account switching, 15% weaker starting heroes, and the cleaned-up map tags.
+
+Then a real Tank model, and the second batch in "Added 2026-11-02, second batch" in
+`docs/DESIGN.md`: sprint, firing from the gunboat, taking a whole base, headquarters requirements,
+crystal trades, dearer checkpoints, splotchy clouds, a new crosshair, a new run, and new music.
 
 For battery, screens nobody's touching run at 30 frames, shadows redraw less often, nothing draws
 behind the tree screen, the picture starts a little softer, and there are fewer clouds.

@@ -191,10 +191,10 @@ export function upgradeGold(tier: number): number {
 }
 
 const CHECKPOINTS_PER_LINE = 3;
-/** Each checkpoint costs this share of the upgrade its line leads to. */
-const CHECKPOINT_PRICE = 0.1;
+/** Gold for a checkpoint, by the tier of the upgrade its line leads to. */
+const CHECKPOINT_GOLD = [0, 0, 500, 800, 1200, 1800] as const;
 /** How strong a checkpoint is in percent, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_PERCENT = [0, 0, 1, 1, 2, 2] as const;
+const CHECKPOINT_PERCENT = [0, 0, 3, 3, 4, 4] as const;
 /** Percent for percent, these do far less than the rest, so they get twice as much. */
 const SLIGHT_STAT = 2;
 
@@ -754,7 +754,7 @@ function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
           ...checkpoint(kind, stat, percent),
           id,
           tier: 0,
-          gold: upgradeGold(tier) * CHECKPOINT_PRICE,
+          gold: CHECKPOINT_GOLD[tier] ?? 0,
           needs: [needs],
           path: p.name,
           ...lineAt(from, to, at),

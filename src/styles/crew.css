@@ -948,3 +948,24 @@
     padding: 22px 16px 10px;
   }
 }
+
+/* What the headquarters still wants, under its details. */
+.crew-selection-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 5px;
+}
+
+.crew-selection-needs:empty {
+  display: none;
+}
+
+.crew-need {
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffd9d0;
+  background: rgb(160 40 30 / 0.55);
+  white-space: nowrap;
+}

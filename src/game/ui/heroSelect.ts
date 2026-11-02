@@ -42,6 +42,7 @@ export interface HeroSelectHost {
   onStart(hero: HeroKind): void;
   /** Opens this hero's upgrade tree. */
   onUpgrades(hero: HeroKind): void;
+  onTrade(): void;
 }
 
 export class HeroSelect {
@@ -79,7 +80,14 @@ export class HeroSelect {
     // Top bar.
     const top = el("div", "screen-top");
     const wallet = el("div", "screen-wallet");
-    wallet.append(this.crystals.root, this.gold.root);
+    const trade = button({
+      label: "Trade",
+      variant: "steel",
+      size: "sm",
+      aria: "Trade crystals",
+      onClick: () => host.onTrade(),
+    });
+    wallet.append(trade, this.crystals.root, this.gold.root);
     const back = backButton(() => host.onBack());
 
     // Roster.
@@ -186,7 +194,7 @@ export class HeroSelect {
     this.refresh();
   }
 
-  private refresh(): void {
+  refresh(): void {
     const save = this.host.save();
     const kind = this.hero;
     const spec = HEROES[kind];

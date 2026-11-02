@@ -249,21 +249,32 @@ test("buys checkpoints along a line, then the upgrade at the end of it", async (
       tropicRush: {
         openHeroes(): void;
         syncNow(changes: { crystals: Record<string, number> }): void;
-        crewOp(op: { kind: "loot"; purse: { gold: number } }): boolean;
       };
     };
     tropicRush.syncNow({ crystals: { nature: 9, fire: 9, ice: 9, dark: 9 } });
-    // Enough on the island for the first upgrade, its line and the one at the end.
-    tropicRush.crewOp({ kind: "loot", purse: { gold: 100 } });
     tropicRush.openHeroes();
   });
+  // A new island can hold less than a line costs, so it's filled up before each purchase.
+  const topUp = () =>
+    page.evaluate(() => {
+      const { tropicRush } = window as unknown as {
+        tropicRush: { crewOp(op: { kind: "loot"; purse: { gold: number } }): boolean };
+      };
+      tropicRush.crewOp({ kind: "loot", purse: { gold: 700 } });
+    });
   await page.getByRole("button", { name: "Upgrades" }).click();
   const buy = page.locator(".tree-buy");
   await expect(page.locator(".tree-spec-name")).toHaveText("Basic Training");
   await buy.click();
-  await page.locator(".tree-step").first().click();
-  await expect(page.locator(".tree-spec-path")).toHaveText(/checkpoint/i);
-  for (let step = 0; step < 3; step++) await buy.click();
+  for (let step = 0; step < 3; step++) {
+    await topUp();
+    await page.locator(".tree-step").nth(step).click();
+    await expect(page.locator(".tree-spec-path")).toHaveText(/checkpoint/i);
+    await expect(buy).toBeEnabled();
+    await buy.click();
+  }
   await expect(page.locator(".tree-spec-name")).toHaveText("Hot Rounds");
+  await topUp();
+  await page.getByRole("button", { name: "Hot Rounds" }).click();
   await expect(buy).toBeEnabled();
 });

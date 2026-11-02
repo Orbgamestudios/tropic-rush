@@ -120,6 +120,9 @@ export interface JobPin {
 
 type Category = "defenses" | "resources" | "storage";
 
+/** How many of the headquarters' wants fit on the selection card. */
+const MOST_NEEDS = 3;
+
 /** What a build card shows: how many there are of how many allowed, the cost, and whether it's
  * locked behind a headquarters level or can't be built right now. */
 export interface ChipState {
@@ -208,6 +211,8 @@ export class CrewUi {
   private readonly selectionLevel = el("div", "crew-selection-level");
   private readonly selectionLabel = el("div", "crew-selection-label");
   private readonly selectionDetail = el("div", "crew-selection-detail");
+  private readonly selectionNeeds = el("div", "crew-selection-needs");
+  private shownNeeds = "";
   private readonly upgradeCost = el("div", "crew-selection-cost");
   private readonly upgradeButton: HTMLButtonElement;
   private readonly removeButton: HTMLButtonElement;
@@ -404,7 +409,7 @@ export class CrewUi {
     this.selectionImg.alt = "";
     pic.append(this.selectionImg, this.selectionLevel);
     const words = el("div", "crew-selection-words");
-    words.append(this.selectionLabel, this.selectionDetail, this.upgradeCost);
+    words.append(this.selectionLabel, this.selectionDetail, this.selectionNeeds, this.upgradeCost);
     const tools = el("div", "crew-selection-tools");
     tools.append(rotate, this.removeButton, done);
     info.body.append(pic, words, this.upgradeButton, tools);
@@ -937,6 +942,8 @@ export class CrewUi {
       detail: string;
       upgrade: string;
       canUpgrade: boolean;
+      /** What's still wanted before it can be upgraded. */
+      needs: readonly string[];
     } | null,
     canRemove: boolean,
   ): void {
@@ -960,6 +967,14 @@ export class CrewUi {
       this.selectedLevel = info.level;
       this.selectionLabel.textContent = info.label;
       this.selectionDetail.textContent = info.detail;
+      const needs = info.needs.join("|");
+      if (needs !== this.shownNeeds) {
+        this.shownNeeds = needs;
+        const shown = info.needs.slice(0, MOST_NEEDS).map((n) => el("span", "crew-need", n));
+        const more = info.needs.length - MOST_NEEDS;
+        if (more > 0) shown.push(el("span", "crew-need", `${more} more`));
+        this.selectionNeeds.replaceChildren(...shown);
+      }
       if (info.upgrade !== this.shownUpgrade) {
         this.shownUpgrade = info.upgrade;
         const costText = info.upgrade.startsWith("Next: ") ? info.upgrade.slice(6) : null;

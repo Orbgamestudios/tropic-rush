@@ -45,8 +45,10 @@ const SIGHTS_HELD = 0.25;
 /** Heroes slow to this share of their speed while aiming or shooting. */
 const SHOOTING_SPEED = 0.2;
 /** On the move, shots stray this much wider, coming on and easing off over this many seconds. */
-const MOVING_SPREAD = 0.25;
+const MOVING_SPREAD = 0.66;
 const STEADY_SECONDS = 0.5;
+/** The sprint button: this much quicker for this long, then a slow wait for the next one. */
+export const SPRINT = { seconds: 2.5, speed: 1.7, recharge: 20 } as const;
 /** On the move, a throw can land this far off: a share of its length, and radians to the side. */
 const THROW_LENGTH_SCATTER = 0.2;
 const THROW_WIDTH_SCATTER = 0.12;
@@ -66,6 +68,11 @@ const POCKET_TURRET = { hp: 450, seconds: 20, damage: 0.6 };
 const DECOY_DRONE = { hp: 2000, seconds: 6, reach: 30 };
 const GADGET_SECONDS = 30;
 const AUTO_FIRE_SECONDS = 0.6;
+/** Each building that falls takes this share off the headquarters, but never its last sliver. */
+const HQ_CHIP = 0.04;
+const HQ_CHIP_FLOOR = 0.1;
+/** Once the headquarters is down the rest goes up one at a time, in about this many seconds. */
+const CONQUEST = { firstAfter: 0.9, seconds: 7, longestGap: 0.45, lastAfter: 1.1 } as const;
 
 /** What the capstones that carry a hero's signature move do; see heroTrees.ts. */
 const SIGNATURE = {
@@ -197,6 +204,9 @@ export interface RaidHero {
   /** Seconds until the next pocket turret and decoy drone. */
   pocketIn: number;
   droneIn: number;
+  /** Seconds left of a sprint, and until the next one is ready. */
+  sprint: number;
+  sprintIn: number;
 }
 
 export interface RaidBuilding {
@@ -325,6 +335,7 @@ export type RaidEvent =
   | { type: "mineTriggered"; id: number; pos: Vec2 }
   /** A hero's rage or last stand has just come on. */
   | { type: "enrage"; pos: Vec2 }
+  | { type: "sprint"; heroId: number; pos: Vec2 }
   | { type: "eruption"; pos: Vec2 };
 
 export type RaidStatus = "playing" | "won" | "lost";
@@ -354,6 +365,10 @@ export interface RaidState {
   shape: IslandShape;
   /** Seconds until the next eruption, on an island with a volcano. */
   eruptionIn: number;
+  /** The headquarters is down: seconds until the next building goes up. Null until then. */
+  conquest: number | null;
+  /** AI raiders on the crew's own island: they grab what they can, and only its fall ends it. */
+  hitAndRun: boolean;
 }
 
 export interface HeroInput {
@@ -370,6 +385,8 @@ export interface HeroInput {
   /** Open the gunboat's view, or go back to the hero. */
   toggleBoat: boolean;
   boatAbility: { ability: Ability; target: Vec2 } | null;
+  /** The sprint button. */
+  sprint: boolean;
 }
 
 export const IDLE_INPUT: HeroInput = {
@@ -380,6 +397,7 @@ export const IDLE_INPUT: HeroInput = {
   autoAim: false,
   toggleBoat: false,
   boatAbility: null,
+  sprint: false,
 };
 
 /**
@@ -437,6 +455,8 @@ export function createRaid(
       tapReady: true,
       pocketIn: GADGET_SECONDS,
       droneIn: GADGET_SECONDS,
+      sprint: 0,
+      sprintIn: 0,
       targetId: null,
       patientId: null,
     };
@@ -490,6 +510,8 @@ export function createRaid(
     rng,
     shape: layout.shape ?? HOME_SHAPE,
     eruptionIn: ERUPTION_EVERY * 0.6,
+    conquest: null,
+    hitAndRun: false,
   };
 }
 
@@ -511,7 +533,8 @@ export function stepRaid(
   updateMines(state, dt);
   updateZones(state, dt);
   updateLava(state, dt);
-  if (state.status === "playing") {
+  stepConquest(state, dt);
+  if (state.status === "playing" && state.conquest === null) {
     if (state.heroes.every((h) => !h.alive)) {
       state.status = "lost";
       state.lostReason = "crew";
@@ -546,45 +569,31 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   hero.autoFireTime = Math.max(0, hero.autoFireTime - dt);
   tickTricks(state, hero, dt);
 
-  if (input.toggleBoat) toggleBoat(state, hero);
-  if (hero.inBoat) {
+  // The base has fallen: everyone stands and watches it go.
+  if (state.conquest !== null) {
+    if (hero.inBoat) toggleBoat(state, hero);
     hero.moving = false;
     hero.firing = false;
-    hero.burstLeft = 0;
-    hero.spin = 0;
-    hero.unsteady = 0;
     hero.targetId = null;
     hero.patientId = null;
-    if (input.boatAbility) fireAbility(state, input.boatAbility.ability, input.boatAbility.target);
     return;
   }
 
-  const spec = HEROES[hero.kind];
-  moveByInput(state, hero, input, dt);
-  hero.unsteady = clamp(hero.unsteady + (hero.moving ? dt : -dt) / STEADY_SECONDS, 0, 1);
-
-  // Locking on: let go of a drag to lock onto the building in that direction, or tap to lock
-  // onto the nearest tower (tapping the same one again stops). A medic locks onto crewmates.
-  const medic = spec.attack.kind === "heal";
-  if (medic) lockPatient(state, hero, input);
-  else if (input.lockAt && length(input.lockAt) > 0.05) {
-    const target = lockCandidate(state, hero, input.lockAt);
-    hero.targetId = target?.id ?? null;
-    if (!target) {
-      // Nothing there: a quick volley in that direction.
-      hero.autoDir = normalize(input.lockAt);
-      hero.autoDistance = clamp(length(input.lockAt), 0.3, 1) * heroRange(hero);
-      hero.autoFireTime = AUTO_FIRE_SECONDS;
-    }
-  } else if (input.autoAim) {
-    const target = lockCandidate(state, hero, null);
-    hero.targetId = target && target.id !== hero.targetId ? target.id : null;
-    hero.autoFireTime = 0;
+  if (input.toggleBoat) toggleBoat(state, hero);
+  // On the gunboat a hero can't move or pick a new target, but keeps firing at what they're on.
+  if (hero.inBoat) {
+    hero.moving = false;
+    if (input.boatAbility) fireAbility(state, input.boatAbility.ability, input.boatAbility.target);
+  } else {
+    if (input.sprint) startSprint(state, hero);
+    moveByInput(state, hero, input, dt);
+    lockOn(state, hero, input);
   }
+  hero.unsteady = clamp(hero.unsteady + (hero.moving ? dt : -dt) / STEADY_SECONDS, 0, 1);
 
   let dir: Vec2 | null = null;
   let aimDistance = heroRange(hero);
-  const aim = input.aim;
+  const aim = hero.inBoat ? null : input.aim;
   const locked = hero.targetId === null ? null : lockedBuilding(state, hero);
   if (hero.targetId !== null && !locked) hero.targetId = null;
   const patient = hero.patientId === null ? null : lockedPatient(state, hero);
@@ -609,6 +618,29 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   updateAttack(state, hero, dir, aimDistance, dt);
 }
 
+/**
+ * Locking on: let go of a drag to lock onto the building in that direction, or tap to lock onto
+ * the nearest tower (tapping the same one again stops). With nothing in the arc, letting go just
+ * stops firing. A medic locks onto crewmates.
+ */
+function lockOn(state: RaidState, hero: RaidHero, input: HeroInput): void {
+  if (HEROES[hero.kind].attack.kind === "heal") lockPatient(state, hero, input);
+  else if (input.lockAt && length(input.lockAt) > 0.05) {
+    hero.targetId = lockCandidate(state, hero, input.lockAt)?.id ?? null;
+  } else if (input.autoAim) {
+    const target = lockCandidate(state, hero, null);
+    hero.targetId = target && target.id !== hero.targetId ? target.id : null;
+    hero.autoFireTime = 0;
+  }
+}
+
+function startSprint(state: RaidState, hero: RaidHero): void {
+  if (hero.sprintIn > 0) return;
+  hero.sprint = SPRINT.seconds;
+  hero.sprintIn = SPRINT.seconds + SPRINT.recharge;
+  state.events.push({ type: "sprint", heroId: hero.id, pos: { ...hero.pos } });
+}
+
 /** The timers and steady effects of a hero's upgrades, once a step. */
 function tickTricks(state: RaidState, hero: RaidHero, dt: number): void {
   const m = hero.mods;
@@ -617,6 +649,8 @@ function tickTricks(state: RaidState, hero: RaidHero, dt: number): void {
   hero.haste = Math.max(0, hero.haste - dt);
   hero.iced = Math.max(0, hero.iced - dt);
   hero.pumped = Math.max(0, hero.pumped - dt);
+  hero.sprint = Math.max(0, hero.sprint - dt);
+  hero.sprintIn = Math.max(0, hero.sprintIn - dt);
   hero.fireTime = hero.firing ? hero.fireTime + dt : 0;
   hero.stillTime = hero.moving ? 0 : hero.stillTime + dt;
   const regen =
@@ -678,10 +712,11 @@ function shotTime(hero: RaidHero, base: number): number {
 /** A hero's full speed right now. */
 function heroSpeed(hero: RaidHero, slowed: boolean): number {
   const m = hero.mods;
-  const firing = slowed && hero.rage <= 0 ? m.fireSpeed || SHOOTING_SPEED : 1;
+  const sprinting = hero.sprint > 0;
+  const firing = slowed && hero.rage <= 0 && !sprinting ? m.fireSpeed || SHOOTING_SPEED : 1;
   const haste = hero.haste > 0 ? TRICKS.getawaySpeed : 1;
   const iced = hero.iced > 0 ? TRICKS.iceSpeed : 1;
-  return HEROES[hero.kind].speed * m.speed * firing * haste * iced;
+  return HEROES[hero.kind].speed * m.speed * firing * haste * iced * (sprinting ? SPRINT.speed : 1);
 }
 
 /** Walks a hero by the move stick. Guests' phones use this too, to answer the stick at once. */
@@ -968,7 +1003,7 @@ function damageHero(
   heavyBonus = 1,
   blast = false,
 ): void {
-  if (!hero.alive) return;
+  if (!hero.alive || state.conquest !== null) return;
   const m = hero.mods;
   const wasStanding = hero.hp >= hero.maxHp * TRICKS.lastStandAt;
   let taken = damageTaken(hero, amount, heavyBonus, blast);
@@ -1176,7 +1211,7 @@ function updateBuildings(state: RaidState, dt: number): void {
   for (const b of state.buildings) {
     b.firing = false;
     const atk = BUILDINGS[b.type].attack;
-    if (b.destroyed || !atk) continue;
+    if (b.destroyed || !atk || state.conquest !== null) continue;
     b.reload = Math.max(0, b.reload - dt);
     const minRange = atk.kind === "mortar" ? atk.minRange : 0;
     const target = findTarget(state, b.pos, atk.range, minRange);
@@ -1421,12 +1456,20 @@ function nearestBuilding(state: RaidState, from: Vec2, range: number): RaidBuild
 }
 
 function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, ownerId: number): void {
-  if (b.destroyed || state.status !== "playing") return;
+  if (b.destroyed || state.status !== "playing" || state.conquest !== null) return;
   const owner = state.heroes.find((h) => h.id === ownerId);
   const m = owner?.mods;
   b.hp -=
     amount * (m?.buildingDamage ?? 1) * (BUILDINGS[b.type].attack ? (m?.defenseDamage ?? 1) : 1);
   if (b.hp > 0) return;
+  fell(state, b);
+  if (b.type === "headquarters") takeBase(state);
+  else if (!state.hitAndRun) chipHeadquarters(state);
+  if (owner) destroyedBy(state, owner, b);
+}
+
+/** A building comes down, and pays out whatever it held. */
+function fell(state: RaidState, b: RaidBuilding): void {
   b.hp = 0;
   b.destroyed = true;
   b.firing = false;
@@ -1437,8 +1480,49 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
     for (const r of RESOURCES) state.loot[r] += loot[r] ?? 0;
     state.events.push({ type: "loot", pos: { ...b.pos }, loot });
   }
-  if (b.type === "headquarters") state.status = "won";
-  if (owner) destroyedBy(state, owner, b);
+}
+
+function standing(state: RaidState): RaidBuilding[] {
+  return state.buildings.filter((b) => !b.destroyed);
+}
+
+/** Every building that falls shakes the headquarters a little. */
+function chipHeadquarters(state: RaidState): void {
+  const hq = standing(state).find((b) => b.type === "headquarters");
+  if (!hq) return;
+  const floor = Math.min(hq.hp, hq.maxHp * HQ_CHIP_FLOOR);
+  hq.hp = Math.max(floor, hq.hp - hq.maxHp * HQ_CHIP);
+  state.events.push({ type: "hit", pos: { ...hq.pos } });
+}
+
+/** The headquarters is down, and the base with it: the guns fall silent. */
+function takeBase(state: RaidState): void {
+  if (state.hitAndRun || standing(state).length === 0) {
+    state.status = "won";
+    return;
+  }
+  state.conquest = CONQUEST.firstAfter;
+  for (const b of state.buildings) b.sights = null;
+}
+
+/** Sets off what's left of a taken base one building at a time, outward from the headquarters. */
+function stepConquest(state: RaidState, dt: number): void {
+  if (state.conquest === null) return;
+  state.conquest -= dt;
+  if (state.conquest > 0) return;
+  const left = standing(state);
+  const hq = state.buildings.find((b) => b.type === "headquarters");
+  if (left.length === 0) {
+    state.status = "won";
+    return;
+  }
+  const from = hq?.pos ?? vec(0, 0);
+  const next = left.reduce((a, b) => (distance(a.pos, from) <= distance(b.pos, from) ? a : b));
+  fell(state, next);
+  state.conquest =
+    left.length > 1
+      ? Math.min(CONQUEST.longestGap, CONQUEST.seconds / state.buildings.length)
+      : CONQUEST.lastAfter;
 }
 
 /** Upgrades set off by knocking a building down. */

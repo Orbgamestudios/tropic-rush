@@ -104,6 +104,8 @@ function heroRing(radius: number, leader: boolean): THREE.Mesh {
       map: texture,
       transparent: true,
       depthWrite: false,
+      // Laid flat over slopes, so it ignores the depth of what's under it.
+      depthTest: false,
     }),
   );
   mesh.rotation.x = -Math.PI / 2;
@@ -137,7 +139,8 @@ function sniperSights(): SniperSights {
   const beam = new THREE.Mesh(line, material);
   const ring = new THREE.RingGeometry(0.9, 1.15, 20);
   ring.rotateX(-Math.PI / 2);
-  const mark = new THREE.Mesh(ring, material);
+  const mark = new THREE.Mesh(ring, material.clone());
+  (mark.material as THREE.MeshBasicMaterial).depthTest = false;
   beam.visible = false;
   mark.visible = false;
   return { beam, mark };
@@ -210,6 +213,8 @@ export class RaidView {
   showBars = true;
   /** Where the player is dragging the aim stick (null when not), for the aim cone. */
   aim: Vec2 | null = null;
+  /** Where the last building fell. */
+  lastBlast: Vec2 | null = null;
   /** The camera as of the last frame, for placing words over things. */
   private lastCamera: THREE.Camera | null = null;
   private lastSize = { width: 1, height: 1 };
@@ -387,6 +392,7 @@ export class RaidView {
           break;
         case "hit":
           this.effects.hit(this.at(e.pos, BULLET_HEIGHT));
+          this.aimView.hit(e.pos);
           break;
         case "heal":
           this.effects.heal(this.at(e.pos, 0.5));
@@ -397,8 +403,13 @@ export class RaidView {
         case "loot":
           this.showLoot(e.pos, e.loot);
           break;
+        case "sprint":
+          this.effects.footstep(this.at(e.pos, 0));
+          break;
         case "destroyed": {
           const radius = BUILDINGS[e.buildingType].radius;
+          this.lastBlast = e.pos;
+          this.aimView.fell(e.pos, radius);
           this.effects.explosion(this.at(e.pos, 1.2), radius * 1.3);
           this.effects.smokeColumn(this.at(e.pos, 0.5), e.buildingType === "headquarters" ? 8 : 4);
           this.shake(e.pos, radius * 0.16, state);
@@ -503,7 +514,7 @@ export class RaidView {
     );
     updateWind(time, watched && !watched.inBoat && this.showBars ? this.focus : null);
     this.effects.update(dt);
-    this.reach?.update(this.showBars ? leader : undefined, dt);
+    this.reach?.update(this.showBars && state.conquest === null ? leader : undefined, dt);
     const aiming = this.showBars && !this.defending ? leader : undefined;
     this.aimView.update(state, aiming, this.aim, this.ground, time);
     this.overgrowth?.update(dt);
@@ -640,7 +651,7 @@ export class RaidView {
       if (h.alive && h.moving) {
         view.stepTimer -= dt;
         if (view.stepTimer <= 0) {
-          view.stepTimer = 0.2;
+          view.stepTimer = h.sprint > 0 ? 0.08 : 0.2;
           this.effects.footstep(this.at(h.pos, 0));
         }
       }
@@ -690,7 +701,7 @@ export class RaidView {
       aiming: h.firing || (this.aim !== null && h === state.heroes[this.seat]),
       reload: attack.kind === "burst" && h.burstLeft === 0 ? Math.min(1, h.reload / reloadTime) : 0,
       down: !h.alive,
-      cheering: state.status === "won",
+      cheering: state.status === "won" || state.conquest !== null,
     });
   }
 
@@ -776,14 +787,19 @@ export class RaidView {
       ringGeometry.rotateX(-Math.PI / 2);
       const fillGeometry = new THREE.CircleGeometry(p.splash, 40);
       fillGeometry.rotateX(-Math.PI / 2);
-      const ring = new THREE.Mesh(
-        ringGeometry,
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }),
-      );
-      const fill = new THREE.Mesh(
-        fillGeometry,
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false }),
-      );
+      // Laid flat over slopes, so they ignore the depth of what's under them.
+      const overlay = (opacity: number) =>
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          depthTest: false,
+        });
+      const ring = new THREE.Mesh(ringGeometry, overlay(0.85));
+      const fill = new THREE.Mesh(fillGeometry, overlay(0.25));
+      ring.renderOrder = 2;
+      fill.renderOrder = 2;
       const y = this.ground(p.lob.to.x, p.lob.to.y) + 0.12;
       ring.position.set(p.lob.to.x, y, p.lob.to.y);
       fill.position.set(p.lob.to.x, y + 0.01, p.lob.to.y);
@@ -837,49 +853,36 @@ export class RaidView {
       transparent: true,
       opacity: kind === "fire" ? 0.3 : 0.55,
       depthWrite: false,
+      depthTest: false,
     });
-    g.add(at(new THREE.Mesh(disc, material), 0, 0.1, 0));
+    const mesh = new THREE.Mesh(disc, material);
+    mesh.renderOrder = 2;
+    g.add(at(mesh, 0, 0.1, 0));
     return g;
   }
 
   private healCircle(radius: number): THREE.Group {
     const g = new THREE.Group();
+    const flat = (shape: THREE.BufferGeometry, color: number, opacity: number) => {
+      const mesh = new THREE.Mesh(
+        shape,
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          depthTest: false,
+        }),
+      );
+      mesh.renderOrder = 2;
+      return mesh;
+    };
     const disc = new THREE.CircleGeometry(radius, 40);
     disc.rotateX(-Math.PI / 2);
-    g.add(
-      at(
-        new THREE.Mesh(
-          disc,
-          new THREE.MeshBasicMaterial({
-            color: 0x7dff9a,
-            transparent: true,
-            opacity: 0.22,
-            depthWrite: false,
-          }),
-        ),
-        0,
-        0.1,
-        0,
-      ),
-    );
+    g.add(at(flat(disc, 0x7dff9a, 0.22), 0, 0.1, 0));
     const ring = new THREE.RingGeometry(radius * 0.9, radius, 40);
     ring.rotateX(-Math.PI / 2);
-    g.add(
-      at(
-        new THREE.Mesh(
-          ring,
-          new THREE.MeshBasicMaterial({
-            color: 0x9dffb4,
-            transparent: true,
-            opacity: 0.7,
-            depthWrite: false,
-          }),
-        ),
-        0,
-        0.12,
-        0,
-      ),
-    );
+    g.add(at(flat(ring, 0x9dffb4, 0.7), 0, 0.12, 0));
     for (const [x, z] of [
       [0.5, 0],
       [-0.5, 0],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BuildingType } from "./buildings";
+import { BUILDINGS, type BuildingType } from "./buildings";
 import {
   applyOp,
   buildableTiles,
@@ -18,6 +18,7 @@ import {
   GRID_ORIGIN,
   HOME_START,
   hqLevel,
+  hqNeeds,
   isBuildableTile,
   MAX_TOOL_LEVEL,
   OBSTACLE_KINDS,
@@ -34,11 +35,18 @@ import {
   tryOp,
   upgradeBlocker,
 } from "./crewIsland";
-import { buildTime, costFor, nextLevelGain, START_RESOURCES } from "./economy";
+import {
+  buildTime,
+  costFor,
+  levelCap,
+  MAX_HQ_LEVEL,
+  nextLevelGain,
+  START_RESOURCES,
+} from "./economy";
 import { heroTree } from "./heroTrees";
 import { isOnGrass } from "./island";
 import { nightIsland } from "./nightRaid";
-import { BLUEPRINT_TYPES } from "./spoils";
+import { BLUEPRINT_TYPES, needsBlueprint } from "./spoils";
 
 const NOW = 1_000_000_000;
 const HOUR = 3_600_000;
@@ -388,8 +396,60 @@ describe("crew island progression", () => {
     expect(upgrade(layout)).toEqual({ error: "Already at its highest level" });
   });
 
+  /** The buildings and hero upgrades a headquarters level asks for, all done. */
+  const ready = (layout: CrewLayout, level: number): CrewLayout => {
+    const made = hqNeeds(layout, level).flatMap((need) => {
+      const type = (Object.keys(BUILDINGS) as BuildingType[]).find((t) =>
+        need.text.startsWith(BUILDINGS[t].label),
+      );
+      return type ? [{ ...building(`need-${type}`, type, at(0, 0)), level: need.need }] : [];
+    });
+    const owned = heroTree("rifleman").map((u) => u.id);
+    return {
+      ...layout,
+      buildings: [...layout.buildings, ...made],
+      upgrades: { ...layout.upgrades, rifleman: owned },
+    };
+  };
+
+  it("won't raise the headquarters until the island and heroes are ready", () => {
+    const start = island(4);
+    expect(upgradeBlocker(start, start.buildings[0] as PlacedBuilding)).toMatch(/Needs Gold mine/);
+    const needs = hqNeeds(start, 5);
+    expect(needs.map((n) => n.text)).toContain("Gold mine level 3");
+    expect(needs.map((n) => n.text)).toContain("6 hero upgrades");
+    expect(needs.every((n) => n.have < n.need)).toBe(true);
+    const done = ready(start, 5);
+    expect(hqNeeds(done, 5).every((n) => n.have >= n.need)).toBe(true);
+    const result = tryOp(done, { kind: "upgrade", id: "hq" }, NOW);
+    if (!("layout" in result)) throw new Error(result.error);
+  });
+
+  it("only ever asks for what a crew can already build", () => {
+    for (let level = 2; level <= MAX_HQ_LEVEL; level++) {
+      for (const need of hqNeeds(island(level - 1), level)) {
+        const type = (Object.keys(BUILDINGS) as BuildingType[]).find((t) =>
+          need.text.startsWith(BUILDINGS[t].label),
+        );
+        if (!type) continue;
+        expect(need.need, need.text).toBeLessThanOrEqual(levelCap(type, level - 1));
+        expect(needsBlueprint(type), need.text).toBe(false);
+      }
+    }
+  });
+
+  it("takes the island's gold for a crystal trade", () => {
+    const layout = island(3);
+    const rich = { ...layout, resources: { ...layout.resources, gold: 1500 } };
+    const result = tryOp(rich, { kind: "crystalSwap" }, NOW);
+    if (!("layout" in result)) throw new Error(result.error);
+    expect(result.layout.resources.gold).toBeCloseTo(500);
+    const poor = { ...layout, resources: { ...layout.resources, gold: 900 } };
+    expect(tryOp(poor, { kind: "crystalSwap" }, NOW)).toEqual({ error: "Not enough gold" });
+  });
+
   it("upgrades the headquarters up to level 20", () => {
-    let layout = island(19);
+    let layout = ready(island(19), 20);
     const result = tryOp(layout, { kind: "upgrade", id: "hq" }, NOW);
     if (!("layout" in result)) throw new Error(result.error);
     layout = finishWork(result.layout);
@@ -527,7 +587,7 @@ describe("crew island progression", () => {
     ).toEqual({
       error: "Not enough resources",
     });
-    expect(tryOp(broke, { kind: "upgrade", id: "hq" }, NOW)).toEqual({
+    expect(tryOp(ready(broke, 2), { kind: "upgrade", id: "hq" }, NOW)).toEqual({
       error: "Not enough resources",
     });
   });
@@ -536,7 +596,7 @@ describe("crew island progression", () => {
     let layout = finishWork(place(island(3), building("m", "goldMine", at(0, 0))));
     layout = { ...layout, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 }, stamp: NOW };
     const later = settle(layout, NOW + HOUR);
-    expect(later.resources.gold).toBeCloseTo(900);
+    expect(later.resources.gold).toBeCloseTo(150);
     expect(later.resources.timber).toBe(0);
     const muchLater = settle(layout, NOW + 1000 * HOUR);
     expect(muchLater.resources.gold).toBe(capacity(layout).gold);

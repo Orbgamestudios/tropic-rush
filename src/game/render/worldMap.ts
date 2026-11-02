@@ -1,7 +1,7 @@
 // The world map: the crew's home on a deep blue sea, little 3D islands round it with palms and a
-// base, and banks of cloud over everything not yet reached. The camera drags and pinches over all
-// of it. It can go on forever, so regions are only built as they come into view, each in a handful
-// of draw calls, and cloud lifts from a region when the crew earns its way in.
+// base, and cloud over everything not yet reached. The camera drags and pinches over all of it. It
+// can go on forever, so regions are only built as they come into view, each in a handful of draw
+// calls, and splotches of cloud lift as the crew earns its way out.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -10,15 +10,15 @@ import { islandShape } from "../logic/islandShapes";
 import { createRng } from "../logic/rng";
 import { clamp, lerp } from "../logic/vec";
 import {
-  chartedRegions,
+  clearSky,
   islandRadius,
   type MapIsland,
   REGION,
-  regionKey,
   type WorldProgress,
 } from "../logic/worldMap";
 import { cloudTexture } from "./clouds";
 import { type Lamp, LightPool } from "./lightPool";
+import { MapClouds } from "./mapClouds";
 import { buildingModel, gunboatModel } from "./models";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
@@ -39,12 +39,10 @@ const PITCH = 1.12;
 const DISTANCE = [62, 190] as const;
 const START_DISTANCE = 112;
 const LOOK_Z = 2;
-/** How far past the open regions the camera can drift, as a share of a region. */
-const PAN_MARGIN = 0.42;
+/** How far past the clear sky the camera can drift, in map units. */
+const PAN_MARGIN = 26;
 /** Regions are built once they're this near the middle of the view, in regions. */
 const BUILD_REACH = { x: 1.4, y: 1.5 } as const;
-const CLOUD_PUFFS = 22;
-const CLOUD_LIFT_SECONDS = 2.6;
 const SMOKE_STEPS = 4;
 const CREW_LIGHT = 0xffc680;
 const RAIDER_LIGHT = 0xff6a3c;
@@ -301,50 +299,10 @@ function buildBatch(batch: Batch, shallows: THREE.Material): THREE.Group {
   return group;
 }
 
-/** A region's cloud bank: big soft sheets with smaller puffs on them, as one mesh. */
-function cloudGeometry(column: number, row: number): THREE.BufferGeometry {
-  const rng = createRng(Math.imul(column, 7919) ^ Math.imul(row, 104729) ^ 0x2f1);
-  const quads: THREE.BufferGeometry[] = [];
-  const cx = column * REGION.w;
-  const cz = row * REGION.h;
-  const put = (x: number, y: number, z: number, size: number) => {
-    const quad = new THREE.PlaneGeometry(size, size * 0.66);
-    quad.rotateX(-PITCH);
-    quad.translate(x, y, z);
-    quads.push(quad);
-  };
-  // Four sheets overlap to hide the sea, whichever way the camera comes at it.
-  for (const [dx, dz] of [
-    [-0.27, -0.27],
-    [0.27, -0.27],
-    [-0.27, 0.27],
-    [0.27, 0.27],
-  ] as const) {
-    put(cx + dx * REGION.w, 7, cz + dz * REGION.h, REGION.w * 0.74);
-  }
-  for (let i = 0; i < CLOUD_PUFFS; i++) {
-    put(
-      cx + (rng() - 0.5) * REGION.w * 0.86,
-      8 + rng() * 7,
-      cz + (rng() - 0.5) * REGION.h * 0.86,
-      26 + rng() * 20,
-    );
-  }
-  const merged = mergeGeometries(quads, false) ?? new THREE.BufferGeometry();
-  for (const q of quads) q.dispose();
-  return merged;
-}
-
 interface RegionView {
   group: THREE.Group;
   /** What the region's islands looked like when it was built. */
   look: string;
-}
-
-interface Lifting {
-  mesh: THREE.Mesh;
-  material: THREE.MeshBasicMaterial;
-  age: number;
 }
 
 interface Smoke {
@@ -362,10 +320,7 @@ export class WorldMapView {
   private readonly sea: THREE.Mesh;
   private readonly regions = new Map<string, RegionView>();
   private readonly regionRoot = new THREE.Group();
-  private readonly cloudRoot = new THREE.Group();
-  private readonly clouds = new Map<string, THREE.Mesh>();
-  private readonly lifting: Lifting[] = [];
-  private readonly cloudMaterial: THREE.MeshBasicMaterial;
+  private readonly clouds = new MapClouds();
   private readonly shallows = new THREE.MeshBasicMaterial({
     map: shallowsTexture(),
     transparent: true,
@@ -405,7 +360,7 @@ export class WorldMapView {
     this.sea = new THREE.Mesh(sea, this.ocean);
     this.sea.renderOrder = -1;
     this.shallows.color = SKY.unlit.value;
-    this.root.add(this.sea, this.regionRoot, this.cloudRoot, this.lights.root);
+    this.root.add(this.sea, this.regionRoot, this.clouds.mesh, this.lights.root);
 
     // Home in the middle, and the gunboat at anchor beside it.
     const home = newBatch();
@@ -426,79 +381,28 @@ export class WorldMapView {
       material.transparent = true;
       this.smokeMaterials.push(material);
     }
-    // Tilted to face the camera, so the sheets reach down through the sea: no depth test.
-    this.cloudMaterial = new THREE.MeshBasicMaterial({
-      map: puff,
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      fog: false,
-    });
-    this.cloudMaterial.color = SKY.unlit.value;
     this.root.visible = false;
     stage.scene.add(this.root);
   }
 
-  /** Lays the world out as it stands. `reveal` lists regions whose cloud lifts as you watch. */
-  setWorld(
-    islands: readonly MapIsland[],
-    world: WorldProgress,
-    reveal: readonly string[] = [],
-  ): void {
+  /** Lays the world out as it stands. With `lifting`, the newest cloud lifts as you watch. */
+  setWorld(islands: readonly MapIsland[], world: WorldProgress, lifting = false): void {
     this.islands = islands;
     this.lightIslands(islands);
-    const { open } = chartedRegions(world);
-    const spots = open.map((key) => key.split(",").map(Number) as [number, number]);
-    const columns = spots.map(([c]) => c);
-    const rows = spots.map(([, r]) => r);
-    const west = Math.min(...columns);
-    const east = Math.max(...columns);
-    const north = Math.min(...rows);
-    const south = Math.max(...rows);
+    const sky = clearSky(world);
     this.bounds = {
-      west: (west - 0.5 - PAN_MARGIN) * REGION.w,
-      east: (east + 0.5 + PAN_MARGIN) * REGION.w,
-      north: (north - 0.5 - PAN_MARGIN) * REGION.h,
-      south: (south + 0.5 + PAN_MARGIN) * REGION.h,
+      west: Math.min(...sky.map((h) => h.x - h.radius)) - PAN_MARGIN,
+      east: Math.max(...sky.map((h) => h.x + h.radius)) + PAN_MARGIN,
+      north: Math.min(...sky.map((h) => h.y - h.radius)) - PAN_MARGIN,
+      south: Math.max(...sky.map((h) => h.y + h.radius)) + PAN_MARGIN,
     };
-    // Cloud fills the whole box round the open water, right past the edge of where you can pan.
-    const wanted = new Set<string>();
-    for (let c = west - 2; c <= east + 2; c++) {
-      for (let r = north - 2; r <= south + 2; r++) {
-        if (!open.includes(regionKey(c, r))) wanted.add(regionKey(c, r));
-      }
-    }
-    for (const [key, mesh] of this.clouds) {
-      if (wanted.has(key)) continue;
-      this.clouds.delete(key);
-      if (reveal.includes(key)) this.lift(mesh);
-      else this.dropCloud(mesh);
-    }
-    for (const key of wanted) {
-      if (this.clouds.has(key)) continue;
-      const [c = 0, r = 0] = key.split(",").map(Number);
-      const mesh = new THREE.Mesh(cloudGeometry(c, r), this.cloudMaterial);
-      mesh.renderOrder = 5;
-      this.cloudRoot.add(mesh);
-      this.clouds.set(key, mesh);
-    }
+    this.clouds.setSky(sky, lifting);
     // Regions rebuild only when something on them has changed.
     for (const [key, view] of this.regions) {
       if (view.look === this.lookOf(key)) continue;
       this.dropRegion(key, view);
     }
     this.placeSmoke();
-  }
-
-  private lift(mesh: THREE.Mesh): void {
-    const material = this.cloudMaterial.clone();
-    mesh.material = material;
-    this.lifting.push({ mesh, material, age: 0 });
-  }
-
-  private dropCloud(mesh: THREE.Mesh): void {
-    this.cloudRoot.remove(mesh);
-    mesh.geometry.dispose();
   }
 
   private lookOf(region: string): string {
@@ -616,8 +520,6 @@ export class WorldMapView {
   update(time: number, dt: number): void {
     (this.ocean.uniforms.uTime as THREE.IUniform<number>).value = time;
     this.lights.update(dt, time);
-    this.cloudRoot.position.x = Math.sin(time * 0.05) * 3;
-    this.cloudRoot.position.z = Math.cos(time * 0.04) * 2;
     this.boat.root.position.set(Math.sin(time * 0.1) * 1.5 + 9, 0.1, 6.5);
     this.boat.root.rotation.y = 0.5;
     for (const s of this.smoke) {
@@ -628,19 +530,6 @@ export class WorldMapView {
     this.smokeMaterials.forEach((material, i) => {
       material.opacity = Math.sin(Math.PI * ((time * 0.18 + i / SMOKE_STEPS) % 1)) * 0.62;
     });
-    for (let i = this.lifting.length - 1; i >= 0; i--) {
-      const l = this.lifting[i];
-      if (!l) continue;
-      l.age += dt;
-      const t = Math.min(1, l.age / CLOUD_LIFT_SECONDS);
-      l.material.opacity = 1 - t * t;
-      l.mesh.position.y = t * t * 26;
-      if (t >= 1) {
-        this.dropCloud(l.mesh);
-        l.material.dispose();
-        this.lifting.splice(i, 1);
-      }
-    }
 
     const k = 1 - Math.exp(-dt * 9);
     const gap = this.focus.distanceToSquared(this.target);
@@ -654,6 +543,7 @@ export class WorldMapView {
     const x = this.focus.x;
     const z = this.focus.y + LOOK_Z;
     this.sea.position.set(x, 0, z);
+    this.clouds.update(time, dt, x, z);
     cam.position.set(x, Math.sin(PITCH) * this.distance, z + Math.cos(PITCH) * this.distance);
     cam.lookAt(x, 0, z);
     cam.updateMatrixWorld();

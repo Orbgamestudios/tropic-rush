@@ -40,7 +40,8 @@ function dress(scene: THREE.Object3D, detailed: boolean): void {
       ? new THREE.MeshStandardMaterial({ map, roughness: 0.72, metalness: 0 })
       : new THREE.MeshLambertMaterial({ map });
     o.castShadow = true;
-    o.receiveShadow = detailed;
+    // The art has its own shading, and a skinned body shadowing itself only ever makes blotches.
+    o.receiveShadow = false;
     // The skeleton swings the mesh about, away from where its bounds were worked out.
     o.frustumCulled = !(o instanceof THREE.SkinnedMesh);
   });

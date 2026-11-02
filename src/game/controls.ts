@@ -1,12 +1,13 @@
 // Turns touches, mouse and keyboard into HeroInput for the rules.
 // Phone: left thumb moves, right thumb aims. Dragging the aim stick shows the aim cone without
 // firing (and slows the hero); letting go locks onto the building in the cone and the hero keeps
-// firing at it until it's gone or out of range. A quick tap locks onto the nearest tower. Both
+// firing at it until it's gone or out of range, and with nothing in the cone just stops. A quick
+// tap locks onto the nearest tower. Both
 // sticks rest in their corners and jump to wherever the thumb lands on that half of the screen,
 // then spring back home. In the gunboat: drag to look
 // around, tap the island to fire the selected ability.
 // Computer: WASD/arrows move, drag the mouse from the hero to aim and release to lock on (click
-// to lock onto the nearest tower), E gunboat, 1-3 abilities.
+// to lock onto the nearest tower), E gunboat, Shift sprint, 1-3 abilities.
 
 import type { Ability } from "./logic/gunboat";
 import { ABILITY_ORDER } from "./logic/gunboat";
@@ -86,6 +87,7 @@ export class Controls {
   private pendingLock: Vec2 | null = null;
   private lastHero: Vec2 | null = null;
   private pendingBoat = false;
+  private pendingSprint = false;
   private heldMove = vec(0, 0);
   private pendingAbility: { ability: Ability; target: Vec2 } | null = null;
   private readonly leftVisual: { base: HTMLElement; knob: HTMLElement };
@@ -132,6 +134,10 @@ export class Controls {
 
   pressBoat(): void {
     this.pendingBoat = true;
+  }
+
+  pressSprint(): void {
+    this.pendingSprint = true;
   }
 
   selectAbility(ability: Ability): void {
@@ -192,7 +198,9 @@ export class Controls {
       autoAim: this.pendingAutoAim,
       toggleBoat: this.pendingBoat,
       boatAbility: this.pendingAbility,
+      sprint: this.pendingSprint,
     };
+    this.pendingSprint = false;
     this.pendingAutoAim = false;
     this.pendingLock = null;
     this.pendingBoat = false;
@@ -222,6 +230,7 @@ export class Controls {
       if (this.mode === "off") return;
       if (key === "e") this.pendingBoat = true;
       if (key === "q" || key === "f") this.pendingAutoAim = true;
+      if (key === "shift") this.pendingSprint = true;
       const index = ["1", "2", "3"].indexOf(key);
       const ability = ABILITY_ORDER[index];
       if (ability) this.selectedAbility = ability;

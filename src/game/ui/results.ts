@@ -162,7 +162,7 @@ export class ResultsScreen {
     if (RESOURCES.some((r) => result.materials[r] > 0))
       this.loot.append(costChips(costText(result.materials)));
     this.showFound(result);
-    this.timers.push(setTimeout(() => (result.won ? sfx.victory() : sfx.defeat()), 150));
+    if (!result.won) this.timers.push(setTimeout(() => sfx.defeat(), 150));
   }
 
   /** The crystals, blueprint and treasure a win turned up, popping in after the gold. */

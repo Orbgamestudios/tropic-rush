@@ -80,6 +80,12 @@ export function playRaidEvents(
       case "mineTriggered":
         sfx.tick();
         break;
+      case "sprint":
+        if (e.heroId === player?.id) {
+          sfx.whoosh();
+          haptic("light");
+        }
+        break;
       case "eruption":
         playSample("bigblast", 0.9, 0.6);
         haptic("heavy");

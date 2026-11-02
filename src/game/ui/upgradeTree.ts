@@ -31,6 +31,7 @@ import { type IconName, icon } from "./kit/icons";
 import { LevelUpReveal } from "./levelUp";
 
 export interface UpgradeTreeHost {
+  onTrade(): void;
   save(): SaveData;
   /** The island's gold, which pays for upgrades. */
   gold(): number;
@@ -127,7 +128,14 @@ export class UpgradeTree {
     );
 
     const purse = el("div", "tree-purse");
-    purse.append(this.gold.root, this.wallet.root);
+    const trade = button({
+      label: "Trade",
+      variant: "steel",
+      size: "sm",
+      aria: "Trade crystals",
+      onClick: () => host.onTrade(),
+    });
+    purse.append(trade, this.gold.root, this.wallet.root);
 
     this.root.append(top, this.board, spec, purse, this.fx);
     this.reveal = new LevelUpReveal(this.root);
@@ -193,7 +201,7 @@ export class UpgradeTree {
     });
   }
 
-  private refresh(): void {
+  refresh(): void {
     const save = this.host.save();
     const kind = this.hero;
     const owned = save.upgrades[kind];
