@@ -83,21 +83,22 @@ export function buildableTiles(): readonly { x: number; y: number }[] {
 /** Footprint in tiles (width east-west, depth north-south) before rotating. */
 export const FOOTPRINTS: Record<BuildingType, { w: number; h: number }> = {
   headquarters: { w: 5, h: 5 },
-  gunTurret: { w: 2, h: 2 },
-  mortar: { w: 2, h: 2 },
-  harpoon: { w: 2, h: 2 },
-  flamethrower: { w: 2, h: 2 },
-  watchtower: { w: 2, h: 2 },
-  goldMine: { w: 5, h: 5 },
-  lumberCamp: { w: 5, h: 5 },
-  quarry: { w: 5, h: 5 },
-  scrapYard: { w: 5, h: 5 },
+  gunTurret: { w: 3, h: 3 },
+  mortar: { w: 3, h: 3 },
+  harpoon: { w: 3, h: 3 },
+  flamethrower: { w: 3, h: 3 },
+  watchtower: { w: 3, h: 3 },
+  landmine: { w: 1, h: 1 },
+  goldMine: { w: 4, h: 4 },
+  lumberCamp: { w: 4, h: 4 },
+  quarry: { w: 4, h: 4 },
+  scrapYard: { w: 4, h: 4 },
   storehouse: { w: 3, h: 3 },
   goldVault: { w: 3, h: 3 },
   timberShed: { w: 3, h: 3 },
   stoneYard: { w: 3, h: 3 },
   scrapBin: { w: 3, h: 3 },
-  refinery: { w: 5, h: 5 },
+  refinery: { w: 4, h: 4 },
 };
 
 export interface PlacedBuilding {
@@ -296,6 +297,8 @@ export interface Obstacle {
 
 /** The open clearing round the headquarters on a new island, in meters. */
 const START_CLEARING = 18;
+/** How far out past that clearing the first tier of patches reaches, in meters. */
+const NEAR_BASE_REACH = 12;
 /** The trail from the landing beach stays open this far either side of its middle. */
 const TRAIL_CLEARING = 3.4;
 
@@ -426,7 +429,7 @@ export function toolJob(layout: Pick<CrewLayout, "builds">, tool: Tool): BuildJo
 }
 
 /** Minutes to bring a tool to each level. */
-const TOOL_MINUTES = [30, 120, 480, 1440, 2880] as const;
+const TOOL_MINUTES = [2, 10, 60, 480, 1440] as const;
 
 /** Milliseconds of work on a tool's next level. */
 export function toolTime(level: number): number {
@@ -457,9 +460,22 @@ export function clearGives(o: Obstacle): Partial<Purse> {
   return scaled(OBSTACLE_KINDS[o.kind].gives, tierScale(o));
 }
 
+/** Round the base, patches take this many minutes, from the nearest to the furthest of them. */
+const NEAR_BASE_MINUTES = [1, 5] as const;
+
+/** Minutes to clear a patch just outside the start clearing, more the further in it lies. */
+function nearBaseMinutes(o: Obstacle): number {
+  const x = GRID_ORIGIN.x + (o.x + o.w / 2) * TILE;
+  const y = GRID_ORIGIN.y + (o.y + o.h / 2) * TILE;
+  const out = (Math.hypot(x - HOME_START.x, y - HOME_START.y) - START_CLEARING) / NEAR_BASE_REACH;
+  const [first, last] = NEAR_BASE_MINUTES;
+  return Math.ceil(first + (last - first) * Math.max(0, Math.min(1, out)));
+}
+
 /** Milliseconds to clear a patch; a tool better than the patch needs goes quicker. */
 export function clearTime(o: Obstacle, toolLevel = o.tier): number {
   const speed = 1 + 0.25 * Math.max(0, toolLevel - o.tier);
+  if (o.tier === 1) return Math.round((nearBaseMinutes(o) * 60_000) / speed);
   const hours = (CLEAR_HOURS[o.kind] * (TIER_TIME[o.tier - 1] ?? 1)) / speed;
   return Math.round(hours * 3_600_000);
 }

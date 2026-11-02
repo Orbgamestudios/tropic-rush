@@ -319,7 +319,7 @@ export class CrewIslandView {
     private readonly labelLayer: HTMLElement,
   ) {
     this.camera = new HomeCamera(stage);
-    this.heroes = new HomeHeroes(stage, labelLayer);
+    this.heroes = new HomeHeroes(stage);
     this.root.add(this.heroes.root);
     const scenery = homeScenery(HOME_START);
     const landing = landingPoints();
@@ -594,7 +594,7 @@ export class CrewIslandView {
     this.camera.update(dt);
     this.overgrowth.setDistance(this.camera.distance);
     this.overgrowth.update(dt);
-    this.heroes.update(dt, this.camera.distance);
+    this.heroes.update(dt);
     updateWind(time, null);
     this.terrain.update(time);
     this.clouds.update(time);

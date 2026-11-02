@@ -50,9 +50,9 @@ test("picks a hero and starts a raid", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("drags round the world map, with clouds saying what lifts them", async ({ page }) => {
+test("drags round the world map, and says what lifts the next cloud", async ({ page }) => {
   await openMap(page);
-  await expect(page.locator(".map-cloud-plate").first()).toBeAttached({ timeout: 60_000 });
+  await expect(page.locator(".map-progress")).toContainText("to lift a cloud", { timeout: 60_000 });
   const pin = page.locator(".map-pin:visible").first();
   const before = await pin.evaluate((node) => (node as HTMLElement).style.transform);
   await page.mouse.move(400, 180);
@@ -187,6 +187,26 @@ test("opens the profile from the crew bar, and the map from its button", async (
   await page.getByRole("button", { name: "World map" }).click();
   await expect(page.locator(".map-pin:visible").first()).toBeVisible({ timeout: 60_000 });
   expect(errors).toEqual([]);
+});
+
+test("resets the game from the settings, only after confirming", async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.goto("/?testhooks");
+  type Hooks = { tropicRush: { save(): { gold: number }; syncNow(c: object): Promise<void> } };
+  await page.evaluate(() => (window as unknown as Hooks).tropicRush.syncNow({ gold: 9999 }));
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Reset game" }).click();
+  // Backing out leaves everything as it was.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  expect(await page.evaluate(() => (window as unknown as Hooks).tropicRush.save().gold)).toBe(9999);
+  await page.getByRole("button", { name: "Reset game" }).click();
+  await page.getByRole("button", { name: "Erase everything" }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as Hooks).tropicRush?.save().gold), {
+      timeout: 120_000,
+    })
+    .toBe(300);
 });
 
 test("runs a night raid, replays it and reports the result", async ({ page }) => {

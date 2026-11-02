@@ -250,6 +250,21 @@ export function writeSave(data: SaveData, storage: Storage = localStorage): bool
   }
 }
 
+/**
+ * Starts the game over, wiping progress and this phone's island. Who the player is and how they
+ * like things set up stay. It leaves their crew, whose island is shared and isn't theirs to wipe.
+ */
+export function resetGame(
+  keep: Pick<SaveData, "nickname" | "avatar" | "memberId" | "settings">,
+  storage: Storage = localStorage,
+): SaveData {
+  const { nickname, avatar, memberId, settings } = keep;
+  const save = { ...fresh(), nickname, avatar, memberId, settings };
+  writeSave(save, storage);
+  storage.removeItem(LAYOUT_KEY);
+  return save;
+}
+
 const LAYOUT_KEY = "tropic-rush:crew-layout:v1";
 const ACCOUNT_KEY = "tropic-rush:account:v1";
 

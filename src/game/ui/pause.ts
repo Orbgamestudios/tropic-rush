@@ -3,7 +3,6 @@
 // apply as you drag.
 
 import { DEFAULT_SETTINGS, type Settings, TILT_RANGE, UI_SCALE_RANGE } from "../save";
-import { spotText } from "./controlsEditor";
 import { button, closeOnBackdrop, confirmTap, el, panel, setLabel } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
@@ -14,6 +13,12 @@ export interface PauseHandlers {
   settings(): Settings;
   onSettings(settings: Settings): void;
   onEditControls(): void;
+  /** The signed-in username, if any. */
+  username(): string | null;
+  /** Checks the account's password; says what's wrong, or null if it's right. */
+  checkPassword(password: string): Promise<string | null>;
+  /** Wipes the player's progress and starts again. */
+  onResetGame(): void;
 }
 
 interface Slider {
@@ -26,13 +31,19 @@ export class PauseMenu {
   private readonly main: HTMLElement;
   private readonly options: HTMLElement;
   private readonly retreat: HTMLButtonElement;
+  private readonly resetGame: HTMLButtonElement;
+  private readonly reset: HTMLElement;
+  private readonly resetText = el("p", "pause-reset-text");
+  private readonly resetPassword = el("input", "crew-input");
+  private readonly resetError = el("div", "crew-join-error");
+  private readonly resetGo: HTMLButtonElement;
+  /** Until the password's been checked, there's nothing to confirm. */
+  private resetStep: "password" | "confirm" = "confirm";
   private readonly title: HTMLElement;
   private readonly sound: HTMLButtonElement;
   private readonly musicButton: HTMLButtonElement;
   private readonly hapticsButton: HTMLButtonElement;
   private readonly cameraMode: HTMLButtonElement;
-  /** Every value in one place, easy to read off and pass on. */
-  private readonly summary = el("div", "pause-summary");
   private inRaid = true;
   private readonly sliders: Record<"tilt" | "zoom" | "uiScale", Slider>;
 
@@ -66,6 +77,13 @@ export class PauseMenu {
     );
 
     // Settings page.
+    this.resetGame = button({
+      label: "Reset game",
+      icon: "trash",
+      variant: "red",
+      size: "sm",
+      onClick: () => this.startReset(),
+    });
     this.options = el("div", "pause-page pause-options");
     this.sliders = {
       // Exact values, so the player can read them off and pass them on as new defaults.
@@ -104,12 +122,14 @@ export class PauseMenu {
       handlers.onSettings({ ...s, camera: s.camera === "top" ? "behind" : "top" });
       this.refresh();
     });
-    const toggles = el("div", "pause-row");
-    toggles.append(this.cameraMode, this.sound, this.musicButton, this.hapticsButton);
-    const row = el("div", "pause-row");
-    row.append(
+    const buttons = el("div", "pause-buttons");
+    buttons.append(
+      this.cameraMode,
+      this.sound,
+      this.musicButton,
+      this.hapticsButton,
       button({
-        label: "Reset",
+        label: "Defaults",
         icon: "rotate",
         variant: "steel",
         size: "sm",
@@ -133,6 +153,7 @@ export class PauseMenu {
         size: "sm",
         onClick: () => handlers.onEditControls(),
       }),
+      this.resetGame,
       button({
         label: "Done",
         icon: "check",
@@ -141,16 +162,40 @@ export class PauseMenu {
         onClick: () => this.page("main"),
       }),
     );
-    this.options.append(
+    const sliders = el("div", "pause-sliders");
+    sliders.append(
       this.sliders.tilt.input.closest(".pause-slider") ?? el("div"),
       this.sliders.zoom.input.closest(".pause-slider") ?? el("div"),
       this.sliders.uiScale.input.closest(".pause-slider") ?? el("div"),
-      this.summary,
-      toggles,
-      row,
+    );
+    this.options.append(sliders, buttons);
+
+    // Resetting: the account's password if there is one, then one last chance to back out.
+    this.reset = el("div", "pause-page pause-reset");
+    this.resetPassword.type = "password";
+    this.resetPassword.placeholder = "Password";
+    this.resetPassword.setAttribute("aria-label", "Password");
+    this.resetPassword.autocomplete = "current-password";
+    this.resetGo = button({
+      label: "Continue",
+      variant: "red",
+      size: "md",
+      onClick: () => void this.resetNext(),
+    });
+    this.reset.append(
+      this.resetText,
+      this.resetPassword,
+      this.resetError,
+      this.resetGo,
+      button({
+        label: "Cancel",
+        variant: "steel",
+        size: "md",
+        onClick: () => this.page("options"),
+      }),
     );
 
-    box.body.append(this.main, this.options);
+    box.body.append(this.main, this.options, this.reset);
     this.root.append(box.root);
     this.root.style.display = "none";
     closeOnBackdrop(this.root, () => handlers.onResume());
@@ -162,6 +207,7 @@ export class PauseMenu {
     this.root.style.display = on ? "flex" : "none";
     this.inRaid = inRaid;
     this.retreat.style.display = inRaid ? "" : "none";
+    this.resetGame.style.display = inRaid ? "none" : "";
     if (on) {
       this.page("main");
       this.refresh();
@@ -174,10 +220,52 @@ export class PauseMenu {
     this.page("options");
   }
 
-  private page(which: "main" | "options"): void {
+  private page(which: "main" | "options" | "reset"): void {
     this.main.style.display = which === "main" ? "" : "none";
     this.options.style.display = which === "options" ? "" : "none";
-    this.title.textContent = which === "main" ? "Paused" : "Settings";
+    this.reset.style.display = which === "reset" ? "" : "none";
+    this.title.textContent = {
+      main: "Paused",
+      options: "Settings",
+      reset: this.resetName(),
+    }[which];
+  }
+
+  private resetName(): string {
+    return this.handlers.username() ? "Reset account" : "Reset game";
+  }
+
+  private startReset(): void {
+    const name = this.handlers.username();
+    this.resetStep = name ? "password" : "confirm";
+    this.resetPassword.value = "";
+    this.resetError.textContent = "";
+    this.showResetStep(name);
+    this.page("reset");
+  }
+
+  private showResetStep(name: string | null): void {
+    const asking = this.resetStep === "password";
+    this.resetPassword.style.display = asking ? "" : "none";
+    this.resetText.textContent = asking
+      ? `Enter the password for ${name} to reset your account.`
+      : "This erases all your progress for good, and takes you out of your crew. Are you sure?";
+    setLabel(this.resetGo, asking ? "Continue" : "Erase everything");
+  }
+
+  private async resetNext(): Promise<void> {
+    if (this.resetStep === "confirm") {
+      this.handlers.onResetGame();
+      return;
+    }
+    const problem = await this.handlers.checkPassword(this.resetPassword.value);
+    this.resetError.textContent = problem ?? "";
+    if (problem) {
+      sfx.error();
+      return;
+    }
+    this.resetStep = "confirm";
+    this.showResetStep(null);
   }
 
   private refresh(): void {
@@ -187,24 +275,11 @@ export class PauseMenu {
       slider.input.value = String(s[key]);
       slider.input.dispatchEvent(new Event("refresh"));
     }
+    setLabel(this.resetGame, this.resetName());
     setLabel(this.sound, s.muted ? "Sound off" : "Sound on");
     setLabel(this.musicButton, s.musicMuted ? "Music off" : "Music on");
     setLabel(this.hapticsButton, s.haptics ? "Vibration on" : "Vibration off");
     setLabel(this.cameraMode, s.camera === "top" ? "Camera: top" : "Camera: behind");
-    this.paintSummary();
-  }
-
-  private paintSummary(): void {
-    const s = this.handlers.settings();
-    this.summary.replaceChildren(
-      el(
-        "div",
-        "",
-        `tilt ${s.tilt.toFixed(2)} · zoom ${s.zoom.toFixed(2)} · ui ${s.uiScale.toFixed(2)}`,
-      ),
-      el("div", "", spotText("Move", s.controls.move)),
-      el("div", "", spotText("Fire", s.controls.aim)),
-    );
   }
 
   private slider(
@@ -238,7 +313,6 @@ export class PauseMenu {
       paint();
       const key = label === "Camera tilt" ? "tilt" : label === "Camera zoom" ? "zoom" : "uiScale";
       this.handlers.onSettings({ ...this.handlers.settings(), [key]: Number(input.value) });
-      this.paintSummary();
     });
     input.addEventListener("change", () => sfx.tick());
     wrap.append(head, input);

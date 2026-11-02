@@ -106,7 +106,7 @@ const CATEGORIES: Record<Category, { label: string; icon: IconName; types: Build
   defenses: {
     label: "Defenses",
     icon: "shield",
-    types: ["gunTurret", "mortar", "harpoon", "flamethrower", "watchtower"],
+    types: ["gunTurret", "mortar", "harpoon", "flamethrower", "watchtower", "landmine"],
   },
   resources: {
     label: "Resources",

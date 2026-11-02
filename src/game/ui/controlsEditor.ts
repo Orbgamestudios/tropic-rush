@@ -153,6 +153,6 @@ export class ControlsEditor {
 }
 
 /** One control's numbers, the way the player reads them back. */
-export function spotText(label: string, spot: { x: number; y: number; size: number }): string {
+function spotText(label: string, spot: { x: number; y: number; size: number }): string {
   return `${label.toLowerCase()}: x ${spot.x.toFixed(3)}  y ${spot.y.toFixed(3)}  size ${spot.size.toFixed(2)}`;
 }

@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chartedRegions,
   islandRadius,
-  islandsLeftFor,
-  islandsToOpen,
+  islandsToNextCloud,
   NEW_WORLD,
   regionAt,
   retakeIslands,
@@ -13,15 +12,26 @@ import {
   worldIslands,
 } from "./worldMap";
 
-/** Takes islands of a region until the cloud next door lifts. */
-function clearRegion(world: WorldProgress, region: string): WorldProgress {
-  let next = world;
-  for (const island of worldIslands(next, 1)) {
-    if (island.region !== region) continue;
-    if (next.opened.length > world.opened.length) break;
-    next = takeIsland(next, island.id);
+/** Takes the home waters' islands until `clouds` banks of cloud have lifted. */
+function liftClouds(clouds: number): WorldProgress {
+  let world = NEW_WORLD;
+  for (const island of worldIslands(NEW_WORLD, 1)) {
+    if (world.opened.length >= clouds) break;
+    world = takeIsland(world, island.id);
   }
-  return next;
+  return world;
+}
+
+/** Pushes outward, always taking the furthest island in reach, for `wins` wins. */
+function pushOut(wins: number): WorldProgress {
+  let world = NEW_WORLD;
+  for (let i = 0; i < wins; i++) {
+    const [next] = worldIslands(world, 1)
+      .filter((island) => !island.taken)
+      .sort((a, b) => Math.hypot(b.x, b.y) - Math.hypot(a.x, a.y));
+    if (next) world = takeIsland(world, next.id);
+  }
+  return world;
 }
 
 describe("the world", () => {
@@ -43,9 +53,7 @@ describe("the world", () => {
   });
 
   it("puts every island in the region it says it's in", () => {
-    let world = NEW_WORLD;
-    world = clearRegion(world, "0,0");
-    for (const island of worldIslands(world, 1)) {
+    for (const island of worldIslands(pushOut(12), 1)) {
       const { column, row } = regionAt(island.x, island.y);
       expect(island.region).toBe(`${column},${row}`);
     }
@@ -55,33 +63,51 @@ describe("the world", () => {
     const { open, cloud } = chartedRegions(NEW_WORLD);
     expect(open).toEqual(["0,0"]);
     expect(cloud.sort()).toEqual(["-1,0", "0,-1", "0,1", "1,0"]);
-    expect(islandsLeftFor(NEW_WORLD, "1,0")).toBe(islandsToOpen("0,0"));
+    expect(islandsToNextCloud(NEW_WORLD)).toBe(3);
+  });
+
+  it("lifts one bank of cloud at a time, every third island, next to the fighting", () => {
+    const [first, second, third, fourth] = worldIslands(NEW_WORLD, 1)
+      .sort((a, b) => b.x - a.x)
+      .map((island) => island.id);
+    if (!first || !second || !third || !fourth) throw new Error("too few islands");
+    let world = takeIsland(NEW_WORLD, first);
+    expect(world.opened).toEqual([]);
+    expect(islandsToNextCloud(world)).toBe(2);
+    world = takeIsland(world, second);
+    expect(world.opened).toEqual([]);
+    world = takeIsland(world, third);
+    // The islands furthest east were last taken, so the cloud lifts on that side.
+    expect(world.opened).toHaveLength(1);
+    expect(islandsToNextCloud(world)).toBe(3);
+    world = takeIsland(world, fourth);
+    expect(world.opened).toHaveLength(1);
+  });
+
+  it("gives nothing for an island the crew already holds", () => {
+    const [island] = worldIslands(NEW_WORLD, 1);
+    if (!island) throw new Error("no islands");
+    const once = takeIsland(NEW_WORLD, island.id);
+    expect(takeIsland(once, island.id)).toBe(once);
   });
 
   it("gets harder and harder the further out it goes, with no end", () => {
-    let world = NEW_WORLD;
-    let region = "0,0";
-    for (let step = 0; step < 12; step++) {
-      world = clearRegion(world, region);
-      region = `${step + 1},0`;
-    }
-    const near = worldIslands(world, 1).filter((i) => i.region === "0,0");
-    const far = worldIslands(world, 1).filter((i) => i.region === "12,0");
-    expect(far.length).toBeGreaterThan(0);
-    expect(Math.min(...far.map((i) => i.hq))).toBeGreaterThan(20);
+    const world = pushOut(70);
+    const islands = worldIslands(world, 1);
+    const near = islands.filter((i) => i.region === "0,0");
+    expect(Math.max(...islands.map((i) => i.hq))).toBeGreaterThan(20);
     expect(Math.max(...near.map((i) => i.hq))).toBeLessThanOrEqual(4);
   });
 
   it("keeps a region open after the islands that opened it are lost", () => {
-    const world = clearRegion(NEW_WORLD, "0,0");
-    expect(world.opened.length).toBe(4);
+    const world = liftClouds(1);
+    expect(world.opened).toHaveLength(1);
     const empty = { ...world, taken: [] };
-    expect(chartedRegions(empty).open).toContain("1,0");
+    expect(chartedRegions(empty).open).toContain(world.opened[0]);
   });
 
   it("names and rates islands, and pays more for harder ones", () => {
-    const world = clearRegion(NEW_WORLD, "0,0");
-    const islands = worldIslands(world, 1).sort((a, b) => a.hq - b.hq);
+    const islands = worldIslands(liftClouds(2), 1).sort((a, b) => a.hq - b.hq);
     expect(islands.every((i) => i.name.length > 3)).toBe(true);
     const easy = islands[0];
     const hard = islands[islands.length - 1];
@@ -144,13 +170,19 @@ describe("raiders retaking islands", () => {
 
 describe("saved progress", () => {
   it("survives a round trip and drops rubbish", () => {
-    const world: WorldProgress = { taken: ["0,0:1"], retaken: { "0,0:2": 7 }, opened: ["1,0"] };
+    const world: WorldProgress = {
+      taken: ["0,0:1"],
+      retaken: { "0,0:2": 7 },
+      opened: ["1,0"],
+      progress: 2,
+    };
     expect(sanitizeWorld(JSON.parse(JSON.stringify(world)))).toEqual(world);
     expect(sanitizeWorld(null)).toEqual(NEW_WORLD);
     expect(sanitizeWorld({ taken: [1, "a"], retaken: { x: "y" }, opened: "no" })).toEqual({
       taken: ["a"],
       retaken: {},
       opened: [],
+      progress: 0,
     });
   });
 });

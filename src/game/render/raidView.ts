@@ -703,10 +703,12 @@ export class RaidView {
     for (const m of state.mines) {
       const mesh = this.mines.get(m.id);
       if (!mesh) continue;
-      mesh.visible = !m.exploded;
       const near = state.heroes.some((h) => h.alive && distance(h.pos, m.pos) < 5);
+      const showing = near || m.fuse !== null;
+      // Hidden from raiders until they're on top of it; a replay of your island shows your own.
+      mesh.visible = !m.exploded && (showing || this.defending);
       const mat = mesh.material as THREE.MeshLambertMaterial;
-      mat.opacity = near || m.fuse !== null ? 0.9 : 0.3;
+      mat.opacity = showing ? 0.9 : 0.3;
       mat.emissive.set(m.fuse !== null && Math.sin(time * 40) > 0 ? 0xff2a1a : 0x000000);
     }
   }

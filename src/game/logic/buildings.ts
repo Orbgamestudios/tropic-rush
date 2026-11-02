@@ -8,6 +8,7 @@ export type BuildingType =
   | "harpoon"
   | "flamethrower"
   | "watchtower"
+  | "landmine"
   | "goldMine"
   | "lumberCamp"
   | "quarry"
@@ -58,16 +59,16 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
   headquarters: { label: "Headquarters", radius: 5, height: 6.5, hp: 5000, energy: 0 },
   gunTurret: {
     label: "Gun turret",
-    radius: 1.9,
-    height: 4.5,
+    radius: 2.4,
+    height: 5.6,
     hp: 1100,
     energy: 4,
     attack: { kind: "bullet", range: 21, damage: 50, reload: 0.42, speed: 30 },
   },
   mortar: {
     label: "Mortar",
-    radius: 2.1,
-    height: 3.6,
+    radius: 2.6,
+    height: 4.5,
     hp: 1000,
     energy: 5,
     attack: {
@@ -82,31 +83,33 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
   },
   harpoon: {
     label: "Harpoon launcher",
-    radius: 1.9,
-    height: 3.6,
+    radius: 2.4,
+    height: 4.5,
     hp: 1200,
     energy: 5,
     attack: { kind: "harpoon", range: 25, damage: 230, reload: 2.6, speed: 36, heavyBonus: 1.6 },
   },
   flamethrower: {
     label: "Flamethrower",
-    radius: 1.7,
-    height: 4,
+    radius: 2.1,
+    height: 5,
     hp: 1000,
     energy: 4,
     attack: { kind: "flame", range: 9.5, damage: 28, reload: 0.13, coneHalfAngle: 0.45 },
   },
-  watchtower: { label: "Watchtower", radius: 1.8, height: 9, hp: 700, energy: 3 },
-  goldMine: { label: "Gold mine", radius: 4.6, height: 4.2, hp: 900, energy: 3 },
-  lumberCamp: { label: "Lumber mill", radius: 4.6, height: 3.8, hp: 900, energy: 3 },
-  quarry: { label: "Stone quarry", radius: 4.6, height: 3.6, hp: 900, energy: 3 },
-  scrapYard: { label: "Scrap yard", radius: 4.6, height: 3.6, hp: 800, energy: 3 },
+  watchtower: { label: "Watchtower", radius: 2.3, height: 9, hp: 700, energy: 3 },
+  // Not a building in a raid: it goes down as a hidden mine, which nothing can target.
+  landmine: { label: "Land mine", radius: 0.5, height: 0.3, hp: 1, energy: 0 },
+  goldMine: { label: "Gold mine", radius: 3.7, height: 3.9, hp: 900, energy: 3 },
+  lumberCamp: { label: "Lumber mill", radius: 3.7, height: 3.6, hp: 900, energy: 3 },
+  quarry: { label: "Stone quarry", radius: 3.7, height: 3.3, hp: 900, energy: 3 },
+  scrapYard: { label: "Scrap yard", radius: 3.7, height: 3.3, hp: 800, energy: 3 },
   storehouse: { label: "Storehouse", radius: 2.9, height: 3.6, hp: 1200, energy: 3 },
   goldVault: { label: "Gold vault", radius: 2.9, height: 3.2, hp: 1200, energy: 3 },
   timberShed: { label: "Timber shed", radius: 2.9, height: 3.4, hp: 1100, energy: 3 },
   stoneYard: { label: "Stone yard", radius: 2.9, height: 2.6, hp: 1300, energy: 3 },
   scrapBin: { label: "Scrap bin", radius: 2.9, height: 3, hp: 1100, energy: 3 },
-  refinery: { label: "Refinery", radius: 4.6, height: 6.5, hp: 1300, energy: 4 },
+  refinery: { label: "Refinery", radius: 3.7, height: 6.5, hp: 1300, energy: 4 },
 };
 
 export type BuildingCounts = Partial<Record<BuildingType, number>>;

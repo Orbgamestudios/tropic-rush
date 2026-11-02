@@ -32,6 +32,7 @@ import {
   tileAt,
   toolBlocker,
   tryOp,
+  upgradeBlocker,
 } from "./crewIsland";
 import { buildTime, costFor, nextLevelGain, START_RESOURCES } from "./economy";
 import { isOnGrass } from "./island";
@@ -197,6 +198,24 @@ describe("crew island ground", () => {
     expect(finishWork(better).tools.axe).toBe(2);
   });
 
+  it("clears the patches round the base in minutes, slower the further out they lie", () => {
+    const near = obstacles().filter((o) => o.tier === 1);
+    const minutes = near.map((o) => clearTime(o) / 60_000);
+    expect(Math.min(...minutes)).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...minutes)).toBeLessThanOrEqual(5);
+    expect(new Set(minutes).size).toBeGreaterThanOrEqual(4);
+    const outFrom = (o: (typeof near)[number]) =>
+      Math.hypot(
+        GRID_ORIGIN.x + (o.x + o.w / 2) * TILE - HOME_START.x,
+        GRID_ORIGIN.y + (o.y + o.h / 2) * TILE - HOME_START.y,
+      );
+    const sorted = [...near].sort((a, b) => outFrom(a) - outFrom(b));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    if (!first || !last) throw new Error("no patches");
+    expect(clearTime(first)).toBeLessThan(clearTime(last));
+  });
+
   it("takes months to clear the whole island, even with every worker busy", () => {
     const hours = obstacles().reduce((sum, o) => sum + clearTime(o, MAX_TOOL_LEVEL), 0) / 3.6e6;
     expect(hours / 4 / 24).toBeGreaterThan(90);
@@ -220,7 +239,7 @@ describe("crew island layout", () => {
     expect(
       applyOp(layout, { kind: "place", building: turret("b", at(1, 1).x, at(1, 1).y) }, NOW),
     ).toBeNull();
-    layout = place(layout, turret("b", at(2, 0).x, at(2, 0).y));
+    layout = place(layout, turret("b", at(3, 0).x, at(3, 0).y));
     expect(layout.buildings).toHaveLength(3);
   });
 
@@ -263,8 +282,8 @@ describe("crew island layout", () => {
     expect(cornerFor("gunTurret", false, center)).toEqual(at(5, 3));
     const layout = place(island(), b);
     expect(buildingAtTile(layout, at(6, 4))?.id).toBe("t");
-    expect(buildingAtTile(layout, at(7, 4))).toBeUndefined();
-    expect(fits(layout, turret("u", at(7, 3).x, at(7, 3).y))).toBe(true);
+    expect(buildingAtTile(layout, at(8, 4))).toBeUndefined();
+    expect(fits(layout, turret("u", at(8, 3).x, at(8, 3).y))).toBe(true);
     expect(footprint("goldVault", true)).toEqual({ w: 3, h: 3 });
   });
 });
@@ -342,10 +361,12 @@ describe("crew island progression", () => {
 
   it("takes minutes, then hours, for each level, and longer for the headquarters", () => {
     const minutes = (type: BuildingType, level: number) => buildTime(type, level) / 60_000;
-    expect([2, 3, 4, 5].map((level) => minutes("gunTurret", level))).toEqual([1, 5, 10, 30]);
-    expect(minutes("gunTurret", 6)).toBeGreaterThanOrEqual(60);
-    expect(minutes("headquarters", 2)).toBe(30);
-    expect(minutes("headquarters", 3)).toBeGreaterThanOrEqual(60);
+    expect(minutes("gunTurret", 1)).toBe(0.5);
+    expect([2, 3, 4, 5].map((level) => minutes("gunTurret", level))).toEqual([1, 2, 3, 5]);
+    expect(minutes("gunTurret", 8)).toBeGreaterThanOrEqual(60);
+    expect(minutes("headquarters", 2)).toBeLessThanOrEqual(5);
+    expect(minutes("headquarters", 6)).toBeLessThanOrEqual(30);
+    expect(minutes("headquarters", 8)).toBeGreaterThanOrEqual(60);
     for (let level = 3; level <= 10; level++) {
       expect(minutes("mortar", level)).toBeGreaterThan(minutes("mortar", level - 1));
     }
@@ -379,6 +400,24 @@ describe("crew island progression", () => {
     expect(nextLevelGain("goldMine", 1)).toMatch(/an hour/);
     expect(nextLevelGain("goldVault", 1)).toMatch(/storage/);
     expect(nextLevelGain("gunTurret", 1)).toBe("+12% strength");
+  });
+
+  it("sells land mines from HQ 2, a tile each, and they can't be upgraded", () => {
+    expect(buildBlocker(island(1), "landmine")).toMatch(/level 2/);
+    expect(footprint("landmine", false)).toEqual({ w: 1, h: 1 });
+    const layout = finishWork(place(island(2), building("m", "landmine", at(0, 0))));
+    const mine = layout.buildings.find((b) => b.id === "m");
+    if (!mine) throw new Error("no mine");
+    expect(mine.level).toBe(1);
+    expect(upgradeBlocker(layout, mine)).toMatch(/highest level/);
+  });
+
+  it("only sets a bought mine off in a night raid once it's in the ground", () => {
+    const placed = place(island(2), building("m", "landmine", at(0, 0)));
+    expect(nightIsland(placed, 1).mines).toHaveLength(0);
+    const ready = nightIsland(finishWork(placed), 1);
+    expect(ready.mines).toHaveLength(1);
+    expect(ready.buildings.some((b) => b.type === "landmine")).toBe(false);
   });
 
   it("keeps a new building out of action until it's up", () => {

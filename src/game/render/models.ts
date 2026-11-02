@@ -51,11 +51,16 @@ function flameCone(length: number): THREE.Mesh {
 
 /** Widens a model to its footprint, and how much of that height it takes on: [across, up]. */
 const STRETCH: Partial<Record<BuildingType, readonly [number, number]>> = {
-  goldMine: [1.55, 1.2],
-  lumberCamp: [1.6, 1.2],
-  quarry: [1.7, 1.2],
-  scrapYard: [1.7, 1.2],
-  refinery: [1.6, 1],
+  gunTurret: [1.25, 1.25],
+  mortar: [1.25, 1.25],
+  harpoon: [1.25, 1.25],
+  flamethrower: [1.25, 1.25],
+  watchtower: [1.4, 1],
+  goldMine: [1.25, 1.1],
+  lumberCamp: [1.3, 1.1],
+  quarry: [1.4, 1.1],
+  scrapYard: [1.4, 1.1],
+  refinery: [1.3, 1],
   storehouse: [1.2, 1],
   goldVault: [1.2, 1],
   timberShed: [1.2, 1],
@@ -178,7 +183,7 @@ function makeBuilding(type: BuildingType): BuildingModel {
       root.add(at(ball(0.95, C.enemyRust), 0, 3.4, 0));
       head = at(new THREE.Group(), 0, 2.9, 0);
       head.add(at(barrel(0.18, 1.7, C.darkMetal), 0.4, 0, 0));
-      flame = at(flameCone(9.5), 2.1, 0, 0);
+      flame = at(flameCone(7.6), 2.1, 0, 0);
       head.add(flame);
       root.add(head);
       break;
@@ -215,6 +220,11 @@ function makeBuilding(type: BuildingType): BuildingModel {
       root.add(at(rbox(0.15, 0.6, 3.4, C.bamboo), 1.65, 8, 0));
       const roof = at(cone(2.9, 1.5, C.tin, 4), 0, 11.1, 0, 0, Math.PI / 4, 0);
       root.add(roof);
+      break;
+    }
+    case "landmine": {
+      root.add(at(cyl(0.42, 0.5, 0.14, C.darkMetal, 14), 0, 0.07, 0));
+      root.add(at(cyl(0.12, 0.12, 0.06, C.enemyRust, 10), 0, 0.17, 0));
       break;
     }
     case "goldMine": {

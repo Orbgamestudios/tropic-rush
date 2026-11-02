@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
   loadAccount,
   loadSave,
+  resetGame,
   restoreBundle,
   type SaveData,
   saveBundle,
@@ -78,6 +79,42 @@ describe("accounts on this phone", () => {
   });
 });
 
+describe("resetting the game", () => {
+  it("wipes progress and the island, but keeps who you are and your settings", () => {
+    const storage = memoryStorage();
+    const settings = { ...DEFAULT_SETTINGS, zoom: 0.9 };
+    writeSave(
+      {
+        ...loadSave(storage),
+        nickname: "Ann",
+        avatar: "medic-2",
+        memberId: "m-1",
+        crewCode: "ABC234",
+        gold: 9999,
+        wins: 12,
+        unlocked: ["rifleman", "medic", "heavy", "tank"],
+        world: { taken: ["0,0:1"], retaken: {}, opened: ["1,0"], progress: 1 },
+        settings,
+      },
+      storage,
+    );
+    storage.items.set("tropic-rush:crew-layout:v1", '{"buildings":[]}');
+    const before = loadSave(storage);
+    resetGame(before, storage);
+    const after = loadSave(storage);
+    expect(after.gold).toBe(300);
+    expect(after.wins).toBe(0);
+    expect(after.unlocked).not.toContain("tank");
+    expect(after.world).toEqual(NEW_WORLD);
+    expect(after.crewCode).toBe("");
+    expect(after.nickname).toBe("Ann");
+    expect(after.avatar).toBe("medic-2");
+    expect(after.memberId).toBe("m-1");
+    expect(after.settings.zoom).toBe(0.9);
+    expect(storage.items.has("tropic-rush:crew-layout:v1")).toBe(false);
+  });
+});
+
 describe("save", () => {
   it("round-trips save data", () => {
     const storage = memoryStorage();
@@ -124,7 +161,7 @@ describe("save", () => {
           raidersDown: 2,
         },
       },
-      world: { taken: ["0,0:2"], retaken: { "0,0:3": 6 }, opened: ["1,0"] },
+      world: { taken: ["0,0:2"], retaken: { "0,0:3": 6 }, opened: ["1,0"], progress: 2 },
       loot: { timber: 250 },
       lostIslands: ["Skull Rock"],
     };

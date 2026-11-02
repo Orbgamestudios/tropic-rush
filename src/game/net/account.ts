@@ -43,6 +43,14 @@ export function pushSave(token: string, save: string): Promise<SyncResponse> {
   return post("push", { token, save }, { ok: false });
 }
 
+/** Checks a signed-in player's password, before something that can't be undone. */
+export function verifyPassword(
+  token: string,
+  password: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return post("verify", { token, password }, NO_SERVER);
+}
+
 export function logOut(token: string): Promise<unknown> {
   return post("logout", { token }, null);
 }

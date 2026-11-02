@@ -1,7 +1,7 @@
 // The world: one endless sea of islands, the same for every crew, laid out in regions from a seed.
 // Each region holds a loose scatter of enemy islands, and the further from home the harder they
-// are, with no end to it. Only the home region starts in the clear: taking enough islands in a
-// region blows the cloud off the regions beside it. Islands a crew has taken stay theirs until
+// are, with no end to it. Only the home region starts in the clear: every few islands won blows
+// the cloud off one more region. Islands a crew has taken stay theirs until
 // raiders retake one in the night, which brings it back stronger. No engine imports.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
@@ -43,14 +43,18 @@ export interface WorldProgress {
   retaken: Record<string, number>;
   /** Regions out of the cloud, as "column,row". The home region is always open. */
   opened: string[];
+  /** Islands won towards lifting the next cloud. */
+  progress: number;
 }
 
-export const NEW_WORLD: WorldProgress = { taken: [], retaken: {}, opened: [] };
+export const NEW_WORLD: WorldProgress = { taken: [], retaken: {}, opened: [], progress: 0 };
 
 /** A region's size in map units. Wider than tall, like the screen. */
 export const REGION = { w: 112, h: 66 } as const;
 
 const HOME_REGION = "0,0";
+/** Islands to win for each bank of cloud that lifts. */
+const ISLANDS_PER_CLOUD = 3;
 const ISLANDS_PER_REGION = [6, 8] as const;
 /** Kept clear round the crew's own island and the gunboat beside it. */
 const HOME_CLEAR = 14;
@@ -291,34 +295,39 @@ export function worldIslands(world: WorldProgress, yourHq: number): MapIsland[] 
   });
 }
 
-/** How many islands to take in a region before the cloud beside it lifts. */
-export function islandsToOpen(region: string): number {
-  const { column, row } = parseRegion(region);
-  return Math.ceil(chartRegion(column, row).length / 2);
+/** How many more islands to win before the next bank of cloud lifts. */
+export function islandsToNextCloud(world: WorldProgress): number {
+  return ISLANDS_PER_CLOUD - world.progress;
 }
 
-/** Islands still to take before a clouded region opens, by the cheapest way in. */
-export function islandsLeftFor(world: WorldProgress, region: string): number {
-  const { column, row } = parseRegion(region);
-  let fewest = Number.POSITIVE_INFINITY;
-  for (const [dx, dy] of NEIGHBORS) {
-    const beside = regionKey(column + dx, row + dy);
-    if (!isOpen(world, beside)) continue;
-    const held = world.taken.filter((id) => id.startsWith(`${beside}:`)).length;
-    fewest = Math.min(fewest, islandsToOpen(beside) - held);
+/** The clouded region nearest an island, which is the one its capture opens up. */
+function nearestCloud(world: WorldProgress, id: string): string | undefined {
+  const island = chartedIsland(id);
+  let best: string | undefined;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const key of chartedRegions(world).cloud) {
+    const { column, row } = parseRegion(key);
+    const gap = Math.hypot(column * REGION.w - (island?.x ?? 0), row * REGION.h - (island?.y ?? 0));
+    if (gap < bestGap) {
+      best = key;
+      bestGap = gap;
+    }
   }
-  return Math.max(0, fewest);
+  return best;
 }
 
-/** The crew wins an island: it's theirs, and enough of them lift the cloud next door. */
+/**
+ * The crew wins an island: it's theirs, and every few wins lifts one bank of cloud, next to where
+ * they're fighting. Won islands open the way for good: losing one later won't bring the cloud back.
+ */
 export function takeIsland(world: WorldProgress, id: string): WorldProgress {
+  if (world.taken.includes(id)) return world;
   const retaken = { ...world.retaken };
   delete retaken[id];
-  const taken = world.taken.includes(id) ? world.taken : [...world.taken, id];
-  const next: WorldProgress = { taken, retaken, opened: world.opened };
-  // Taken islands open the way for good: losing one later won't bring the cloud back.
-  const opened = chartedRegions(next).cloud.filter((key) => islandsLeftFor(next, key) === 0);
-  return opened.length > 0 ? { ...next, opened: [...world.opened, ...opened] } : next;
+  const next: WorldProgress = { ...world, taken: [...world.taken, id], retaken };
+  if (world.progress + 1 < ISLANDS_PER_CLOUD) return { ...next, progress: world.progress + 1 };
+  const cloud = nearestCloud(next, id);
+  return { ...next, progress: 0, opened: cloud ? [...world.opened, cloud] : world.opened };
 }
 
 /**
@@ -359,5 +368,7 @@ export function sanitizeWorld(value: unknown): WorldProgress {
       if (Number.isInteger(hq) && (hq as number) > 0) retaken[id] = hq as number;
     }
   }
-  return { taken: ids(v?.taken), retaken, opened: ids(v?.opened) };
+  const won = Number.isInteger(v?.progress) ? (v?.progress as number) : 0;
+  const progress = Math.max(0, Math.min(ISLANDS_PER_CLOUD - 1, won));
+  return { taken: ids(v?.taken), retaken, opened: ids(v?.opened), progress };
 }

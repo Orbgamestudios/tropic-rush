@@ -97,6 +97,23 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
+  /* How far the safe area is from the edge of the screen, in the UI layers' own scaled pixels. */
+  --bleed-top: calc(var(--safe-top) / var(--ui-scale, 1));
+  --bleed-right: calc(var(--safe-right) / var(--ui-scale, 1));
+  --bleed-bottom: calc(var(--safe-bottom) / var(--ui-scale, 1));
+  --bleed-left: calc(var(--safe-left) / var(--ui-scale, 1));
+}
+
+/* Overlays that darken the screen reach its edges, with what's on them kept in the safe area. */
+#game .screen-pause,
+#game .screen-lobby,
+#game .screen-profile,
+#game .screen-results,
+#game .crew-join {
+  box-sizing: border-box;
+  inset: calc(var(--bleed-top) * -1) calc(var(--bleed-right) * -1) calc(var(--bleed-bottom) * -1)
+    calc(var(--bleed-left) * -1);
+  padding: var(--bleed-top) var(--bleed-right) var(--bleed-bottom) var(--bleed-left);
 }
 
 #game canvas {

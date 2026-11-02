@@ -21,7 +21,7 @@ import {
   type PlacedBuilding,
 } from "./island";
 import { between, createRng } from "./rng";
-import { add, fromAngle, vec } from "./vec";
+import { add, fromAngle, type Vec2, vec } from "./vec";
 
 /** Defenses first so they get the ground round the headquarters, then everything else. */
 const BUILD_ORDER: readonly BuildingType[] = [
@@ -40,6 +40,7 @@ const BUILD_ORDER: readonly BuildingType[] = [
   "lumberCamp",
   "quarry",
   "scrapYard",
+  "landmine",
 ];
 
 /** Tiles kept free between buildings, so heroes can walk the base. */
@@ -49,14 +50,15 @@ const GAP_TILES = 2;
 const RINGS: Partial<Record<BuildingType, readonly [number, number]>> = {
   flamethrower: [11, 15],
   mortar: [11, 16],
-  gunTurret: [15, 21],
-  harpoon: [15, 21],
-  watchtower: [18, 24],
+  gunTurret: [15, 23],
+  harpoon: [15, 23],
+  watchtower: [18, 25],
   goldVault: [23, 31],
   timberShed: [23, 31],
   stoneYard: [23, 31],
   scrapBin: [23, 31],
   refinery: [24, 32],
+  landmine: [13, 34],
 };
 /** The mills lie furthest out, where they're first to fall. */
 const OUTER_RING = [30, 40] as const;
@@ -118,7 +120,7 @@ export function enemyBase(seed: number, hq: number, options: BaseOptions = {}): 
       // Upgraded close to the cap, the way a crew would, unless it's a full rebuild.
       const below = !options.maxed && rng() < 0.4 ? 1 : 0;
       const level = (type === "headquarters" ? rated : Math.max(1, cap - below)) + extra;
-      const spread = Math.PI / Math.max(4, defenses);
+      const spread = (Math.PI * 2) / Math.max(4, defenses);
       turn += step;
       for (let attempt = 0; attempt < 800; attempt++) {
         const loose = attempt >= 500;
@@ -179,6 +181,13 @@ export function scoutReport(buildings: readonly PlacedBuilding[]): ScoutRow[] {
 
 /** A full raid island: an enemy base of this HQ level with cover, mines and a landing round it. */
 export function generateIsland(seed: number, hq: number, options?: BaseOptions): IslandLayout {
-  const base = enemyBase(seed, hq, options).map(toRaidBuilding);
-  return dressIsland(seed, 1 + Math.floor(hq / 5), base);
+  const base = enemyBase(seed, hq, options);
+  const standing = base.filter((b) => b.type !== "landmine").map(toRaidBuilding);
+  const island = dressIsland(seed, 1 + Math.floor(hq / 5), standing);
+  return { ...island, mines: [...island.mines, ...minesOf(base)] };
+}
+
+/** Where a base's bought land mines are: they're hidden mines in a raid, not buildings. */
+export function minesOf(base: readonly TileBuilding[]): Vec2[] {
+  return base.filter((b) => b.type === "landmine" && b.level > 0).map(buildingCenter);
 }

@@ -140,4 +140,5 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - iOS ignores the manifest's orientation; a "turn your phone sideways" overlay covers portrait.
 - The 3D view fills the whole screen. `.hud`, `.screens` and `.crew-layer` sit inside the safe area
   (`src/styles/base.css`), so overlays placed over the 3D view go through `layerPlacer` in
-  `ui/kit/dom.ts`.
+  `ui/kit/dom.ts`. A full-screen backdrop joins the list in `base.css` that reaches past the safe
+  area to the edges.

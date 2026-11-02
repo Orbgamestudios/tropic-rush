@@ -1,14 +1,12 @@
 // The world map's overlay: drag to look around and pinch to zoom, a plate on every island with its
-// difficulty, a plate on each bank of cloud saying what it'll take to lift it, a card when an
+// difficulty, a line saying what it'll take to lift the next bank of cloud, a card when an
 // island is tapped (what's there, what it pays, Scout, Team up and Attack), and one way out:
 // Return to island.
 
 import {
-  chartedRegions,
   islandRadius,
-  islandsLeftFor,
+  islandsToNextCloud,
   type MapIsland,
-  REGION,
   type WorldProgress,
 } from "../logic/worldMap";
 import { button, el, layerPlacer } from "./kit/dom";
@@ -57,7 +55,7 @@ export class WorldMapScreen {
   private readonly banner = el("div", "map-banner");
   private readonly progress = el("div", "map-progress");
   private bannerTimer: ReturnType<typeof setTimeout> | null = null;
-  private pins: (Pin & { island: MapIsland | null })[] = [];
+  private pins: (Pin & { island: MapIsland })[] = [];
   private selected: MapIsland | null = null;
   private drawnMoves = -1;
   private readonly fingers = new Map<number, { x: number; y: number }>();
@@ -139,7 +137,7 @@ export class WorldMapScreen {
   show(islands: readonly MapIsland[], world: WorldProgress): void {
     this.root.style.display = "block";
     this.select(null);
-    const pins: (Pin & { island: MapIsland | null })[] = islands.map((island) => {
+    const pins = islands.map((island) => {
       const rating = island.difficulty.toLowerCase();
       const pin = el("button", `map-pin map-${island.taken ? "yours" : rating}`);
       pin.setAttribute("aria-label", island.name);
@@ -166,21 +164,10 @@ export class WorldMapScreen {
         y: island.y - islandRadius(island.size) * 0.7,
       };
     });
-    for (const region of chartedRegions(world).cloud) {
-      const [column = 0, row = 0] = region.split(",").map(Number);
-      const left = islandsLeftFor(world, region);
-      const node = el("div", "map-cloud-plate");
-      node.append(
-        icon("lock", "map-cloud-icon"),
-        el("span", "", `Take ${left} more ${left === 1 ? "island" : "islands"}`),
-      );
-      pins.push({ island: null, node, x: column * REGION.w, y: row * REGION.h });
-    }
     this.pins = pins;
     this.pinLayer.replaceChildren(...pins.map((p) => p.node));
-    // However far off the cloud plates are, what's next is always on screen.
-    const left = Math.min(...chartedRegions(world).cloud.map((r) => islandsLeftFor(world, r)));
-    this.progress.textContent = `Take ${left} more ${left === 1 ? "island" : "islands"} to lift the clouds`;
+    const left = islandsToNextCloud(world);
+    this.progress.textContent = `Take ${left} more ${left === 1 ? "island" : "islands"} to lift a cloud`;
     this.drawnMoves = -1;
   }
 

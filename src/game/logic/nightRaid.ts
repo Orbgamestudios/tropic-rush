@@ -5,7 +5,7 @@
 
 import { SIM_STEP } from "../config";
 import { type CrewLayout, hqLevel, type PlacedBuilding } from "./crewIsland";
-import { toRaidBuilding } from "./enemyBase";
+import { minesOf, toRaidBuilding } from "./enemyBase";
 import { HERO_KINDS, type HeroKind } from "./heroes";
 import { type IslandLayout, landingPoints } from "./island";
 import { createRaid, destructionPercent, type RaidState, stepRaid } from "./raid";
@@ -63,11 +63,13 @@ export function nightIsland(crew: Island, seed: number): IslandLayout {
   return {
     seed,
     level: 1,
-    // Anything still going up can't fight yet.
-    buildings: crew.buildings.filter((b) => b.level > 0).map(toRaidBuilding),
+    // Anything still going up can't fight yet. Land mines go off and are set again by morning.
+    buildings: crew.buildings
+      .filter((b) => b.level > 0 && b.type !== "landmine")
+      .map(toRaidBuilding),
     obstacles: [],
     decor: [],
-    mines: [],
+    mines: minesOf(crew.buildings),
     ...landingPoints(),
   };
 }

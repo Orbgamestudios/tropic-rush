@@ -48,8 +48,9 @@ export default defineConfig({
         globPatterns: [
           "**/*.{js,css,html,svg,png,webp,jpg,ico,json,glb,gltf,bin,ktx2,mp3,ogg,m4a,wav,woff2,ttf}",
         ],
-        // The ?debug console is only fetched on demand.
-        globIgnores: ["**/eruda-*.js"],
+        // The ?debug console is only fetched on demand, and the big icon is only a source for the
+        // generated sizes.
+        globIgnores: ["**/eruda-*.js", "icon.png"],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       },
     }),

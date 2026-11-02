@@ -13,7 +13,6 @@ import {
   tileAt,
 } from "../logic/crewIsland";
 import type { HeroKind } from "../logic/heroes";
-import { HERO_NAMES } from "../logic/heroProgress";
 import { homeHeight } from "../logic/island";
 import { angleDiff, type Vec2, vec } from "../logic/vec";
 import { type HeroModel, heroModel } from "./models";
@@ -26,37 +25,25 @@ const WANDER = 26;
 /** A tap this close to a hero (CSS pixels) counts as tapping them. */
 const TAP_RADIUS = 46;
 
-/** Heroes' names show once the camera is closer than this. */
-const NAME_DISTANCE = 38;
-
 interface Walker {
   kind: HeroKind;
   model: HeroModel;
-  tag: HTMLDivElement;
   pos: Vec2;
   target: Vec2 | null;
   rest: number;
   walk: number;
   animator: RiflemanAnimator | null;
   facing: number;
-  /** Where the name tag was last put, and whether it's showing. */
-  tagX: number;
-  tagY: number;
-  tagShown: boolean;
 }
 
 export class HomeHeroes {
   readonly root = new THREE.Group();
   private readonly walkers = new Map<HeroKind, Walker>();
-  private named = false;
   private open = new Set<string>();
   private spots: Vec2[] = [];
   private openKey = "";
 
-  constructor(
-    private readonly stage: { camera: THREE.Camera; width: number; height: number },
-    private readonly labelLayer: HTMLElement,
-  ) {}
+  constructor(private readonly stage: { camera: THREE.Camera; width: number; height: number }) {}
 
   /** Keeps one walker per unlocked hero, and tracks where's free to walk. */
   sync(kinds: readonly HeroKind[], layout: Pick<CrewLayout, "cleared" | "buildings">): void {
@@ -77,20 +64,11 @@ export class HomeHeroes {
       if (this.walkers.has(kind) || this.spots.length === 0) continue;
       const model = heroModel(kind);
       if (kind === "tank") model.root.scale.setScalar(0.6);
-      const tag = document.createElement("div");
-      tag.className = "name-tag hero-tag";
-      tag.style.display = "none";
-      tag.textContent = HERO_NAMES[kind];
-      this.labelLayer.append(tag);
       this.root.add(model.root);
       const start = this.randomSpot();
       this.walkers.set(kind, {
         kind,
         model,
-        tag,
-        tagX: Number.NaN,
-        tagY: Number.NaN,
-        tagShown: false,
         pos: { ...start },
         target: null,
         rest: Math.random() * 3,
@@ -122,9 +100,7 @@ export class HomeHeroes {
     return to;
   }
 
-  /** `distance` is how far back the camera is: names only show from close up. */
-  update(dt: number, distance: number): void {
-    this.named = distance < NAME_DISTANCE;
+  update(dt: number): void {
     for (const w of this.walkers.values()) {
       // A new building or job landed on them: step aside.
       if (!this.isOpen(w.pos) && this.spots.length > 0) {
@@ -158,7 +134,6 @@ export class HomeHeroes {
       model.root.rotation.y = -w.facing;
       if (w.animator) {
         w.animator.update(dt, { ...AT_EASE, moving, speed: moving ? WALK_SPEED : 0 });
-        this.placeTag(w);
         continue;
       }
       const swing = moving ? Math.sin(w.walk) : 0;
@@ -167,7 +142,6 @@ export class HomeHeroes {
         model.legs[1].rotation.z = -swing * 0.6;
       }
       model.body.position.y = moving ? Math.abs(Math.sin(w.walk)) * 0.05 : 0;
-      this.placeTag(w);
     }
   }
 
@@ -179,21 +153,6 @@ export class HomeHeroes {
       y: ((1 - p.y) / 2) * this.stage.height,
       ok: p.z < 1,
     };
-  }
-
-  private placeTag(w: Walker): void {
-    const s = this.screen(w, w.model.height + 0.4);
-    const show = s.ok && this.named;
-    if (show !== w.tagShown) {
-      w.tagShown = show;
-      w.tag.style.display = show ? "block" : "none";
-    }
-    if (!show) return;
-    // A phone lays the page out again for every write, moved or not.
-    if (Math.abs(s.x - w.tagX) < 0.5 && Math.abs(s.y - w.tagY) < 0.5) return;
-    w.tagX = s.x;
-    w.tagY = s.y;
-    w.tag.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
   }
 
   /** The hero nearest a screen point (relative to the canvas), if one's close enough. */
@@ -213,7 +172,6 @@ export class HomeHeroes {
   }
 
   dispose(): void {
-    for (const w of this.walkers.values()) w.tag.remove();
     this.walkers.clear();
   }
 }

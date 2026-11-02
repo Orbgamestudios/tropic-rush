@@ -926,9 +926,3 @@
   white-space: nowrap;
   pointer-events: none;
 }
-
-/* Name tags over the heroes strolling the crew island. */
-.hero-tag {
-  font-size: 11px;
-  pointer-events: none;
-}

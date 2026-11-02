@@ -246,6 +246,8 @@ Starting size ratios, in hero heights:
     boulders Dynamite.
   - Each patch has a tier from 1 to 5 by its distance from the HQ, and a tool must reach that
     tier's level, so the far edges wait for the best tools.
+  - The patches round the base take 1 to 5 minutes, more the further out they lie (Decided
+    2026-11-01, owner's request). The rest take hours.
   - Clearing takes real time, on the server's clock. A worker starts the job, it keeps going with
     the app closed, and a countdown pin stands over it. Better tools work faster.
   - Workers limit how many jobs run at once: 1, and 1 more every 4 HQ levels, up to 4.
@@ -311,15 +313,22 @@ Starting size ratios, in hero heights:
   - a Harbor that upgrades the gunboat's energy and abilities
   - a Lookout Tower that sets how far you can see on the map
   - a Barracks for heroes
-- **Build timers (Decided 2026-11-01, owner's request):** building and upgrading take real time.
-  Upgrades take 1, 5, 10 and 30 minutes, then 1, 2, 4, 8 and 12 hours. The headquarters starts at
-  30 minutes for level 2 and climbs to 3 days. **Proposed:** a new building takes 1 minute, tools
-  30 minutes to 2 days, and builders (2, and 1 more every 5 HQ levels, up to 5) limit how much runs
-  at once, apart from the workers clearing ground. Hero levels stay instant. A building goes on
-  working while it's upgraded, at its old level; a new one does nothing until it's up.
+- **Build timers (Decided 2026-11-01, owner's request, shortened the same day):** building and
+  upgrading take real time, but early levels are a matter of minutes. A new building takes 30
+  seconds. Upgrades take 1, 2, 3 and 5 minutes, then 15 minutes, then 1, 4, 8 and 12 hours. The
+  headquarters takes 2, 5, 10, 20 and 30 minutes for levels 2 to 6, then climbs to 3 days.
+  **Proposed:** tools take 2 minutes to a day, and builders (2, and 1 more every 5 HQ levels, up to
+  5) limit how much runs at once, apart from the workers clearing ground. Hero levels stay instant.
+  A building goes on working while it's upgraded, at its old level; a new one does nothing until
+  it's up.
 - **Building sizes (Decided 2026-11-01, owner's request):** the headquarters is 5x5 tiles and about
-  4 heroes tall, storages 3x3, and mills 5x5 (**Proposed:** so is the refinery). Buildings already
-  on an island move to the nearest free spot if they no longer fit.
+  4 heroes tall, the refinery and mines 4x4 (**Proposed:** the lumber mill, quarry and scrap yard
+  too), and defenses and storages 3x3. Buildings already on an island move to the nearest free spot
+  if they no longer fit.
+- **Land mines (Decided 2026-11-01, owner's request):** a crew can buy mines, 1x1 and hidden.
+  **Proposed:** from HQ 2, 2 at first and up to 12, at 80 gold and 30 stone each. They can't be
+  upgraded, are set again after a night raid, and enemy bases have as many as their HQ allows.
+  A raider only sees one when almost on top of it.
 - **Buildings stand on the grass (Decided 2026-11-01, owner's request):** no pad or dirt under them,
   on the crew's island or an enemy's.
 - **Showing range (Decided 2026-11-01, owner's request):** tapping a defense on your island shows
@@ -457,6 +466,9 @@ crystals, with a reward that changes every two weeks beyond it. The full plan is
 
 - The profile opens from the crew bar: a player icon (14 to choose from), a name, stats, the crew
   and its invite code, and the account.
+- Settings has Reset account (Reset game without an account). It asks for the account's password,
+  then asks once more. It wipes progress and the player's own island and leaves their crew, since
+  a crew's island is shared. The account, name, icon and settings stay.
 - The crew bar only shows everyone's pictures. A picture's border glows green while they're online.
 
 **Proposed:** an account is a username and password with no email, so a lost password can't be
@@ -481,15 +493,14 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
 - **Scouting:** the island card also has Scout, a free look over the real base before attacking,
   and free of charge. Drag and pinch round it. Every defense is listed with how many and its
   highest level, red ground shows what's in range, and tapping a building gives its level and
-  numbers. From there it's Attack or Back to map. **Proposed:** mines look as faint as they do in
-  a raid, not hidden and not highlighted.
+  numbers. From there it's Attack or Back to map. Mines stay hidden, as they do in a raid.
 
 **Decided 2026-11-01 (owner's request): the world never ends.**
 
 - It's one fixed sea of islands, and you drag and pinch round it. Only the waters round home start
-  in the clear. Everything else lies under cloud, and each bank of cloud says how many more
-  islands to take.
-- Take half the islands of a region and the cloud lifts from the regions beside it, for good.
+  in the clear, and everything else lies under cloud. The map always says how many more islands
+  it'll take to lift the next bank.
+- One bank of cloud lifts at a time, for good, every 3 islands won, next to where you're fighting.
 - Islands get harder with distance, past the top headquarters level and on forever: beyond HQ 20 a
   base can't grow, so its buildings keep gaining levels instead.
 - A beaten island is yours until raiders retake it. Each night they retake 0, 1 or 2 of your

@@ -86,12 +86,15 @@ describe("generateIsland", () => {
     for (const hq of HQ_LEVELS) {
       const expected = Object.fromEntries(
         (Object.keys(BUILDINGS) as BuildingType[])
+          .filter((type) => type !== "landmine")
           .map((type) => [type, allowedCount(type, hq)] as const)
           .filter(([, count]) => count > 0),
       );
       for (const seed of SEEDS) {
         const island = generateIsland(seed, hq);
         expect(countByType(island.buildings.map((b) => b.type))).toEqual(expected);
+        // Land mines go in hidden, on top of the ones along the beach.
+        expect(island.mines.length).toBeGreaterThanOrEqual(allowedCount("landmine", hq));
       }
     }
   });

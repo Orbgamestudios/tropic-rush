@@ -125,6 +125,19 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
     ],
     cost: { timber: 400, stone: 200 },
   },
+  landmine: {
+    unlockHq: 2,
+    maxLevel: 1,
+    counts: [
+      [2, 2],
+      [4, 4],
+      [7, 6],
+      [10, 8],
+      [14, 10],
+      [18, 12],
+    ],
+    cost: { gold: 80, stone: 30 },
+  },
   goldVault: storage({ timber: 300, stone: 300 }),
   timberShed: storage({ gold: 300, stone: 200 }),
   stoneYard: storage({ gold: 300, timber: 300 }),
@@ -193,11 +206,10 @@ export function costFor(type: BuildingType, level: number): Partial<Purse> {
 }
 
 /** Minutes of work to bring a building to a level, from 1 upward; level 1 is building it. */
-const BUILD_MINUTES = [1, 1, 5, 10, 30, 60, 120, 240, 480, 720] as const;
-/** The same for the headquarters, which starts in the hours from its first upgrade. */
+const BUILD_MINUTES = [0.5, 1, 2, 3, 5, 15, 60, 240, 480, 720] as const;
+/** The same for the headquarters: minutes at first, hours from level 7, days by the end. */
 const HQ_MINUTES = [
-  0, 30, 60, 120, 180, 240, 360, 480, 600, 720, 960, 1200, 1440, 1800, 2160, 2520, 2880, 3240, 3600,
-  4320,
+  0, 2, 5, 10, 20, 30, 60, 120, 240, 480, 720, 1200, 1440, 1800, 2160, 2520, 2880, 3240, 3600, 4320,
 ] as const;
 
 const MINUTE_MS = 60_000;

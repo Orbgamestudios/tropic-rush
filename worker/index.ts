@@ -3,7 +3,8 @@
 //
 //   POST /api/crew/new            -> { code } a fresh invite code
 //   GET  /api/crew/<code>/socket  -> WebSocket to that crew's island
-//   POST /api/account/<action>    -> sign up, log in, log out, and fetch or store a saved game
+//   POST /api/account/<action>    -> sign up, log in, log out, check a password, and fetch or
+//                                    store a saved game
 //   anything else                 -> the game (static assets)
 
 import { DurableObject } from "cloudflare:workers";
@@ -73,6 +74,7 @@ async function handleAccount(action: string, request: Request, env: Env): Promis
   const stub = account(owner);
   if (action === "pull") return Response.json(await stub.pull(token));
   if (action === "push") return Response.json(await stub.push(token, save));
+  if (action === "verify") return Response.json(await stub.verify(token, password));
   if (action === "logout") {
     await stub.logOut(token);
     return Response.json({ ok: true });

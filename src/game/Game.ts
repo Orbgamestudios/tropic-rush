@@ -32,7 +32,7 @@ import {
 } from "./logic/raid";
 import { distance, lerp, vec } from "./logic/vec";
 import { type MapIsland, REGION, takeIsland, worldIslands } from "./logic/worldMap";
-import { logIn, logOut, pullSave, pushSave, signUp } from "./net/account";
+import { logIn, logOut, pullSave, pushSave, signUp, verifyPassword } from "./net/account";
 import { CoopSession, HOST_TIMEOUT } from "./net/coopSession";
 import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
@@ -48,6 +48,7 @@ import {
   type AccountSession,
   loadAccount,
   loadSave,
+  resetGame,
   restoreBundle,
   type SaveData,
   type Settings,
@@ -208,6 +209,9 @@ export class Game {
         this.pause.show(false, this.phase !== "crew");
         this.controlsEditor.show(true);
       },
+      username: () => this.account?.username ?? null,
+      checkPassword: (password) => this.checkPassword(password),
+      onResetGame: () => void this.startOver(),
     });
     this.controlsEditor = new ControlsEditor(container, {
       settings: () => this.save.settings,
@@ -435,6 +439,27 @@ export class Game {
     // The account's progress takes over this phone, so start again from it.
     if (result.save && restoreBundle(result.save)) location.reload();
     return null;
+  }
+
+  private async checkPassword(password: string): Promise<string | null> {
+    const { account } = this;
+    if (!account) return null;
+    if (!password) return "Enter your password";
+    const result = await verifyPassword(account.token, password);
+    return result.ok ? null : result.error;
+  }
+
+  /** Wipes the game, on the account too, and starts again from nothing. */
+  private async startOver(): Promise<void> {
+    // Nothing left running to write the old game back.
+    if (this.crew.active) this.crew.exit();
+    this.save = resetGame(this.save);
+    const { account } = this;
+    if (account) {
+      const result = await pushSave(account.token, saveBundle());
+      if (result.ok) this.setAccount({ ...account, syncedAt: result.savedAt });
+    }
+    location.reload();
   }
 
   private signOut(): void {

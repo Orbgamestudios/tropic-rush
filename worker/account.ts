@@ -12,6 +12,7 @@ const MOST_SESSIONS = 10;
 /** Wrong passwords before the account stops listening for a while. */
 const MOST_FAILS = 8;
 const LOCK_MS = 5 * 60_000;
+const TOO_MANY = "Too many tries: wait a few minutes";
 
 interface Session {
   hash: string;
@@ -32,6 +33,8 @@ export type AccountResult =
   | { ok: false; error: string };
 
 export type SyncResult = { ok: true; save: string | null; savedAt: number } | { ok: false };
+
+export type VerifyResult = { ok: true } | { ok: false; error: string };
 
 const hex = (bytes: ArrayBuffer | Uint8Array): string =>
   [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -113,21 +116,39 @@ export class PlayerAccount extends DurableObject {
     const record = await this.read();
     const refused = "Wrong name or password";
     if (!record) return { ok: false, error: refused };
-    if (Date.now() < record.lockedUntil) {
-      return { ok: false, error: "Too many tries: wait a few minutes" };
-    }
-    if (!same(await hashPassword(password, record.salt), record.hash)) {
-      const fails = record.fails + 1;
-      const locked = fails >= MOST_FAILS;
-      await this.ctx.storage.put("account", {
-        ...record,
-        fails: locked ? 0 : fails,
-        lockedUntil: locked ? Date.now() + LOCK_MS : 0,
-      });
-      return { ok: false, error: refused };
-    }
+    const problem = await this.passwordProblem(record, password);
+    if (problem === "locked") return { ok: false, error: TOO_MANY };
+    if (problem) return { ok: false, error: refused };
     const token = await this.startSession({ ...record, fails: 0, lockedUntil: 0 });
     return { ok: true, token, username: record.username, ...(await this.savedGame()) };
+  }
+
+  /** Checks a password, counting wrong ones towards the lock. */
+  private async passwordProblem(
+    record: Record,
+    password: string,
+  ): Promise<"wrong" | "locked" | null> {
+    if (Date.now() < record.lockedUntil) return "locked";
+    if (same(await hashPassword(password, record.salt), record.hash)) return null;
+    const fails = record.fails + 1;
+    const locked = fails >= MOST_FAILS;
+    await this.ctx.storage.put("account", {
+      ...record,
+      fails: locked ? 0 : fails,
+      lockedUntil: locked ? Date.now() + LOCK_MS : 0,
+    });
+    return "wrong";
+  }
+
+  /** A signed-in player proving it's them, before something that can't be undone. */
+  async verify(token: string, password: string): Promise<VerifyResult> {
+    const record = await this.read();
+    if (!record || !(await this.sessionOk(token)))
+      return { ok: false, error: "Log in again first" };
+    const problem = await this.passwordProblem(record, password);
+    if (problem === "locked") return { ok: false, error: TOO_MANY };
+    if (problem) return { ok: false, error: "Wrong password" };
+    return { ok: true };
   }
 
   private async sessionOk(token: string): Promise<boolean> {
