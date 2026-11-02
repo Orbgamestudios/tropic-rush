@@ -12,6 +12,7 @@ results to GitHub; check the live site or ask the owner for the build log.
 The game's design is in `docs/DESIGN.md`, with concept art in `docs/concept/`. Read it before
 gameplay or art work, and respect its Decided / Proposed / Open labels: confirm Proposed items with
 the owner before building on them. Gemini prompts for every model are in `docs/ASSET_PROMPTS.md`.
+Where the work currently stands, and what's waiting on the owner, is in `docs/HANDOFF.md`.
 
 The code is a playable draft of the solo raid. Every model is a placeholder built from primitives
 at the design doc's real sizes, waiting for GLB models from the art pipeline.
