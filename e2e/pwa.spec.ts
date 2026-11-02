@@ -227,3 +227,40 @@ test("runs a night raid, replays it and reports the result", async ({ page }) =>
   });
   expect(errors).toEqual([]);
 });
+
+test("keeps tools and statues under Build, and heroes beside the map", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Build", exact: true }).click();
+  await page.getByRole("button", { name: "Tools", exact: true }).click();
+  await expect(page.locator(".crew-tool-rows")).toBeVisible();
+  await page.locator(".crew-tools").getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Build", exact: true }).click();
+  await page.getByRole("button", { name: "Statues", exact: true }).click();
+  await expect(page.locator(".crew-statue-rows")).toBeVisible();
+  await page.locator(".crew-statues").getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Heroes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Raid", exact: true })).toBeVisible();
+});
+
+test("buys checkpoints along a line, then the upgrade at the end of it", async ({ page }) => {
+  await page.goto("/?testhooks");
+  await page.evaluate(() => {
+    const { tropicRush } = window as unknown as {
+      tropicRush: {
+        openHeroes(): void;
+        syncNow(changes: { gold: number; crystals: Record<string, number> }): void;
+      };
+    };
+    tropicRush.syncNow({ gold: 5000, crystals: { nature: 9, fire: 9, ice: 9, dark: 9 } });
+    tropicRush.openHeroes();
+  });
+  await page.getByRole("button", { name: "Upgrades" }).click();
+  const buy = page.locator(".tree-buy");
+  await expect(page.locator(".tree-spec-name")).toHaveText("Basic Training");
+  await buy.click();
+  await page.locator(".tree-step").first().click();
+  await expect(page.locator(".tree-spec-path")).toHaveText(/checkpoint/i);
+  for (let step = 0; step < 3; step++) await buy.click();
+  await expect(page.locator(".tree-spec-name")).toHaveText("Hot Rounds");
+  await expect(buy).toBeEnabled();
+});

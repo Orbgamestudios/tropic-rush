@@ -5,17 +5,15 @@ import {
   HERO_NAMES,
   HERO_UNLOCK_HQ,
   heroesJoining,
-  heroPower,
   heroStats,
   isStarter,
-  levelUpCost,
-  MAX_HERO_LEVEL,
-  PERK_LEVELS,
-  PERKS,
-  perkMods,
+  oldLevelRefund,
   raidReward,
   statBars,
 } from "./heroProgress";
+import { heroTree } from "./heroTrees";
+
+const everything = (kind: (typeof HERO_KINDS)[number]) => heroTree(kind).map((u) => u.id);
 
 describe("hero progress", () => {
   it("names every hero and starts with the Rifleman alone", () => {
@@ -37,24 +35,38 @@ describe("hero progress", () => {
     expect(Math.max(...levels)).toBeLessThanOrEqual(MAX_HQ_LEVEL);
   });
 
-  it("grows stronger and costlier each level", () => {
-    expect(heroPower(1)).toBe(1);
-    expect(heroPower(MAX_HERO_LEVEL)).toBeGreaterThan(1.5);
-    expect(heroPower(99)).toBe(heroPower(MAX_HERO_LEVEL));
-    for (let level = 1; level < MAX_HERO_LEVEL; level++) {
-      expect(levelUpCost(level + 1)).toBeGreaterThan(levelUpCost(level));
-      expect(heroStats("rifleman", level + 1).hp).toBeGreaterThan(heroStats("rifleman", level).hp);
-    }
+  it("shows upgrades in a hero's stats", () => {
+    const start = heroStats("rifleman", []);
+    const trained = heroStats("rifleman", ["rifleman-basic-training"]);
+    expect(trained.hp).toBeGreaterThan(start.hp);
+    const full = heroStats("rifleman", everything("rifleman"));
+    expect(full.hp).toBeGreaterThan(trained.hp);
+    expect(full.dps).toBeGreaterThan(start.dps);
+    expect(full.speed).toBeGreaterThan(start.speed);
+    expect(full.range).toBeGreaterThan(start.range);
+  });
+
+  it("counts healing as a medic's attack", () => {
+    const owned = ["medic-steady-hand"];
+    expect(heroStats("medic", owned).dps).toBeGreaterThan(heroStats("medic", []).dps);
   });
 
   it("scales stat bars between 0 and 1", () => {
     for (const kind of HERO_KINDS) {
-      for (const value of Object.values(statBars(kind, 1))) {
+      for (const value of Object.values(statBars(kind, []))) {
         expect(value).toBeGreaterThan(0);
         expect(value).toBeLessThanOrEqual(1);
       }
     }
-    expect(statBars("tank", MAX_HERO_LEVEL).hp).toBe(1);
+    expect(statBars("tank", everything("tank")).hp).toBe(1);
+  });
+
+  it("hands back what hero levels cost", () => {
+    expect(oldLevelRefund({})).toBe(0);
+    expect(oldLevelRefund({ rifleman: 1 })).toBe(0);
+    expect(oldLevelRefund({ rifleman: 2 })).toBe(120);
+    expect(oldLevelRefund({ rifleman: 3, heavy: 2 })).toBe(120 + 190 + 120);
+    expect(oldLevelRefund({ rifleman: "x" })).toBe(0);
   });
 
   it("pays more for more destruction and a win", () => {
@@ -64,31 +76,5 @@ describe("hero progress", () => {
     expect(won.stars).toBe(3);
     expect(won.gold).toBeGreaterThan(lost.gold);
     expect(raidReward(true, 100, 3).gold).toBeGreaterThan(won.gold);
-  });
-
-  it("gives every hero four perks of their own at the milestone levels", () => {
-    const names = new Set<string>();
-    for (const kind of HERO_KINDS) {
-      expect(PERKS[kind].map((p) => p.level)).toEqual([...PERK_LEVELS]);
-      for (const p of PERKS[kind]) {
-        expect(names.has(p.name)).toBe(false);
-        names.add(p.name);
-      }
-    }
-  });
-
-  it("gives every hero a signature move at level 5 that level 10 strengthens", () => {
-    for (const kind of HERO_KINDS) {
-      expect(perkMods(kind, 4).signature).toBe(0);
-      expect(perkMods(kind, 5).signature).toBe(1);
-      expect(perkMods(kind, 10).signature).toBe(2);
-    }
-  });
-
-  it("adds perks up and shows them in the stats", () => {
-    expect(perkMods("rifleman", 2).shots).toBe(0);
-    expect(perkMods("rifleman", 10).shots).toBe(2);
-    expect(perkMods("rifleman", 7).range).toBe(3);
-    expect(heroStats("heavy", 7).hp).toBeGreaterThan(heroStats("heavy", 6).hp * 1.3);
   });
 });

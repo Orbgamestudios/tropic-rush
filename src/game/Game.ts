@@ -11,14 +11,17 @@ import { type ControlMode, Controls } from "./controls";
 import { CrewMode, newId } from "./crew/crewMode";
 import { guessedPlace, locate, skyText } from "./location";
 import { passwordProblem, usernameProblem } from "./logic/account";
-import { BUILDINGS } from "./logic/buildings";
+import { BUILDINGS, type BuildingType } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
-import { hqLevel } from "./logic/crewIsland";
-import { emptyPurse, type Purse, RESOURCES } from "./logic/economy";
-import { generateIsland, scoutReport } from "./logic/enemyBase";
+import { hqLevel, type LayoutOp } from "./logic/crewIsland";
+import { addCrystals, type CrystalKind } from "./logic/crystals";
+import { allowedCount, emptyPurse, type Purse, RESOURCES } from "./logic/economy";
+import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
 import type { HeroKind } from "./logic/heroes";
-import { heroPower, perkMods, raidReward } from "./logic/heroProgress";
-import { BASE_CENTER } from "./logic/island";
+import { raidReward } from "./logic/heroProgress";
+import { heroMods } from "./logic/heroTrees";
+import { BASE_CENTER, HOME_SHAPE } from "./logic/island";
+import { archetypeFor } from "./logic/islandShapes";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
 import {
   canBoard,
@@ -31,13 +34,23 @@ import {
   type RaidState,
   stepRaid,
 } from "./logic/raid";
+import { BLUEPRINT_TYPES, rollSpoils, type Spoils } from "./logic/spoils";
+import { statueBuffs } from "./logic/statues";
 import type { Place } from "./logic/sun";
 import { angleOf, distance, lerp, vec } from "./logic/vec";
-import { type MapIsland, REGION, takeIsland, worldIslands } from "./logic/worldMap";
+import {
+  beatRival,
+  type MapIsland,
+  REGION,
+  settleRivals,
+  takeIsland,
+  worldIslands,
+} from "./logic/worldMap";
 import { logIn, logOut, pullSave, pushSave, signUp, verifyPassword } from "./net/account";
 import { CoopSession, HOST_TIMEOUT } from "./net/coopSession";
 import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
+import { fetchRivals, reportRaid } from "./net/world";
 import { CameraRig } from "./render/cameraRig";
 import { updateWind } from "./render/props";
 import { RaidView } from "./render/raidView";
@@ -48,6 +61,7 @@ import { heroPortrait } from "./render/thumbnails";
 import { WorldMapView } from "./render/worldMap";
 import {
   type AccountSession,
+  clearPhone,
   loadAccount,
   loadPlace,
   loadSave,
@@ -72,9 +86,25 @@ import { ReplayBar } from "./ui/replayBar";
 import { ResultsScreen } from "./ui/results";
 import { ScoutScreen } from "./ui/scoutScreen";
 import { SkyCard } from "./ui/skyCard";
-import { WorldMapScreen } from "./ui/worldMapScreen";
+import { UpgradeTree } from "./ui/upgradeTree";
+import { type CrewRaid, WorldMapScreen } from "./ui/worldMapScreen";
 
-type Phase = "heroes" | "map" | "scout" | "raid" | "ended" | "crew" | "replay";
+type Phase = "heroes" | "tree" | "map" | "scout" | "raid" | "ended" | "crew" | "replay";
+
+/** A crewmate's raid, as this phone last heard about it. */
+interface HeardRaid {
+  raidId: string;
+  name: string;
+  island: MapIsland | null;
+  raiding: boolean;
+  /** Seconds since the last word of it. */
+  age: number;
+}
+
+/** How long a crewmate's raid stays on the map after the last word of it, in seconds. */
+const RAID_HEARD_SECONDS = 8;
+/** How often a phone heading out says so to its crew, in seconds. */
+const RALLY_EVERY = 3;
 
 /**
  * Trims a frame that's a whisker off a whole number of rule steps. Timers wobble by a millisecond
@@ -106,6 +136,13 @@ const SKY_CARD_MS = 12_000;
 /** Players stop being told how to stop firing after this many wins. */
 const HINT_WINS = 3;
 
+/** The slowest the picture needs to run in a fight, and on a screen nobody's touching. */
+const FULL_FRAME_MS = 1000 / 60;
+const CALM_FRAME_MS = 1000 / 30;
+const FRAME_SLACK_MS = 2;
+/** How long after the last touch a screen counts as sitting still. */
+const CALM_AFTER_MS = 1500;
+
 /** The HUD updates once in this many frames. */
 const HUD_EVERY = 3;
 
@@ -127,6 +164,7 @@ export class Game {
   private readonly scout: ScoutScreen;
   private rangeRings: RangeRings | null = null;
   private mapHero: HeroKind = "rifleman";
+  private treeHero: HeroKind = "rifleman";
   private raidTarget: MapIsland | null = null;
   /** Regions the last win opened: their cloud lifts next time the map is shown. */
   private reveal: string[] = [];
@@ -137,18 +175,40 @@ export class Game {
   private linkFor = "";
   private crewMembers: Member[] = [];
   private readonly lobbyView: RaidLobby;
-  /** The raid being got together, before it starts. */
-  private lobby: { raidId: string; island: MapIsland; seats: Seat[]; host: string } | null = null;
-  /** A crewmate's raid on offer. */
-  private invite: { raidId: string; island: MapIsland; from: string } | null = null;
-  private inviteAgainIn = 0;
+  /** The raid being got together, before it starts. No island until the host has picked one. */
+  private lobby: {
+    raidId: string;
+    island: MapIsland | null;
+    seats: Seat[];
+    /** Who's scouted the island and readied up. */
+    ready: string[];
+    host: string;
+  } | null = null;
+  /** The raid this phone is heading out on, which the crew hears about from the first moment. */
+  private rallyId = "";
+  /** The island being looked over, while scouting. */
+  private scouting: MapIsland | null = null;
+  /** Crewmates' raids this phone has heard about, by who's leading them. */
+  private readonly crewRaids = new Map<string, HeardRaid>();
+  /** The crewmate whose raid the banner is offering. */
+  private invite: string | null = null;
+  /** Raids the player has already said no to. */
+  private readonly passedOn = new Set<string>();
+  private rallyIn = 0;
   private coop: CoopSession | null = null;
+  private spoils: Spoils | null = null;
+  /** What the raid brought back, statues included. */
+  private carried: Purse = emptyPurse();
   private readonly profile: ProfileScreen;
   private account: AccountSession | null = loadAccount();
   /** What the account last stored, to send only what's new. */
   private syncedBundle = saveBundle();
   private syncIn = SYNC_SECONDS;
   private syncing = false;
+  /** This phone's game is being swapped for another. */
+  private leaving = false;
+  /** When the screen was last touched. */
+  private touched = 0;
   private hudFrames = 0;
   private stopHinted = false;
   private hudTime = 0;
@@ -156,6 +216,7 @@ export class Game {
   private replaySpeed = 1;
   private readonly hud: Hud;
   private readonly heroes: HeroSelect;
+  private readonly tree: UpgradeTree;
   private readonly results: ResultsScreen;
   private readonly pause: PauseMenu;
   private readonly skyCard: SkyCard;
@@ -199,6 +260,12 @@ export class Game {
       update: (changes) => this.updateSave(changes),
       onBack: () => this.go(() => this.goHome()),
       onStart: (hero) => this.go(() => this.showMap(hero)),
+      onUpgrades: (hero) => this.go(() => this.showTree(hero)),
+    });
+    this.tree = new UpgradeTree(screens, {
+      save: () => this.save,
+      update: (changes) => this.updateSave(changes),
+      onBack: () => this.go(() => this.showHeroes(this.treeHero)),
     });
     this.results = new ResultsScreen(screens, {
       onAgain: () => this.go(() => this.showMap(this.save.hero)),
@@ -233,10 +300,12 @@ export class Game {
     });
     this.mapView = new WorldMapView(this.stage);
     this.mapScreen = new WorldMapScreen(screens, {
-      onAttack: (island) => this.go(() => this.startRaid(this.mapHero, island)),
+      onAttack: (island) => this.attack(island),
       onScout: (island) => this.go(() => this.startScout(island)),
       onTeamUp: (island) => this.openLobby(island),
       onReturn: () => this.go(() => this.goHome()),
+      onJoinCrew: (id) => this.joinRaid(id),
+      blueprintsOn: (island) => this.blueprintsOn(island),
       onHome: () => this.mapView.lookAt(0, 0),
       onPan: (dx, dy) => this.mapView.pan(dx, dy),
       onZoom: (factor) => this.mapView.zoom(factor),
@@ -246,17 +315,27 @@ export class Game {
       crewOnline: () => this.crewOnline(),
     });
     this.lobbyView = new RaidLobby(screens, {
-      onJoin: () => this.joinInvite(),
+      onJoin: () => {
+        if (this.invite) this.joinRaid(this.invite);
+      },
       onDismiss: () => {
+        const raid = this.invite ? this.crewRaids.get(this.invite) : undefined;
+        if (raid) this.passedOn.add(raid.raidId);
         this.invite = null;
         this.lobbyView.invite(null);
       },
-      onAttack: () => this.startLobby(),
+      onScout: () => this.scoutLobby(),
       onLeave: () => this.leaveLobby(),
+      onHero: (hero) => this.changeLobbyHero(hero),
     });
     this.scout = new ScoutScreen(screens, {
-      onAttack: (island) => this.go(() => this.startRaid(this.mapHero, island)),
-      onBack: () => this.go(() => this.showMap(this.mapHero)),
+      onAttack: (island) => this.attack(island),
+      onReady: (ready) => this.setReady(ready),
+      onBack: () =>
+        this.go(() => {
+          this.showMap(this.mapHero);
+          this.drawLobby();
+        }),
       onPan: (dx, dy) => this.rig.pan(dx, dy),
       onZoom: (factor) => this.rig.scoutZoom(factor),
       onTap: (x, y) => this.scoutTap(x, y),
@@ -328,6 +407,12 @@ export class Game {
     if (loadPlace() === undefined && !params.has("testhooks")) this.offerSkyCard();
     if (params.has("testhooks")) this.installTestHooks();
     this.stage.holdQuality = params.has("fullquality");
+    for (const type of ["pointerdown", "pointermove", "wheel"]) {
+      window.addEventListener(type, () => (this.touched = performance.now()), {
+        capture: true,
+        passive: true,
+      });
+    }
     requestAnimationFrame(this.frame);
   }
 
@@ -387,6 +472,33 @@ export class Game {
       },
       online: () => this.crewOnline(),
       seat: () => this.seat,
+      /** Makes a change to the crew's island, the way a real one would arrive. */
+      crewOp: (op: LayoutOp) => this.crew.applyForTest(op),
+      /** Skips the island's clock on, finishing whatever would be done by then. */
+      crewAhead: (ms: number) => this.crew.skipForTest(ms),
+      /** Brings a statue to light, without months of clearing first. */
+      findStatue: (kind: CrystalKind) => this.crew.findForTest(kind),
+      /** Points the home island's camera at a spot. */
+      crewLook: (x: number, y: number, distance: number) => this.crew.lookForTest(x, y, distance),
+      /** Scouts any island there is, for looking at how it comes out. */
+      visit: (seed: number, hq: number) => {
+        const hero = this.save.hero;
+        this.mapHero = hero;
+        const [any] = worldIslands(this.save.world, hq).filter((i) => !i.rival);
+        if (!any) return;
+        const rated = { ...any, seed, hq, archetype: archetypeFor(seed, hq) };
+        if (this.crew.active) this.crew.exit();
+        this.startScout(rated);
+      },
+      /** Wins the raid at once, for looking at what a win gives. */
+      win: () => {
+        const hq = this.state?.buildings.find((b) => b.type === "headquarters");
+        if (hq && this.state) {
+          hq.hp = 0;
+          hq.destroyed = true;
+          this.state.status = "won";
+        }
+      },
       /** Holds this phone's move stick over, for testing a raid from outside it. */
       holdMove: (x: number, y: number) => this.controls.holdMove(x, y),
       /** Sets off a blast by the player, for looking at effects. */
@@ -432,6 +544,7 @@ export class Game {
       case "crew":
         return "home";
       case "heroes":
+      case "tree":
         return "heroes";
       case "map":
         return "map";
@@ -453,7 +566,7 @@ export class Game {
 
   private updateSave(changes: Partial<SaveData>): void {
     this.save = { ...this.save, ...changes };
-    writeSave(this.save);
+    if (!this.leaving) writeSave(this.save);
     this.syncLink();
   }
 
@@ -485,8 +598,16 @@ export class Game {
     if (!result.ok) return result.error;
     this.setAccount({ token: result.token, username: result.username, syncedAt: result.savedAt });
     // The account's progress takes over this phone, so start again from it.
-    if (result.save && restoreBundle(result.save)) location.reload();
+    this.stopWriting();
+    if (!result.save || !restoreBundle(result.save)) clearPhone(this.save.settings);
+    location.reload();
     return null;
+  }
+
+  /** Before this phone's game is swapped: nothing left running to write the old one back. */
+  private stopWriting(): void {
+    if (this.crew.active) this.crew.exit();
+    this.leaving = true;
   }
 
   private async checkPassword(password: string): Promise<string | null> {
@@ -499,8 +620,7 @@ export class Game {
 
   /** Wipes the game, on the account too, and starts again from nothing. */
   private async startOver(): Promise<void> {
-    // Nothing left running to write the old game back.
-    if (this.crew.active) this.crew.exit();
+    this.stopWriting();
     this.save = resetGame(this.save);
     const { account } = this;
     if (account) {
@@ -510,11 +630,21 @@ export class Game {
     location.reload();
   }
 
-  private signOut(): void {
+  /**
+   * Stores the game on the account, then clears it off this phone, so whoever plays here next
+   * starts fresh. Without a connection it stays signed in: clearing now would lose progress.
+   */
+  private async signOut(): Promise<string | null> {
     const { account } = this;
-    if (!account) return;
-    void this.pushAccount().then(() => logOut(account.token));
+    if (!account) return null;
+    const result = await pushSave(account.token, saveBundle());
+    if (!result.ok) return "Can't save your game right now. Try again when you're online.";
+    void logOut(account.token);
     this.setAccount(null);
+    this.stopWriting();
+    clearPhone(this.save.settings);
+    location.reload();
+    return null;
   }
 
   /** Takes on the account's progress if another phone has moved it on since this one last synced. */
@@ -524,7 +654,9 @@ export class Game {
     const result = await pullSave(account.token);
     if (!result.ok || !result.save || result.savedAt <= account.syncedAt) return;
     this.setAccount({ ...account, syncedAt: result.savedAt });
-    if (restoreBundle(result.save)) location.reload();
+    this.stopWriting();
+    restoreBundle(result.save);
+    location.reload();
   }
 
   /** Stores the save on the account, if there's anything new to store. */
@@ -571,8 +703,8 @@ export class Game {
   }
 
   private mySeat(hero: HeroKind): Seat {
-    const { memberId, nickname, heroLevels } = this.save;
-    return { member: memberId, name: nickname, hero, level: heroLevels[hero] };
+    const { memberId, nickname, upgrades } = this.save;
+    return { member: memberId, name: nickname, hero, upgrades: upgrades[hero] };
   }
 
   private lobbyBlocker(seats: readonly Seat[]): string | null {
@@ -581,60 +713,225 @@ export class Game {
       : null;
   }
 
+  private isHost(): boolean {
+    return this.lobby?.host === this.save.memberId;
+  }
+
+  /** How many could come: everyone here, and the rest of the crew who are online. */
+  private teamSize(seats: readonly Seat[]): number {
+    return Math.min(MAX_SEATS, Math.max(seats.length, this.crewOnline() + 1));
+  }
+
+  /** What's holding the team up from getting ready, if anything. */
+  private lobbyHold(seats: readonly Seat[]): string | null {
+    if (seats.length < 2) return "Waiting for your crew to join.";
+    return this.lobbyBlocker(seats);
+  }
+
   private drawLobby(): void {
     const { lobby } = this;
-    if (!lobby) {
+    if (!lobby || this.phase === "scout") {
       this.lobbyView.hide();
+      this.lobbyView.party(null);
+      this.scout.setTeam(
+        lobby?.island
+          ? {
+              have: lobby.seats.length,
+              of: this.teamSize(lobby.seats),
+              ready: lobby.ready.length,
+              mine: lobby.ready.includes(this.save.memberId),
+              waiting: this.lobbyHold(lobby.seats),
+            }
+          : null,
+      );
       return;
     }
-    const host = lobby.host === this.save.memberId;
-    const blocker = host ? this.lobbyBlocker(lobby.seats) : null;
-    this.lobbyView.show(lobby.island.name, lobby.seats, host, blocker);
+    const host = this.isHost();
+    // The host is still choosing: the crew shows as a note over the map, not in the way of it.
+    if (host && !lobby.island) {
+      this.lobbyView.hide();
+      const others = lobby.seats.filter((s) => s.member !== this.save.memberId);
+      this.lobbyView.party(others.length > 0 ? others.map((s) => s.name).join(", ") : null);
+      return;
+    }
+    this.lobbyView.party(null);
+    this.lobbyView.show({
+      island: lobby.island?.name ?? null,
+      seats: lobby.seats,
+      ready: lobby.ready,
+      team: this.teamSize(lobby.seats),
+      message: !lobby.island
+        ? "Your crewmate is choosing an island."
+        : (this.lobbyHold(lobby.seats) ?? "Scout the island, then ready up."),
+      heroes: host ? [] : this.save.unlocked,
+      mine: this.mapHero,
+    });
+  }
+
+  /** Who's leading this raid, once a crew is getting together: the player, from here on. */
+  private ownLobby(island: MapIsland | null): void {
+    const { lobby } = this;
+    const me = this.mySeat(this.mapHero);
+    if (lobby && this.isHost()) {
+      if (lobby.island?.id !== island?.id) lobby.ready = [];
+      lobby.island = island;
+      lobby.seats = [me, ...lobby.seats.slice(1)];
+      return;
+    }
+    this.rallyId ||= `${this.save.memberId}-${Date.now().toString(36)}`;
+    const host = this.save.memberId;
+    this.lobby = { raidId: this.rallyId, island, seats: [me], ready: [], host };
   }
 
   private openLobby(island: MapIsland): void {
-    const raidId = `${this.save.memberId}-${Date.now().toString(36)}`;
-    this.lobby = {
-      raidId,
-      island,
-      seats: [this.mySeat(this.mapHero)],
-      host: this.save.memberId,
-    };
-    this.inviteAgainIn = 0;
+    this.ownLobby(island);
+    this.rallyIn = 0;
+    this.tellSeats();
     this.drawLobby();
   }
 
-  /** Reminds crewmates of the raid, so anyone who's just come online sees it too. */
-  private tickLobby(dt: number): void {
+  private tellSeats(): void {
     const { lobby } = this;
-    if (!lobby || lobby.host !== this.save.memberId) return;
-    this.inviteAgainIn -= dt;
-    if (this.inviteAgainIn > 0) return;
-    this.inviteAgainIn = 3;
-    const { raidId, island } = lobby;
-    this.link?.relay({ k: "invite", raidId, host: this.save.nickname, island });
+    if (!lobby) return;
+    const { raidId, seats, ready, island } = lobby;
+    this.link?.relay({ k: "seats", raidId, seats, ready, island });
   }
 
-  private joinInvite(): void {
-    const { invite } = this;
-    if (!invite) return;
+  private withParty(): boolean {
+    return Boolean(this.lobby && this.isHost() && this.lobby.seats.length > 1);
+  }
+
+  /** Attack from the map or a scout: straight in alone, but a team scouts and readies up first. */
+  private attack(island: MapIsland): void {
+    if (this.withParty()) this.openLobby(island);
+    else this.go(() => this.startRaid(this.mapHero, island));
+  }
+
+  /** From the lobby to a look at the island, for anyone on the team. */
+  private scoutLobby(): void {
+    const island = this.lobby?.island;
+    if (!island) return;
+    this.go(() => {
+      if (this.crew.active) this.crew.exit();
+      this.startScout(island);
+    });
+  }
+
+  /** This player's good to go, or isn't after all. The host starts it once everyone is. */
+  private setReady(ready: boolean): void {
+    const { lobby } = this;
+    if (!lobby) return;
+    this.markReady(this.save.memberId, ready);
+    if (this.isHost()) this.teamChanged();
+    else this.link?.relay({ k: "ready", raidId: lobby.raidId, ready }, lobby.host);
+    this.drawLobby();
+  }
+
+  private markReady(member: string, ready: boolean): void {
+    const { lobby } = this;
+    if (!lobby) return;
+    lobby.ready = lobby.ready.filter((m) => m !== member);
+    if (ready) lobby.ready.push(member);
+  }
+
+  /** Tells the team how things stand, and sets off if that's everyone ready. */
+  private teamChanged(): void {
+    const { lobby } = this;
+    if (!lobby) return;
+    this.tellSeats();
+    const set = lobby.seats.every((s) => lobby.ready.includes(s.member));
+    if (set && !this.lobbyHold(lobby.seats)) this.startLobby();
+  }
+
+  private headingOut(): boolean {
+    return this.phase === "heroes" || this.phase === "tree" || this.phase === "map";
+  }
+
+  /**
+   * Tells the crew this phone's heading out, from the moment it opens its heroes, and keeps telling
+   * them, so anyone who's just come online sees it too. A guest is along for someone else's raid.
+   */
+  private tickRally(dt: number): void {
+    for (const [from, raid] of this.crewRaids) {
+      raid.age += dt;
+      if (raid.age <= RAID_HEARD_SECONDS) continue;
+      this.crewRaids.delete(from);
+      if (this.invite === from) {
+        this.invite = null;
+        this.lobbyView.invite(null);
+      }
+    }
+    if (this.phase === "map") this.mapScreen.setCrewRaids(this.crewRaidList());
+    const guest = (this.lobby && !this.isHost()) || (this.coop && !this.coop.isHost);
+    const scouting = this.phase === "scout";
+    const raiding = this.phase === "raid";
+    if (guest || !(this.headingOut() || scouting || raiding)) return;
+    this.rallyId ||= `${this.save.memberId}-${Date.now().toString(36)}`;
+    this.rallyIn -= dt;
+    if (this.rallyIn > 0) return;
+    this.rallyIn = RALLY_EVERY;
+    const island = raiding ? this.raidTarget : (this.lobby?.island ?? null);
+    this.link?.relay({
+      k: "invite",
+      raidId: this.rallyId,
+      host: this.save.nickname,
+      island,
+      raiding,
+    });
+  }
+
+  /** Stands down: nobody's heading out any more. */
+  private endRally(): void {
+    if (!this.rallyId) return;
+    this.link?.relay({ k: "cancel", raidId: this.rallyId });
+    this.rallyId = "";
+  }
+
+  private crewRaidList(): CrewRaid[] {
+    return [...this.crewRaids].map(([id, raid]) => ({
+      id,
+      name: raid.name,
+      islandId: raid.island?.id ?? null,
+      islandName: raid.island?.name ?? null,
+      joinable: !raid.raiding,
+    }));
+  }
+
+  /** Falls in with a crewmate who's heading out. */
+  private joinRaid(from: string): void {
+    const raid = this.crewRaids.get(from);
+    if (!raid || raid.raiding) return;
+    this.endRally();
     this.invite = null;
     this.lobbyView.invite(null);
     const hero = this.save.unlocked.includes(this.save.hero) ? this.save.hero : "rifleman";
     this.mapHero = hero;
     const seat = this.mySeat(hero);
-    this.lobby = { ...invite, seats: [seat], host: invite.from };
+    const { raidId, island } = raid;
+    this.lobby = { raidId, island, seats: [seat], ready: [], host: from };
     this.drawLobby();
-    this.link?.relay(
-      {
-        k: "join",
-        raidId: invite.raidId,
-        name: seat.name,
-        hero,
-        level: seat.level,
-      },
-      invite.from,
-    );
+    this.sayJoin(seat);
+  }
+
+  private sayJoin(seat: Seat): void {
+    const { lobby } = this;
+    if (!lobby) return;
+    const { name, hero, upgrades } = seat;
+    this.link?.relay({ k: "join", raidId: lobby.raidId, name, hero, upgrades }, lobby.host);
+  }
+
+  /** A crewmate waiting in the lobby swaps heroes. */
+  private changeLobbyHero(hero: HeroKind): void {
+    const { lobby } = this;
+    if (!lobby) return;
+    this.mapHero = hero;
+    this.updateSave({ hero });
+    const seat = this.mySeat(hero);
+    const mine = lobby.seats.findIndex((s) => s.member === seat.member);
+    if (mine >= 0) lobby.seats[mine] = seat;
+    this.markReady(seat.member, false);
+    this.drawLobby();
+    this.sayJoin(seat);
   }
 
   private leaveLobby(): void {
@@ -642,14 +939,13 @@ export class Game {
     this.lobby = null;
     this.drawLobby();
     if (!lobby) return;
-    const host = lobby.host === this.save.memberId;
-    if (host) this.link?.relay({ k: "cancel", raidId: lobby.raidId });
+    if (lobby.host === this.save.memberId) this.link?.relay({ k: "cancel", raidId: lobby.raidId });
     else this.link?.relay({ k: "leave", raidId: lobby.raidId }, lobby.host);
   }
 
   private startLobby(): void {
     const { lobby } = this;
-    if (!lobby || this.lobbyBlocker(lobby.seats)) return;
+    if (!lobby?.island || this.lobbyBlocker(lobby.seats)) return;
     this.link?.relay({
       k: "start",
       raidId: lobby.raidId,
@@ -674,13 +970,26 @@ export class Game {
     const { lobby, coop } = this;
     switch (data.k) {
       case "invite":
-        // Not in the middle of a fight, or of getting one together.
+        this.crewRaids.set(from, {
+          raidId: data.raidId,
+          name: data.host,
+          island: data.island,
+          raiding: data.raiding,
+          age: 0,
+        });
+        // Not in the middle of a fight, or of getting one together, and only the once.
         if (lobby || coop || this.phase === "raid" || this.phase === "replay") return;
-        this.invite = { raidId: data.raidId, island: data.island, from };
-        this.lobbyView.invite(`${data.host} is raiding ${data.island.name}`);
+        if (data.raiding || this.passedOn.has(data.raidId)) return;
+        this.invite = from;
+        this.lobbyView.invite(
+          data.island
+            ? `${data.host} is raiding ${data.island.name}`
+            : `${data.host} is picking a hero. Raid together?`,
+        );
         return;
       case "cancel":
-        if (this.invite?.raidId === data.raidId) {
+        if (this.crewRaids.get(from)?.raidId === data.raidId) this.crewRaids.delete(from);
+        if (this.invite === from) {
           this.invite = null;
           this.lobbyView.invite(null);
         }
@@ -689,26 +998,41 @@ export class Game {
           this.drawLobby();
         }
         return;
-      case "join":
-        if (lobby?.raidId !== data.raidId || lobby.host !== this.save.memberId) return;
-        if (lobby.seats.length >= MAX_SEATS || lobby.seats.some((s) => s.member === from)) return;
-        lobby.seats.push({ member: from, name: data.name, hero: data.hero, level: data.level });
-        this.link?.relay({
-          k: "seats",
-          raidId: data.raidId,
-          seats: lobby.seats,
-          island: lobby.island,
-        });
+      case "join": {
+        if (data.raidId !== this.rallyId) return;
+        if (!lobby) this.ownLobby(this.phase === "scout" ? this.scouting : null);
+        const party = this.lobby;
+        if (!party) return;
+        const seat = { member: from, name: data.name, hero: data.hero, upgrades: data.upgrades };
+        const known = party.seats.findIndex((s) => s.member === from);
+        if (known >= 0) party.seats[known] = seat;
+        else if (party.seats.length < MAX_SEATS) party.seats.push(seat);
+        else return;
+        // New, or back in the lobby to change hero: either way, they've still to ready up.
+        this.markReady(from, false);
+        this.tellSeats();
         this.drawLobby();
+        sfx.coin();
         return;
+      }
       case "seats":
         if (lobby?.raidId !== data.raidId) return;
         lobby.seats = data.seats;
+        lobby.ready = data.ready;
+        lobby.island = data.island;
+        this.drawLobby();
+        return;
+      case "ready":
+        if (lobby?.raidId !== data.raidId || !this.isHost()) return;
+        this.markReady(from, data.ready);
+        this.teamChanged();
         this.drawLobby();
         return;
       case "leave":
         if (lobby?.raidId === data.raidId) {
           lobby.seats = lobby.seats.filter((s) => s.member !== from);
+          this.markReady(from, false);
+          if (this.isHost()) this.teamChanged();
           this.drawLobby();
         }
         if (coop?.raidId === data.raidId && coop.isHost) this.seatLeft(from);
@@ -758,6 +1082,7 @@ export class Game {
 
   private hideScreens(): void {
     this.heroes.hide();
+    this.tree.hide();
     this.mapScreen.hide();
     this.scout.hide();
     this.mapView.show(false);
@@ -779,11 +1104,10 @@ export class Game {
     this.phase = "map";
     this.skyCard.hide();
     this.mapHero = hero;
-    const { world, lostIslands } = this.save;
-    const islands = worldIslands(world, hqLevel(this.crew.snapshot().layout));
-    this.mapView.setWorld(islands, world, this.reveal);
+    const { lostIslands } = this.save;
+    this.drawMap();
     this.mapView.show(true);
-    this.mapScreen.show(islands, world);
+    void this.findRivals();
     const [opened] = this.reveal;
     if (opened) {
       // Over to the water that's just opened up.
@@ -798,9 +1122,42 @@ export class Game {
     this.stage.ignoreSlowFrames();
   }
 
+  /** Lays the world out as it stands. */
+  private drawMap(): void {
+    const { world, crystals } = this.save;
+    const islands = worldIslands(world, hqLevel(this.crew.snapshot().layout));
+    this.mapView.setWorld(islands, world, this.reveal);
+    this.mapScreen.show(islands, world, crystals);
+  }
+
+  /** Moves real crews onto any player islands that are open, if the server knows of any. */
+  private async findRivals(): Promise<void> {
+    const hq = hqLevel(this.crew.snapshot().layout);
+    const crews = await fetchRivals(this.save.crewCode, hq);
+    if (crews.length === 0 || this.phase !== "map") return;
+    const before = this.save.world;
+    const world = settleRivals(before, worldIslands(before, hq), crews);
+    if (Object.keys(world.rivals).length === Object.keys(before.rivals).length) return;
+    this.updateSave({ world });
+    this.drawMap();
+  }
+
+  /** The blueprints a raider base could turn up, that the crew hasn't got yet. */
+  private blueprintsOn(island: MapIsland): string[] {
+    if (island.rival) return [];
+    return this.unknownOn(island.hq).map((t) => BUILDINGS[t].label);
+  }
+
+  private unknownOn(hq: number): BuildingType[] {
+    const known = [...this.crew.snapshot().layout.blueprints, ...this.save.blueprints];
+    return BLUEPRINT_TYPES.filter((t) => allowedCount(t, hq) > 0 && !known.includes(t));
+  }
+
   /** Back to the crew island, from hero select or the end of a raid. */
   private goHome(): void {
     this.endRaidWorld();
+    this.endRally();
+    if (this.lobby) this.leaveLobby();
     this.enterCrew();
   }
 
@@ -810,7 +1167,15 @@ export class Game {
     this.hideScreens();
     this.phase = "heroes";
     this.skyCard.hide();
+    this.rallyIn = 0;
     this.heroes.show(kind);
+  }
+
+  private showTree(kind: HeroKind): void {
+    this.hideScreens();
+    this.phase = "tree";
+    this.treeHero = kind;
+    this.tree.show(kind);
   }
 
   private enterCrew(): void {
@@ -833,18 +1198,29 @@ export class Game {
     this.rangeRings = null;
     this.labels.clear();
     this.state = null;
+    this.rig.shape = HOME_SHAPE;
+  }
+
+  /** The island a map spot holds: a raider base, or a rival crew's own. */
+  private islandFor(target: MapIsland) {
+    const { rival } = target;
+    if (!rival) return generateIsland(target.seed, target.hq, { maxed: target.retaken });
+    const buildings =
+      rival.buildings.length > 0 ? rival.buildings : enemyBase(target.seed, rival.hq);
+    return { ...rivalIsland(target.seed, buildings), buffs: rival.buffs };
   }
 
   /** Sets a target island up, the same whether the crew is scouting it or landing. */
   private loadRaid(hero: HeroKind, target: MapIsland, team?: Team) {
-    const layout = generateIsland(target.seed, target.hq, { maxed: target.retaken });
-    const level = this.save.heroLevels[hero];
+    const layout = this.islandFor(target);
     const state = team
       ? createCoopRaid(layout, team.seats)
-      : createRaid(layout, [hero], [heroPower(level)], [perkMods(hero, level)]);
+      : createRaid(layout, [hero], [], [heroMods(hero, this.save.upgrades[hero])]);
     this.seat = team?.seat ?? 0;
     this.state = state;
+    this.rig.shape = state.shape;
     this.view = new RaidView(layout, state, this.labels, undefined, this.seat);
+    this.view.names = team?.seats.map((s) => s.name) ?? [];
     this.stage.scene.add(this.view.root);
     this.stage.ignoreSlowFrames();
     return { layout, state };
@@ -852,6 +1228,11 @@ export class Game {
 
   /** A look over an enemy base from above before committing: the raid hasn't started. */
   private startScout(target: MapIsland): void {
+    if (this.withParty() && this.lobby?.island?.id !== target.id) {
+      this.ownLobby(target);
+      this.tellSeats();
+    }
+    this.scouting = target;
     this.endRaidWorld();
     this.hideScreens();
     const { layout, state } = this.loadRaid(this.mapHero, target);
@@ -870,6 +1251,7 @@ export class Game {
     );
     this.phase = "scout";
     this.scout.show(target, scoutReport(layout.buildings), this.soloBlocker() === null);
+    this.drawLobby();
   }
 
   /** Tapping a defense while scouting: lights up its reach and says what it does. */
@@ -914,12 +1296,19 @@ export class Game {
     this.rig.zoomOut = 0;
     this.rig.snap(layout.spawn);
     this.setControlMode("hero");
-    this.hud.setHero(heroPortrait(hero), this.save.heroLevels[hero]);
+    this.hud.setHero(heroPortrait(hero), this.save.upgrades[hero].length);
     this.hud.setSquad(
       (team?.seats ?? []).flatMap((s, i) =>
         i === team?.seat
           ? []
-          : [{ seat: i, kind: s.hero, level: s.level, portrait: heroPortrait(s.hero) }],
+          : [
+              {
+                seat: i,
+                kind: s.hero,
+                upgrades: s.upgrades.length,
+                portrait: heroPortrait(s.hero),
+              },
+            ],
       ),
     );
     this.playerDown = false;
@@ -1020,15 +1409,26 @@ export class Game {
     return this.coop?.hostInputs(player) ?? [player];
   }
 
+  /** Outside a fight, a screen nobody's touching runs at half speed: it looks the same at rest. */
+  private calmNow(now: number): boolean {
+    const fighting = this.phase === "raid" || this.phase === "replay" || this.phase === "ended";
+    return !fighting && now - this.touched > CALM_AFTER_MS;
+  }
+
   private readonly frame = (now: number): void => {
+    requestAnimationFrame(this.frame);
+    const calm = this.calmNow(now);
+    // A little under the gap, or a 60 Hz screen would miss every other frame by a whisker.
+    if (now - this.last < (calm ? CALM_FRAME_MS : FULL_FRAME_MS) - FRAME_SLACK_MS) return;
     const frameTime = (now - this.last) / 1000;
     const dt = steadied(Math.min(MAX_FRAME_SECONDS, frameTime));
     this.last = now;
     this.time += dt;
+    this.stage.calm = calm;
     // The real frame time, so a device that's struggling badly drops quality straight away.
-    this.stage.adaptQuality(frameTime);
+    if (!calm) this.stage.adaptQuality(frameTime);
     music.play(this.trackForPhase());
-    this.tickLobby(dt);
+    this.tickRally(dt);
     this.syncIn -= dt;
     if (this.syncIn <= 0) {
       this.syncIn = SYNC_SECONDS;
@@ -1036,7 +1436,10 @@ export class Game {
     }
     if (this.phase === "crew") this.crew.frame(dt, this.time);
     else if (this.phase === "heroes") this.showcase.update(dt, this.time);
-    else if (this.phase === "replay") this.replayFrame(dt, now);
+    else if (this.phase === "tree") {
+      // Nothing moves behind the tree's own full-screen backdrop, so nothing needs drawing.
+      return;
+    } else if (this.phase === "replay") this.replayFrame(dt, now);
     else if (this.phase === "map") {
       this.mapView.update(this.time, dt);
       this.mapScreen.update();
@@ -1044,7 +1447,6 @@ export class Game {
     } else if (this.phase === "scout") this.scoutFrame(dt);
     else this.raidFrame(dt, now);
     this.stage.render();
-    requestAnimationFrame(this.frame);
   };
 
   private raidFrame(dt: number, now: number): void {
@@ -1141,19 +1543,69 @@ export class Game {
     const won = state.status === "won";
     const percent = destructionPercent(state);
     const reward = raidReward(won, percent, this.islandLevel);
+    const target = this.raidTarget;
     const before = this.save.world;
-    const world = won && this.raidTarget ? takeIsland(before, this.raidTarget.id) : before;
+    const { rival } = target ?? { rival: null };
+    let world = won && target ? takeIsland(before, target.id) : before;
+    if (won && target && rival) {
+      // Keep a note of who was beaten here: what the island pays goes by their strength.
+      world = beatRival({ ...world, rivals: { ...world.rivals, [target.id]: rival } }, rival);
+    }
     this.reveal = world.opened.filter((key) => !before.opened.includes(key));
+    const { plunder, luck } = statueBuffs(this.crew.snapshot().layout.statues);
+    const carried = emptyPurse();
     const loot: Partial<Purse> = { ...this.save.loot };
     for (const r of RESOURCES) {
-      if (state.loot[r] > 0) loot[r] = (loot[r] ?? 0) + state.loot[r];
+      carried[r] = Math.round(state.loot[r] * plunder);
+      if (carried[r] > 0) loot[r] = (loot[r] ?? 0) + carried[r];
     }
+    this.carried = carried;
+    const spoils = won && target ? this.rollWin(target, state, luck) : null;
+    this.spoils = spoils;
+    const prints = spoils?.blueprint ? [...this.save.blueprints, spoils.blueprint] : null;
     this.updateSave({
       world,
       loot,
       wins: this.save.wins + (won ? 1 : 0),
       bestDestruction: Math.max(this.save.bestDestruction, percent),
-      gold: this.save.gold + reward.gold,
+      gold: this.save.gold + reward.gold + (spoils?.chest ?? 0),
+      crystals: spoils ? addCrystals(this.save.crystals, spoils.crystals) : this.save.crystals,
+      blueprints: prints ?? this.save.blueprints,
+      blueprintDrought: won
+        ? prints
+          ? 0
+          : this.save.blueprintDrought + 1
+        : this.save.blueprintDrought,
+    });
+    // A real crew hears about it, from whoever led the raid.
+    if (rival?.code && this.seat === 0) {
+      void reportRaid({
+        target: rival.code,
+        by: `${this.save.nickname || "A rival"}'s crew`,
+        won,
+        destroyedPercent: percent,
+        loot: carried,
+      });
+    }
+    this.view?.dropCrystal(state, spoils);
+  }
+
+  private rollWin(target: MapIsland, state: RaidState, luck: number): Spoils {
+    const layout = this.crew.snapshot().layout;
+    // Only a raider base has plans lying about, and only for what's standing on it.
+    const raiders = target.rival === null;
+    const types = new Set(state.buildings.map((b) => b.type));
+    if (state.mines.length > 0) types.add("landmine");
+    return rollSpoils({
+      seed: target.seed ^ Math.imul(this.save.wins + 1, 7919),
+      difficulty: target.difficulty,
+      crystal: target.crystal,
+      defenses: raiders ? [...types] : [],
+      known: [...layout.blueprints, ...this.save.blueprints],
+      drought: this.save.blueprintDrought,
+      firstWin: this.save.wins === 0,
+      luck,
+      tier: target.tier,
     });
   }
 
@@ -1173,7 +1625,9 @@ export class Game {
       totalCount: state.buildings.length,
       seconds: state.time,
       reward: raidReward(won, percent, this.islandLevel),
-      materials: { ...emptyPurse(), ...state.loot },
+      materials: this.carried,
+      spoils: this.spoils,
+      tribute: won ? (this.raidTarget?.tribute ?? 0) : 0,
     });
   }
 }

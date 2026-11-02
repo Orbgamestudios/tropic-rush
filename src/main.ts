@@ -3,6 +3,7 @@ import "./styles/kit.css";
 import "./styles/screens.css";
 import "./styles/hud.css";
 import "./styles/crew.css";
+import "./styles/upgrades.css";
 import { maybeLoadDebugConsole } from "./debug";
 import { Game } from "./game/Game";
 import { setupPwa } from "./pwa";

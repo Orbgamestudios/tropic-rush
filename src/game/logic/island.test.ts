@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { BUILDINGS, type BuildingType } from "./buildings";
 import { type CrewLayout, fits, hqLevel, obstacles } from "./crewIsland";
 import { allowedCount, levelCap } from "./economy";
-import { enemyBase, generateIsland, scoutReport } from "./enemyBase";
-import { isOnGrass, isOnLand, shoreDistance } from "./island";
+import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./enemyBase";
+import { HOME_SHAPE } from "./island";
 import { createRaid } from "./raid";
 import { distance, vec } from "./vec";
 
@@ -27,14 +27,28 @@ describe("enemy base layout", () => {
         const hq = hqOf(island);
         if (!hq) throw new Error("no headquarters");
         const defenses = island.buildings.filter((b) => BUILDINGS[b.type].attack);
-        const near = defenses.filter((b) => distance(b.pos, hq.pos) < 26);
-        expect(near.length / defenses.length).toBeGreaterThan(0.8);
-        // No side of the headquarters is left open.
+        const near = defenses.filter((b) => distance(b.pos, hq.pos) < 28);
+        // A narrow island can't fit a full ring: what doesn't fit goes on along the coast.
+        expect(near.length / defenses.length).toBeGreaterThan(0.5);
         const sides = new Set(
           near.map((b) => Math.floor(Math.atan2(b.pos.y - hq.pos.y, b.pos.x - hq.pos.x) / 1.6)),
         );
-        expect(sides.size).toBeGreaterThanOrEqual(3);
+        expect(sides.size).toBeGreaterThanOrEqual(2);
       }
+    }
+  });
+
+  it("rings the headquarters on every side, given the room", () => {
+    for (const seed of SEEDS) {
+      const buildings = enemyBase(seed, 12);
+      const hq = buildings.find((b) => b.type === "headquarters");
+      if (!hq) throw new Error("no headquarters");
+      const sides = new Set(
+        buildings
+          .filter((b) => BUILDINGS[b.type].attack)
+          .map((b) => Math.floor(Math.atan2(b.y - hq.y, b.x - hq.x) / 1.6)),
+      );
+      expect(sides.size).toBeGreaterThanOrEqual(3);
     }
   });
 
@@ -93,7 +107,7 @@ describe("generateIsland", () => {
       for (const seed of SEEDS) {
         const island = generateIsland(seed, hq);
         expect(countByType(island.buildings.map((b) => b.type))).toEqual(expected);
-        // Land mines go in hidden, on top of the ones along the beach.
+        // Land mines go in hidden, on top of the ones along the way in.
         expect(island.mines.length).toBeGreaterThanOrEqual(allowedCount("landmine", hq));
       }
     }
@@ -145,10 +159,13 @@ describe("generateIsland", () => {
 
   it("puts buildings on grass without overlapping", () => {
     for (const seed of SEEDS) {
-      const { buildings } = generateIsland(seed, 12);
+      const { buildings, shape } = generateIsland(seed, 12);
+      if (!shape) throw new Error("no shape");
       buildings.forEach((b, i) => {
         const r = BUILDINGS[b.type].radius;
-        expect(isOnGrass(b.pos.x, b.pos.y, r)).toBe(true);
+        expect(shape.shoreDistance(b.pos.x, b.pos.y)).toBeGreaterThan(
+          shape.beachWidth(b.pos.x, b.pos.y),
+        );
         for (const other of buildings.slice(i + 1)) {
           expect(distance(b.pos, other.pos)).toBeGreaterThan(r + BUILDINGS[other.type].radius);
         }
@@ -156,13 +173,11 @@ describe("generateIsland", () => {
     }
   });
 
-  it("lands the crew on the south-west beach with the gunboat moored off it", () => {
-    for (const seed of SEEDS) {
-      const island = generateIsland(seed, 1);
-      expect(isOnLand(island.spawn.x, island.spawn.y)).toBe(true);
-      expect(island.spawn.x).toBeLessThan(0);
-      expect(island.spawn.y).toBeGreaterThan(0);
-      expect(shoreDistance(island.boat.x, island.boat.y)).toBeLessThan(0);
-    }
+  it("raids a rival crew on their own island, with the buildings they've really got", () => {
+    const base = enemyBase(4, 6);
+    const island = rivalIsland(4, base);
+    expect(island.shape).toBe(HOME_SHAPE);
+    const standing = base.filter((b) => b.type !== "landmine").map((b) => b.type);
+    expect(island.buildings.map((b) => b.type)).toEqual(standing);
   });
 });

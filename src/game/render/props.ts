@@ -6,7 +6,8 @@
 
 import * as THREE from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { beachWidth, type IslandLayout, shoreDistance, terrainHeight } from "../logic/island";
+import { HOME_CLIFFS } from "../logic/crewIsland";
+import { HOME_SHAPE, homeHeight, type IslandLayout, type IslandShape } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
 import type { Vec2 } from "../logic/vec";
 import { COLORS } from "./palette";
@@ -20,18 +21,20 @@ import { SKY } from "./sky";
 const wind = { value: 0 };
 /** The hero the camera follows; plants between them and the camera dissolve. */
 const focus = { value: new THREE.Vector3(0, -100, 0) };
-const swayMaterials = new Map<boolean, THREE.MeshLambertMaterial>();
+const swayMaterials = new Map<string, THREE.MeshLambertMaterial>();
 
 /**
  * Like vertexColored(), but the higher a vertex sits, the more it sways in the wind. With
  * `dissolve`, plants between the camera and the hero fade away; that uses `discard`, which stops
  * an iPhone's graphics chip skipping hidden surfaces, so it's only for plants tall enough to need it.
+ * `stiff` is for rock: it fades away the same, and stands still.
  */
-export function swaying(dissolve = true): THREE.MeshLambertMaterial {
-  const made = swayMaterials.get(dissolve);
+export function swaying(dissolve = true, stiff = false): THREE.MeshLambertMaterial {
+  const key = `${dissolve}-${stiff}`;
+  const made = swayMaterials.get(key);
   if (made) return made;
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
-  m.color = SKY.forest.value;
+  if (!stiff) m.color = SKY.forest.value;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uWind = wind;
     shader.uniforms.uFocus = focus;
@@ -48,7 +51,7 @@ export function swaying(dissolve = true): THREE.MeshLambertMaterial {
         #else
           vec3 rootPos = vec3(0.0);
         #endif
-        float lift = max(position.y, 0.0);
+        float lift = ${stiff ? "0.0" : "max(position.y, 0.0)"};
         float phase = uWind * 1.4 + rootPos.x * 0.21 + rootPos.z * 0.17;
         float gust = 0.6 + 0.4 * sin(uWind * 0.37 + rootPos.x * 0.03);
         float bend = lift * lift * 0.012 * gust;
@@ -80,8 +83,8 @@ export function swaying(dissolve = true): THREE.MeshLambertMaterial {
         if (noiseCut < cut * 0.85) discard;`,
       );
   };
-  m.customProgramCacheKey = () => `tropic-sway-${dissolve}`;
-  swayMaterials.set(dissolve, m);
+  m.customProgramCacheKey = () => `tropic-sway-${key}`;
+  swayMaterials.set(key, m);
   return m;
 }
 
@@ -329,6 +332,75 @@ export function rockGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
+/** One lump of a cliff, with moss where it faces the sky and darker rock towards the bottom. */
+function cliffLump(
+  seed: number,
+  sx: number,
+  sy: number,
+  sz: number,
+  x: number,
+  y: number,
+  z: number,
+): THREE.BufferGeometry {
+  const raw = new THREE.IcosahedronGeometry(1, 3);
+  raw.deleteAttribute("normal");
+  raw.deleteAttribute("uv");
+  const g = mergeVertices(raw);
+  const pos = g.getAttribute("position");
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    // Blocky ledges: the rock is pushed in and out in steps as it rises.
+    const ledge = Math.round((v.y + seed) * 2.6) / 2.6 - seed;
+    const bump =
+      1 +
+      0.16 * Math.sin(v.x * 3.3 + seed) * Math.cos(v.z * 2.7 - seed) +
+      0.09 * Math.sin(ledge * 7.1 + seed * 2);
+    v.set(v.x * bump * sx, (v.y * 0.7 + ledge * 0.3) * sy, v.z * bump * sz);
+    pos.setXYZ(i, v.x + x, v.y + y, v.z + z);
+  }
+  g.computeVertexNormals();
+  const normal = g.getAttribute("normal");
+  const colors = new Float32Array(pos.count * 3);
+  const low = new THREE.Color(0x77705f);
+  const high = new THREE.Color(0xb1a993);
+  const moss = new THREE.Color(0x5f9a44);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const lift = Math.max(0, Math.min(1, (pos.getY(i) + 0.5) / 2));
+    c.copy(low).lerp(high, lift);
+    c.lerp(moss, Math.max(0, Math.min(1, (normal.getY(i) - 0.6) * 3.2)) * 0.85);
+    colors.set([c.r, c.g, c.b], i * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return g;
+}
+
+/** A great stack of boulders, about 1 across and 2 tall before it's scaled. */
+export function cliffGeometry(): THREE.BufferGeometry {
+  return merge([
+    cliffLump(1.3, 1, 1.5, 0.95, 0, 0.5, 0),
+    cliffLump(2.7, 0.72, 0.95, 0.7, 0.62, -0.1, 0.34),
+    cliffLump(4.1, 0.66, 0.8, 0.8, -0.58, -0.25, -0.3),
+    cliffLump(5.9, 0.5, 0.62, 0.5, 0.12, 1.45, -0.1),
+  ]);
+}
+
+/** The great boulders at the back of the crew's island. */
+export function homeCliffs(): THREE.Group {
+  const rng = createRng(0xc11f);
+  const items: PropInstance[] = HOME_CLIFFS.map((c) => ({
+    x: c.x,
+    y: c.y,
+    rotation: rng() * Math.PI * 2,
+    scale: new THREE.Vector3(c.r * 0.92, c.r * (0.95 + rng() * 0.5), c.r * 0.92),
+    sink: -0.4,
+  }));
+  const group = new THREE.Group();
+  group.add(instanced(cliffGeometry(), items, true, vertexColored(), homeHeight));
+  return group;
+}
+
 export function pebblesGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const stones = [
@@ -401,7 +473,7 @@ export function instanced(
   items: readonly PropInstance[],
   castShadow = true,
   material: THREE.Material = vertexColored(),
-  ground: (x: number, y: number) => number = terrainHeight,
+  ground: (x: number, y: number) => number = homeHeight,
 ): THREE.InstancedMesh {
   const meshes = new THREE.InstancedMesh(geometry, material, Math.max(1, items.length));
   meshes.count = items.length;
@@ -432,7 +504,7 @@ export function chunked(
   items: readonly PropInstance[],
   castShadow: boolean,
   material: THREE.Material,
-  ground: (x: number, y: number) => number = terrainHeight,
+  ground: (x: number, y: number) => number = homeHeight,
 ): THREE.Group {
   const cells = new Map<string, PropInstance[]>();
   for (const it of items) {
@@ -447,9 +519,14 @@ export function chunked(
 }
 
 /** Calls `visit` at jittered points on a grid over the island, `cell` meters apart. */
-function sample(rng: Rng, cell: number, visit: (x: number, y: number) => void): void {
-  for (let gx = -ISLAND_EXTENT; gx < ISLAND_EXTENT; gx += cell) {
-    for (let gy = -ISLAND_EXTENT; gy < ISLAND_EXTENT; gy += cell) {
+function sample(
+  rng: Rng,
+  cell: number,
+  visit: (x: number, y: number) => void,
+  extent = ISLAND_EXTENT,
+): void {
+  for (let gx = -extent; gx < extent; gx += cell) {
+    for (let gy = -extent; gy < extent; gy += cell) {
       visit(gx + rng() * cell, gy + rng() * cell);
     }
   }
@@ -468,10 +545,14 @@ function item(rng: Rng, x: number, y: number, size: number, squash = 1): PropIns
 export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
   const root = new THREE.Group();
   const rng = createRng(layout.seed + 17);
+  const shape = layout.shape ?? HOME_SHAPE;
+  const ground = (x: number, y: number) => Math.max(0, shape.height(x, y));
+  const extent = shape.reach;
 
-  // The rules' own obstacles: palms (walk-through) and boulders (cover).
+  // The rules' own obstacles: palms (walk-through), boulders and cliffs (cover).
   const palms: PropInstance[] = [];
   const rocks: PropInstance[] = [];
+  const cliffs: PropInstance[] = [];
   for (const o of layout.obstacles) {
     const base = {
       x: o.pos.x,
@@ -482,6 +563,14 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     if (o.kind === "palm") palms.push({ ...base, scale: new THREE.Vector3().setScalar(o.scale) });
     if (o.kind === "rock")
       rocks.push({ ...base, scale: new THREE.Vector3(o.scale * 1.1, o.scale, o.scale * 0.95) });
+    if (o.kind === "cliff") {
+      const tall = o.scale * (1.25 + rng() * 0.7);
+      cliffs.push({
+        ...base,
+        scale: new THREE.Vector3(o.scale * 1.08, tall, o.scale * 1.08),
+        sink: -0.3,
+      });
+    }
   }
   const bushes = layout.decor.map((d) => ({
     x: d.pos.x,
@@ -494,50 +583,66 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
   const trees: PropInstance[] = [];
   const ears: PropInstance[] = [];
   const pebbles: PropInstance[] = [];
-  sample(rng, 3.2, (x, y) => {
-    const j = map.jungle(x, y);
-    if (j < 0.15 || map.room(x, y) < 2.5) return;
-    const roll = rng();
-    if (roll < j * 0.42) trees.push(item(rng, x, y, 0.8 + rng() * 0.75));
-    else if (roll < j * 0.52) palms.push(item(rng, x, y, 0.9 + rng() * 0.45));
-    else if (roll < j * 0.75) ears.push(item(rng, x, y, 0.8 + rng() * 0.6));
-    else if (roll < j * 0.8) pebbles.push(item(rng, x, y, 0.7 + rng() * 0.9));
-  });
+  sample(
+    rng,
+    3.2,
+    (x, y) => {
+      const j = map.jungle(x, y);
+      if (j < 0.15 || map.room(x, y) < 2.5) return;
+      const roll = rng();
+      if (roll < j * 0.42) trees.push(item(rng, x, y, 0.8 + rng() * 0.75));
+      else if (roll < j * 0.52) palms.push(item(rng, x, y, 0.9 + rng() * 0.45));
+      else if (roll < j * 0.75) ears.push(item(rng, x, y, 0.8 + rng() * 0.6));
+      else if (roll < j * 0.8) pebbles.push(item(rng, x, y, 0.7 + rng() * 0.9));
+    },
+    extent,
+  );
 
   // Low plants on the open grass: ferns, flowers and tufts, kept off the trail and buildings.
   const ferns: PropInstance[] = [];
   const flowers: PropInstance[][] = [[], [], []];
   const tufts: PropInstance[] = [];
-  sample(rng, 2.1, (x, y) => {
-    const g = map.grass(x, y);
-    if (g < 0.5 || map.room(x, y) < 1.1 || map.trail(x, y) < 2.6) return;
-    const j = map.jungle(x, y);
-    const roll = rng();
-    if (roll < 0.14 + 0.45 * j) ferns.push(item(rng, x, y, 0.7 + rng() * 0.6));
-    else if (roll < 0.19 + 0.5 * j)
-      flowers[Math.floor(rng() * 3)]?.push(item(rng, x, y, 0.9 + rng() * 0.6));
-  });
-  sample(rng, 1.5, (x, y) => {
-    const g = map.grass(x, y);
-    if (g < 0.2 || map.room(x, y) < 0.7 || map.trail(x, y) < 1.9) return;
-    if (rng() < 0.3 + 0.2 * (1 - g)) tufts.push(item(rng, x, y, 0.7 + rng() * 0.8));
-  });
+  sample(
+    rng,
+    2.1,
+    (x, y) => {
+      const g = map.grass(x, y);
+      if (g < 0.5 || map.room(x, y) < 1.1 || map.trail(x, y) < 2.6) return;
+      const j = map.jungle(x, y);
+      const roll = rng();
+      if (roll < 0.14 + 0.45 * j) ferns.push(item(rng, x, y, 0.7 + rng() * 0.6));
+      else if (roll < 0.19 + 0.5 * j)
+        flowers[Math.floor(rng() * 3)]?.push(item(rng, x, y, 0.9 + rng() * 0.6));
+    },
+    extent,
+  );
+  sample(
+    rng,
+    1.5,
+    (x, y) => {
+      const g = map.grass(x, y);
+      if (g < 0.2 || map.room(x, y) < 0.7 || map.trail(x, y) < 1.9) return;
+      if (rng() < 0.3 + 0.2 * (1 - g)) tufts.push(item(rng, x, y, 0.7 + rng() * 0.8));
+    },
+    extent,
+  );
 
   const sway = swaying();
   const low = swaying(false);
   root.add(
-    chunked(palmGeometry(), palms, true, sway),
-    chunked(jungleTreeGeometry(), trees, true, sway),
-    chunked(elephantEarGeometry(), ears, false, sway),
-    instanced(rockGeometry(), rocks),
-    instanced(pebblesGeometry(), pebbles),
-    instanced(bushGeometry(), bushes, true, low),
-    chunked(fernGeometry(), ferns, false, low),
-    chunked(flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], false, low),
-    chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, low),
-    chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, low),
-    chunked(tuftGeometry(), tufts, false, low),
-    buildShore(layout.seed, map, layout.spawn),
+    chunked(palmGeometry(), palms, true, sway, ground),
+    chunked(jungleTreeGeometry(), trees, true, sway, ground),
+    chunked(elephantEarGeometry(), ears, false, sway, ground),
+    instanced(rockGeometry(), rocks, true, vertexColored(), ground),
+    instanced(cliffGeometry(), cliffs, true, swaying(true, true), ground),
+    instanced(pebblesGeometry(), pebbles, true, vertexColored(), ground),
+    instanced(bushGeometry(), bushes, true, low, ground),
+    chunked(fernGeometry(), ferns, false, low, ground),
+    chunked(flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], false, low, ground),
+    chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, low, ground),
+    chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, low, ground),
+    chunked(tuftGeometry(), tufts, false, low, ground),
+    buildShore(layout.seed, map, layout.spawn, ground, 5, shape),
   );
   return root;
 }
@@ -550,32 +655,44 @@ export function buildShore(
   seed: number,
   map: SceneryMap,
   landing: Vec2,
-  ground: (x: number, y: number) => number = terrainHeight,
+  ground: (x: number, y: number) => number = homeHeight,
   inland = 5,
+  shape: IslandShape = HOME_SHAPE,
 ): THREE.Group {
   const rng = createRng(seed + 29);
+  const extent = shape.reach;
   const palms: PropInstance[] = [];
-  sample(rng, 4, (x, y) => {
-    const sd = shoreDistance(x, y);
-    const top = beachWidth(x, y);
-    if (sd < top - 3 || sd > top + inland || map.room(x, y) < 2 || map.trail(x, y) < 4) return;
-    if (rng() < 0.16) palms.push(item(rng, x, y, 0.85 + rng() * 0.4));
-  });
+  sample(
+    rng,
+    4,
+    (x, y) => {
+      const sd = shape.shoreDistance(x, y);
+      const top = shape.beachWidth(x, y);
+      if (sd < top - 3 || sd > top + inland || map.room(x, y) < 2 || map.trail(x, y) < 4) return;
+      if (rng() < 0.16) palms.push(item(rng, x, y, 0.85 + rng() * 0.4));
+    },
+    extent,
+  );
 
   const driftwood: PropInstance[] = [];
   const stars: PropInstance[][] = [[], []];
   const shells: PropInstance[] = [];
-  sample(rng, 3, (x, y) => {
-    const sd = shoreDistance(x, y);
-    if (sd < 0.6 || sd > beachWidth(x, y) - 1 || map.room(x, y) < 2) return;
-    if (Math.hypot(x - landing.x, y - landing.y) < 7) return;
-    const roll = rng();
-    if (sd > 4 && roll < 0.018)
-      driftwood.push({ ...item(rng, x, y, 0.8 + rng() * 0.5), sink: -0.05 });
-    else if (sd < 4.5 && roll < 0.07)
-      stars[rng() < 0.6 ? 0 : 1]?.push({ ...item(rng, x, y, 0.9 + rng() * 0.6), sink: 0.01 });
-    else if (roll < 0.12) shells.push({ ...item(rng, x, y, 0.8 + rng() * 0.8), sink: 0.01 });
-  });
+  sample(
+    rng,
+    3,
+    (x, y) => {
+      const sd = shape.shoreDistance(x, y);
+      if (sd < 0.6 || sd > shape.beachWidth(x, y) - 1 || map.room(x, y) < 2) return;
+      if (Math.hypot(x - landing.x, y - landing.y) < 7) return;
+      const roll = rng();
+      if (sd > 4 && roll < 0.018)
+        driftwood.push({ ...item(rng, x, y, 0.8 + rng() * 0.5), sink: -0.05 });
+      else if (sd < 4.5 && roll < 0.07)
+        stars[rng() < 0.6 ? 0 : 1]?.push({ ...item(rng, x, y, 0.9 + rng() * 0.6), sink: 0.01 });
+      else if (roll < 0.12) shells.push({ ...item(rng, x, y, 0.8 + rng() * 0.8), sink: 0.01 });
+    },
+    extent,
+  );
 
   const root = new THREE.Group();
   const still = vertexColored();

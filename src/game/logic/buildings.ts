@@ -41,7 +41,16 @@ export type DefenseAttack =
       flightTime: number;
       splash: number;
     }
-  | { kind: "flame"; range: number; damage: number; reload: number; coneHalfAngle: number };
+  | { kind: "flame"; range: number; damage: number; reload: number; coneHalfAngle: number }
+  | {
+      /** One hard shot from far away, after holding its aim long enough for anyone to see it. */
+      kind: "sniper";
+      range: number;
+      damage: number;
+      reload: number;
+      speed: number;
+      aimTime: number;
+    };
 
 export interface BuildingSpec {
   label: string;
@@ -97,7 +106,15 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
     energy: 4,
     attack: { kind: "flame", range: 9.5, damage: 28, reload: 0.13, coneHalfAngle: 0.45 },
   },
-  watchtower: { label: "Watchtower", radius: 2.3, height: 9, hp: 700, energy: 3 },
+  watchtower: {
+    label: "Watchtower",
+    radius: 2.3,
+    height: 9,
+    hp: 700,
+    energy: 3,
+    // Any faster and a shot could step clean over a hero between one tick and the next.
+    attack: { kind: "sniper", range: 32, damage: 200, reload: 3, speed: 60, aimTime: 1.2 },
+  },
   // Not a building in a raid: it goes down as a hidden mine, which nothing can target.
   landmine: { label: "Land mine", radius: 0.5, height: 0.3, hp: 1, energy: 0 },
   goldMine: { label: "Gold mine", radius: 3.7, height: 3.9, hp: 900, energy: 3 },

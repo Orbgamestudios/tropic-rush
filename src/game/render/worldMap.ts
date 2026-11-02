@@ -5,6 +5,8 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { HOME_SHAPE, type IslandShape } from "../logic/island";
+import { islandShape } from "../logic/islandShapes";
 import { createRng } from "../logic/rng";
 import { clamp, lerp } from "../logic/vec";
 import {
@@ -24,7 +26,6 @@ import {
   bushGeometry,
   instanced,
   jungleTreeGeometry,
-  lump,
   type PropInstance,
   palmGeometry,
   swaying,
@@ -142,66 +143,136 @@ function newBatch(): Batch {
   };
 }
 
-/** One island's coast, a few overlapping blobs of sand and grass, and its trees. */
-function addLand(batch: Batch, seed: number, x: number, z: number, radius: number): void {
-  const rng = createRng(seed);
-  // The land turns as one, so no two coasts face the same way.
-  const turn = rng() * Math.PI * 2;
-  const place = (g: THREE.BufferGeometry, y = 0) => {
-    g.rotateY(turn);
-    g.translate(x, y, z);
-    return g;
-  };
-  const shelf = new THREE.PlaneGeometry(radius * 4.4, radius * 3.4);
-  shelf.rotateX(-Math.PI / 2);
-  batch.shallows.push(place(shelf, 0.05));
-  const blob = (bx: number, bz: number, size: number, stretch: number, detail: number) => {
-    const sand = lump(radius * size * 1.2, detail, seed % 100, COLORS.sand);
-    sand.scale(1, 0.14, stretch);
-    sand.translate(bx, 0, bz);
-    const grass = lump(radius * size, detail, (seed % 100) + 3, 0x6fbf4c);
-    grass.scale(0.95, 0.2, stretch * 0.87);
-    grass.translate(bx, 0.25, bz - radius * 0.04);
-    batch.land.push(place(sand), place(grass));
-  };
-  blob(0, 0, 1, 0.7 + rng() * 0.3, 2);
-  // One or two headlands off the main body, for a coastline with some shape.
-  const headlands = 1 + Math.floor(rng() * 2);
-  for (let i = 0; i < headlands; i++) {
-    const a = rng() * Math.PI * 2;
-    blob(Math.cos(a) * radius * 0.75, Math.sin(a) * radius * 0.5, 0.42 + rng() * 0.2, 0.8, 1);
+/** A map island is drawn from this many samples of the real island's land, each way. */
+const MODEL_CELLS = 30;
+
+/** Where an island's land lies: its middle, and how far it reaches from there. */
+function landBounds(shape: IslandShape): { x: number; z: number; reach: number } {
+  let west = Infinity;
+  let east = -Infinity;
+  let north = Infinity;
+  let south = -Infinity;
+  for (let x = -shape.reach; x <= shape.reach; x += 6) {
+    for (let z = -shape.reach; z <= shape.reach; z += 6) {
+      if (shape.shoreDistance(x, z) <= 0) continue;
+      west = Math.min(west, x);
+      east = Math.max(east, x);
+      north = Math.min(north, z);
+      south = Math.max(south, z);
+    }
   }
-  const count = Math.round(5 + radius * 1.6);
-  for (let i = 0; i < count; i++) {
-    const a = rng() * Math.PI * 2;
-    const r = radius * (0.5 + rng() * 0.42);
-    const lx = Math.cos(a) * r;
-    const lz = Math.sin(a) * r * 0.72;
+  return {
+    x: (west + east) / 2,
+    z: (north + south) / 2,
+    reach: Math.max(east - west, south - north) / 2 + 3,
+  };
+}
+
+/** One island in miniature: its true coast and hills, shrunk onto the map. */
+function addLand(
+  batch: Batch,
+  seed: number,
+  x: number,
+  z: number,
+  radius: number,
+  shape: IslandShape,
+): (wx: number, wz: number) => { x: number; y: number } {
+  const rng = createRng(seed);
+  const { x: mx, z: mz, reach } = landBounds(shape);
+  const scale = radius / reach;
+  const toMap = (wx: number, wz: number) => ({
+    x: x + (wx - mx) * scale,
+    y: z + (wz - mz) * scale,
+  });
+  const shelf = new THREE.PlaneGeometry(radius * 4.4, radius * 4.4);
+  shelf.rotateX(-Math.PI / 2);
+  shelf.translate(x, 0.05, z);
+  batch.shallows.push(shelf);
+
+  const sand = new THREE.Color(shape.blackSand ? 0x4a4648 : COLORS.sand);
+  const grass = new THREE.Color(0x6fbf4c);
+  const rock = new THREE.Color(0x6d6358);
+  const lava = new THREE.Color(0xff7a24);
+  const step = (reach * 2) / MODEL_CELLS;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const count = MODEL_CELLS + 1;
+  const color = new THREE.Color();
+  for (let j = 0; j < count; j++) {
+    for (let i = 0; i < count; i++) {
+      const wx = mx - reach + i * step;
+      const wz = mz - reach + j * step;
+      const sd = shape.shoreDistance(wx, wz);
+      const land = sd > 0;
+      const rise = land ? 0.2 + Math.max(0, shape.height(wx, wz)) * scale * 0.9 : -0.25;
+      positions.push(x + (wx - mx) * scale, rise, z + (wz - mz) * scale);
+      color.copy(sand);
+      if (sd > shape.beachWidth(wx, wz)) color.copy(grass);
+      if (shape.height(wx, wz) > 11) color.copy(rock);
+      if (shape.lava(wx, wz) > 0.3) color.copy(lava);
+      colors.push(color.r, color.g, color.b);
+    }
+  }
+  const landAt = (i: number, j: number) => (positions[(j * count + i) * 3 + 1] ?? -1) > 0;
+  for (let j = 0; j + 1 < count; j++) {
+    for (let i = 0; i + 1 < count; i++) {
+      if (!landAt(i, j) && !landAt(i + 1, j) && !landAt(i, j + 1) && !landAt(i + 1, j + 1))
+        continue;
+      const a = j * count + i;
+      const b = a + 1;
+      const c = a + count;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  batch.land.push(g);
+
+  const trees = Math.round(6 + radius * 2.4);
+  for (let i = 0, made = 0; i < trees * 12 && made < trees; i++) {
+    const wx = mx + (rng() - 0.5) * reach * 1.9;
+    const wz = mz + (rng() - 0.5) * reach * 1.9;
+    if (shape.shoreDistance(wx, wz) <= shape.beachWidth(wx, wz) * 0.6) continue;
+    if (shape.lava(wx, wz) > 0 || shape.height(wx, wz) > 9) continue;
+    made++;
+    const spot = toMap(wx, wz);
     const item: PropInstance = {
-      x: x + lx * Math.cos(turn) + lz * Math.sin(turn),
-      y: z - lx * Math.sin(turn) + lz * Math.cos(turn),
+      x: spot.x,
+      y: spot.y,
       rotation: rng() * 6.28,
-      scale: new THREE.Vector3().setScalar(0.28 + rng() * 0.14),
+      scale: new THREE.Vector3().setScalar(0.24 + rng() * 0.12),
     };
     const roll = rng();
     (roll < 0.4 ? batch.palms : roll < 0.7 ? batch.trees : batch.bushes).push(item);
   }
+  return toMap;
+}
+
+/** The land a map island shows: player islands are all crew islands. */
+function mapShape(island: MapIsland): IslandShape {
+  return island.archetype === "player" ? HOME_SHAPE : islandShape(island.seed, island.hq);
 }
 
 function addIsland(batch: Batch, island: MapIsland): void {
   const radius = islandRadius(island.size);
-  addLand(batch, island.seed, island.x, island.y, radius);
+  const shape = mapShape(island);
+  const toMap = addLand(batch, island.seed, island.x, island.y, radius, shape);
   // A taste of the base: a headquarters, and towers the harder it gets. Square on, like home.
   const scale = new THREE.Vector3().setScalar(0.16 + island.size * 0.05);
-  const base = { x: island.x, y: island.y, rotation: 0, scale };
-  (island.taken ? batch.crewHqs : batch.enemyHqs).push(base);
+  const base = { ...toMap(shape.base.x, shape.base.y), rotation: 0, scale };
+  (island.taken || island.rival ? batch.crewHqs : batch.enemyHqs).push(base);
   if (island.taken) return;
   const towers = Math.min(3, 1 + Math.floor(island.hq / 5));
   for (let i = 0; i < towers; i++) {
     const a = i * 2.2 + 0.6;
     batch.towers.push({
-      x: island.x + Math.cos(a) * radius * 0.5,
-      y: island.y + Math.sin(a) * radius * 0.36,
+      x: base.x + Math.cos(a) * radius * 0.34,
+      y: base.y + Math.sin(a) * radius * 0.26,
       rotation: 0,
       scale: new THREE.Vector3().setScalar(0.18),
     });
@@ -338,7 +409,7 @@ export class WorldMapView {
 
     // Home in the middle, and the gunboat at anchor beside it.
     const home = newBatch();
-    addLand(home, 5, 0, 0, 6.5);
+    addLand(home, 5, 0, 0, 6.5, HOME_SHAPE);
     home.crewHqs.push({
       x: 0,
       y: 0,
@@ -433,7 +504,7 @@ export class WorldMapView {
   private lookOf(region: string): string {
     return this.islands
       .filter((i) => i.region === region)
-      .map((i) => `${i.id}${i.taken ? "t" : ""}${i.hq}`)
+      .map((i) => `${i.id}${i.taken ? "t" : ""}${i.hq}${i.seed}`)
       .join();
   }
 
@@ -472,7 +543,8 @@ export class WorldMapView {
     for (const s of this.smoke) this.root.remove(s.puff);
     this.smoke.length = 0;
     for (const island of this.islands) {
-      if (!island.retaken) continue;
+      // Volcanoes smoke too, which makes them easy to spot across the map.
+      if (!island.retaken && island.archetype !== "volcano") continue;
       this.smokeMaterials.forEach((material, i) => {
         const puff = new THREE.Sprite(material);
         this.root.add(puff);

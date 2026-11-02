@@ -9,8 +9,9 @@
 
 import { avatarUrl } from "../logic/avatars";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
-import type { Tool } from "../logic/crewIsland";
-import { formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
+import type { RivalRaid, Tool } from "../logic/crewIsland";
+import type { CrystalKind } from "../logic/crystals";
+import { costText, formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
 import type { NightRaid } from "../logic/nightRaid";
 import type { Member } from "../net/protocol";
 import { buildingIcon } from "../render/thumbnails";
@@ -19,6 +20,8 @@ import {
   closeOnBackdrop,
   confirmTap,
   costChips,
+  crystalChip,
+  crystalIcon,
   el,
   layerPlacer,
   levelBadge,
@@ -34,6 +37,8 @@ export interface CrewUiHandlers {
   onProfile(): void;
   /** Straight to the world map. */
   onMap(): void;
+  /** Straight to the hero screen. */
+  onHeroes(): void;
   onCreate(name: string): void;
   onJoin(name: string, code: string): void;
   onOffline(name: string): void;
@@ -49,6 +54,30 @@ export interface CrewUiHandlers {
   onNightPanel(): void;
   onNightRaidNow(): void;
   onNightReplay(): void;
+  onStatuesPanel(): void;
+  /** Gives a statue all the crystals of its kind the player can spare. */
+  onStatueGive(kind: CrystalKind): void;
+  onStatueRestore(kind: CrystalKind): void;
+}
+
+/** A row of the statues panel. */
+export interface StatueRow {
+  kind: CrystalKind;
+  name: string;
+  found: boolean;
+  restored: boolean;
+  /** What it does, or the clue to where it lies. */
+  text: string;
+  /** Where it stands: crystals so far, time left. */
+  status: string;
+  crystals: number;
+  need: number;
+  /** How many of this crystal the player has to give. */
+  have: number;
+  canGive: boolean;
+  canRestore: boolean;
+  /** Why it can't be restored yet, once it has its crystals. */
+  blocker: string | null;
 }
 
 /** What the clearing panel shows for a tapped obstacle. */
@@ -135,11 +164,9 @@ export class CrewUi {
   private readonly tabs = new Map<Category, HTMLButtonElement>();
   private readonly buildButton: HTMLButtonElement;
   private readonly mapButton: HTMLButtonElement;
+  private readonly heroButton: HTMLButtonElement;
   private readonly buildLabel = el("span", "crew-build-label", "Build");
   private readonly avatars = el("div", "crew-avatars");
-  private readonly progressLabel = el("span", "crew-progress-label");
-  private readonly progressFill = el("span", "crew-progress-fill");
-  private readonly buildersLabel = el("span", "crew-progress-label");
   private readonly clearing = el("div", "crew-clearing");
   private readonly clearTitle = el("div", "crew-clearing-title");
   private readonly clearTool = el("div", "crew-clearing-tool");
@@ -156,7 +183,12 @@ export class CrewUi {
   private readonly nightNext = el("p", "crew-join-text");
   private readonly nightResult = el("div", "crew-night-result");
   private readonly nightStats = el("div", "crew-night-stats");
+  private readonly nightLoot = el("div", "crew-night-loot");
+  private readonly nightLog = el("div", "crew-night-log");
   private readonly nightReplay: HTMLButtonElement;
+  private readonly statuesPanel = el("div", "crew-join crew-statues");
+  private readonly statueRows = el("div", "crew-statue-rows");
+  private lastStatuesKey = "";
   private readonly resourceItems = new Map<
     Resource,
     { amount: HTMLSpanElement; fill: HTMLSpanElement; root: HTMLDivElement; rate: HTMLSpanElement }
@@ -225,23 +257,6 @@ export class CrewUi {
       resources.append(item);
       this.resourceItems.set(r, { amount, fill, root: item, rate });
     }
-    const progress = el("div", "crew-progress");
-    const track = el("div", "crew-progress-track");
-    track.append(this.progressFill);
-    progress.append(
-      icon("map", "crew-progress-icon"),
-      this.progressLabel,
-      track,
-      icon("hammer", "crew-progress-icon"),
-      this.buildersLabel,
-    );
-    const toolsButton = button({
-      label: "Tools",
-      icon: "hammer",
-      variant: "steel",
-      size: "sm",
-      onClick: () => handlers.onToolsPanel(),
-    });
     const night = button({
       label: "Night raid",
       icon: "skull",
@@ -252,8 +267,8 @@ export class CrewUi {
     });
     const right = el("div", "crew-top-right");
     const topButtons = el("div", "crew-top-buttons");
-    topButtons.append(toolsButton, night);
-    right.append(resources, progress, topButtons);
+    topButtons.append(night);
+    right.append(resources, topButtons);
     const menu = button({
       icon: "pause",
       aria: "Menu",
@@ -285,6 +300,23 @@ export class CrewUi {
       this.tabs.set(name, tab);
       tabRow.append(tab);
     }
+    // These open a panel of their own rather than a row of cards.
+    const panels = el("div", "crew-tab-panels");
+    for (const [label, tabIcon, open] of [
+      ["Tools", "gear", handlers.onToolsPanel],
+      ["Statues", "star", handlers.onStatuesPanel],
+    ] as const) {
+      const tab = el("button", "crew-tab");
+      tab.setAttribute("aria-label", label);
+      tab.append(icon(tabIcon, "crew-tab-icon"), el("span", "crew-tab-label", label));
+      tab.addEventListener("click", () => {
+        sfx.press();
+        this.setDrawer(false);
+        open();
+      });
+      panels.append(tab);
+    }
+    tabRow.append(panels);
     this.drawer.append(tabRow, this.cards);
     // One round button opens and closes the drawer.
     this.buildButton = button({
@@ -311,6 +343,16 @@ export class CrewUi {
       onClick: () => handlers.onMap(),
     });
     this.mapButton.append(el("span", "crew-build-label", "Map"));
+    this.heroButton = button({
+      icon: "rank",
+      aria: "Heroes",
+      round: true,
+      variant: "blue",
+      size: "lg",
+      className: "crew-heroes",
+      onClick: () => handlers.onHeroes(),
+    });
+    this.heroButton.append(el("span", "crew-build-label", "Heroes"));
     // Anything pressed outside the build menu closes it.
     window.addEventListener(
       "pointerdown",
@@ -466,7 +508,14 @@ export class CrewUi {
       }),
       this.nightReplay,
     );
-    nightCard.body.append(this.nightNext, this.nightResult, this.nightStats, nightButtons);
+    nightCard.body.append(
+      this.nightNext,
+      this.nightResult,
+      this.nightStats,
+      this.nightLoot,
+      this.nightLog,
+      nightButtons,
+    );
     nightCard.root.append(
       button({
         icon: "close",
@@ -479,6 +528,22 @@ export class CrewUi {
       }),
     );
     this.night.append(nightCard.root);
+
+    // The ancient statues: which are found, and what each still needs.
+    const statueCard = panel("Ancient statues", "crew-night-card");
+    statueCard.body.append(this.statueRows);
+    statueCard.root.append(
+      button({
+        icon: "close",
+        aria: "Close statues",
+        round: true,
+        variant: "red",
+        size: "sm",
+        className: "crew-join-close",
+        onClick: () => this.hideStatues(),
+      }),
+    );
+    this.statuesPanel.append(statueCard.root);
 
     const closeJoin = button({
       icon: "close",
@@ -497,28 +562,33 @@ export class CrewUi {
       this.drawer,
       this.buildButton,
       this.mapButton,
+      this.heroButton,
       this.selection,
       this.clearing,
       this.toast,
       this.join,
       this.toolsPanel,
       this.night,
+      this.statuesPanel,
       this.fx,
     );
     this.setDrawer(false);
     closeOnBackdrop(this.join, () => this.hideJoin());
     closeOnBackdrop(this.toolsPanel, () => this.hideTools());
     closeOnBackdrop(this.night, () => this.hideNight());
+    closeOnBackdrop(this.statuesPanel, () => this.hideStatues());
     for (const node of [
       top,
       this.drawer,
       this.buildButton,
       this.mapButton,
+      this.heroButton,
       this.selection,
       this.clearing,
       this.join,
       this.toolsPanel,
       this.night,
+      this.statuesPanel,
     ]) {
       node.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
@@ -563,10 +633,12 @@ export class CrewUi {
     this.fitMapButton();
   }
 
-  /** The Map button makes way for the build menu, when that's what's showing. */
+  /** The Map button makes way for the build menu, and the Hero button for any panel down there. */
   private fitMapButton(): void {
     const showing = this.drawerOpen && this.drawer.style.display !== "none";
     this.mapButton.style.display = showing ? "none" : "";
+    const panelUp = this.buildButton.style.display === "none";
+    this.heroButton.style.display = showing || panelUp ? "none" : "";
   }
 
   /** Sets how each build card looks (count, cost, locked); called every few frames. */
@@ -651,8 +723,11 @@ export class CrewUi {
     );
   }
 
-  /** Opens the night raid panel: when the next raid lands, and how the last one went. */
-  showNight(last: NightRaid | null, nextAt: number): void {
+  /**
+   * Opens the night raid panel: when the next raid lands, how the last one went, what it cost or
+   * paid, and any rival crews who've tried their luck.
+   */
+  showNight(last: NightRaid | null, nextAt: number, log: readonly RivalRaid[] = []): void {
     const hours = Math.max(0, nextAt - Date.now()) / 3_600_000;
     const h = Math.floor(hours);
     const m = Math.floor((hours - h) * 60);
@@ -664,11 +739,98 @@ export class CrewUi {
     this.nightStats.textContent = r
       ? `${r.destroyedPercent}% destroyed · ${r.raidersDown} of ${r.raiders} raiders down`
       : "No raids yet. Tap Raid now to test your defenses.";
+    this.nightLoot.replaceChildren();
+    if (r) {
+      const stolen = Object.keys(r.stolen).length > 0;
+      if (stolen) {
+        this.nightLoot.append(
+          el("span", "crew-night-lost", "Raiders took"),
+          costChips(costText(r.stolen)),
+        );
+      }
+      if (r.reward > 0) {
+        this.nightLoot.append(
+          el("span", "crew-night-won", "For holding the island"),
+          costChips(costText({ gold: r.reward })),
+        );
+      }
+      if (!stolen && r.reward === 0) this.nightLoot.append(el("span", "", "Nothing was taken."));
+    }
+    this.nightLog.replaceChildren(
+      ...log.slice(0, 3).map((raid) => {
+        const row = el("div", "crew-night-rival");
+        const said = raid.won ? `${raid.by} took the island` : `${raid.by} attacked and failed`;
+        row.append(el("span", "", said));
+        const gone = Object.keys(raid.stolen).length > 0;
+        if (gone) row.append(costChips(costText(raid.stolen)));
+        else if (raid.reward > 0) row.append(costChips(costText({ gold: raid.reward })));
+        return row;
+      }),
+    );
     this.night.style.display = "flex";
   }
 
   hideNight(): void {
     this.night.style.display = "none";
+  }
+
+  get statuesOpen(): boolean {
+    return this.statuesPanel.style.display === "flex";
+  }
+
+  /** Opens the statues panel, or brings it up to date while it's open. */
+  showStatues(rows: readonly StatueRow[]): void {
+    const key = JSON.stringify(rows);
+    this.statuesPanel.style.display = "flex";
+    if (key === this.lastStatuesKey) return;
+    this.lastStatuesKey = key;
+    this.statueRows.replaceChildren(...rows.map((row) => this.statueRow(row)));
+  }
+
+  private statueRow(row: StatueRow): HTMLElement {
+    const node = el(
+      "div",
+      `crew-statue${row.found ? "" : " lost"}${row.restored ? " restored" : ""}`,
+    );
+    const words = el("div", "crew-statue-words");
+    words.append(
+      el("div", "crew-statue-name", row.found ? row.name : "Undiscovered"),
+      el("div", "crew-statue-text", row.text),
+      el("div", "crew-statue-status", row.status),
+    );
+    const picture = el("div", "crew-statue-gem");
+    picture.append(crystalIcon(row.kind));
+    node.append(picture, words);
+    if (!row.found || row.restored) return node;
+    const actions = el("div", "crew-statue-actions");
+    if (row.canGive) {
+      const give = button({
+        label: "Give",
+        variant: "blue",
+        size: "sm",
+        onClick: () => this.handlers.onStatueGive(row.kind),
+      });
+      give.querySelector(".ui-btn-face")?.append(crystalChip(row.kind, row.have));
+      actions.append(give);
+    }
+    if (row.crystals >= row.need && row.status !== "") {
+      const restore = button({
+        label: "Restore",
+        icon: "hammer",
+        variant: "green",
+        size: "sm",
+        onClick: () => this.handlers.onStatueRestore(row.kind),
+      });
+      restore.disabled = !row.canRestore;
+      actions.append(restore);
+    }
+    if (row.blocker) actions.append(el("div", "crew-statue-blocker", row.blocker));
+    node.append(actions);
+    return node;
+  }
+
+  hideStatues(): void {
+    this.statuesPanel.style.display = "none";
   }
 
   /** True while the tools panel is open. */
@@ -683,17 +845,6 @@ export class CrewUi {
       count: 28,
       spread: 140,
     });
-  }
-
-  /** How much of the island's overgrowth is cleared, 0 to 1. */
-  setProgress(share: number): void {
-    this.progressLabel.textContent = `Cleared ${Math.floor(share * 100)}%`;
-    this.progressFill.style.width = `${share * 100}%`;
-  }
-
-  /** How many builders are busy, so nobody has to open a panel to find out. */
-  setBuilders(busy: number, total: number): void {
-    this.buildersLabel.textContent = `${busy}/${total}`;
   }
 
   /** Shows the clearing panel for a tapped obstacle, or hides it. */

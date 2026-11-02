@@ -4,7 +4,7 @@
 // raid are real people like this: there are no AI crewmates. No engine imports.
 
 import type { HeroKind } from "./heroes";
-import { heroPower, perkMods } from "./heroProgress";
+import { heroMods } from "./heroTrees";
 import type { IslandLayout } from "./island";
 import {
   createRaid,
@@ -26,15 +26,16 @@ export interface Seat {
   member: string;
   name: string;
   hero: HeroKind;
-  level: number;
+  /** The upgrades they own for that hero, so everyone's phone agrees what the hero can do. */
+  upgrades: string[];
 }
 
 export function createCoopRaid(layout: IslandLayout, seats: readonly Seat[]): RaidState {
   return createRaid(
     layout,
     seats.map((s) => s.hero),
-    seats.map((s) => heroPower(s.level)),
-    seats.map((s) => perkMods(s.hero, s.level)),
+    [],
+    seats.map((s) => heroMods(s.hero, s.upgrades)),
   );
 }
 
@@ -64,6 +65,10 @@ interface HeroSnap {
   spin: number;
   unsteady: number;
   target: number | null;
+  /** Seconds left of the boosts that change how fast a guest's own hero walks. */
+  rage: number;
+  haste: number;
+  iced: number;
 }
 
 type ProjectileSnap = [
@@ -91,6 +96,8 @@ export interface RaidSnapshot {
   heroes: HeroSnap[];
   /** Defenses aiming or firing, and any building whose health has changed: id, hp, aim, firing. */
   buildings: [number, number, number, number][];
+  /** Snipers taking aim: id and where their sights are. */
+  sights: [number, number, number][];
   projectiles: ProjectileSnap[];
   /** Mines by index: fuse (or -1), and 1 once exploded. */
   mines: [number, number, number][];
@@ -126,6 +133,10 @@ export function takeSnapshot(
     seen.set(b.id, b.hp);
     buildings.push([b.id, b.hp, b.aim, b.firing ? 1 : 0]);
   }
+  const sights: RaidSnapshot["sights"] = [];
+  for (const b of state.buildings) {
+    if (b.sights) sights.push([b.id, b.sights.x, b.sights.y]);
+  }
   const mines: RaidSnapshot["mines"] = [];
   state.mines.forEach((m, i) => {
     if (m.fuse !== null || m.exploded) mines.push([i, m.fuse ?? -1, m.exploded ? 1 : 0]);
@@ -147,8 +158,12 @@ export function takeSnapshot(
       spin: h.spin,
       unsteady: h.unsteady,
       target: h.targetId,
+      rage: h.rage,
+      haste: h.haste,
+      iced: h.iced,
     })),
     buildings,
+    sights,
     projectiles: state.projectiles.map(projectileSnap),
     mines,
     zones: state.zones,
@@ -183,6 +198,8 @@ function restoreProjectile(snap: ProjectileSnap): Projectile {
       peak: lob[6],
     },
     charges: 0,
+    homing: null,
+    smoke: false,
   };
 }
 
@@ -215,6 +232,9 @@ export function applySnapshot(
     h.spin = s.spin;
     h.unsteady = s.unsteady;
     h.targetId = s.target;
+    h.rage = s.rage;
+    h.haste = s.haste;
+    h.iced = s.iced;
     targets[i] = { x: s.x, y: s.y, facing: s.f };
     if (i === seat) {
       if (distance(h.pos, s) > SNAP_BACK) h.pos = { x: s.x, y: s.y };
@@ -230,6 +250,13 @@ export function applySnapshot(
     b.aim = aim;
     b.firing = firing !== 0;
     b.destroyed = hp <= 0;
+  }
+  for (const b of state.buildings) b.sights = null;
+  for (const [id, x, y] of snap.sights) {
+    const b = byId.get(id);
+    if (!b) continue;
+    b.sights = { x, y };
+    b.aim = Math.atan2(y - b.pos.y, x - b.pos.x);
   }
   state.projectiles = snap.projectiles.map(restoreProjectile);
   for (const [i, fuse, exploded] of snap.mines) {

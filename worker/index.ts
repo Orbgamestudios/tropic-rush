@@ -5,6 +5,8 @@
 //   GET  /api/crew/<code>/socket  -> WebSocket to that crew's island
 //   POST /api/account/<action>    -> sign up, log in, log out, check a password, and fetch or
 //                                    store a saved game
+//   POST /api/world/rivals        -> other crews near this one's strength, to raid
+//   POST /api/world/raid          -> tells a rival crew what just happened on their island
 //   anything else                 -> the game (static assets)
 
 import { DurableObject } from "cloudflare:workers";
@@ -17,31 +19,88 @@ import {
 } from "../src/game/logic/account";
 import { type Avatar, DEFAULT_AVATAR, readAvatar } from "../src/game/logic/avatars";
 import {
+  applyRivalRaid,
   type CrewLayout,
+  hqLevel,
   sanitizeLayout,
   starterLayout,
   tryOp,
 } from "../src/game/logic/crewIsland";
+import { type Purse, RESOURCES } from "../src/game/logic/economy";
+import { statueBuffs } from "../src/game/logic/statues";
 import {
   type ClientMessage,
   CREW_CODE_PATTERN,
+  type CrewEntry,
   cleanName,
   type Hold,
   MAX_CREW,
   MAX_RELAY,
   type Member,
   newCrewCode,
+  type RaidReport,
   type ServerMessage,
 } from "../src/game/net/protocol";
 import { PlayerAccount } from "./account";
+import { WorldDirectory } from "./world";
 
 interface Env {
   ASSETS: Fetcher;
   CREW_ISLAND: DurableObjectNamespace<CrewIsland>;
   ACCOUNT: DurableObjectNamespace<PlayerAccount>;
+  WORLD: DurableObjectNamespace<WorldDirectory>;
 }
 
-export { PlayerAccount };
+export { PlayerAccount, WorldDirectory };
+
+/** Crews offered to raid at once, and how often a crew's entry in the directory is refreshed. */
+const RIVALS_OFFERED = 6;
+const PUBLISH_EVERY_MS = 60_000;
+const MOST_STOLEN = 50_000;
+
+function directory(env: Env): DurableObjectStub<WorldDirectory> {
+  return env.WORLD.get(env.WORLD.idFromName("world"));
+}
+
+/** Only numbers we expect, from a report that came off somebody's phone. */
+function readLoot(value: unknown): Partial<Purse> {
+  const raw = (value ?? {}) as Partial<Record<keyof Purse, unknown>>;
+  const loot: Partial<Purse> = {};
+  for (const r of RESOURCES) {
+    const v = raw[r];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) loot[r] = Math.min(v, MOST_STOLEN);
+  }
+  return loot;
+}
+
+async function handleWorld(action: string, request: Request, env: Env): Promise<Response> {
+  let body: Partial<RaidReport> & { code?: unknown; hq?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return Response.json({ ok: false, error: "Bad request" }, { status: 400 });
+  }
+  if (action === "rivals") {
+    const code = typeof body.code === "string" ? body.code : "";
+    const hq = typeof body.hq === "number" && Number.isFinite(body.hq) ? body.hq : 1;
+    const crews = await directory(env).rivals(code, hq, RIVALS_OFFERED);
+    return Response.json({ crews });
+  }
+  if (action === "raid") {
+    const target = typeof body.target === "string" ? body.target : "";
+    if (!CREW_CODE_PATTERN.test(target)) return Response.json({ ok: false }, { status: 400 });
+    const by = cleanName(typeof body.by === "string" ? body.by : "") || "A rival crew";
+    const percent = typeof body.destroyedPercent === "number" ? body.destroyedPercent : 0;
+    await env.CREW_ISLAND.get(env.CREW_ISLAND.idFromName(target)).rivalRaid({
+      by,
+      won: body.won === true,
+      destroyedPercent: percent,
+      loot: readLoot(body.loot),
+    });
+    return Response.json({ ok: true });
+  }
+  return new Response("Not found", { status: 404 });
+}
 
 /** Accounts: checks what can be checked here, then hands over to that player's own object. */
 async function handleAccount(action: string, request: Request, env: Env): Promise<Response> {
@@ -102,6 +161,10 @@ export default {
     if (accountAction && request.method === "POST") {
       return handleAccount(accountAction[1] ?? "", request, env);
     }
+    const worldAction = url.pathname.match(/^\/api\/world\/([a-z]+)$/);
+    if (worldAction && request.method === "POST") {
+      return handleWorld(worldAction[1] ?? "", request, env);
+    }
     if (url.pathname.startsWith("/api/")) return new Response("Not found", { status: 404 });
     return env.ASSETS.fetch(request);
   },
@@ -123,6 +186,34 @@ export class CrewIsland extends DurableObject<Env> {
   // Cached between messages; reloaded from storage after the object hibernates.
   private layout: CrewLayout | null = null;
   private roster: RosterEntry[] | null = null;
+  private publishedAt = 0;
+
+  /** Keeps this crew's island in the world's directory, a minute out of date at most. */
+  private async publish(): Promise<void> {
+    const now = Date.now();
+    const { layout, roster } = this;
+    if (!layout || !roster || now - this.publishedAt < PUBLISH_EVERY_MS) return;
+    const code = await this.ctx.storage.get<string>("code");
+    if (!code) return;
+    this.publishedAt = now;
+    const { health, damage } = statueBuffs(layout.statues);
+    const entry: CrewEntry = {
+      code,
+      name: roster[0] ? `${roster[0].name}'s crew` : "A crew",
+      hq: hqLevel(layout),
+      buildings: layout.buildings.filter((b) => b.level > 0),
+      buffs: { health, damage },
+    };
+    await directory(this.env).publish(entry);
+  }
+
+  /** A rival crew's raid, told to us by the Worker. */
+  async rivalRaid(raid: Parameters<typeof applyRivalRaid>[1]): Promise<void> {
+    const { layout } = await this.load();
+    this.layout = applyRivalRaid(layout, raid, Date.now());
+    await this.ctx.storage.put("layout", this.layout);
+    this.broadcast(null);
+  }
 
   private async load(): Promise<{ layout: CrewLayout; roster: RosterEntry[] }> {
     this.layout ??= sanitizeLayout(
@@ -133,7 +224,9 @@ export class CrewIsland extends DurableObject<Env> {
     return { layout: this.layout, roster: this.roster };
   }
 
-  async fetch(): Promise<Response> {
+  async fetch(request: Request): Promise<Response> {
+    const code = new URL(request.url).pathname.match(/\/api\/crew\/([A-Z0-9]+)\/socket/)?.[1];
+    if (code) await this.ctx.storage.put("code", code);
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     // Hibernatable: the object can sleep between messages without dropping the connection.
@@ -169,6 +262,7 @@ export class CrewIsland extends DurableObject<Env> {
       await this.ctx.storage.put("roster", roster);
       ws.serializeAttachment({ memberId, name, hold: null } satisfies Attachment);
       this.broadcast(null);
+      await this.publish();
       return;
     }
     if (!me) return; // must say hello first
@@ -199,9 +293,9 @@ export class CrewIsland extends DurableObject<Env> {
       const target =
         op.kind === "place"
           ? op.building?.id
-          : op.kind === "clear" || op.kind === "toolUp" || op.kind === "loot"
-            ? undefined
-            : op.id;
+          : op.kind === "move" || op.kind === "remove" || op.kind === "upgrade"
+            ? op.id
+            : undefined;
       if (target && this.holderOf(target, me.memberId)) {
         send(ws, { t: "reject", opId: message.opId, reason: "A crewmate is moving that" });
         this.sendState(ws, null);
@@ -217,6 +311,7 @@ export class CrewIsland extends DurableObject<Env> {
       this.layout = next;
       await this.ctx.storage.put("layout", next);
       this.broadcast(me.name);
+      await this.publish();
     }
   }
 

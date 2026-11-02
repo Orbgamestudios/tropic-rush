@@ -15,7 +15,8 @@ export interface ProfileHandlers {
   onChange(changes: Pick<SaveData, "nickname" | "avatar">): void;
   onSignUp(username: string, password: string): Promise<string | null>;
   onLogIn(username: string, password: string): Promise<string | null>;
-  onLogOut(): void;
+  /** Null once it's done, or what's stopping it. */
+  onLogOut(): Promise<string | null>;
   onShare(): void;
   onCrew(): void;
   onClose(): void;
@@ -35,6 +36,7 @@ export class ProfileScreen {
   private readonly username = el("input", "crew-input");
   private readonly password = el("input", "crew-input");
   private readonly error = el("div", "crew-join-error");
+  private readonly logOutError = el("div", "crew-join-error");
   private readonly tiles = new Map<Avatar, HTMLButtonElement>();
   private busy = false;
 
@@ -116,16 +118,18 @@ export class ProfileScreen {
     );
     this.signedIn.append(
       this.who,
-      el("div", "profile-note", "Your progress is saved to your account."),
+      el(
+        "div",
+        "profile-note",
+        "Your progress is saved to your account. Logging out takes it off this phone.",
+      ),
+      this.logOutError,
       button({
         label: "Log out",
         icon: "close",
         variant: "steel",
         size: "sm",
-        onClick: () => {
-          handlers.onLogOut();
-          this.refresh();
-        },
+        onClick: () => void this.logOut(),
       }),
     );
     account.append(el("div", "profile-label", "Account"), this.signedOut, this.signedIn);
@@ -175,6 +179,16 @@ export class ProfileScreen {
     if (problem) sfx.error();
     else this.password.value = "";
     this.refresh();
+  }
+
+  private async logOut(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    this.logOutError.textContent = "";
+    const problem = await this.handlers.onLogOut();
+    this.busy = false;
+    this.logOutError.textContent = problem ?? "";
+    if (problem) sfx.error();
   }
 
   show(on: boolean): void {

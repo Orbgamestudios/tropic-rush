@@ -41,17 +41,24 @@ export class WorldLabels {
     fraction: number,
     wide = false,
     maxHp = 0,
+    name = "",
   ): void {
     const f = Math.max(0, Math.min(1, fraction));
     let bar = this.bars.get(id);
     if (!bar) {
       const root = document.createElement("div");
-      root.className = `bar bar-${style}${wide ? " bar-wide" : ""}`;
+      root.className = `bar bar-${style}${wide ? " bar-wide" : ""}${name ? " bar-named" : ""}`;
       const lag = document.createElement("div");
       lag.className = "bar-lag";
       const fill = document.createElement("div");
       fill.className = "bar-fill";
       root.append(lag, fill);
+      if (name) {
+        const tag = document.createElement("div");
+        tag.className = "bar-name";
+        tag.textContent = name;
+        root.append(tag);
+      }
       this.layer.append(root);
       bar = {
         root,

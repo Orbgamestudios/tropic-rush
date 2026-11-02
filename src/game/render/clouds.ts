@@ -6,11 +6,13 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { VIEW_YAW } from "../config";
-import { beachSide, shoreRadius } from "../logic/island";
+import { HOME_SHAPE, type IslandShape } from "../logic/island";
 import { createRng } from "../logic/rng";
 import { SKY } from "./sky";
 
-const PUFFS = 260;
+const PUFFS = 170;
+/** Keeps the biggest puffs off the land, so they never cover a fight on a thin island. */
+const OFF_THE_COAST = 14;
 
 export function cloudTexture(): THREE.CanvasTexture {
   const size = 256;
@@ -51,17 +53,25 @@ export interface CloudView {
   dispose(): void;
 }
 
-export function buildClouds(seed: number): CloudView {
+/** How far out from the middle the island's coast lies along a line, in meters. */
+function coastAlong(shape: IslandShape, angle: number): number {
+  for (let r = shape.reach; r > 0; r -= 3) {
+    if (shape.shoreDistance(Math.cos(angle) * r, Math.sin(angle) * r) > 0) return r;
+  }
+  return 30;
+}
+
+export function buildClouds(seed: number, shape: IslandShape = HOME_SHAPE): CloudView {
   const root = new THREE.Group();
   const texture = cloudTexture();
   const rng = createRng(seed + 404);
   const quads: THREE.BufferGeometry[] = [];
   for (let i = 0; i < PUFFS * 3 && quads.length < PUFFS; i++) {
     const angle = rng() * Math.PI * 2;
-    const radius = shoreRadius(angle) + 3 + rng() * 30;
+    const radius = coastAlong(shape, angle) + OFF_THE_COAST + rng() * 30;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
-    if (beachSide(x, y) > 0.12) continue;
+    if (shape.beachSide(x, y) > 0.12) continue;
     const size = 11 + rng() * 15;
     const quad = new THREE.PlaneGeometry(size, size * 0.62);
     // Lean back and turn to face the camera, about 40 degrees up at the diamond angle.

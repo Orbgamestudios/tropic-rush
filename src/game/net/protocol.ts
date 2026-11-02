@@ -4,7 +4,8 @@
 
 import type { Avatar } from "../logic/avatars";
 import type { RaidSnapshot, Seat } from "../logic/coop";
-import type { CrewLayout, LayoutOp } from "../logic/crewIsland";
+import type { CrewLayout, LayoutOp, PlacedBuilding } from "../logic/crewIsland";
+import type { Purse } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
 import type { HeroInput } from "../logic/raid";
 import type { MapIsland } from "../logic/worldMap";
@@ -47,10 +48,23 @@ export interface Hold {
 
 /** Passed from phone to phone through the crew's server, which doesn't look inside. */
 export type RaidMessage =
-  | { k: "invite"; raidId: string; host: string; island: MapIsland }
+  /**
+   * A crewmate is heading out: from the moment they open their heroes, and on through the raid,
+   * so everyone else's phone can show it. `island` stays null until they've picked one.
+   */
+  | {
+      k: "invite";
+      raidId: string;
+      host: string;
+      island: MapIsland | null;
+      /** The raid's under way: too late to join, but the map can still show it. */
+      raiding: boolean;
+    }
   | { k: "cancel"; raidId: string }
-  | { k: "join"; raidId: string; name: string; hero: HeroKind; level: number }
-  | { k: "seats"; raidId: string; seats: Seat[]; island: MapIsland }
+  | { k: "join"; raidId: string; name: string; hero: HeroKind; upgrades: string[] }
+  | { k: "seats"; raidId: string; seats: Seat[]; ready: string[]; island: MapIsland | null }
+  /** A crewmate has scouted the island and is good to go, or has thought better of it. */
+  | { k: "ready"; raidId: string; ready: boolean }
   | { k: "leave"; raidId: string }
   | { k: "start"; raidId: string; seats: Seat[]; island: MapIsland }
   | { k: "input"; raidId: string; seat: number; input: HeroInput }
@@ -79,3 +93,21 @@ export type ServerMessage =
 
 /** The most a relayed message may weigh, in characters. */
 export const MAX_RELAY = 64_000;
+
+/** One entry in the world's directory of crews, which other crews can find and raid. */
+export interface CrewEntry {
+  code: string;
+  name: string;
+  hq: number;
+  buildings: PlacedBuilding[];
+  buffs: { health: number; damage: number };
+}
+
+/** A crew's report of raiding a real rival's island. */
+export interface RaidReport {
+  target: string;
+  by: string;
+  won: boolean;
+  destroyedPercent: number;
+  loot: Partial<Purse>;
+}

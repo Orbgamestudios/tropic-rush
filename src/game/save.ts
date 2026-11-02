@@ -1,8 +1,12 @@
 import { type Avatar, DEFAULT_AVATAR, readAvatar } from "./logic/avatars";
+import type { BuildingType } from "./logic/buildings";
+import { type Crystals, noCrystals, readCrystals } from "./logic/crystals";
 import { type Purse, RESOURCES } from "./logic/economy";
 import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
-import { MAX_HERO_LEVEL } from "./logic/heroProgress";
+import { oldLevelRefund } from "./logic/heroProgress";
+import { noUpgrades, readOwned } from "./logic/heroTrees";
 import type { NightRaid } from "./logic/nightRaid";
+import { BLUEPRINT_TYPES } from "./logic/spoils";
 import type { Place } from "./logic/sun";
 import { NEW_WORLD, sanitizeWorld, type WorldProgress } from "./logic/worldMap";
 
@@ -23,10 +27,16 @@ export interface SaveData {
   crewCode: string;
   /** Random id that tells the crew server this phone is the same player next time. */
   memberId: string;
-  /** Personal gold, won on raids and spent levelling heroes. */
+  /** Personal gold, won on raids and spent on hero upgrades. */
   gold: number;
-  /** Each hero's level (1 to 10). */
-  heroLevels: Record<HeroKind, number>;
+  /** Personal crystals, won from enemy headquarters. */
+  crystals: Crystals;
+  /** The upgrades each hero owns (see heroTrees.ts). */
+  upgrades: Record<HeroKind, string[]>;
+  /** Blueprints won that haven't reached the crew's island yet. */
+  blueprints: BuildingType[];
+  /** Wins since the last blueprint turned up. */
+  blueprintDrought: number;
   /** Heroes this player can pick. */
   unlocked: HeroKind[];
   settings: Settings;
@@ -134,9 +144,6 @@ function readSettings(value: unknown): Settings {
 
 const starters = (): HeroKind[] => HERO_KINDS.filter((k) => STARTER_HEROES.includes(k));
 
-const startLevels = (): Record<HeroKind, number> =>
-  Object.fromEntries(HERO_KINDS.map((k) => [k, 1])) as Record<HeroKind, number>;
-
 const DEFAULT_SAVE: SaveData = {
   hero: "rifleman",
   level: 1,
@@ -147,7 +154,10 @@ const DEFAULT_SAVE: SaveData = {
   crewCode: "",
   memberId: "",
   gold: 300,
-  heroLevels: startLevels(),
+  crystals: noCrystals(),
+  upgrades: noUpgrades(),
+  blueprints: [],
+  blueprintDrought: 0,
   unlocked: starters(),
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
@@ -180,7 +190,8 @@ function readLoot(value: unknown): Partial<Purse> {
 
 const fresh = (): SaveData => ({
   ...DEFAULT_SAVE,
-  heroLevels: startLevels(),
+  crystals: noCrystals(),
+  upgrades: noUpgrades(),
   unlocked: starters(),
   settings: { ...DEFAULT_SETTINGS, controls: readControls(null) },
 });
@@ -204,9 +215,13 @@ export function loadSave(storage: Storage = localStorage): SaveData {
     const parsed: Partial<Record<keyof SaveData, unknown>> = JSON.parse(raw);
     const hero = HERO_KINDS.find((k) => k === parsed.hero) ?? DEFAULT_SAVE.hero;
     const level = count(parsed.level, 3);
-    const rawLevels = (parsed.heroLevels ?? {}) as Partial<Record<HeroKind, unknown>>;
-    const heroLevels = startLevels();
-    for (const k of HERO_KINDS) heroLevels[k] = Math.max(1, count(rawLevels[k], MAX_HERO_LEVEL));
+    // Saves from before the trees get back every coin they spent on hero levels.
+    const old = parsed as { heroLevels?: Record<string, unknown> };
+    const refund = parsed.upgrades === undefined ? oldLevelRefund(old.heroLevels ?? {}) : 0;
+    const rawUpgrades = (parsed.upgrades ?? {}) as Partial<Record<HeroKind, unknown>>;
+    const upgrades = noUpgrades();
+    for (const k of HERO_KINDS) upgrades[k] = readOwned(k, rawUpgrades[k]);
+    const rawPrints = Array.isArray(parsed.blueprints) ? parsed.blueprints : [];
     const rawUnlocked = Array.isArray(parsed.unlocked) ? parsed.unlocked : [];
     const unlocked = HERO_KINDS.filter(
       (k) => STARTER_HEROES.includes(k) || rawUnlocked.includes(k),
@@ -220,8 +235,11 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       avatar: readAvatar(parsed.avatar),
       crewCode: text(parsed.crewCode, 6),
       memberId: text(parsed.memberId, 64),
-      gold: parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold),
-      heroLevels,
+      gold: (parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold)) + refund,
+      crystals: readCrystals(parsed.crystals),
+      upgrades,
+      blueprints: BLUEPRINT_TYPES.filter((t) => rawPrints.includes(t)),
+      blueprintDrought: count(parsed.blueprintDrought, 99),
       unlocked,
       settings: readSettings(parsed.settings),
       nightChecked: count(parsed.nightChecked),
@@ -257,6 +275,20 @@ export function resetGame(
 ): SaveData {
   const { nickname, avatar, memberId, settings } = keep;
   const save = { ...fresh(), nickname, avatar, memberId, settings };
+  writeSave(save, storage);
+  storage.removeItem(LAYOUT_KEY);
+  return save;
+}
+
+/**
+ * Takes the last player's game off this phone when they log out, so nothing of theirs can end up
+ * in the next account made on it. Only how the phone's set up stays.
+ */
+export function clearPhone(
+  settings: SaveData["settings"],
+  storage: Storage = localStorage,
+): SaveData {
+  const save = { ...fresh(), settings };
   writeSave(save, storage);
   storage.removeItem(LAYOUT_KEY);
   return save;
@@ -331,6 +363,7 @@ export function restoreBundle(bundle: string, storage: Storage = localStorage): 
     if (typeof save !== "string") return false;
     storage.setItem(KEY, save);
     if (typeof layout === "string") storage.setItem(LAYOUT_KEY, layout);
+    else storage.removeItem(LAYOUT_KEY);
     return true;
   } catch {
     return false;

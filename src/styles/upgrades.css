@@ -1,0 +1,683 @@
+/* The crystals, the upgrade tree, the statues panel, and what's been added to the map, the lobby
+   and the results. Same navy steel and brass as everything else. */
+
+/* ---------- Crystals ---------- */
+
+.crystal-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 1px rgb(0 0 0 / 0.45));
+}
+
+.crystal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+  font-variant-numeric: tabular-nums;
+}
+
+.crystal-chip.short {
+  color: #ff9a84;
+}
+
+.crystal-wallet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 10px 2px 6px;
+  border: 2px solid var(--brass-mid);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--navy-700), var(--navy-900));
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+/* ---------- Upgrade tree ---------- */
+
+.screen-tree {
+  grid-template-columns: 1fr minmax(214px, 26%);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "top top"
+    "board spec"
+    "purse spec";
+  gap: 4px 14px;
+  padding: 8px 14px 10px;
+  background:
+    radial-gradient(ellipse at 42% 50%, rgb(58 86 130 / 0.5), rgb(0 0 0 / 0) 66%),
+    linear-gradient(180deg, var(--navy-800), var(--navy-900));
+}
+
+#game .screen-tree {
+  box-sizing: border-box;
+  inset: calc(var(--bleed-top) * -1) calc(var(--bleed-right) * -1) calc(var(--bleed-bottom) * -1)
+    calc(var(--bleed-left) * -1);
+  padding: calc(var(--bleed-top) + 8px) calc(var(--bleed-right) + 14px)
+    calc(var(--bleed-bottom) + 10px) calc(var(--bleed-left) + 14px);
+}
+
+.tree-top {
+  grid-area: top;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 42px;
+}
+
+.tree-title {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  margin: 0 auto;
+  padding: 3px 22px 5px;
+}
+
+.tree-hero {
+  position: absolute;
+  right: 0;
+  font-family: var(--display);
+  font-size: 18px;
+  letter-spacing: 0.8px;
+  color: var(--gold-text);
+  text-shadow: var(--outline-thin);
+}
+
+.tree-board {
+  grid-area: board;
+  position: relative;
+  min-height: 0;
+}
+
+.tree-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tree-lines path {
+  fill: none;
+  stroke: #33435f;
+  stroke-width: 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.tree-lines path.next {
+  stroke: #6f88ad;
+}
+
+.tree-lines path.on {
+  stroke: var(--brass);
+  filter: drop-shadow(0 0 4px rgb(255 214 106 / 0.8));
+}
+
+.tree-path {
+  position: absolute;
+  transform: translateX(-50%);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #9bb2d4;
+  text-shadow: var(--outline-thin);
+  pointer-events: none;
+}
+
+.tree-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 124px;
+  margin-left: -62px;
+  margin-top: -30px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.tree-node-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border: 2px solid #3e4f6d;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #27344c, #141c2d);
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.tree-tier-1,
+.tree-tier-5 {
+  margin-top: -36px;
+}
+
+.tree-tier-1 .tree-node-face,
+.tree-tier-5 .tree-node-face {
+  width: 72px;
+  height: 72px;
+}
+
+.tree-node-icon {
+  width: 40px;
+  height: 40px;
+  filter: grayscale(0.85) brightness(0.72);
+}
+
+.tree-node-label {
+  max-width: 124px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-align: center;
+  color: #9fb0c8;
+  text-shadow: var(--outline-thin);
+}
+
+.tree-node.open .tree-node-face {
+  border-color: #6f88ad;
+}
+
+.tree-node.open .tree-node-icon {
+  filter: grayscale(0.25);
+}
+
+.tree-node.ready .tree-node-face {
+  border-color: var(--brass);
+  animation: tree-ready 1.8s ease-in-out infinite;
+}
+
+@keyframes tree-ready {
+  50% {
+    box-shadow:
+      0 0 0 1.5px var(--ink),
+      0 0 12px rgb(255 214 106 / 0.7);
+  }
+}
+
+.tree-node.owned .tree-node-face {
+  border-color: var(--brass-hi);
+  background: linear-gradient(180deg, #3f76c4, #1c3f80);
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 0 12px rgb(255 214 106 / 0.75);
+}
+
+.tree-node.owned .tree-node-icon {
+  filter: none;
+}
+
+.tree-node.owned .tree-node-label {
+  color: var(--gold-text);
+}
+
+.tree-node.selected .tree-node-face {
+  outline: 2px solid #fff6d2;
+  outline-offset: 2px;
+}
+
+/* A checkpoint: a stud on the line, with room round it for a thumb. */
+.tree-step {
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  margin-left: -21px;
+  margin-top: -21px;
+}
+
+.tree-step .tree-node-face {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.tree-step .tree-node-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.tree-node-lock {
+  position: absolute;
+  top: 38px;
+  left: 76px;
+  width: 20px;
+  height: 20px;
+}
+
+.tree-tier-5 .tree-node-lock,
+.tree-tier-1 .tree-node-lock {
+  top: 48px;
+  left: 82px;
+}
+
+.tree-spec {
+  grid-area: spec;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  padding: 26px 12px 12px;
+  border: 3px solid var(--brass-mid);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f5ecd6, #e4d5b0);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 10px 20px rgb(0 0 0 / 0.45);
+  color: #2c2a22;
+}
+
+.tree-spec-plate {
+  top: -13px;
+}
+
+.tree-spec-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  border: 3px solid var(--brass-mid);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #3f76c4, #1c3f80);
+}
+
+.tree-spec-icon .icon-wrap {
+  width: 42px;
+  height: 42px;
+}
+
+.tree-spec-name {
+  font-family: var(--display);
+  font-size: 20px;
+  line-height: 1.05;
+  text-align: center;
+  letter-spacing: 0.4px;
+  color: #1f2a3f;
+}
+
+.tree-spec-path {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #7a6a44;
+}
+
+.tree-spec-text {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  color: #3a3628;
+}
+
+.tree-spec-cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--navy-800);
+}
+
+.tree-coin {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+.tree-coin.short {
+  color: #ff9a84;
+}
+
+.tree-coin-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.tree-spec-note {
+  min-height: 1em;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+  color: #8a3a22;
+}
+
+.tree-purse {
+  grid-area: purse;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---------- Statues ---------- */
+
+.crew-statues .crew-night-card {
+  width: min(560px, 94vw);
+}
+
+.crew-statue-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding-top: 8px;
+}
+
+.crew-statue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1.5px solid #3a4d6e;
+  border-radius: 8px;
+  background: rgb(7 14 27 / 0.6);
+}
+
+.crew-statue.lost .crew-statue-gem {
+  filter: grayscale(1) brightness(0.5);
+}
+
+.crew-statue.restored {
+  border-color: var(--brass);
+  box-shadow: inset 0 0 12px rgb(255 214 106 / 0.2);
+}
+
+.crew-statue-gem {
+  flex: none;
+}
+
+.crew-statue-gem .crystal-icon {
+  width: 38px;
+  height: 38px;
+}
+
+.crew-statue-words {
+  flex: 1;
+  min-width: 0;
+}
+
+.crew-statue-name {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: var(--gold-text);
+  text-shadow: 0 1.5px 0 var(--ink);
+}
+
+.crew-statue-text {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #c6d2e4;
+}
+
+.crew-statue-status {
+  font-size: 11px;
+  font-weight: 900;
+  color: #9df27e;
+}
+
+.crew-statue-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.crew-statue-blocker {
+  font-size: 10px;
+  font-weight: 900;
+  color: #ffc9a0;
+}
+
+/* ---------- Night raid ---------- */
+
+.crew-night-loot,
+.crew-night-rival {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.crew-night-loot:empty,
+.crew-night-log:empty {
+  display: none;
+}
+
+.crew-night-lost {
+  color: #ff9a84;
+}
+
+.crew-night-won {
+  color: #9df27e;
+}
+
+.crew-night-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---------- The map ---------- */
+
+.map-wallet {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+}
+
+.map-pin-title {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.map-pin-crystal {
+  width: 15px;
+  height: 15px;
+}
+
+.map-pin.rival {
+  border-color: #8fd4ff;
+}
+
+.map-pin.crew-here {
+  border-color: #9df27e;
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 0 14px rgb(120 240 110 / 0.9);
+}
+
+.map-pin-crew {
+  font-size: 10px;
+  font-weight: 900;
+  color: #9df27e;
+}
+
+.map-card-kind {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--gold-text);
+}
+
+.map-card-tip {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #c6d2e4;
+}
+
+.map-crew-raids {
+  position: absolute;
+  top: 54px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.map-crew-raid {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 2px solid #5cc452;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.map-crew-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.map-crew-text {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--cream);
+}
+
+/* ---------- Lobby ---------- */
+
+.lobby-heroes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+}
+
+.lobby-hero {
+  padding: 3px 9px;
+  border: 2px solid #3e4f6d;
+  border-radius: 7px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--cream);
+}
+
+.lobby-hero.selected {
+  border-color: var(--brass-hi);
+  color: var(--gold-text);
+}
+
+.lobby-party {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  border: 2px solid #5cc452;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow: 0 0 0 1.5px var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--cream);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---------- Results ---------- */
+
+.results-found {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 0;
+}
+
+.results-pop {
+  animation: pop-in 0.3s ease-out;
+}
+
+.results-crystal {
+  font-size: 22px;
+}
+
+.results-crystal .crystal-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.results-blueprint {
+  display: grid;
+  grid-template-columns: 40px auto;
+  grid-template-rows: auto auto;
+  column-gap: 6px;
+  align-items: center;
+  padding: 3px 10px 3px 4px;
+  border: 2px solid #8fd4ff;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #1f4a86, #122c55);
+}
+
+.results-blueprint-img {
+  grid-row: span 2;
+  width: 40px;
+  height: 40px;
+  filter: drop-shadow(0 0 3px rgb(143 212 255 / 0.9));
+}
+
+.results-blueprint-tag {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8fd4ff;
+}
+
+.results-blueprint-name {
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--cream);
+}
+
+.results-chest,
+.results-tribute {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--display);
+  font-size: 15px;
+  color: #fff2a0;
+  text-shadow: var(--outline-thin);
+}
+
+.results-chest .icon-wrap {
+  width: 26px;
+  height: 26px;
+}

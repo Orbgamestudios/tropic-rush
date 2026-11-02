@@ -4,17 +4,22 @@
 import * as THREE from "three";
 import { BUILDINGS } from "../logic/buildings";
 import { type CrewLayout, HOME_START } from "../logic/crewIsland";
+import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse } from "../logic/economy";
 import { HEROES } from "../logic/heroes";
-import { homeHeight, type IslandLayout, terrainHeight } from "../logic/island";
+import { HOME_SHAPE, type IslandLayout, type IslandShape } from "../logic/island";
 import type {
   Projectile,
   ProjectileKind,
+  RaidBuilding,
   RaidEvent,
   RaidHero,
   RaidState,
   Team,
+  TurretKind,
+  ZoneKind,
 } from "../logic/raid";
+import type { Spoils } from "../logic/spoils";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
@@ -23,11 +28,13 @@ import { buildClouds, type CloudView } from "./clouds";
 import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
-import { buildingLamps, LightPool } from "./lightPool";
+import { tileFit, tileRotation } from "./footprint";
+import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import {
   type BuildingModel,
   buildingModel,
   crewTurretModel,
+  decoyDroneModel,
   gunboatModel,
   type HeroModel,
   heroModel,
@@ -36,7 +43,8 @@ import {
 } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
-import { buildProps, buildShore, updateWind } from "./props";
+import { buildProps, buildShore, homeCliffs, updateWind } from "./props";
+import { crystalGem } from "./relics";
 import { RiflemanAnimator } from "./riflemanAnimator";
 import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
@@ -49,6 +57,7 @@ interface BuildingView {
   /** How far it's come down, 0 to 1, once destroyed. */
   collapse: number | null;
   baseY: number;
+  sights: SniperSights | null;
 }
 
 interface HeroView {
@@ -103,6 +112,37 @@ function heroRing(radius: number, leader: boolean): THREE.Mesh {
 }
 
 const BULLET_HEIGHT = 1.1;
+/** How high a sniper's beam starts, as a share of its tower. */
+const SIGHTS_FROM = 0.92;
+
+interface SniperSights {
+  /** A thin line one meter long, stretched out to reach its target. */
+  beam: THREE.Mesh;
+  /** A ring on the ground, so whoever's in the sights can't miss it. */
+  mark: THREE.Mesh;
+}
+
+function sniperSights(): SniperSights {
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0xff1408).multiplyScalar(1.6),
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    fog: false,
+    side: THREE.DoubleSide,
+  });
+  const line = new THREE.CylinderGeometry(0.09, 0.09, 1, 5, 1, true);
+  line.rotateX(Math.PI / 2);
+  line.translate(0, 0, 0.5);
+  const beam = new THREE.Mesh(line, material);
+  const ring = new THREE.RingGeometry(0.9, 1.15, 20);
+  ring.rotateX(-Math.PI / 2);
+  const mark = new THREE.Mesh(ring, material);
+  beam.visible = false;
+  mark.visible = false;
+  return { beam, mark };
+}
+
 /** How near the screen's top and sides a building's health bar can go, as a share of it. */
 const BAR_TOP = 0.2;
 const BAR_MARGIN = 0.12;
@@ -114,6 +154,12 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
       geometry.rotateZ(Math.PI / 2);
       // Brighter than white, so tracers catch the bloom.
       const color = new THREE.Color(team === "crew" ? 0xfff0a0 : 0xff7d4d).multiplyScalar(3);
+      return new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color }));
+    }
+    case "sniper": {
+      const geometry = new THREE.CapsuleGeometry(0.08, 1.8, 2, 6);
+      geometry.rotateZ(Math.PI / 2);
+      const color = new THREE.Color(0xff3a26).multiplyScalar(4);
       return new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color }));
     }
     case "rocket": {
@@ -136,6 +182,11 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
       return ball(0.32, COLORS.darkMetal, 10);
     case "artillery":
       return ball(0.42, COLORS.darkMetal, 12);
+    case "lava":
+      return new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.9, 1),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff6a1c).multiplyScalar(2) }),
+      );
     case "vial": {
       const g = new THREE.Group();
       g.add(cyl(0.16, 0.16, 0.34, 0x7dff9a, 10, { emissive: 0x2a8a45 }));
@@ -147,6 +198,8 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
 
 export class RaidView {
   readonly root = new THREE.Group();
+  /** Who's playing each hero, for the tags over crewmates. */
+  names: readonly string[] = [];
   readonly effects: Effects;
   private readonly lights = new LightPool();
   private readonly fireflies: Fireflies;
@@ -184,6 +237,10 @@ export class RaidView {
   private readonly overgrowth: OvergrowthView | null = null;
   private readonly defending: boolean;
   private readonly ground: (x: number, y: number) => number;
+  private readonly shape: IslandShape;
+  /** Seconds until the volcano's next plume of smoke. */
+  private plumeIn = 0;
+  private readonly gems: THREE.Group[] = [];
 
   /** `home` draws the crew's own island instead: the heroes are then the attackers. */
   constructor(
@@ -195,7 +252,9 @@ export class RaidView {
     private readonly seat = 0,
   ) {
     this.defending = home !== undefined;
-    const height = home ? homeHeight : terrainHeight;
+    const shape = layout.shape ?? HOME_SHAPE;
+    this.shape = shape;
+    const { height } = shape;
     this.ground = (x, y) => Math.max(0, height(x, y));
     if (home) {
       const scenery = homeScenery(HOME_START);
@@ -203,15 +262,15 @@ export class RaidView {
       this.overgrowth.sync(home);
       this.terrain = buildTerrain(scenery, { height, shade: this.overgrowth.shade });
       this.props = new THREE.Group();
-      this.props.add(buildShore(layout.seed, scenery, layout.spawn, height, -0.5));
+      this.props.add(buildShore(layout.seed, scenery, layout.spawn, height, -0.5), homeCliffs());
       this.root.add(this.overgrowth.root);
     } else {
       const scenery = sceneryMap(layout);
-      this.terrain = buildTerrain(scenery);
+      this.terrain = buildTerrain(scenery, { shape });
       this.props = buildProps(layout, scenery);
       this.props.add(buildCamp(layout, scenery));
     }
-    this.clouds = buildClouds(layout.seed);
+    this.clouds = buildClouds(layout.seed, shape);
     this.root.add(this.clouds.root, this.aimView.root);
     this.effects = new Effects((x, z) => this.ground(x, z), this.lights);
     this.fireflies = new Fireflies(layout.seed, this.ground);
@@ -223,22 +282,26 @@ export class RaidView {
       this.fireflies.mesh,
     );
 
-    for (const b of state.buildings) {
+    state.buildings.forEach((b, i) => {
       const model = buildingModel(b.type, home !== undefined);
-      // Turn each building's front towards the landing beach.
-      const toBeach = sub(layout.spawn, b.pos);
-      const baseRotation = Math.atan2(toBeach.x, toBeach.y);
+      // Square on its tiles, the same as on the crew's island.
+      const rotated = layout.buildings[i]?.rotated ?? false;
+      const baseRotation = tileRotation(rotated);
+      model.root.scale.setScalar(tileFit(b.type, rotated, model.root));
       model.root.position.set(b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y);
       model.root.rotation.y = baseRotation;
       this.root.add(model.root);
+      const sights = BUILDINGS[b.type].attack?.kind === "sniper" ? sniperSights() : null;
+      if (sights) this.root.add(sights.beam, sights.mark);
       this.buildings.set(b.id, {
         model,
         rubble: null,
         baseRotation,
         collapse: null,
         baseY: model.root.position.y,
+        sights,
       });
-    }
+    });
     this.lightBuildings(state);
 
     state.heroes.forEach((h, i) => {
@@ -313,6 +376,15 @@ export class RaidView {
           this.effects.explosion(this.at(e.pos, 0.4), e.radius);
           this.shake(e.pos, e.radius * 0.11, state);
           break;
+        case "enrage":
+          this.effects.burn(this.at(e.pos, 1.2), 1.4);
+          this.effects.muzzle(this.at(e.pos, 1.2), 0xff5a2a, 1.2);
+          break;
+        case "eruption":
+          this.effects.explosion(this.at(e.pos, 2), 9);
+          this.effects.smokeColumn(this.at(e.pos, 1), 6);
+          this.tremor = Math.max(this.tremor, 0.7);
+          break;
         case "hit":
           this.effects.hit(this.at(e.pos, BULLET_HEIGHT));
           break;
@@ -355,6 +427,32 @@ export class RaidView {
     }
   }
 
+  /** The crystals a fallen headquarters gives up, rising out of the wreck and turning. */
+  dropCrystal(state: RaidState, spoils: Spoils | null): void {
+    const hq = state.buildings.find((b) => b.type === "headquarters");
+    if (!hq || !spoils) return;
+    for (const kind of CRYSTAL_KINDS) {
+      if (!spoils.crystals[kind]) continue;
+      const gem = crystalGem(kind);
+      gem.scale.setScalar(0.1);
+      gem.position.copy(this.at(hq.pos, 2));
+      this.root.add(gem);
+      this.gems.push(gem);
+    }
+  }
+
+  private updateGems(dt: number, time: number): void {
+    for (const gem of this.gems) {
+      gem.scale.setScalar(Math.min(1.9, gem.scale.x + dt * 1.4));
+      gem.position.y += (this.groundUnderGem(gem) + 6.5 - gem.position.y) * Math.min(1, dt * 2);
+      gem.rotation.y = time * 1.6;
+    }
+  }
+
+  private groundUnderGem(gem: THREE.Group): number {
+    return this.ground(gem.position.x, gem.position.z);
+  }
+
   /** The materials a broken mill or storage gives up, rising off the wreck. */
   private showLoot(pos: Vec2, loot: Partial<Purse>): void {
     if (!this.lastCamera) return;
@@ -393,6 +491,8 @@ export class RaidView {
     this.lastSize = { width, height };
     this.terrain.update(time);
     this.clouds.update(time);
+    this.updatePlume(dt);
+    this.updateGems(dt, time);
     // Plants between the camera and the followed hero dissolve so the hero never disappears.
     const leader = state.heroes[this.seat];
     const watched = leader?.alive ? leader : state.heroes.find((h) => h.alive);
@@ -419,15 +519,56 @@ export class RaidView {
     this.updateLabels(state, camera, width, height);
   }
 
+  /** A volcano smokes all the time, not only when it goes off. */
+  private updatePlume(dt: number): void {
+    const { volcano } = this.shape;
+    if (!volcano) return;
+    this.plumeIn -= dt;
+    if (this.plumeIn > 0) return;
+    this.plumeIn = 2.4;
+    this.effects.smokeColumn(this.at(volcano.pos, 1), 3, false);
+  }
+
+  /** The glow of a volcano's crater and its rivers, seen after dark. */
+  private lavaLamps(): Lamp[] {
+    const { shape } = this;
+    const { volcano } = shape;
+    if (!volcano) return [];
+    const lamp = (x: number, z: number, reach: number): Lamp => ({
+      x,
+      y: this.ground(x, z),
+      z,
+      reach,
+      power: 2.6,
+      color: 0xff6a24,
+      halo: 2,
+      height: 0.5,
+      flicker: true,
+    });
+    const lamps = [lamp(volcano.pos.x, volcano.pos.y, volcano.radius * 0.6)];
+    // Along the rivers, wherever the lava runs on open ground.
+    for (let x = -shape.reach; x < shape.reach; x += 16) {
+      for (let y = -shape.reach; y < shape.reach; y += 16) {
+        for (let dx = 0; dx < 16; dx += 4) {
+          if (shape.lava(x + dx, y + dx) <= 0.5) continue;
+          lamps.push(lamp(x + dx, y + dx, 12));
+          break;
+        }
+      }
+    }
+    return lamps;
+  }
+
   /** Lamps on everything still standing. */
   private lightBuildings(state: RaidState): void {
-    this.lights.setLamps(
-      state.buildings
+    this.lights.setLamps([
+      ...state.buildings
         .filter((b) => !b.destroyed)
         .flatMap((b) =>
           buildingLamps(b.type, b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y, !this.defending),
         ),
-    );
+      ...this.lavaLamps(),
+    ]);
   }
 
   private updateBuildings(state: RaidState, dt: number): void {
@@ -435,6 +576,7 @@ export class RaidView {
       const view = this.buildings.get(b.id);
       if (!view) continue;
       const spec = BUILDINGS[b.type];
+      this.aimSights(view, b);
       if (b.destroyed) {
         this.collapse(view, spec.height, dt);
         continue;
@@ -448,6 +590,22 @@ export class RaidView {
       if (view.model.head) view.model.head.rotation.y = -b.aim - view.baseRotation;
       if (view.model.flame) view.model.flame.visible = b.firing;
     }
+  }
+
+  private aimSights(view: BuildingView, b: RaidBuilding): void {
+    const { sights } = view;
+    if (!sights) return;
+    const { beam, mark } = sights;
+    const on = b.sights !== null && !b.destroyed;
+    beam.visible = on;
+    mark.visible = on;
+    if (!on || !b.sights) return;
+    const top = view.baseY + BUILDINGS[b.type].height * SIGHTS_FROM;
+    beam.position.set(b.pos.x, top, b.pos.y);
+    const target = this.at(b.sights, BULLET_HEIGHT);
+    beam.scale.set(1, 1, beam.position.distanceTo(target));
+    beam.lookAt(target);
+    mark.position.copy(this.at(b.sights, 0.1));
   }
 
   private collapse(view: BuildingView, height: number, dt: number): void {
@@ -567,8 +725,10 @@ export class RaidView {
         this.projectiles.set(p.id, obj);
       }
       this.placeProjectile(p, obj);
-      if (p.lob && (p.kind === "mortar" || p.kind === "artillery")) this.placeTelegraph(p);
-      if (p.kind === "rocket") this.effects.trail(obj.position, true);
+      if (p.lob && (p.kind === "mortar" || p.kind === "artillery" || p.kind === "lava")) {
+        this.placeTelegraph(p);
+      }
+      if (p.kind === "rocket" || p.kind === "lava") this.effects.trail(obj.position, true);
       else if (
         p.kind !== "bullet" &&
         p.kind !== "harpoon" &&
@@ -643,14 +803,21 @@ export class RaidView {
       live.add(z.id);
       let obj = this.zones.get(z.id);
       if (!obj) {
-        obj = this.healCircle(z.radius);
+        obj = z.kind === "heal" ? this.healCircle(z.radius) : this.groundPatch(z.kind, z.radius);
         obj.position.set(z.pos.x, this.ground(z.pos.x, z.pos.y), z.pos.y);
         this.root.add(obj);
         this.zones.set(z.id, obj);
+        if (z.kind === "smoke") this.effects.smokeColumn(this.at(z.pos, 0.4), z.time, false);
       }
       const fade = Math.min(1, z.time);
       obj.scale.setScalar(0.6 + 0.4 * fade);
       obj.rotation.y = time * 0.6;
+      if (z.kind === "fire" && Math.random() < 0.3) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.random() * z.radius;
+        const flame = { x: z.pos.x + Math.cos(a) * r, y: z.pos.y + Math.sin(a) * r };
+        this.effects.burn(this.at(flame, 0.3), 0.5);
+      }
     }
     for (const [id, obj] of this.zones) {
       if (live.has(id)) continue;
@@ -658,6 +825,21 @@ export class RaidView {
       disposeGeometries(obj);
       this.zones.delete(id);
     }
+  }
+
+  /** A soft stain on the ground under burning ground or a smoke cloud. */
+  private groundPatch(kind: Exclude<ZoneKind, "heal">, radius: number): THREE.Group {
+    const g = new THREE.Group();
+    const disc = new THREE.CircleGeometry(radius, 32);
+    disc.rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({
+      color: kind === "fire" ? 0xff6a1c : 0xc9ced6,
+      transparent: true,
+      opacity: kind === "fire" ? 0.3 : 0.55,
+      depthWrite: false,
+    });
+    g.add(at(new THREE.Mesh(disc, material), 0, 0.1, 0));
+    return g;
   }
 
   private healCircle(radius: number): THREE.Group {
@@ -713,12 +895,17 @@ export class RaidView {
       live.add(t.id);
       let view = this.turrets.get(t.id);
       if (!view) {
-        view = crewTurretModel();
+        view = this.turretModel(t.kind);
         view.root.position.set(t.pos.x, this.ground(t.pos.x, t.pos.y), t.pos.y);
         this.root.add(view.root);
         this.turrets.set(t.id, view);
       }
       view.head.rotation.y = -t.aim;
+      // A decoy hangs in the air, bobbing and turning to draw the eye.
+      if (t.kind === "decoy") {
+        view.head.rotation.y = t.time * 3;
+        view.root.position.y = this.ground(t.pos.x, t.pos.y) + 1.6 + Math.sin(t.time * 4) * 0.15;
+      }
     }
     for (const [id, view] of this.turrets) {
       if (live.has(id)) continue;
@@ -728,12 +915,21 @@ export class RaidView {
     }
   }
 
+  private turretModel(kind: TurretKind): { root: THREE.Group; head: THREE.Object3D } {
+    if (kind === "decoy") return decoyDroneModel();
+    const view = crewTurretModel();
+    if (kind === "pocket") view.root.scale.setScalar(0.72);
+    return view;
+  }
+
   private updateMines(state: RaidState, time: number): void {
+    // A Grenadier who's been trained to sweep sees every mine on the island.
+    const swept = state.heroes.some((h) => h.alive && h.mods.mineSweeper);
     for (const m of state.mines) {
       const mesh = this.mines.get(m.id);
       if (!mesh) continue;
       const near = state.heroes.some((h) => h.alive && distance(h.pos, m.pos) < 5);
-      const showing = near || m.fuse !== null;
+      const showing = near || swept || m.fuse !== null;
       // Hidden from raiders until they're on top of it; a replay of your island shows your own.
       mesh.visible = !m.exploded && (showing || this.defending);
       const mat = mesh.material as THREE.MeshLambertMaterial;
@@ -804,7 +1000,9 @@ export class RaidView {
         height,
       );
       const style = this.defending ? "enemy" : "crew";
-      if (p.inFront) this.labels.place(h.id, style, p.x, p.y, h.hp / h.maxHp, false, h.maxHp);
+      const seat = state.heroes.indexOf(h);
+      const name = seat === this.seat ? "" : this.names[seat];
+      if (p.inFront) this.labels.place(h.id, style, p.x, p.y, h.hp / h.maxHp, false, h.maxHp, name);
     }
     for (const t of state.turrets) {
       const p = this.screenPosition(t.pos, 1.7, camera, width, height);

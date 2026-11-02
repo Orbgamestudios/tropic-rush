@@ -3,21 +3,37 @@
 // island is tapped (what's there, what it pays, Scout, Team up and Attack), and one way out:
 // Return to island.
 
+import { CRYSTAL_LABELS, type Crystals } from "../logic/crystals";
 import {
+  archetypeLabel,
+  archetypeTip,
   islandRadius,
   islandsToNextCloud,
   type MapIsland,
   type WorldProgress,
 } from "../logic/worldMap";
-import { button, el, layerPlacer } from "./kit/dom";
+import { button, CrystalWallet, crystalIcon, el, layerPlacer } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
+
+/** A crewmate out raiding or about to, shown on the map. */
+export interface CrewRaid {
+  id: string;
+  name: string;
+  /** The island they're at, once they've picked one. */
+  islandId: string | null;
+  islandName: string | null;
+  /** They're getting ready, so there's still time to join them. */
+  joinable: boolean;
+}
 
 export interface WorldMapHandlers {
   onAttack(island: MapIsland): void;
   onScout(island: MapIsland): void;
   onTeamUp(island: MapIsland): void;
   onReturn(): void;
+  /** Joins a crewmate who's getting ready to raid. */
+  onJoinCrew(id: string): void;
   /** Brings the view back over the crew's own island. */
   onHome(): void;
   onPan(dx: number, dy: number): void;
@@ -30,6 +46,8 @@ export interface WorldMapHandlers {
   soloBlocker(): string | null;
   /** How many crewmates could team up right now. */
   crewOnline(): number;
+  /** Blueprints still to find on this base, by name. */
+  blueprintsOn(island: MapIsland): string[];
 }
 
 interface Pin {
@@ -47,9 +65,14 @@ export class WorldMapScreen {
   private readonly pinLayer = el("div", "map-pins");
   private readonly card = el("div", "map-card");
   private readonly cardName = el("div", "map-card-name");
+  private readonly cardKind = el("div", "map-card-kind");
   private readonly cardRating = el("div", "map-card-rating");
   private readonly cardFacts = el("div", "map-card-facts");
+  private readonly cardTip = el("div", "map-card-tip");
   private readonly cardNote = el("div", "map-card-note");
+  private readonly wallet = new CrystalWallet();
+  private readonly crewList = el("div", "map-crew-raids");
+  private crewKey = "";
   private readonly attack: HTMLButtonElement;
   private readonly teamUp: HTMLButtonElement;
   private readonly banner = el("div", "map-banner");
@@ -96,7 +119,15 @@ export class WorldMapScreen {
     });
     const actions = el("div", "map-card-actions");
     actions.append(scout, this.teamUp, this.attack);
-    this.card.append(this.cardName, this.cardRating, this.cardFacts, this.cardNote, actions);
+    this.card.append(
+      this.cardName,
+      this.cardKind,
+      this.cardRating,
+      this.cardFacts,
+      this.cardTip,
+      this.cardNote,
+      actions,
+    );
     this.card.addEventListener("pointerdown", (e) => e.stopPropagation());
     const back = button({
       icon: "island",
@@ -118,10 +149,20 @@ export class WorldMapScreen {
       className: "map-home",
       onClick: () => handlers.onHome(),
     });
-    for (const node of [home, this.progress]) {
+    for (const node of [home, this.progress, this.crewList, this.wallet.root]) {
       node.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
-    this.root.append(this.pinLayer, this.banner, this.card, back, home, this.progress);
+    this.wallet.root.classList.add("map-wallet");
+    this.root.append(
+      this.pinLayer,
+      this.banner,
+      this.card,
+      back,
+      home,
+      this.progress,
+      this.wallet.root,
+      this.crewList,
+    );
     this.root.addEventListener("pointerdown", (e) => this.onDown(e));
     this.root.addEventListener("pointermove", (e) => this.onMove(e));
     this.root.addEventListener("pointerup", (e) => this.onUp(e));
@@ -134,21 +175,34 @@ export class WorldMapScreen {
     parent.append(this.root);
   }
 
-  show(islands: readonly MapIsland[], world: WorldProgress): void {
+  show(islands: readonly MapIsland[], world: WorldProgress, crystals: Crystals): void {
     this.root.style.display = "block";
     this.select(null);
+    this.wallet.set(crystals);
     const pins = islands.map((island) => {
       const rating = island.difficulty.toLowerCase();
       const pin = el("button", `map-pin map-${island.taken ? "yours" : rating}`);
       pin.setAttribute("aria-label", island.name);
       pin.classList.toggle("done", island.taken);
       pin.classList.toggle("retaken", island.retaken);
+      pin.classList.toggle("rival", island.rival !== null);
+      const title = island.taken
+        ? "Yours"
+        : island.retaken
+          ? "Retaken!"
+          : (island.rival?.name ?? "Raid");
+      const head = el("span", "map-pin-title", title);
+      if (!island.taken) head.prepend(crystalIcon(island.crystal, "map-pin-crystal"));
       pin.append(
-        el("span", "map-pin-title", island.taken ? "Yours" : island.retaken ? "Retaken!" : "Raid"),
+        head,
         el(
           "span",
           "map-pin-rating",
-          island.taken ? island.name : `HQ ${island.hq} · ${island.difficulty}`,
+          island.taken
+            ? island.tribute
+              ? `+${island.tribute} gold a day`
+              : island.name
+            : `HQ ${island.hq} · ${island.difficulty}`,
         ),
       );
       pin.disabled = island.taken;
@@ -190,19 +244,33 @@ export class WorldMapScreen {
     if (!island) return;
     // Opposite the island, so the card never covers the place it's about.
     this.card.classList.toggle("left", this.handlers.screen(island.x, island.y).x > 0.5);
-    this.cardName.textContent = island.name;
+    this.cardName.textContent = island.rival?.name ?? island.name;
+    this.cardKind.textContent = island.rival
+      ? `${island.name} · ${archetypeLabel(island)}`
+      : archetypeLabel(island);
     this.cardRating.className = `map-card-rating map-${island.difficulty.toLowerCase()}`;
     this.cardRating.textContent = `${island.difficulty} · Headquarters ${island.hq}`;
     const loot = el("span", "map-fact");
     loot.append(icon("coin", "map-fact-icon"), el("span", "", String(island.reward.gold)));
     const guns = el("span", "map-fact");
     guns.append(icon("shield", "map-fact-icon"), el("span", "", `${island.defenses} defenses`));
-    this.cardFacts.replaceChildren(guns, loot);
+    const gem = el("span", "map-fact");
+    gem.append(
+      crystalIcon(island.crystal, "map-fact-icon"),
+      el("span", "", CRYSTAL_LABELS[island.crystal]),
+    );
+    this.cardFacts.replaceChildren(guns, loot, gem);
+    this.cardTip.textContent = archetypeTip(island);
     const blocker = this.handlers.soloBlocker();
     const crew = this.handlers.crewOnline();
+    const prints = this.handlers.blueprintsOn(island);
     this.cardNote.textContent = island.retaken
       ? "Raiders rebuilt it: every building, all at full level."
-      : (blocker ?? "");
+      : island.tribute
+        ? `Hold it for ${island.tribute} gold a day.`
+        : prints.length > 0
+          ? `Blueprints to find here: ${prints.join(", ")}.`
+          : "";
     if (blocker) this.cardNote.textContent = blocker;
     this.cardNote.style.display = this.cardNote.textContent ? "block" : "none";
     this.attack.disabled = blocker !== null;
@@ -271,6 +339,45 @@ export class WorldMapScreen {
       if (off) continue;
       const spot = place(p.x, p.y);
       node.style.transform = `translate(${spot.x.toFixed(1)}px, ${spot.y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+  }
+
+  /** Crewmates out raiding or about to: a row each, and a flag over any island they've picked. */
+  setCrewRaids(raids: readonly CrewRaid[]): void {
+    const key = JSON.stringify(raids);
+    if (key === this.crewKey) return;
+    this.crewKey = key;
+    this.crewList.replaceChildren(
+      ...raids.map((raid) => {
+        const row = el("div", "map-crew-raid");
+        const where = raid.islandName ? `at ${raid.islandName}` : "getting ready";
+        row.append(
+          icon("crew", "map-crew-icon"),
+          el(
+            "span",
+            "map-crew-text",
+            raid.joinable ? `${raid.name} is ${where}` : `${raid.name} is raiding ${where}`,
+          ),
+        );
+        if (raid.joinable) {
+          row.append(
+            button({
+              label: "Join",
+              icon: "sword2",
+              variant: "green",
+              size: "sm",
+              onClick: () => this.handlers.onJoinCrew(raid.id),
+            }),
+          );
+        }
+        return row;
+      }),
+    );
+    for (const { island, node } of this.pins) {
+      const raid = raids.find((r) => r.islandId === island.id);
+      node.classList.toggle("crew-here", raid !== undefined);
+      node.querySelector(".map-pin-crew")?.remove();
+      if (raid) node.append(el("span", "map-pin-crew", raid.name));
     }
   }
 }

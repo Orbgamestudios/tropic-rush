@@ -124,7 +124,7 @@ export class AimView {
       this.locked.visible = false;
       return;
     }
-    if (this.coneKind !== hero.kind) this.buildCone(hero.kind);
+    if (this.coneKind !== hero.kind) this.buildCone(hero.kind, hero.mods.spread, hero.mods.range);
     const cone = this.cone;
     const y = ground(hero.pos.x, hero.pos.y) + 0.12;
     (this.material.uniforms.uTime as THREE.IUniform<number>).value = time;
@@ -185,13 +185,13 @@ export class AimView {
     m.rotation.z = spin ? time * 1.2 : 0;
   }
 
-  private buildCone(kind: HeroKind): void {
+  private buildCone(kind: HeroKind, tighter: number, extraRange: number): void {
     if (this.cone) {
       this.root.remove(this.cone);
       this.cone.geometry.dispose();
     }
-    const half = Math.max(MIN_HALF_ANGLE, shotSpread(kind));
-    const range = HEROES[kind].attack.range;
+    const half = Math.max(MIN_HALF_ANGLE, shotSpread(kind, tighter));
+    const range = HEROES[kind].attack.range + extraRange;
     // A fan in the XY plane centered on +x; the mesh is laid flat and turned to the aim.
     const geometry = new THREE.CircleGeometry(range, 40, -half, half * 2);
     (this.material.uniforms.uHalf as THREE.IUniform<number>).value = half;

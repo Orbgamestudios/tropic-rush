@@ -235,9 +235,12 @@ export function lootFor(type: BuildingType, level: number): Partial<Purse> {
   return { [resource]: Math.round(amount / 5) * 5 };
 }
 
-/** What the headquarters itself can hold of each resource. */
+/**
+ * What the headquarters itself can hold of each resource: only a little, so a new island's first
+ * raids soon outgrow it, and storages are what let a crew keep more.
+ */
 export function hqCapacity(hqLevel: number): number {
-  return 1000 + 400 * (hqLevel - 1);
+  return 700 + 200 * (hqLevel - 1);
 }
 
 /** What one storage holds at a level. */

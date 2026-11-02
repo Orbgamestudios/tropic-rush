@@ -897,8 +897,8 @@ export class Effects {
   }
 
   /** Smoke rising from a destroyed building for a few seconds, burning at first. */
-  smokeColumn(pos: THREE.Vector3, seconds: number): void {
-    this.emitters.push({ pos: pos.clone(), time: seconds, timer: 0, fire: true });
+  smokeColumn(pos: THREE.Vector3, seconds: number, fire = true): void {
+    this.emitters.push({ pos: pos.clone(), time: seconds, timer: 0, fire });
   }
 
   update(dt: number): void {

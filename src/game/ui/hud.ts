@@ -11,7 +11,6 @@ import { costText, RESOURCES } from "../logic/economy";
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, raidReward } from "../logic/heroProgress";
-import { shoreRadius } from "../logic/island";
 import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
 import { CurrencyPill, costChips, el, formatNumber, levelBadge } from "./kit/dom";
 import { sfx } from "./kit/fx";
@@ -179,19 +178,21 @@ export class Hud {
     this.root.style.display = visible ? "block" : "none";
   }
 
-  /** Sets the hero card's picture and level at the start of a raid. */
-  setHero(portraitUrl: Promise<string>, level: number): void {
+  /** Sets the hero card's picture and upgrade count at the start of a raid. */
+  setHero(portraitUrl: Promise<string>, upgrades: number): void {
     this.portrait.removeAttribute("src");
     void portraitUrl.then((url) => {
       this.portrait.src = url;
     });
-    this.level.replaceChildren(levelBadge(level));
+    this.level.replaceChildren(levelBadge(upgrades));
     this.lastHp = -1;
+    // A new island, so a new map of it.
+    this.mapBase = null;
   }
 
   /** The crewmates on this raid, by their place in state.heroes. */
   setSquad(
-    mates: readonly { seat: number; kind: HeroKind; level: number; portrait: Promise<string> }[],
+    mates: readonly { seat: number; kind: HeroKind; upgrades: number; portrait: Promise<string> }[],
   ): void {
     this.squad = mates.map((mate) => {
       const root = el("div", "hud-mate");
@@ -206,7 +207,7 @@ export class Hud {
       const lag = el("div", "hud-mate-lag");
       const fill = el("div", "hud-mate-fill");
       bar.append(lag, fill);
-      root.append(frame, levelBadge(mate.level, "hud-mate-level"), bar);
+      root.append(frame, levelBadge(mate.upgrades, "hud-mate-level"), bar);
       root.title = HERO_NAMES[mate.kind];
       return { root, fill, lag, lagHp: 1, alive: true, kind: mate.kind, seat: mate.seat };
     });
@@ -303,7 +304,7 @@ export class Hud {
   }
 
   /** The sea and island, which never change: drawn once and copied onto the minimap. */
-  private mapBackdrop(size: number, px: (x: number) => number, py: (y: number) => number) {
+  private mapBackdrop(state: RaidState, size: number, scale: number) {
     if (this.mapBase) return this.mapBase;
     const canvas = document.createElement("canvas");
     canvas.width = size;
@@ -311,30 +312,30 @@ export class Hud {
     this.mapBase = canvas;
     const g = canvas.getContext("2d");
     if (!g) return canvas;
-    const c = size / 2;
-    const sea = g.createRadialGradient(c, c, 10, c, c, size * 0.7);
-    sea.addColorStop(0, "#56c7d8");
-    sea.addColorStop(1, "#1a7fa6");
-    g.fillStyle = sea;
-    g.fillRect(0, 0, size, size);
-    const shore = (inset: number) => {
-      g.beginPath();
-      for (let i = 0; i <= 64; i++) {
-        const a = (i / 64) * Math.PI * 2;
-        const r = shoreRadius(a) - inset;
-        const x = px(Math.cos(a) * r);
-        const y = py(Math.sin(a) * r);
-        if (i === 0) g.moveTo(x, y);
-        else g.lineTo(x, y);
-      }
-      g.closePath();
+    const { shape } = state;
+    const image = g.createImageData(size, size);
+    const paint = (i: number, r: number, b: number, c: number) => {
+      image.data[i] = r;
+      image.data[i + 1] = b;
+      image.data[i + 2] = c;
+      image.data[i + 3] = 255;
     };
-    shore(-2);
-    g.fillStyle = "#f2d79b";
-    g.fill();
-    shore(9);
-    g.fillStyle = "#5fae46";
-    g.fill();
+    for (let j = 0; j < size; j++) {
+      for (let i = 0; i < size; i++) {
+        const x = (i - size / 2) / scale;
+        const y = (j - size / 2) / scale;
+        const sd = shape.shoreDistance(x, y);
+        const k = (j * size + i) * 4;
+        if (shape.lava(x, y) > 0.3) paint(k, 255, 110, 36);
+        else if (sd <= -2) paint(k, 38, 145, 186);
+        else if (sd <= 0) paint(k, 110, 208, 216);
+        else if (sd < shape.beachWidth(x, y)) {
+          if (shape.blackSand) paint(k, 92, 86, 90);
+          else paint(k, 242, 215, 155);
+        } else paint(k, 95, 174, 70);
+      }
+    }
+    g.putImageData(image, 0, 0);
     return canvas;
   }
 
@@ -343,12 +344,12 @@ export class Hud {
     const g = this.map.getContext("2d");
     if (!g) return;
     const size = this.map.width;
-    const scale = size / 190;
+    const scale = size / (state.shape.reach * 2 * 0.85);
     const cx = size / 2;
     const cy = size / 2;
     const px = (x: number) => cx + x * scale;
     const py = (y: number) => cy + y * scale;
-    g.drawImage(this.mapBackdrop(size, px, py), 0, 0);
+    g.drawImage(this.mapBackdrop(state, size, scale), 0, 0);
     for (const b of state.buildings) {
       if (b.destroyed) {
         g.fillStyle = "rgba(40, 30, 20, 0.5)";

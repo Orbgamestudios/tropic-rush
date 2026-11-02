@@ -71,9 +71,13 @@ export type HeroAttack =
 
 /**
  * Half-width of a hero's shot spread in radians: how far shots stray either side of the aim.
- * The aim cone on screen is drawn this wide.
+ * The aim cone on screen is drawn this wide. `tighter` is what their upgrades take off it.
  */
-export function shotSpread(kind: HeroKind): number {
+export function shotSpread(kind: HeroKind, tighter = 1): number {
+  return baseSpread(kind) * tighter;
+}
+
+function baseSpread(kind: HeroKind): number {
   const atk = HEROES[kind].attack;
   switch (atk.kind) {
     case "minigun":

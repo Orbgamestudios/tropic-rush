@@ -220,6 +220,14 @@ function makeBuilding(type: BuildingType): BuildingModel {
       root.add(at(rbox(0.15, 0.6, 3.4, C.bamboo), 1.65, 8, 0));
       const roof = at(cone(2.9, 1.5, C.tin, 4), 0, 11.1, 0, 0, Math.PI / 4, 0);
       root.add(roof);
+      // The sniper at the rail, whose long rifle follows the aim.
+      head = at(new THREE.Group(), 0, 7.55, 0);
+      head.add(at(cyl(0.3, 0.4, 1, C.olive, 8), -0.15, 0.5, 0));
+      head.add(at(ball(0.27, 0xd9a877, 8), -0.1, 1.2, 0));
+      head.add(at(ball(0.3, C.enemyDark, 8), -0.14, 1.3, 0));
+      head.add(at(barrel(0.06, 2.3, C.darkMetal, 6), -0.1, 0.92, 0));
+      head.add(at(barrel(0.09, 0.55, C.metal, 6), 0.3, 1.06, 0));
+      root.add(head);
       break;
     }
     case "landmine": {
@@ -482,6 +490,24 @@ export function crewTurretModel(): { root: THREE.Group; head: THREE.Object3D } {
   head.add(rbox(0.6, 0.45, 0.55, 0x587a99));
   head.add(at(barrel(0.07, 0.6, C.darkMetal, 8), 0.25, 0.02, 0.1));
   head.add(at(barrel(0.07, 0.6, C.darkMetal, 8), 0.25, 0.02, -0.1));
+  root.add(head);
+  return { root, head };
+}
+
+/** The Engineer's decoy: a little hovering drone with a blinking lamp on it. */
+export function decoyDroneModel(): { root: THREE.Group; head: THREE.Object3D } {
+  const root = new THREE.Group();
+  const head = new THREE.Group();
+  head.add(rbox(0.8, 0.26, 0.8, 0x587a99));
+  head.add(at(ball(0.16, 0xff5a3a, 10, { emissive: 0xff3a1a }), 0, 0.18, 0));
+  for (const [x, z] of [
+    [0.5, 0.5],
+    [-0.5, 0.5],
+    [0.5, -0.5],
+    [-0.5, -0.5],
+  ] as const) {
+    head.add(at(cyl(0.3, 0.3, 0.03, C.darkMetal, 12), x, 0.08, z));
+  }
   root.add(head);
   return { root, head };
 }

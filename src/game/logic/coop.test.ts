@@ -16,8 +16,8 @@ import { vec } from "./vec";
 const DT = 1 / 60;
 
 const SEATS: Seat[] = [
-  { member: "a", name: "Ann", hero: "rifleman", level: 1 },
-  { member: "b", name: "Bob", hero: "heavy", level: 3 },
+  { member: "a", name: "Ann", hero: "rifleman", upgrades: [] },
+  { member: "b", name: "Bob", hero: "heavy", upgrades: ["heavy-warm-up", "heavy-thick-skin"] },
 ];
 
 function pair(): { host: RaidState; guest: RaidState } {
@@ -26,10 +26,12 @@ function pair(): { host: RaidState; guest: RaidState } {
 }
 
 describe("raiding together", () => {
-  it("gives every player their own hero, at their own level", () => {
+  it("gives every player their own hero, with their own upgrades", () => {
     const { host } = pair();
     expect(host.heroes.map((h) => h.kind)).toEqual(["rifleman", "heavy"]);
-    expect(host.heroes[1]?.power).toBeGreaterThan(1);
+    expect(host.heroes[0]?.mods.hp).toBe(1);
+    expect(host.heroes[1]?.mods.hp).toBeCloseTo(1.2);
+    expect(host.heroes[1]?.mods.spinUp).toBeCloseTo(0.8);
   });
 
   it("starts both phones on the same island, with the same ids", () => {

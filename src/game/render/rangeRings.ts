@@ -3,7 +3,6 @@
 
 import * as THREE from "three";
 import { BUILDINGS } from "../logic/buildings";
-import { terrainHeight } from "../logic/island";
 import type { RaidState } from "../logic/raid";
 import { overlayOpacity } from "./sky";
 
@@ -39,9 +38,11 @@ export class RangeRings {
       const attack = BUILDINGS[b.type].attack;
       if (!attack) continue;
       const mesh = new THREE.Mesh(this.unit, this.faint);
-      mesh.position.set(b.pos.x, Math.max(0, terrainHeight(b.pos.x, b.pos.y)) + 0.3, b.pos.y);
+      mesh.position.set(b.pos.x, Math.max(0, state.shape.height(b.pos.x, b.pos.y)) + 0.3, b.pos.y);
       mesh.scale.set(attack.range, 1, attack.range);
       mesh.renderOrder = 3;
+      // A sniper reaches so far that shading it in would turn the whole island red.
+      mesh.visible = attack.kind !== "sniper";
       const edge = new THREE.Mesh(this.edge, this.red);
       edge.position.copy(mesh.position);
       edge.scale.copy(mesh.scale);

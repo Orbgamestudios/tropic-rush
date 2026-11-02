@@ -6,12 +6,12 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { BUILDINGS } from "../logic/buildings";
-import { beachSide, beachWidth, type IslandLayout, shoreDistance } from "../logic/island";
+import { HOME_SHAPE, type IslandLayout } from "../logic/island";
 import { createRng } from "../logic/rng";
 import { COLORS } from "./palette";
 import { instanced, type PropInstance, swaying } from "./props";
 import type { SceneryMap } from "./scenery";
-import { merge, painted } from "./shapes";
+import { merge, painted, vertexColored } from "./shapes";
 
 function beam(w: number, h: number, d: number, color: number): THREE.BufferGeometry {
   return painted(new THREE.BoxGeometry(w, h, d), color);
@@ -150,6 +150,8 @@ function flagGeometry(): THREE.BufferGeometry {
 
 export function buildCamp(layout: IslandLayout, map: SceneryMap): THREE.Group {
   const rng = createRng(layout.seed + 911);
+  const shape = layout.shape ?? HOME_SHAPE;
+  const ground = (x: number, y: number) => Math.max(0, shape.height(x, y));
   const traps: PropInstance[] = [];
   const barricades: PropInstance[] = [];
   const crates: PropInstance[] = [];
@@ -205,8 +207,8 @@ export function buildCamp(layout: IslandLayout, map: SceneryMap): THREE.Group {
   for (let i = 0; i < 400 && traps.length < 16; i++) {
     const x = layout.spawn.x + (rng() - 0.5) * 70;
     const y = layout.spawn.y + (rng() - 0.5) * 70;
-    const sd = shoreDistance(x, y);
-    if (beachSide(x, y) < 0.4 || sd < 2.5 || sd > beachWidth(x, y) - 1) continue;
+    const sd = shape.shoreDistance(x, y);
+    if (shape.beachSide(x, y) < 0.4 || sd < 2.5 || sd > shape.beachWidth(x, y) - 1) continue;
     if (Math.hypot(x - layout.spawn.x, y - layout.spawn.y) < 9) continue;
     if (Math.hypot(x - layout.boat.x, y - layout.boat.y) < 8) continue;
     if (map.trail(x, y) < 3.5 || map.room(x, y) < 1.5) continue;
@@ -220,13 +222,14 @@ export function buildCamp(layout: IslandLayout, map: SceneryMap): THREE.Group {
   }
 
   const root = new THREE.Group();
+  const still = vertexColored();
   root.add(
-    instanced(tankTrapGeometry(), traps),
-    instanced(barricadeGeometry(), barricades),
-    instanced(crateGeometry(), crates),
-    instanced(drumsGeometry(), drums),
-    instanced(tentGeometry(), tents),
-    instanced(flagGeometry(), flags, true, swaying(false)),
+    instanced(tankTrapGeometry(), traps, true, still, ground),
+    instanced(barricadeGeometry(), barricades, true, still, ground),
+    instanced(crateGeometry(), crates, true, still, ground),
+    instanced(drumsGeometry(), drums, true, still, ground),
+    instanced(tentGeometry(), tents, true, still, ground),
+    instanced(flagGeometry(), flags, true, swaying(false), ground),
   );
   return root;
 }

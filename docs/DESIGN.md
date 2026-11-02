@@ -24,13 +24,37 @@ and one player at a time can call in the gunboat to fire its weapons from a targ
 
 These were explicitly left out to keep the first version to a basic structure:
 
-- Statues or idols, and other boost items.
 - Prototype or "landmark" signature defenses.
 - Respawning during a raid.
 - A minimap.
-- PvP. This one is a proposal, not decided.
 - AI troop squads following heroes. Also a proposal, not decided.
 
+## Added 2026-11-02 (owner's requests)
+
+**Decided** unless a line says otherwise. The numbers are first passes.
+
+- **Hero trees** replace hero levels and perks: see `docs/HERO_TREES.md`. Three small checkpoints sit
+  on each line between two upgrades, bought with gold, in order.
+- **Crystals:** nature, fire, ice and dark, won from enemy headquarters.
+- **Enemy islands** have their own shapes, not the crew island's: cove, hook, keyhole, twin, volcano,
+  atoll, ridge and chain, each with its own way in. Bases are laid out on tiles. Tree cover grows
+  with headquarters level, and first islands sit close to the beach.
+- **Player islands:** two in each region, nearest home, belong to other crews, or stand-ins until
+  a real one moves in. Holding one pays a little gold a day. Lose it and another crew can take it.
+  Raiding a real crew's island steals at most 10% of what they hold, then shields them for 12 hours.
+- **Night raids** carry off loot from broken stores, and an island that holds gets gold for it.
+- **Blueprints:** every defense but the gun turret has to be found by raiding non-player bases.
+- **Storage:** a new crew has only the headquarters to store things, and it doesn't hold much.
+- **Ancient statues** are hidden in the crew island's forest and rocks, found in order: nature, ice,
+  fire, dark. Each takes 10 of its crystal, 5,000 stone and two days to restore.
+  Nature gives buildings health, fire gives them damage, ice gives production and plunder, and dark
+  improves the odds of crystals, blueprints and chests.
+- **Teaming up:** crewmates get a notification when someone's picking a hero, and can see it on the
+  map. The lobby shows who's come as 2/2. A team can't charge straight in: everyone scouts the
+  island and readies up, and the raid starts when the whole team is ready, with at least two on it.
+- **Crew screen:** Tools and Statues live in the Build drawer, a Heroes button sits by the Map
+  button, and the cleared bar has gone.
+- **Accounts:** logging out takes the game off the phone, so nothing carries into the next account.
 ## Raids (the core of the game)
 
 Raids are what matter most. If a co-op raid is fun, everything else builds on it.
@@ -180,7 +204,7 @@ sets them apart, and the Tank's Aftershock moved from the end of a ram to whatev
 - There's a moderate amount of palm clusters, bushes and boulders, which act as cover. Not dense
   forest, and not empty.
 - Buildings are big relative to heroes.
-- Every island starts from the crew island's shape: a rounded diamond with one landing beach on
+- The crew island's shape (enemy islands now have their own, see above): a rounded diamond with one landing beach on
   the south-west. The base sits on flat ground beyond the beach, with hills rising behind it.
   The crew lands on that beach, and the gunboat waits in its shallows.
 
@@ -226,7 +250,6 @@ Starting size ratios, in hero heights:
 - Forests run out to the island's edges, and all the grass can be built on, down to the top of
   the beach. The ground rolls gently where buildings go, and hills rise near the far shores.
 - Grass fades smoothly into sand.
-- This is also the shape every enemy island starts from.
 - Progression: a new island starts with only its headquarters and some resources. Producers
   (mills and the like) make resources passively. At the start you can also build a gun turret and
   a mortar.
@@ -662,7 +685,7 @@ Choices made while building the draft. All are **Proposed**:
 - **Island difficulty:** the hero-select screen offers HQ levels 1–3, named Outpost, Fort and
   Stronghold, shown with 1–3 stars.
 - **Cover:** rocks block shots both ways. Sandbags are gone from the game (Decided 2026-11-01).
-- **Non-attacking buildings:** the watchtower doesn't attack, and neither does the headquarters.
+- **Non-attacking buildings:** the headquarters doesn't attack. The watchtower is a sniper (**Decided 2026-11-02**, owner's request): the longest reach of any direct-fire defense, one hard shot at a time, after holding its aim for a moment with a red beam and a ring on the ground that anyone can see. Stepping aside once the beam stops moving dodges it.
 - **Starting energy:** the crew starts with 10 gunboat energy. Defenses give 4–5 when destroyed,
   other buildings 3.
 - **Firing:** holding the aim fires continuously, and a quick tap fires at the nearest building

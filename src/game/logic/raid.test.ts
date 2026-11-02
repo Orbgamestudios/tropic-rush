@@ -3,8 +3,9 @@ import { BUILDINGS } from "./buildings";
 import { generateIsland } from "./enemyBase";
 import { abilityCost, START_ENERGY } from "./gunboat";
 import { HEROES, type HeroKind } from "./heroes";
-import { perkMods } from "./heroProgress";
+import { type HeroMods, heroMods, heroTree, NO_MODS } from "./heroTrees";
 import { type IslandLayout, isOnLand, type PlacedBuilding } from "./island";
+import { archetypeFor } from "./islandShapes";
 import {
   aimStretch,
   createRaid,
@@ -445,14 +446,79 @@ describe("balance", () => {
   });
 });
 
-describe("signature moves", () => {
-  /** A hero at a level, alone or with friends, on an island of these buildings. */
-  function signed(kinds: HeroKind[], level: number, buildings: PlacedBuilding[]): RaidState {
+describe("watchtowers", () => {
+  const towerAt = (x: number, y: number): PlacedBuilding[] => [
+    { type: "watchtower", pos: vec(x, y) },
+    { type: "headquarters", pos: vec(70, -70) },
+  ];
+
+  it("hold their aim where everyone can see it, then fire one hard shot", () => {
+    const state = raid(towerAt(0, -25));
+    building(state).reload = 0;
+    const atk = BUILDINGS.watchtower.attack;
+    if (atk?.kind !== "sniper") throw new Error("not a sniper");
+    run(state, 0.6);
+    expect(building(state).sights).not.toBeNull();
+    expect(state.projectiles).toHaveLength(0);
+    const full = hero(state).hp;
+    run(state, atk.aimTime);
+    expect(building(state).sights).toBeNull();
+    expect(hero(state).hp).toBe(full - atk.damage);
+  });
+
+  it("outrange every other direct-fire defense", () => {
+    const reach = BUILDINGS.watchtower.attack?.range ?? 0;
+    expect(reach).toBeGreaterThan(BUILDINGS.gunTurret.attack?.range ?? 0);
+    expect(reach).toBeGreaterThan(BUILDINGS.harpoon.attack?.range ?? 0);
+  });
+
+  it("miss anyone who steps out of the way once the sights stop moving", () => {
+    const state = raid(towerAt(0, -25));
+    building(state).reload = 0;
+    const atk = BUILDINGS.watchtower.attack;
+    if (atk?.kind !== "sniper") throw new Error("not a sniper");
+    run(state, atk.aimTime - 0.3);
+    const full = hero(state).hp;
+    run(state, 1, [input({ move: vec(1, 0) })]);
+    expect(hero(state).hp).toBe(full);
+  });
+
+  it("lose their aim when nobody's left in range", () => {
+    const state = raid(towerAt(0, -25));
+    building(state).reload = 0;
+    run(state, 0.3);
+    expect(building(state).sights).not.toBeNull();
+    hero(state).pos = vec(70, 40);
+    run(state, 0.1);
+    expect(building(state).sights).toBeNull();
+    expect(building(state).aiming).toBe(0);
+  });
+});
+
+describe("hero upgrades", () => {
+  /** The ids of these upgrades, whatever comes before them. */
+  function owned(kind: HeroKind, names: readonly string[]): string[] {
+    return heroTree(kind)
+      .filter((u) => names.includes(u.name))
+      .map((u) => u.id);
+  }
+
+  function modsOf(kind: HeroKind, names: readonly string[]): HeroMods {
+    return heroMods(kind, owned(kind, names));
+  }
+
+  /** Heroes with these upgrades on an island of these buildings. */
+  function raided(
+    kinds: HeroKind[],
+    names: readonly string[],
+    buildings: PlacedBuilding[],
+    extra: Partial<IslandLayout> = {},
+  ): RaidState {
     return createRaid(
-      layout(buildings),
+      layout(buildings, extra),
       kinds,
       [],
-      kinds.map((k) => perkMods(k, level)),
+      kinds.map((k) => modsOf(k, names)),
     );
   }
 
@@ -463,22 +529,25 @@ describe("signature moves", () => {
     { type: "headquarters", pos: vec(40, -40) },
   ];
   const fire = (dir: Vec2) => input({ aim: normalize(dir) });
+  const hurtBy = (state: RaidState, amount: number, heavyBonus = 1) => {
+    const shot = { ...enemyShot(state), pos: { ...hero(state).pos }, damage: amount, heavyBonus };
+    state.projectiles.push(shot);
+    stepRaid(state, [], DT);
+  };
 
-  it("ricochets rifle bullets into the next building, further at level 10", () => {
-    const damage = (level: number) => {
-      const state = signed(["rifleman"], level, towers);
+  it("ricochets rifle bullets into the next building", () => {
+    const damage = (names: string[]) => {
+      const state = raided(["rifleman"], names, towers);
       run(state, 2, [fire(vec(0, -1))]);
-      return [1, 2].map((i) => building(state, i).maxHp - building(state, i).hp);
+      return building(state, 1).maxHp - building(state, 1).hp;
     };
-    expect(damage(4)).toEqual([0, 0]);
-    expect(damage(5)[0]).toBeGreaterThan(0);
-    expect(damage(5)[1]).toBe(0);
-    expect(damage(10)[1]).toBeGreaterThan(0);
+    expect(damage([])).toBe(0);
+    expect(damage(["Ricochet"])).toBeGreaterThan(0);
   });
 
-  it("makes some minigun rounds explode at full spin, more often at level 10", () => {
-    const blasts = (level: number) => {
-      const state = signed(["heavy"], level, towers);
+  it("makes every 6th minigun round explode at full spin", () => {
+    const blasts = (names: string[]) => {
+      const state = raided(["heavy"], names, towers);
       let count = 0;
       for (let t = 0; t < 4; t += DT) {
         stepRaid(state, [fire(vec(0, -1))], DT);
@@ -486,31 +555,29 @@ describe("signature moves", () => {
       }
       return count;
     };
-    expect(blasts(4)).toBe(0);
-    expect(blasts(5)).toBeGreaterThan(0);
-    expect(blasts(10)).toBeGreaterThan(blasts(5));
+    expect(blasts([])).toBe(0);
+    expect(blasts(["Explosive Belt"])).toBeGreaterThan(0);
   });
 
-  it("brings a fallen hero back once a raid, twice at level 10", () => {
-    const shots = (level: number) => {
-      const state = signed(["rifleman", "medic"], level, []);
-      let downs = 0;
+  it("brings a fallen hero back twice a raid with Guardian Angel", () => {
+    const save = (names: string[]) => {
+      const state = raided(["rifleman", "medic"], names, []);
+      let back = 0;
       const rifleman = hero(state, 0);
       for (let i = 0; i < 3 && rifleman.alive; i++) {
         state.projectiles.push({ ...enemyShot(state), pos: { ...rifleman.pos } });
         stepRaid(state, [], DT);
-        if (rifleman.alive) downs++;
+        if (rifleman.alive) back++;
       }
-      return { downs, alive: rifleman.alive, hp: rifleman.hp / rifleman.maxHp };
+      return back;
     };
-    expect(shots(4).downs).toBe(0);
-    expect(shots(5)).toMatchObject({ downs: 1, alive: false });
-    expect(shots(10)).toMatchObject({ downs: 2, alive: false });
+    expect(save([])).toBe(0);
+    expect(save(["Guardian Angel"])).toBe(2);
   });
 
-  it("scatters bomblets from rockets", () => {
-    const grenades = (level: number) => {
-      const state = signed(["bazooka"], level, towers);
+  it("scatters 5 bomblets from a rocket", () => {
+    const grenades = (names: string[]) => {
+      const state = raided(["bazooka"], names, towers);
       let most = 0;
       for (let t = 0; t < 1.5; t += DT) {
         stepRaid(state, [t < 0.05 ? fire(vec(0, -1)) : undefined], DT);
@@ -518,14 +585,13 @@ describe("signature moves", () => {
       }
       return most;
     };
-    expect(grenades(4)).toBe(0);
-    expect(grenades(5)).toBe(3);
-    expect(grenades(10)).toBe(5);
+    expect(grenades([])).toBe(0);
+    expect(grenades(["Cluster Warhead"])).toBe(5);
   });
 
-  it("skips grenades on for more blasts", () => {
-    const blasts = (level: number) => {
-      const state = signed(["grenadier"], level, towers);
+  it("skips a grenade on for two more blasts", () => {
+    const blasts = (names: string[]) => {
+      const state = raided(["grenadier"], names, towers);
       let count = 0;
       for (let t = 0; t < 3; t += DT) {
         stepRaid(state, [t < 0.05 ? fire(vec(0, -1)) : undefined], DT);
@@ -533,37 +599,442 @@ describe("signature moves", () => {
       }
       return count;
     };
-    expect(blasts(4)).toBe(1);
-    expect(blasts(5)).toBe(2);
-    expect(blasts(10)).toBe(3);
+    expect(blasts([])).toBe(1);
+    expect(blasts(["Skipping Stone"])).toBe(3);
   });
 
-  it("turns what the Engineer destroys into a turret", () => {
-    const turrets = (level: number) => {
-      const state = signed(["engineer"], level, towers);
+  it("turns what the Engineer destroys into a turret, with Salvage", () => {
+    const turrets = (names: string[]) => {
+      const state = raided(["engineer"], names, towers);
       building(state, 0).hp = 1;
       run(state, 1, [fire(vec(0, -1))]);
       return state.turrets;
     };
-    expect(turrets(4)).toHaveLength(0);
-    expect(turrets(5)).toHaveLength(1);
-    expect(turrets(10)[0]?.time).toBeGreaterThan(turrets(5)[0]?.time ?? 0);
+    expect(turrets([])).toHaveLength(0);
+    expect(turrets(["Salvage"])).toHaveLength(1);
   });
 
-  it("sends a shockwave out from what the Tank destroys, further at level 10", () => {
-    const damage = (level: number) => {
-      const state = signed(["tank"], level, [
+  it("sends a shockwave out from what the Tank destroys", () => {
+    const damage = (names: string[]) => {
+      const state = raided(["tank"], names, [
         { type: "storehouse", pos: vec(0, -8) },
-        { type: "storehouse", pos: vec(12, -8) },
+        { type: "storehouse", pos: vec(8, -8) },
         { type: "headquarters", pos: vec(40, -40) },
       ]);
       building(state, 0).hp = 1;
       run(state, 1, [fire(vec(0, -1))]);
       return building(state, 1).maxHp - building(state, 1).hp;
     };
-    expect(damage(4)).toBe(0);
-    expect(damage(5)).toBe(0);
-    expect(damage(10)).toBeGreaterThan(0);
+    expect(damage([])).toBe(0);
+    expect(damage(["Aftershock"])).toBeGreaterThan(0);
+  });
+
+  it("heals a hero who's kept out of trouble, with Field Dressing", () => {
+    const state = raided(["rifleman"], ["Field Dressing"], []);
+    const h = hero(state);
+    h.hp = h.maxHp / 2;
+    run(state, 3.5);
+    expect(h.hp).toBe(h.maxHp / 2);
+    run(state, 1.5);
+    expect(h.hp).toBeGreaterThan(h.maxHp / 2);
+  });
+
+  it("makes a hero fiercer at the end of their rope, with Last Stand", () => {
+    const shots = (names: string[]) => {
+      const state = raided(["rifleman"], names, towers);
+      hero(state).hp = hero(state).maxHp * 0.2;
+      let count = 0;
+      for (let t = 0; t < 4; t += DT) {
+        stepRaid(state, [fire(vec(0, -1))], DT);
+        count += state.events.filter((e) => e.type === "shot").length;
+      }
+      return count;
+    };
+    expect(shots(["Last Stand"])).toBeGreaterThan(shots([]));
+    const state = raided(["rifleman"], ["Last Stand"], []);
+    const h = hero(state);
+    h.hp = h.maxHp * 0.2;
+    const before = h.hp;
+    hurtBy(state, 100);
+    expect(before - h.hp).toBeCloseTo(75);
+  });
+
+  it("takes less from a blow in a Thick Vest", () => {
+    const state = raided(["rifleman"], ["Thick Vest"], []);
+    const h = hero(state);
+    const before = h.hp;
+    hurtBy(state, 100);
+    expect(before - h.hp).toBeCloseTo(85);
+  });
+
+  it("keeps a hero moving while they fire, with Run and Gun", () => {
+    const walked = (names: string[]) => {
+      const state = raided(["rifleman"], names, towers);
+      const start = hero(state).pos.x;
+      run(state, 1, [input({ move: vec(1, 0), aim: vec(0, -1) })]);
+      return hero(state).pos.x - start;
+    };
+    expect(walked(["Run and Gun"])).toBeGreaterThan(walked([]) * 1.5);
+  });
+
+  it("carries healing on after a bottle lands, with Lingering Dose", () => {
+    const state = raided(["medic"], ["Lingering Dose"], []);
+    run(state, 1.2, [input({ aim: vec(0.3, 0) })]);
+    expect(state.zones.some((z) => z.kind === "heal")).toBe(true);
+  });
+
+  it("turns spare healing into a shield, up to a limit, with Overheal", () => {
+    const state = raided(["medic", "rifleman"], ["Overheal"], []);
+    const mate = hero(state, 1);
+    mate.pos = { ...hero(state, 0).pos };
+    run(state, 2, [input({ aim: vec(0.2, 0) })]);
+    expect(mate.shield).toBeGreaterThan(0);
+    expect(mate.shield).toBeLessThanOrEqual(mate.maxHp * 0.2);
+    const before = mate.hp;
+    state.projectiles.push({ ...enemyShot(state), pos: { ...mate.pos }, damage: 10 });
+    stepRaid(state, [], DT);
+    expect(mate.hp).toBe(before);
+  });
+
+  it("boosts healed crewmates with Ice Pack and Adrenaline", () => {
+    const state = raided(["medic", "rifleman"], ["Ice Pack", "Adrenaline"], []);
+    const mate = hero(state, 1);
+    mate.pos = { ...hero(state, 0).pos };
+    run(state, 1.2, [input({ aim: vec(0.2, 0) })]);
+    expect(mate.iced).toBeGreaterThan(0);
+    expect(mate.pumped).toBeGreaterThan(0);
+    expect(hero(state, 0).iced).toBe(0);
+  });
+
+  it("makes every 5th bottle a big one, with Miracle Bottle", () => {
+    const state = raided(["medic"], ["Miracle Bottle"], []);
+    const sizes: number[] = [];
+    for (let t = 0; t < 8; t += DT) {
+      stepRaid(state, [input({ aim: vec(0.3, 0) })], DT);
+      for (const e of state.events) if (e.type === "healBurst") sizes.push(e.radius);
+    }
+    expect(sizes[4]).toBeCloseTo((sizes[0] ?? 0) * 2);
+  });
+
+  it("speeds a long burst up with Overdrive", () => {
+    const shots = (names: string[]) => {
+      const state = raided(["heavy"], names, towers);
+      let count = 0;
+      for (let t = 0; t < 9; t += DT) {
+        stepRaid(state, [fire(vec(0, -1))], DT);
+        if (t > 6) count += state.events.filter((e) => e.type === "shot").length;
+      }
+      return count;
+    };
+    expect(shots(["Overdrive"])).toBeGreaterThan(shots([]));
+  });
+
+  it("shrugs harpoons off with Harpoon Hide", () => {
+    const taken = (names: string[]) => {
+      const state = raided(["heavy"], names, []);
+      const h = hero(state);
+      const before = h.hp;
+      hurtBy(state, 100, 1.6);
+      return before - h.hp;
+    };
+    expect(taken([])).toBeCloseTo(160);
+    expect(taken(["Harpoon Hide"])).toBeCloseTo(100);
+  });
+
+  it("heals while firing with Iron Gut", () => {
+    const state = raided(["heavy"], ["Iron Gut"], towers);
+    const h = hero(state);
+    h.hp = h.maxHp / 2;
+    run(state, 2, [fire(vec(0, -1))]);
+    expect(h.hp).toBeGreaterThan(h.maxHp / 2);
+  });
+
+  it("sends Big Mo berserk after 500 damage", () => {
+    const state = raided(["heavy"], ["Berserk"], []);
+    const h = hero(state);
+    hurtBy(state, 300);
+    expect(h.rage).toBe(0);
+    hurtBy(state, 300);
+    expect(h.rage).toBeGreaterThan(5);
+  });
+
+  it("fires two shells on every 4th shot with Twin Barrels", () => {
+    const state = raided(["tank"], ["Twin Barrels"], towers);
+    let most = 0;
+    for (let t = 0; t < 8; t += DT) {
+      stepRaid(state, [fire(vec(0, -1))], DT);
+      most = Math.max(most, state.events.filter((e) => e.type === "shot").length);
+    }
+    expect(most).toBe(2);
+  });
+
+  it("repairs a still Tank, and sets it hard in Siege Mode", () => {
+    const repaired = raided(["tank"], ["Field Repairs"], []);
+    const h = hero(repaired);
+    h.hp = h.maxHp / 2;
+    run(repaired, 3);
+    expect(h.hp).toBeGreaterThan(h.maxHp / 2);
+    const dug = raided(["tank"], ["Siege Mode"], []);
+    run(dug, 3);
+    const before = hero(dug).hp;
+    hurtBy(dug, 100);
+    expect(before - hero(dug).hp).toBeCloseTo(60);
+  });
+
+  it("cuts blast damage with Reactive Armor, but not bullets", () => {
+    const state = raided(["tank"], ["Reactive Armor"], [], {
+      buildings: [],
+    });
+    const h = hero(state);
+    const before = h.hp;
+    state.projectiles.push({
+      ...enemyShot(state),
+      kind: "mortar",
+      damage: 100,
+      splash: 3,
+      pos: { ...h.pos },
+      vel: vec(0, 0),
+      lob: { from: { ...h.pos }, to: { ...h.pos }, t: 1, duration: 1, peak: 1 },
+    });
+    stepRaid(state, [], DT);
+    expect(before - h.hp).toBeCloseTo(80);
+  });
+
+  it("leaves fire burning where a rocket lands, with Napalm", () => {
+    const state = raided(["bazooka"], ["Napalm"], towers);
+    run(state, 1, [fire(vec(0, -1))]);
+    expect(state.zones.some((z) => z.kind === "fire")).toBe(true);
+    const after = building(state, 0).hp;
+    run(state, 1);
+    expect(building(state, 0).hp).toBeLessThan(after);
+  });
+
+  it("gets away quick after a shot, with Getaway", () => {
+    const state = raided(["bazooka"], ["Getaway"], towers);
+    run(state, 0.1, [fire(vec(0, -1))]);
+    expect(hero(state).haste).toBeGreaterThan(1.5);
+  });
+
+  it("fires a second rocket straight after the first, with Double Tap", () => {
+    const shots = (names: string[]) => {
+      const state = raided(["bazooka"], names, towers);
+      let count = 0;
+      for (let t = 0; t < 1.5; t += DT) {
+        stepRaid(state, [fire(vec(0, -1))], DT);
+        count += state.events.filter((e) => e.type === "shot").length;
+      }
+      return count;
+    };
+    expect(shots([])).toBe(1);
+    expect(shots(["Double Tap"])).toBe(2);
+  });
+
+  it("curves a guided rocket round cover to its target", () => {
+    const rock = {
+      kind: "rock" as const,
+      pos: vec(0, -6),
+      radius: 1.5,
+      blocksShots: true,
+      scale: 1,
+      rotation: 0,
+    };
+    const hit = (names: string[]) => {
+      const far: PlacedBuilding[] = [
+        { type: "storehouse", pos: vec(0, -15) },
+        { type: "headquarters", pos: vec(40, -40) },
+      ];
+      const state = raided(["bazooka"], names, far, { obstacles: [rock] });
+      hero(state).targetId = building(state, 0).id;
+      run(state, 2, [input({ aim: null })]);
+      return building(state, 0).hp < building(state, 0).maxHp;
+    };
+    expect(hit([])).toBe(false);
+    expect(hit(["Guided Rocket"])).toBe(true);
+  });
+
+  it("lands grenades sooner with Short Fuse", () => {
+    const flight = (names: string[]) => {
+      const state = raided(["grenadier"], names, towers);
+      stepRaid(state, [fire(vec(0, -1))], DT);
+      return state.projectiles[0]?.lob?.duration ?? 0;
+    };
+    expect(flight(["Short Fuse"])).toBeCloseTo(flight([]) * 0.6);
+  });
+
+  it("throws two on every 3rd go with Twin Grenades", () => {
+    const state = raided(["grenadier"], ["Twin Grenades"], towers);
+    let most = 0;
+    for (let t = 0; t < 4.5; t += DT) {
+      stepRaid(state, [fire(vec(0, -1))], DT);
+      most = Math.max(most, state.events.filter((e) => e.type === "shot").length);
+    }
+    expect(most).toBe(2);
+  });
+
+  it("hides heroes in smoke, where defenses can't aim", () => {
+    const turret: PlacedBuilding[] = [
+      { type: "gunTurret", pos: vec(0, -10) },
+      { type: "headquarters", pos: vec(40, -40) },
+    ];
+    const state = raided(["grenadier"], ["Smoke Shell"], turret);
+    let smoked = false;
+    for (let t = 0; t < 9 && !smoked; t += DT) {
+      stepRaid(state, [fire(vec(0, 0.5))], DT);
+      hero(state).hp = hero(state).maxHp;
+      smoked = state.zones.some((z) => z.kind === "smoke");
+    }
+    expect(smoked).toBe(true);
+    const zone = state.zones.find((z) => z.kind === "smoke");
+    if (!zone) throw new Error("no smoke");
+    hero(state).pos = { ...zone.pos };
+    state.projectiles.length = 0;
+    building(state, 0).firing = false;
+    zone.time = 3;
+    run(state, 1);
+    expect(state.projectiles.filter((p) => p.team === "enemy")).toHaveLength(0);
+  });
+
+  it("sets mines off from further with Mine Sweeper", () => {
+    const set = (names: string[]) => {
+      const state = raided(["grenadier"], names, towers, { mines: [vec(0, -7)] });
+      const blast = vec(0, -2);
+      hero(state).pos = vec(0, 2);
+      state.projectiles.push({
+        ...enemyShot(state),
+        kind: "grenade",
+        team: "crew",
+        ownerId: hero(state).id,
+        damage: 1,
+        splash: 3,
+        lob: { from: blast, to: blast, t: 1, duration: 1, peak: 1 },
+      });
+      stepRaid(state, [], DT);
+      return state.mines[0]?.fuse !== null;
+    };
+    expect(set([])).toBe(false);
+    expect(set(["Mine Sweeper"])).toBe(true);
+  });
+
+  it("heals on a kill with Tea Break", () => {
+    const state = raided(["grenadier"], ["Tea Break"], towers);
+    const h = hero(state);
+    h.hp = h.maxHp / 2;
+    building(state, 0).hp = 1;
+    run(state, 1.5, [input({ aim: vec(0, -0.3) })]);
+    expect(h.hp).toBeGreaterThan(h.maxHp / 2);
+  });
+
+  it("drops a pocket turret, and a decoy that draws every gun", () => {
+    const state = raided(
+      ["engineer"],
+      ["Pocket Turret", "Decoy Drone"],
+      [
+        { type: "gunTurret", pos: vec(0, -14) },
+        { type: "headquarters", pos: vec(40, -40) },
+      ],
+    );
+    for (let t = 0; t < 31; t += DT) {
+      stepRaid(state, [], DT);
+      hero(state).hp = hero(state).maxHp;
+    }
+    expect(state.turrets.map((t) => t.kind).sort()).toEqual(["decoy", "pocket"]);
+    const decoy = state.turrets.find((t) => t.kind === "decoy");
+    const aim = building(state, 0).aim;
+    expect(decoy).toBeDefined();
+    if (decoy) {
+      const toDecoy = Math.atan2(decoy.pos.y - -14, decoy.pos.x);
+      expect(aim).toBeCloseTo(toDecoy, 1);
+    }
+  });
+
+  it("repairs the Tank and turrets nearby with Repair Beam", () => {
+    const state = createRaid(
+      layout([]),
+      ["engineer", "tank"],
+      [],
+      [modsOf("engineer", ["Repair Beam"]), NO_MODS],
+    );
+    const tank = hero(state, 1);
+    tank.pos = { ...hero(state, 0).pos };
+    tank.hp = tank.maxHp / 2;
+    run(state, 2);
+    expect(tank.hp).toBeGreaterThan(tank.maxHp / 2);
+  });
+
+  it("turns up the turrets with Overclock", () => {
+    const shots = (names: string[]) => {
+      const state = raided(["engineer"], names, towers);
+      state.turrets.push({
+        id: 999,
+        kind: "salvage",
+        ownerId: hero(state).id,
+        pos: vec(0, -2),
+        hp: 900,
+        maxHp: 900,
+        time: 10,
+        reload: 0,
+        aim: 0,
+      });
+      let count = 0;
+      for (let t = 0; t < 4; t += DT) {
+        stepRaid(state, [], DT);
+        count += state.events.filter((e) => e.type === "shot").length;
+      }
+      return count;
+    };
+    expect(shots(["Overclock"])).toBeGreaterThan(shots([]));
+  });
+});
+
+describe("volcanoes", () => {
+  function fireMountain(): RaidState {
+    for (let seed = 1; seed < 400; seed++) {
+      if (archetypeFor(seed, 8) !== "volcano") continue;
+      return createRaid(generateIsland(seed, 8), ["rifleman"]);
+    }
+    throw new Error("no volcano");
+  }
+
+  it("burns whoever wades into the lava", () => {
+    const state = fireMountain();
+    const h = hero(state);
+    const { shape } = state;
+    let spot = null;
+    for (let x = -120; x < 120 && !spot; x += 2) {
+      for (let y = -120; y < 120 && !spot; y += 2) {
+        if (shape.lava(x, y) > 0.9 && shape.shoreDistance(x, y) > 3) spot = vec(x, y);
+      }
+    }
+    if (!spot) throw new Error("no lava");
+    h.pos = spot;
+    const before = h.hp;
+    run(state, 0.5);
+    expect(h.hp).toBeLessThan(before);
+    expect(state.status).toBe("playing");
+  });
+
+  it("goes off now and then, throwing fire with a warning on the ground", () => {
+    const state = fireMountain();
+    let erupted = false;
+    let bombs = 0;
+    for (let t = 0; t < 30 && !erupted; t += DT) {
+      stepRaid(state, [], DT);
+      hero(state).hp = hero(state).maxHp;
+      erupted = state.events.some((e) => e.type === "eruption");
+      bombs = state.projectiles.filter((p) => p.kind === "lava").length;
+    }
+    expect(erupted).toBe(true);
+    expect(bombs).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("statues in a raid", () => {
+  it("toughens and sharpens the defenders' buildings", () => {
+    const place: PlacedBuilding[] = [{ type: "gunTurret", pos: vec(0, -8) }];
+    const plain = createRaid(layout(place), []);
+    const blessed = createRaid(layout(place, { buffs: { health: 1.15, damage: 1.15 } }), []);
+    expect(building(blessed).maxHp).toBeCloseTo(building(plain).maxHp * 1.15);
+    expect(building(blessed).power).toBeCloseTo(building(plain).power * 1.15);
   });
 });
 
@@ -584,5 +1055,7 @@ function enemyShot(state: RaidState): RaidState["projectiles"][number] {
     maxDistance: 10,
     lob: null,
     charges: 0,
+    homing: null,
+    smoke: false,
   };
 }

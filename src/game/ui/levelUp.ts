@@ -1,7 +1,7 @@
-// The level-up reveal: a burst of rays behind the hero's portrait, the new level, and on the
-// milestone levels the perk they've just earned. Tap to carry on.
+// The reveal for a hero's capstone: a burst of rays behind their portrait and the new ability it
+// brings. Tap to carry on.
 
-import { isSignature, type Perk } from "../logic/heroProgress";
+import type { TreeUpgrade } from "../logic/heroTrees";
 import { button, el } from "./kit/dom";
 import { icon } from "./kit/icons";
 
@@ -33,26 +33,20 @@ export class LevelUpReveal {
     parent.append(this.root);
   }
 
-  show(name: string, level: number, portrait: Promise<string>, perk: Perk | undefined): void {
+  show(name: string, portrait: Promise<string>, upgrade: TreeUpgrade): void {
     void portrait.then((url) => {
       this.portrait.src = url;
     });
-    this.title.textContent = `Level ${level}!`;
+    this.title.textContent = "New ability!";
     this.name.textContent = name;
-    this.perk.replaceChildren();
-    if (perk) {
-      const signature = isSignature(perk);
-      const card = el("div", `levelup-card${signature ? " signature" : ""}`);
-      card.append(
-        icon("star", "levelup-card-icon"),
-        el("div", "levelup-card-tag", signature ? "Signature move" : "New perk"),
-        el("div", "levelup-card-name", perk.name),
-        el("div", "levelup-card-text", perk.text),
-      );
-      this.perk.append(card);
-    } else {
-      this.perk.append(el("div", "levelup-plain", "8% more health and damage"));
-    }
+    const card = el("div", "levelup-card signature");
+    card.append(
+      icon("star", "levelup-card-icon"),
+      el("div", "levelup-card-tag", "Capstone"),
+      el("div", "levelup-card-name", upgrade.name),
+      el("div", "levelup-card-text", upgrade.text),
+    );
+    this.perk.replaceChildren(card);
     this.root.style.display = "flex";
   }
 

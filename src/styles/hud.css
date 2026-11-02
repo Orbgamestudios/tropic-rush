@@ -837,6 +837,23 @@
   height: 11px;
 }
 
+/* A crewmate's name sits on top of their bar. */
+.bar-named {
+  overflow: visible;
+}
+
+.bar-name {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+  white-space: nowrap;
+}
+
 .bar-fill,
 .bar-lag {
   position: absolute;

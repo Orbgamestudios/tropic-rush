@@ -1,9 +1,13 @@
 // The end-of-raid screen: a VICTORY or DEFEAT banner on sun rays, three stars that stamp in one
 // by one, the raid's numbers, and the loot counting up into the wallet.
 
+import { BUILDINGS } from "../logic/buildings";
+import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse, RESOURCES } from "../logic/economy";
 import type { RaidReward } from "../logic/heroProgress";
-import { button, costChips, el, formatNumber, plate } from "./kit/dom";
+import type { Spoils } from "../logic/spoils";
+import { buildingIcon } from "../render/thumbnails";
+import { button, costChips, crystalChip, el, formatNumber, plate } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
@@ -17,6 +21,10 @@ export interface RaidResult {
   reward: RaidReward;
   /** Materials carried off from mills and storages, for the crew's stock. */
   materials: Purse;
+  /** What a win turned up besides. */
+  spoils: Spoils | null;
+  /** What a conquered player island will pay each day, if this was one. */
+  tribute: number;
 }
 
 export interface ResultsHandlers {
@@ -33,6 +41,7 @@ export class ResultsScreen {
   private readonly stars = el("div", "results-stars");
   private readonly stats = el("div", "results-stats");
   private readonly loot = el("div", "results-loot");
+  private readonly found = el("div", "results-found");
   private timers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(parent: HTMLElement, handlers: ResultsHandlers) {
@@ -67,6 +76,7 @@ export class ResultsScreen {
       this.stats,
       plate("Loot", "results-loot-plate"),
       this.loot,
+      this.found,
       actions,
     );
     this.root.append(el("div", "results-rays"), this.banner, card, this.fx);
@@ -151,7 +161,52 @@ export class ResultsScreen {
     lootItem("coin", result.reward.gold, "Gold");
     if (RESOURCES.some((r) => result.materials[r] > 0))
       this.loot.append(costChips(costText(result.materials)));
+    this.showFound(result);
     this.timers.push(setTimeout(() => (result.won ? sfx.victory() : sfx.defeat()), 150));
+  }
+
+  /** The crystals, blueprint and treasure a win turned up, popping in after the gold. */
+  private showFound(result: RaidResult): void {
+    this.found.replaceChildren();
+    const { spoils, tribute } = result;
+    const items: HTMLElement[] = [];
+    for (const k of CRYSTAL_KINDS) {
+      const amount = spoils?.crystals[k];
+      if (amount) items.push(crystalChip(k, amount, "results-crystal"));
+    }
+    if (spoils?.blueprint) {
+      const print = el("div", "results-blueprint");
+      const picture = el("img", "results-blueprint-img");
+      picture.src = buildingIcon(spoils.blueprint);
+      picture.alt = "";
+      print.append(
+        picture,
+        el("span", "results-blueprint-tag", "New blueprint"),
+        el("span", "results-blueprint-name", BUILDINGS[spoils.blueprint].label),
+      );
+      items.push(print);
+    }
+    if (spoils?.chest) {
+      const chest = el("div", "results-chest");
+      chest.append(icon("coin"), el("span", "", `Treasure chest! +${formatNumber(spoils.chest)}`));
+      items.push(chest);
+    }
+    if (tribute > 0) {
+      items.push(el("div", "results-tribute", `Pays you ${tribute} gold every day you hold it`));
+    }
+    items.forEach((item, i) => {
+      item.classList.add("results-pop");
+      this.timers.push(
+        setTimeout(
+          () => {
+            this.found.append(item);
+            sfx.coin();
+            sparkleAt(this.fx, item, { count: 18, spread: 80 });
+          },
+          2200 + i * 420,
+        ),
+      );
+    });
   }
 
   hide(): void {

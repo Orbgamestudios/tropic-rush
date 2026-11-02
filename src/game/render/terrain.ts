@@ -6,8 +6,8 @@
 // ripples with sun glints, and foam that hugs the shore and rolls in as waves.
 
 import * as THREE from "three";
-import { shoreDistance, shoreRadius, terrainHeight } from "../logic/island";
-import { smoothstep } from "../logic/vec";
+import { HOME_SHAPE, type IslandShape, lavaWidth, shoreRadius } from "../logic/island";
+import { smoothstep, type Vec2 } from "../logic/vec";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
@@ -16,6 +16,8 @@ import { SKY } from "./sky";
 const RINGS = 84;
 const SEGMENTS = 200;
 const SEA_MARGIN = 26;
+/** Enemy islands can be any shape, so their ground is a square grid this fine, in meters. */
+const GRID_STEP = 2;
 /** The shore-distance texture covers this square around the middle (meters each way). */
 const MAP_HALF = 150;
 const MAP_SIZE = 256;
@@ -23,7 +25,9 @@ const MAP_SIZE = 256;
 export const SHADE_HALF = 128;
 
 export interface TerrainOptions {
-  /** Ground height in meters; raid islands use terrainHeight. */
+  /** The land itself; the crew's own island if missing. */
+  shape?: IslandShape;
+  /** Ground height in meters, if it isn't the shape's own. */
   height?: (x: number, y: number) => number;
   /**
    * Optional soft overlay on the grass: red darkens it to jungle floor, green turns it to stony
@@ -43,6 +47,9 @@ const JUNGLE_FLOOR = new THREE.Color(0x3f8a3a);
 const DIRT = new THREE.Color(0xc79a62);
 const DIRT_DARK = new THREE.Color(0xa77a4a);
 const ROCK = new THREE.Color(0x9c9584);
+const BLACK_SAND = new THREE.Color(0x6a6468);
+const BLACK_WET_SAND = new THREE.Color(0x4b4650);
+const BURNT_GROUND = new THREE.Color(0x3b2a26);
 
 function noise(x: number, y: number): number {
   return (
@@ -54,19 +61,21 @@ function noise(x: number, y: number): number {
 
 function groundColor(
   map: SceneryMap,
+  shape: IslandShape,
   height: (x: number, y: number) => number,
   x: number,
   y: number,
   out: THREE.Color,
 ): THREE.Color {
-  const sd = shoreDistance(x, y);
+  const sd = shape.shoreDistance(x, y);
+  const sand = shape.blackSand ? BLACK_SAND : SAND;
   if (sd < 0) {
     return out
-      .copy(SAND)
+      .copy(sand)
       .lerp(SEABED, smoothstep(0, 4, -sd))
       .lerp(DEEP_SEABED, smoothstep(6, 22, -sd));
   }
-  out.copy(WET_SAND).lerp(SAND, smoothstep(0, 2.2, sd));
+  out.copy(shape.blackSand ? BLACK_WET_SAND : WET_SAND).lerp(sand, smoothstep(0, 2.2, sd));
   const grass = map.grass(x, y);
   if (grass <= 0) return out;
 
@@ -87,25 +96,34 @@ function groundColor(
   const t = map.trail(x, y);
   const dirt = DIRT.clone().lerp(DIRT_DARK, smoothstep(1.4, 0, t) * 0.5);
   lawn.lerp(dirt, smoothstep(2.6, 1.4, t + noise(x * 3, y * 3) * 0.4));
+  // Scorched ground along the lava, and up the mountain.
+  const { volcano } = shape;
+  if (volcano) {
+    const rise = Math.hypot(x - volcano.pos.x, y - volcano.pos.y) / volcano.radius;
+    lawn.lerp(BURNT_GROUND, smoothstep(1.05, 0.6, rise) * 0.9);
+    lawn.lerp(BURNT_GROUND, Math.max(shape.lava(x, y), shape.lava(x + 2, y), shape.lava(x, y + 2)));
+  }
   return out.lerp(lawn, grass);
 }
 
-function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
-  const height = options.height ?? terrainHeight;
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const color = new THREE.Color();
+interface GroundPoints {
+  xs: number[];
+  ys: number[];
+  indices: number[];
+}
+
+/** Rings round the middle, for the crew's island: it's the only one that's round enough. */
+function polarGround(): GroundPoints {
+  const xs: number[] = [];
+  const ys: number[] = [];
   for (let ring = 0; ring <= RINGS; ring++) {
     // Rings bunch up towards the shore, where the detail is.
     const t = Math.sqrt(ring / RINGS);
     for (let seg = 0; seg <= SEGMENTS; seg++) {
       const angle = (seg / SEGMENTS) * Math.PI * 2;
       const r = t * (shoreRadius(angle) + SEA_MARGIN);
-      const x = Math.cos(angle) * r;
-      const y = Math.sin(angle) * r;
-      positions.push(x, height(x, y), y);
-      groundColor(map, height, x, y, color);
-      colors.push(color.r, color.g, color.b);
+      xs.push(Math.cos(angle) * r);
+      ys.push(Math.sin(angle) * r);
     }
   }
   const indices: number[] = [];
@@ -117,6 +135,206 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
       indices.push(a, a + 1, b, a + 1, b + 1, b);
     }
   }
+  return { xs, ys, indices };
+}
+
+/** A square grid, for coasts with bays and lagoons, kept to the land and the water round it. */
+function gridGround(shape: IslandShape, height: (x: number, y: number) => number): GroundPoints {
+  const near = (x: number, y: number) => shape.shoreDistance(x, y) > -SEA_MARGIN;
+  const edge = shape.reach;
+  const count = Math.ceil((edge * 2) / GRID_STEP) + 1;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const index = new Int32Array(count * count).fill(-1);
+  const put = (i: number, j: number) => {
+    const k = j * count + i;
+    if (index[k] === -1) {
+      index[k] = xs.length;
+      xs.push(-edge + i * GRID_STEP);
+      ys.push(-edge + j * GRID_STEP);
+    }
+    return index[k] ?? 0;
+  };
+  const indices: number[] = [];
+  for (let j = 0; j + 1 < count; j++) {
+    for (let i = 0; i + 1 < count; i++) {
+      if (!near(-edge + i * GRID_STEP, -edge + j * GRID_STEP)) continue;
+      const a = put(i, j);
+      const b = put(i + 1, j);
+      const c = put(i, j + 1);
+      const d = put(i + 1, j + 1);
+      // Each cell splits along whichever diagonal stays level, so a coast doesn't turn sawtooth.
+      const at = (ci: number, cj: number) => height(-edge + ci * GRID_STEP, -edge + cj * GRID_STEP);
+      const down = Math.abs(at(i, j) - at(i + 1, j + 1));
+      const across = Math.abs(at(i + 1, j) - at(i, j + 1));
+      if (down < across) indices.push(a, c, d, a, d, b);
+      else indices.push(a, c, b, b, c, d);
+    }
+  }
+  return { xs, ys, indices };
+}
+
+const LAVA_VERTEX = /* glsl */ `
+  attribute float aFlow;
+  attribute float aSide;
+  varying float vFlow;
+  varying float vSide;
+  void main() {
+    vFlow = aFlow;
+    vSide = aSide;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const LAVA_FRAGMENT = /* glsl */ `
+  uniform float uTime;
+  uniform sampler2D uNoise;
+  varying float vFlow;
+  varying float vSide;
+  float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
+  void main() {
+    // Bright rock pouring downhill under a dark crust, which breaks up and closes over again.
+    float edge = abs(vSide);
+    vec2 p = vec2(vFlow * 0.42 - uTime * 0.55, vSide * 1.5);
+    float veins = noise(p * 1.6);
+    float crust = smoothstep(0.44, 0.56, noise(p * 0.7 + 4.0) + edge * 0.3 - 0.06);
+    vec3 hot = mix(vec3(0.95, 0.12, 0.01), vec3(1.0, 0.42, 0.04), smoothstep(0.4, 0.62, veins));
+    vec3 color = mix(hot, vec3(0.07, 0.03, 0.03), crust * 0.92);
+    gl_FragColor = vec4(color, smoothstep(1.0, 0.78, edge));
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+/** Lengths of ribbon a river is cut into, and points across it, for it to lie on the ground. */
+const LAVA_STEP = 1.5;
+const LAVA_ACROSS = 4;
+const CRATER_RINGS = 3;
+const CRATER_SEGMENTS = 20;
+
+interface LavaMesh {
+  positions: number[];
+  flows: number[];
+  sides: number[];
+  indices: number[];
+}
+
+/** Lays one river on the ground as a ribbon, with its flow running down its length. */
+function layRiver(
+  river: readonly Vec2[],
+  height: (x: number, y: number) => number,
+  out: LavaMesh,
+): void {
+  const legs = river.length - 1;
+  const row = LAVA_ACROSS + 1;
+  let walked = 0;
+  let rows = 0;
+  river.forEach((a, leg) => {
+    const b = river[leg + 1];
+    if (!b) return;
+    const gap = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.round(gap / LAVA_STEP));
+    const nx = -(b.y - a.y) / (gap || 1);
+    const ny = (b.x - a.x) / (gap || 1);
+    for (let s = leg === 0 ? 0 : 1; s <= steps; s++) {
+      const t = s / steps;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const width = lavaWidth((leg + t) / legs, x, y) + 0.6;
+      for (let i = 0; i <= LAVA_ACROSS; i++) {
+        const side = (i / LAVA_ACROSS) * 2 - 1;
+        const px = x + nx * side * width;
+        const py = y + ny * side * width;
+        out.positions.push(px, Math.max(0.02, height(px, py)) + 0.12, py);
+        out.flows.push(walked + (gap * s) / steps);
+        out.sides.push(side);
+      }
+      rows++;
+    }
+    walked += gap;
+  });
+  const first = out.positions.length / 3 - rows * row;
+  for (let r = 0; r + 1 < rows; r++) {
+    for (let i = 0; i < LAVA_ACROSS; i++) {
+      const v = first + r * row + i;
+      out.indices.push(v, v + row, v + 1, v + 1, v + row, v + row + 1);
+    }
+  }
+}
+
+/** The crater's pool, a disc lying in the top of the mountain. */
+function layCrater(
+  volcano: NonNullable<IslandShape["volcano"]>,
+  height: (x: number, y: number) => number,
+  out: LavaMesh,
+): void {
+  const reach = volcano.radius * 0.17;
+  const first = out.positions.length / 3;
+  const { x, y } = volcano.pos;
+  const top = height(x, y) + 0.3;
+  for (let ring = 0; ring <= CRATER_RINGS; ring++) {
+    const r = (ring / CRATER_RINGS) * reach;
+    for (let seg = 0; seg < CRATER_SEGMENTS; seg++) {
+      const a = (seg / CRATER_SEGMENTS) * Math.PI * 2;
+      out.positions.push(x + Math.cos(a) * r, top, y + Math.sin(a) * r);
+      out.flows.push(seg * 2.2);
+      out.sides.push(ring / CRATER_RINGS);
+    }
+  }
+  for (let ring = 0; ring < CRATER_RINGS; ring++) {
+    for (let seg = 0; seg < CRATER_SEGMENTS; seg++) {
+      const next = (seg + 1) % CRATER_SEGMENTS;
+      const a = first + ring * CRATER_SEGMENTS + seg;
+      const b = first + ring * CRATER_SEGMENTS + next;
+      const c = a + CRATER_SEGMENTS;
+      const d = b + CRATER_SEGMENTS;
+      out.indices.push(a, c, b, b, c, d);
+    }
+  }
+}
+
+/** The running lava and the crater's glow, as one mesh laid on the ground. */
+function buildLava(
+  shape: IslandShape,
+  height: (x: number, y: number) => number,
+): { mesh: THREE.Mesh; time: THREE.IUniform<number> } | null {
+  const { volcano } = shape;
+  if (!volcano) return null;
+  const lava: LavaMesh = { positions: [], flows: [], sides: [], indices: [] };
+  for (const river of shape.rivers) layRiver(river, height, lava);
+  layCrater(volcano, height, lava);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(lava.positions, 3));
+  geometry.setAttribute("aFlow", new THREE.Float32BufferAttribute(lava.flows, 1));
+  geometry.setAttribute("aSide", new THREE.Float32BufferAttribute(lava.sides, 1));
+  geometry.setIndex(lava.indices);
+  const time = { value: 0 };
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: { uTime: time, uNoise: { value: noiseTexture() } },
+    vertexShader: LAVA_VERTEX,
+    fragmentShader: LAVA_FRAGMENT,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 1;
+  return { mesh, time };
+}
+
+function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
+  const shape = options.shape ?? HOME_SHAPE;
+  const height = options.height ?? shape.height;
+  const { xs, ys, indices } = shape === HOME_SHAPE ? polarGround() : gridGround(shape, height);
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const color = new THREE.Color();
+  xs.forEach((x, i) => {
+    const y = ys[i] ?? 0;
+    positions.push(x, height(x, y), y);
+    groundColor(map, shape, height, x, y, color);
+    colors.push(color.r, color.g, color.b);
+  });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
@@ -153,14 +371,14 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
 }
 
 /** How far each point is from the shore, baked into a small texture for the water shader. */
-function shoreTexture(): THREE.DataTexture {
+function shoreTexture(shape: IslandShape): THREE.DataTexture {
   const data = new Uint8Array(MAP_SIZE * MAP_SIZE * 4);
   for (let j = 0; j < MAP_SIZE; j++) {
     for (let i = 0; i < MAP_SIZE; i++) {
       const x = ((i + 0.5) / MAP_SIZE) * 2 * MAP_HALF - MAP_HALF;
       const y = ((j + 0.5) / MAP_SIZE) * 2 * MAP_HALF - MAP_HALF;
       // -64 m (open sea) .. +8 m (inland) stored in 0..255.
-      const d = Math.max(-64, Math.min(8, shoreDistance(x, y)));
+      const d = Math.max(-64, Math.min(8, shape.shoreDistance(x, y)));
       const k = (j * MAP_SIZE + i) * 4;
       data[k] = Math.round(((d + 64) / 72) * 255);
       data[k + 3] = 255;
@@ -259,8 +477,11 @@ export interface TerrainView {
 export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): TerrainView {
   const root = new THREE.Group();
   root.add(buildGround(map, options));
+  const shape = options.shape ?? HOME_SHAPE;
+  const lava = buildLava(shape, options.height ?? shape.height);
+  if (lava) root.add(lava.mesh);
 
-  const shore = shoreTexture();
+  const shore = shoreTexture(shape);
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -293,6 +514,7 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
     root,
     update(time) {
       (material.uniforms.uTime as THREE.IUniform<number>).value = time;
+      if (lava) lava.time.value = time;
     },
     dispose() {
       shore.dispose();

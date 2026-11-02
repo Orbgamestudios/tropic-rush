@@ -1,18 +1,12 @@
 # Handoff
 
-Where the work stands, for a Claude picking this up on another computer. Written 2026-11-01 at
-commit 0cd521e, which is pushed and live. Update or delete this note as things change. This repo is
-public, so keep anything private out of it.
+Where the work stands, for a Claude picking this up on another computer. Written 2026-11-02. Update
+or delete this note as things change. This repo is public, so keep anything private out of it.
 
 Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 
 ## Waiting on the owner
 
-- **Hero upgrade trees:** the plan for all seven heroes is in `docs/HERO_TREES.md`, with the
-  two-week "Tides" abilities beyond them. The owner called it a planning phase and hasn't approved
-  it. Don't build any of it until they do. Their reference art is in `docs/concept/`:
-  `ui-upgrade-tree.webp` for the screen and `crystals.png` for the crystals, whose design they like
-  specifically.
 - **iPhone feedback:** nothing below has been tried on a real iPhone. Ask about game speed, sound,
   haptics, the notch, the location card, how dark nights are, and battery.
 - **Hero unlock spacing:** a hero joins every three HQ levels: Heavy 3, Medic 6, Grenadier 9,
@@ -20,28 +14,32 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
   choice. It's a stand-in until the game has a story arc.
 - **Building sizes:** the owner said "mines and refinery 4x4". The refinery is still a Proposed
   building, and "mines" was read as all the producers, so confirm both if they come up.
+- **Tides:** the two-week abilities in `docs/HERO_TREES.md` aren't built.
+- **Balance:** tree prices, checkpoint sizes, the watchtower's numbers and blueprint odds are first
+  passes.
 
 ## Last finished
 
-- The sky follows the real sun and moon where the player is, on the crew island, in raids and on
-  the world map. The hero pedestal stays in daylight. See "Day and night" in `docs/DESIGN.md`.
-- Moon phase sets how much light and shadow a night gets. A new moon gives no moonlight or
-  shadows. The forest goes darker than open ground, and fireflies come out after dark.
-- Buildings, heroes, guns and blasts light the ground at night without real lights
-  (`render/lightPool.ts`).
-- New players start with only the Rifleman, and medals are gone. Existing saves keep the heroes
-  they already have.
-- Moving widens the aim cone by about 25%, throwers scatter on the move, the Grenadier's range is
-  up 33%, and the back camera follows the right stick with a smoother spin.
-- Labels no longer clip at the safe area.
+Everything in "Added 2026-11-02" in `docs/DESIGN.md`: hero trees and checkpoints, crystals, shaped
+enemy islands with volcanoes and cliffs, player islands and rival raids, night loot, blueprints,
+HQ-only storage, raid notifications, statues, sniper watchtowers, scouting and readying up as a
+team, and accounts that stay apart.
+
+For battery, screens nobody's touching run at 30 frames, shadows redraw less often, nothing draws
+behind the tree screen, the picture starts a little softer, and there are fewer clouds.
 
 ## Not checked yet
 
-- The last commit's fixes reran only 4 of the 26 browser tests. The other 22 last passed on the
-  commit before it. Run the full `npm run e2e` before the next push.
+- Battery use hasn't been measured on a phone. One frame costs about 125,000 triangles in a raid
+  and 430,000 on the crew island, whose forest is the heavy part.
+- Team-up and rival raids were run on `npx wrangler dev` with two pages, not on the live site.
+- Personal gold isn't capped by storage: only the island's stock is.
+- Rival crews stand in until real ones are in the directory, so a live world starts mostly with
+  stand-ins.
+- An account that already picked up another account's progress keeps it: only "Reset game" clears
+  that. New logins and logouts can't mix them any more.
 - "Use my location" has never run with a real location. The card was only shown, and "Not now"
   tapped.
-- Battery use hasn't been measured.
 - No screenshot has shown the moon in the sky dome. The cameras rarely see above the horizon: only
   the back view with the tilt set low does.
 - Night lighting hasn't been seen on a dense base: the busiest one checked was an early island.
@@ -89,6 +87,11 @@ cost quality. Battery matters: keep Lambert materials, baked models and few draw
 - `tropicRush.sky(hour, place, date)` shows any time and day, such as a new moon. `hour` is local
   time, and `place` is `{ lat, lon }`. Pass `null` to go back to the clock.
 - `tropicRush.syncNow(changes)` changes the save, which is how a test unlocks a hero.
+- `tropicRush.visit(seed, hq)` scouts any island, `findStatue(kind)` brings a statue to light,
+  `crewLook(x, y, distance)` points the home camera, and `win()` ends a raid in victory.
+- Two pages on one crew need different origins, or they'd share a save: use `localhost:8787` and
+  `127.0.0.1:8787`. Crew codes have no I, L, O, 0 or 1.
+- Node tools on a computer running Avast need `NODE_USE_SYSTEM_CA=1`.
 - Frame timing needs `gl.readPixels` to force the frame to finish: `requestAnimationFrame` alone
   gives bogus numbers.
 - `npx wrangler dev` rebuilds when `src/` changes, so don't edit `src/` during a test run against it.

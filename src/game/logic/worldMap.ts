@@ -5,11 +5,26 @@
 // raiders retake one in the night, which brings it back stronger. No engine imports.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
+import type { PlacedBuilding } from "./crewIsland";
+import { type CrystalKind, islandCrystal } from "./crystals";
 import { allowedCount, MAX_HQ_LEVEL } from "./economy";
 import { type RaidReward, raidReward } from "./heroProgress";
+import { ARCHETYPES, type Archetype, archetypeFor } from "./islandShapes";
 import { createRng } from "./rng";
 
 export type Difficulty = "Easy" | "Fair" | "Hard" | "Deadly";
+
+/** Another crew's base, standing on a player island of the map. */
+export interface Rival {
+  /** Their crew code, or empty for a stand-in while nobody's there to fill the spot. */
+  code: string;
+  name: string;
+  hq: number;
+  /** Their island as it stood; empty for a stand-in, whose base grows from the island's seed. */
+  buildings: PlacedBuilding[];
+  /** What their statues add to their buildings. */
+  buffs?: { health: number; damage: number };
+}
 
 export interface MapIsland {
   /** Stable forever: "region column,region row:index". */
@@ -33,6 +48,14 @@ export interface MapIsland {
   taken: boolean;
   /** Retaken by raiders: every building they're allowed, all at full level. */
   retaken: boolean;
+  /** What kind of island it is. Player islands are all on the crew island's own coast. */
+  archetype: Archetype | "player";
+  /** The crystal its headquarters holds. */
+  crystal: CrystalKind;
+  /** A player island: the crew living there, whoever they are right now. */
+  rival: Rival | null;
+  /** What it pays each day while the crew holds it. */
+  tribute: number;
 }
 
 /** What a crew has done to the map. */
@@ -45,9 +68,32 @@ export interface WorldProgress {
   opened: string[];
   /** Islands won towards lifting the next cloud. */
   progress: number;
+  /** Which crew is on each player island, by island id. */
+  rivals: Record<string, Rival>;
+  /** Crews this one has beaten lately, so a spot comes back with someone new. */
+  beaten: string[];
 }
 
-export const NEW_WORLD: WorldProgress = { taken: [], retaken: {}, opened: [], progress: 0 };
+export const NEW_WORLD: WorldProgress = {
+  taken: [],
+  retaken: {},
+  opened: [],
+  progress: 0,
+  rivals: {},
+  beaten: [],
+};
+
+/** Each region keeps this many of its islands for other crews to live on. */
+const PLAYER_ISLANDS_PER_REGION = 2;
+/** A conquered player island pays a little gold each day: a base, and more for a stronger crew. */
+const TRIBUTE_GOLD = 60;
+const TRIBUTE_PER_HQ = 20;
+/** Crews remembered as beaten. */
+const MOST_BEATEN = 12;
+
+export function tributeFor(hq: number): number {
+  return TRIBUTE_GOLD + TRIBUTE_PER_HQ * hq;
+}
 
 /** A region's size in map units. Wider than tall, like the screen. */
 export const REGION = { w: 112, h: 66 } as const;
@@ -213,6 +259,40 @@ interface Charted {
   seed: number;
   /** Its headquarters level before anyone has touched it. */
   hq: number;
+  /** Kept for another crew to live on. */
+  player: boolean;
+}
+
+const CREW_START = [
+  "Salty",
+  "Rum",
+  "Sunset",
+  "Stormy",
+  "Lucky",
+  "Crooked",
+  "Golden",
+  "Tide",
+  "Wild",
+  "Old",
+] as const;
+const CREW_END = [
+  "Dogs",
+  "Runners",
+  "Corsairs",
+  "Wreckers",
+  "Gulls",
+  "Sharks",
+  "Rovers",
+  "Marauders",
+] as const;
+
+/** Stands in for a real crew until one comes along, so no player island is ever empty. */
+function standIn(island: Charted, yourHq: number): Rival {
+  const rng = createRng(island.seed ^ 0xc4e3);
+  const start = CREW_START[Math.floor(rng() * CREW_START.length)];
+  const end = CREW_END[Math.floor(rng() * CREW_END.length)];
+  const hq = Math.max(1, yourHq - 1 + Math.floor(rng() * 3));
+  return { code: "", name: `The ${start} ${end}`, hq, buildings: [] };
 }
 
 const charted = new Map<string, Charted[]>();
@@ -231,28 +311,88 @@ function chartRegion(column: number, row: number): Charted[] {
     seed: Math.floor(rng() * 2 ** 31),
     // Danger grows with distance, roughly: a little luck keeps it from reading as rings.
     hq: Math.max(1, Math.floor(Math.hypot(spot.x, spot.y * 1.5) / UNITS_PER_LEVEL + rng() * 1.5)),
+    player: false,
   }));
+  // Picked after everything else is settled, so these islands keep their seeds and ids.
+  const nearest = [...islands].sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y));
+  for (const island of nearest.slice(0, PLAYER_ISLANDS_PER_REGION)) island.player = true;
   charted.set(region, islands);
   return islands;
 }
 
 function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland {
-  const raised = world.retaken[island.id];
-  const hq = raised ?? island.hq;
+  const rival = island.player ? (world.rivals[island.id] ?? standIn(island, yourHq)) : null;
+  const raised = rival ? undefined : world.retaken[island.id];
+  const hq = rival?.hq ?? raised ?? island.hq;
   const tier = islandTier(hq);
   const rated = Math.min(hq, MAX_HQ_LEVEL);
+  // A rebuilt base is a new layout, not the old one with its levels raised.
+  const seed = raised ? island.seed + raised : island.seed;
   return {
     ...island,
     hq,
-    // A rebuilt base is a new layout, not the old one with its levels raised.
-    seed: raised ? island.seed + raised : island.seed,
+    seed,
     tier,
     difficulty: difficultyOf(hq, yourHq),
     defenses: DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
     reward: raidReward(true, 100, tier),
     taken: world.taken.includes(island.id),
     retaken: raised !== undefined,
+    archetype: rival ? "player" : archetypeFor(seed, hq),
+    crystal: islandCrystal(seed),
+    rival,
+    tribute: rival ? tributeFor(hq) : 0,
   };
+}
+
+/** The short name of an island's kind, for its card. */
+export function archetypeLabel(island: MapIsland): string {
+  return island.archetype === "player" ? "Player island" : ARCHETYPES[island.archetype].label;
+}
+
+/** How to go about taking an island, for its card. */
+export function archetypeTip(island: MapIsland): string {
+  if (island.archetype !== "player") return ARCHETYPES[island.archetype].tip;
+  return island.rival?.code
+    ? "Another crew's real base. Hold it and it pays you gold every day."
+    : "A rival crew's base. Hold it and it pays you gold every day.";
+}
+
+/** The player islands in a region list with nobody real on them yet. */
+export function openSpots(islands: readonly MapIsland[]): MapIsland[] {
+  return islands.filter((i) => i.rival && !i.rival.code && !i.taken);
+}
+
+/** Moves real crews onto open player islands, leaving out anyone just beaten. */
+export function settleRivals(
+  world: WorldProgress,
+  islands: readonly MapIsland[],
+  crews: readonly Rival[],
+): WorldProgress {
+  const placed = new Set(Object.values(world.rivals).map((r) => r.code));
+  const fresh = crews.filter((c) => !placed.has(c.code) && !world.beaten.includes(c.code));
+  const rivals = { ...world.rivals };
+  for (const spot of openSpots(islands)) {
+    const crew = fresh.shift();
+    if (!crew) break;
+    rivals[spot.id] = crew;
+  }
+  return { ...world, rivals };
+}
+
+/** A player island's crew has been beaten: they won't turn up again for a while. */
+export function beatRival(world: WorldProgress, rival: Rival): WorldProgress {
+  if (!rival.code) return world;
+  return { ...world, beaten: [rival.code, ...world.beaten].slice(0, MOST_BEATEN) };
+}
+
+/** A day's gold from the player islands the crew holds. */
+export function dailyTribute(world: WorldProgress): number {
+  return world.taken.reduce((sum, id) => {
+    const rival = world.rivals[id];
+    const island = chartedIsland(id);
+    return island?.player ? sum + tributeFor(rival?.hq ?? island.hq) : sum;
+  }, 0);
 }
 
 /** One island, from its id. */
@@ -344,16 +484,34 @@ export function retakeIslands(
   const count = roll < 0.3 ? 0 : roll < 0.75 ? 1 : 2;
   const taken = [...world.taken];
   const retaken = { ...world.retaken };
+  const rivals = { ...world.rivals };
   const lost: string[] = [];
   for (let i = 0; i < count && taken.length > 0; i++) {
     const [id] = taken.splice(Math.floor(rng() * taken.length), 1);
     const island = id ? chartedIsland(id) : undefined;
     if (!id || !island) continue;
+    lost.push(island.name);
+    // A player island doesn't go back to raiders: another crew moves in.
+    if (island.player) {
+      delete rivals[id];
+      continue;
+    }
     const before = world.retaken[id] ?? island.hq;
     retaken[id] = Math.max(before + 1, yourHq) + Math.floor(rng() * 2);
-    lost.push(island.name);
   }
-  return { world: { ...world, taken, retaken }, lost };
+  return { world: { ...world, taken, retaken, rivals }, lost };
+}
+
+function readRival(value: unknown): Rival | null {
+  const v = value as Partial<Rival> | null;
+  if (typeof v?.name !== "string" || !Number.isInteger(v.hq)) return null;
+  return {
+    code: typeof v.code === "string" ? v.code : "",
+    name: v.name.slice(0, 32),
+    hq: Math.max(1, v.hq as number),
+    buildings: Array.isArray(v.buildings) ? v.buildings : [],
+    buffs: v.buffs,
+  };
 }
 
 /** Reads untrusted saved progress, keeping only what still makes sense. */
@@ -370,5 +528,19 @@ export function sanitizeWorld(value: unknown): WorldProgress {
   }
   const won = Number.isInteger(v?.progress) ? (v?.progress as number) : 0;
   const progress = Math.max(0, Math.min(ISLANDS_PER_CLOUD - 1, won));
-  return { taken: ids(v?.taken), retaken, opened: ids(v?.opened), progress };
+  const rivals: Record<string, Rival> = {};
+  if (v?.rivals && typeof v.rivals === "object") {
+    for (const [id, value] of Object.entries(v.rivals)) {
+      const rival = readRival(value);
+      if (rival) rivals[id] = rival;
+    }
+  }
+  return {
+    taken: ids(v?.taken),
+    retaken,
+    opened: ids(v?.opened),
+    progress,
+    rivals,
+    beaten: ids(v?.beaten).slice(0, MOST_BEATEN),
+  };
 }

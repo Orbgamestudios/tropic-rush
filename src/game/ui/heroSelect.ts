@@ -1,7 +1,6 @@
 // The hero screen, reached by tapping a hero on the island: the roster on the left, the chosen
-// hero turning on a pedestal in the middle, their stats, signature move and perks on the right. Gold levels
-// heroes up, with a reveal for each level and a perk at the milestones; new heroes join as the
-// headquarters grows.
+// hero turning on a pedestal in the middle, their stats and capstones on the right. Upgrades opens
+// their tree, and new heroes join as the headquarters grows.
 // Raid goes to the world map to pick an island. Nobody brings AI allies: the only crewmates on a
 // raid are other players, who team up from the map.
 
@@ -10,19 +9,17 @@ import {
   HERO_NAMES,
   HERO_UNLOCK_HQ,
   heroStats,
-  isSignature,
-  levelUpCost,
-  MAX_HERO_LEVEL,
-  PERKS,
-  perkAt,
   statBars,
+  treeProgress,
 } from "../logic/heroProgress";
+import { capstones, UPGRADES_PER_HERO } from "../logic/heroTrees";
 import type { Showcase } from "../render/showcase";
 import { heroPortrait } from "../render/thumbnails";
 import type { SaveData } from "../save";
 import {
   backButton,
   button,
+  CrystalWallet,
   CurrencyPill,
   el,
   formatNumber,
@@ -32,9 +29,8 @@ import {
   StatBar,
   setLabel,
 } from "./kit/dom";
-import { sfx, sparkleAt } from "./kit/fx";
+import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
-import { LevelUpReveal } from "./levelUp";
 
 export interface HeroSelectHost {
   save(): SaveData;
@@ -42,12 +38,14 @@ export interface HeroSelectHost {
   onBack(): void;
   /** Raid with this hero: on to the world map. */
   onStart(hero: HeroKind): void;
+  /** Opens this hero's upgrade tree. */
+  onUpgrades(hero: HeroKind): void;
 }
 
 export class HeroSelect {
   readonly root = el("div", "screen screen-heroes");
-  private readonly fx = el("div", "fx-layer");
   private readonly gold = new CurrencyPill("coin", "Gold");
+  private readonly crystals = new CrystalWallet();
   private readonly grid = el("div", "heroes-grid");
   private readonly tiles = new Map<HeroKind, HTMLButtonElement>();
   private readonly name = el("div", "heroes-name");
@@ -66,9 +64,8 @@ export class HeroSelect {
   private readonly signatureText = el("div", "stats-signature-text");
   private readonly perks = el("div", "perk-track");
   private readonly perkText = el("div", "perk-text");
-  private readonly reveal: LevelUpReveal;
-  private readonly levelUp: HTMLButtonElement;
-  private readonly levelCost = el("span", "heroes-cost");
+  private readonly upgrades: HTMLButtonElement;
+  private readonly upgradeCount = el("span", "heroes-cost");
   private readonly start: HTMLButtonElement;
   private hero: HeroKind = "rifleman";
 
@@ -80,7 +77,7 @@ export class HeroSelect {
     // Top bar.
     const top = el("div", "screen-top");
     const wallet = el("div", "screen-wallet");
-    wallet.append(this.gold.root);
+    wallet.append(this.crystals.root, this.gold.root);
     const back = backButton(() => host.onBack());
 
     // Roster.
@@ -143,14 +140,14 @@ export class HeroSelect {
     top.append(back, wallet);
 
     // Actions.
-    this.levelUp = button({
-      label: "Level up",
-      variant: "steel",
+    this.upgrades = button({
+      label: "Upgrades",
+      variant: "gold",
       size: "md",
       className: "heroes-levelup",
-      onClick: () => this.upgrade(),
+      onClick: () => host.onUpgrades(this.hero),
     });
-    this.levelUp.querySelector(".ui-btn-face")?.append(this.levelCost);
+    this.upgrades.querySelector(".ui-btn-face")?.append(this.upgradeCount);
     this.start = button({
       label: "Raid",
       variant: "blue",
@@ -159,10 +156,9 @@ export class HeroSelect {
       onClick: () => this.go(),
     });
     const actions = el("div", "heroes-actions");
-    actions.append(this.levelUp, this.start);
+    actions.append(this.upgrades, this.start);
 
-    this.root.append(top, roster.root, stageArea, info.root, actions, this.fx);
-    this.reveal = new LevelUpReveal(this.root);
+    this.root.append(top, roster.root, stageArea, info.root, actions);
     this.root.style.display = "none";
     parent.append(this.root);
   }
@@ -192,7 +188,7 @@ export class HeroSelect {
     const save = this.host.save();
     const kind = this.hero;
     const spec = HEROES[kind];
-    const level = save.heroLevels[kind];
+    const owned = save.upgrades[kind];
     const unlocked = save.unlocked.includes(kind);
     for (const [k, tile] of this.tiles) {
       tile.classList.toggle("selected", k === kind);
@@ -204,8 +200,8 @@ export class HeroSelect {
         const lock = el("span", "ui-tile-lock");
         lock.append(icon("lock"), el("span", "ui-tile-lock-text", `HQ ${HERO_UNLOCK_HQ[k]}`));
         tile.append(lock);
-      } else {
-        tile.append(levelBadge(save.heroLevels[k]));
+      } else if (save.upgrades[k].length > 0) {
+        tile.append(levelBadge(save.upgrades[k].length));
       }
     }
     this.name.textContent = HERO_NAMES[kind];
@@ -215,102 +211,50 @@ export class HeroSelect {
       icon(spec.heavy ? "shield" : "speed", "stats-badge"),
       icon(spec.attack.kind === "heal" ? "heal" : "crosshair", "stats-badge"),
     );
-    this.cardLevel.replaceChildren(levelBadge(level, "stats-level-badge"));
-    this.cardLevel.title =
-      level >= MAX_HERO_LEVEL ? "Max level" : `Level ${level} of ${MAX_HERO_LEVEL}`;
-    const now = heroStats(kind, level);
-    const bars = statBars(kind, level);
-    const nextBars = statBars(kind, Math.min(MAX_HERO_LEVEL, level + 1));
-    this.bars.hp.set(bars.hp, formatNumber(now.hp), nextBars.hp);
+    this.cardLevel.replaceChildren(levelBadge(owned.length, "stats-level-badge"));
+    this.cardLevel.title = `${owned.length} of ${UPGRADES_PER_HERO} upgrades`;
+    const now = heroStats(kind, owned);
+    const bars = statBars(kind, owned);
+    this.bars.hp.set(bars.hp, formatNumber(now.hp));
     this.bars.dps.setLabel(spec.attack.kind === "heal" ? "Healing" : "Attack");
-    this.bars.dps.set(bars.dps, `${formatNumber(now.dps)}/s`, nextBars.dps);
+    this.bars.dps.set(bars.dps, `${formatNumber(now.dps)}/s`);
     this.bars.speed.set(bars.speed, now.speed.toFixed(1));
     this.bars.range.set(bars.range, `${now.range} m`);
-    const move = PERKS[kind].find(isSignature);
-    this.signatureTag.textContent =
-      level >= (move?.level ?? 0) ? "Signature move" : `Signature move at level ${move?.level}`;
-    this.signatureName.textContent = move?.name ?? "";
-    this.signatureText.textContent = move?.text ?? "";
-    this.refreshPerks(kind, level);
+    this.refreshCapstones(kind, owned);
 
-    // Level up, or say which headquarters brings this hero in.
-    if (!unlocked) {
-      setLabel(this.levelUp, "Locked");
-      this.levelCost.replaceChildren(el("span", "", `HQ ${HERO_UNLOCK_HQ[kind]}`));
-      this.levelUp.disabled = true;
-      this.levelUp.classList.replace("ui-btn-gold", "ui-btn-steel");
-    } else if (level >= MAX_HERO_LEVEL) {
-      setLabel(this.levelUp, "Max level");
-      this.levelCost.replaceChildren();
-      this.levelUp.disabled = true;
-      this.levelUp.classList.replace("ui-btn-gold", "ui-btn-steel");
-    } else {
-      setLabel(this.levelUp, "Level up");
-      this.levelCost.replaceChildren(
-        icon("coin"),
-        el("span", "", formatNumber(levelUpCost(level))),
-      );
-      this.levelUp.disabled = save.gold < levelUpCost(level);
-      this.levelUp.classList.replace("ui-btn-gold", "ui-btn-steel");
-    }
+    // What's in their tree, or which headquarters brings this hero in.
+    this.upgrades.disabled = !unlocked;
+    setLabel(this.upgrades, unlocked ? "Upgrades" : "Locked");
+    this.upgradeCount.textContent = unlocked ? treeProgress(owned) : `HQ ${HERO_UNLOCK_HQ[kind]}`;
     this.start.disabled = !unlocked;
     this.gold.set(save.gold);
+    this.crystals.set(save.crystals);
   }
 
-  /** The four milestones: earned ones lit, and the next one's words underneath. */
-  private refreshPerks(kind: HeroKind, level: number): void {
-    const next = PERKS[kind].find((p) => p.level > level);
+  /** The hero's two capstones, the big prizes of their tree: tap one to read about it. */
+  private refreshCapstones(kind: HeroKind, owned: readonly string[]): void {
+    const tops = capstones(kind);
+    const show = (name: string, text: string, has: boolean) => {
+      this.signatureTag.textContent = has ? "Capstone" : "Capstone to work towards";
+      this.signatureName.textContent = name;
+      this.signatureText.textContent = text;
+    };
     this.perks.replaceChildren(
-      ...PERKS[kind].map((perk) => {
-        const earned = perk.level <= level;
-        const chip = el(
-          "button",
-          `perk${earned ? " earned" : ""}${isSignature(perk) ? " signature" : ""}`,
-        );
-        chip.setAttribute("aria-label", perk.name);
-        chip.append(
-          icon(earned ? "star" : "lock", "perk-icon"),
-          el("span", "perk-level", String(perk.level)),
-        );
+      ...tops.map((u) => {
+        const has = owned.includes(u.id);
+        const chip = el("button", `perk signature${has ? " earned" : ""}`);
+        chip.setAttribute("aria-label", u.name);
+        chip.append(icon(has ? "star" : "lock", "perk-icon"));
         chip.addEventListener("click", () => {
           sfx.tick();
-          this.perkText.textContent = `${perk.name}: ${perk.text}`;
+          show(u.name, u.text, has);
         });
         return chip;
       }),
     );
-    this.perkText.textContent = next
-      ? `Level ${next.level}: ${next.name}. ${next.text}`
-      : "All perks earned!";
-  }
-
-  private upgrade(): void {
-    const save = this.host.save();
-    const kind = this.hero;
-    const level = save.heroLevels[kind];
-    const price = levelUpCost(level);
-    if (!save.unlocked.includes(kind) || level >= MAX_HERO_LEVEL || save.gold < price) {
-      sfx.error();
-      return;
-    }
-    this.host.update({
-      gold: save.gold - price,
-      heroLevels: { ...save.heroLevels, [kind]: level + 1 },
-    });
-    sfx.levelUp();
-    this.celebrate();
-    this.refresh();
-    this.showcase.celebrate();
-    this.reveal.show(HERO_NAMES[kind], level + 1, heroPortrait(kind), perkAt(kind, level + 1));
-  }
-
-  private celebrate(): void {
-    const tile = this.tiles.get(this.hero);
-    if (tile) sparkleAt(this.fx, tile, { count: 16, spread: 60 });
-    sparkleAt(this.fx, this.name, { count: 30, spread: 140 });
-    this.name.classList.remove("pop");
-    void this.name.offsetWidth;
-    this.name.classList.add("pop");
+    const first = tops.find((u) => owned.includes(u.id)) ?? tops[0];
+    if (first) show(first.name, first.text, owned.includes(first.id));
+    this.perkText.textContent = `${owned.length} of ${UPGRADES_PER_HERO} upgrades bought`;
   }
 
   private go(): void {

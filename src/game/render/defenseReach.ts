@@ -5,7 +5,6 @@
 
 import * as THREE from "three";
 import { BUILDINGS } from "../logic/buildings";
-import { terrainHeight } from "../logic/island";
 import type { RaidBuilding, RaidHero, RaidState } from "../logic/raid";
 import { distance } from "../logic/vec";
 import { overlayOpacity } from "./sky";
@@ -77,7 +76,11 @@ export class DefenseReach {
   private readonly dim = { value: 1 };
 
   constructor(state: RaidState) {
-    const defenses = state.buildings.filter((b) => BUILDINGS[b.type].attack);
+    // Not snipers: they reach so far that it'd be red everywhere, and they show their own aim.
+    const defenses = state.buildings.filter((b) => {
+      const attack = BUILDINGS[b.type].attack;
+      return attack && attack.kind !== "sniper";
+    });
     const geometry = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
     this.fades = new Float32Array(defenses.length);
     this.fadeAttribute = new THREE.InstancedBufferAttribute(this.fades, 1);
@@ -107,7 +110,7 @@ export class DefenseReach {
       inner[i] = attack.kind === "mortar" ? attack.minRange / range : 0;
       ranges[i] = range;
       matrix.makeScale(range, 1, range);
-      matrix.setPosition(b.pos.x, Math.max(0, terrainHeight(b.pos.x, b.pos.y)) + 0.3, b.pos.y);
+      matrix.setPosition(b.pos.x, Math.max(0, state.shape.height(b.pos.x, b.pos.y)) + 0.3, b.pos.y);
       this.mesh.setMatrixAt(i, matrix);
       this.reaches.push({ building: b, range, fade: 0 });
     });

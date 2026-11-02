@@ -31,11 +31,14 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/logic/`: the rules, with no Three.js or DOM imports. Each file has a colocated
   `*.test.ts`. `raid.ts` is the raid simulation and updates its state in place for speed; it is
   meant to move to a Durable Object server for multiplayer later.
-  - `island.ts`: the one island every crew and raid uses: coastline (a rounded diamond with a
-    south-west landing beach), terrain height (`terrainHeight` for raids, `homeHeight` for the
-    crew's flatter build ground) and the seeded raid layout generator.
+  - `island.ts`: the crew's island: coastline (a rounded diamond with a south-west landing beach),
+    `homeHeight` for its flatter build ground, the `IslandShape` every island is read through, and
+    the seeded raid layout generator.
+  - `islandShapes.ts`: the eight kinds of enemy island, baked from strokes into distance fields.
   - `buildings.ts`: building stats and the HQ-level table.
   - `heroes.ts`: hero stats.
+  - `heroTrees.ts`: the upgrade trees and their checkpoints, as data. `crystals.ts`: the four
+    crystals. `spoils.ts`: what a win turns up. `statues.ts`: the hidden statues.
   - `gunboat.ts`: gunboat abilities and energy costs.
   - `squad.ts`: the AI raiders' input, for the nightly raid. There are no AI allies: the only
     crewmates on a raid are other players.
@@ -98,14 +101,15 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   - `fx.ts`: synthesized UI sounds and sparkles.
 
   The game opens on the crew island (no title screen). Tapping a strolling hero opens
-  `heroSelect.ts` (with `render/showcase.ts`, the 3D pedestal, and `levelUp.ts`, the perk reveal),
+  `heroSelect.ts` (with `render/showcase.ts`, the 3D pedestal, and `levelUp.ts`, the capstone reveal),
   and its Raid button opens `worldMapScreen.ts`, which leads to `scoutScreen.ts` (with
   `render/rangeRings.ts`), `raidLobby.ts` (teaming up) or the raid. The other screens are
   `profileScreen.ts`, opened from the crew bar, `hud.ts`, `pause.ts` (with settings and `controlsEditor.ts`), `replayBar.ts`, `results.ts` and
   `crewUi.ts`.
   `controlsEditor.ts` moves and sizes the sticks. `render/aimCone.ts` draws the aim cone and lock-on crosshairs. `render/thumbnails.ts` renders hero
-  portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero levels,
-  unlocks and raid rewards.
+  portraits and building icons from the 3D models. `logic/heroProgress.ts` holds hero stats,
+  unlocks and raid rewards. `upgradeTree.ts` is the tree screen. `worker/world.ts` is the world's
+  directory of crews, one SQLite Durable Object.
 - `public/avatars/` holds the player icons (the list is `logic/avatars.ts`).
 - Real models live in `public/models/` (meshopt-compressed GLB; `render/heroAssets.ts` loads
   them). Raw TRELLIS outputs stay in the untracked `models-wip/`.

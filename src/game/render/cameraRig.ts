@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 import { VIEW_YAW } from "../config";
-import { terrainHeight } from "../logic/island";
+import { HOME_SHAPE, type IslandShape } from "../logic/island";
 import { angleDiff, clamp, lerp, type Vec2, vec } from "../logic/vec";
 import type { Stage } from "./stage";
 
@@ -31,7 +31,6 @@ const BOAT_PITCH = 1.12;
 const BOAT_DISTANCE = 60;
 const ORBIT_PITCH = 0.6;
 const ORBIT_DISTANCE = 118;
-const PAN_LIMIT = 85;
 /** Looking over an enemy base before a raid: panned and zoomed by hand. */
 const SCOUT_PITCH = 0.95;
 const SCOUT_DISTANCE = [36, 140] as const;
@@ -47,6 +46,8 @@ export class CameraRig {
   /** Follow from close behind the hero instead of from above. */
   behind = false;
   readonly boatFocus = new THREE.Vector3(0, 0, -10);
+  /** The island in view, for how the ground rises and how far the camera can drag. */
+  shape: IslandShape = HOME_SHAPE;
 
   private scoutDistance = SCOUT_START;
   private tremor = 0;
@@ -91,7 +92,7 @@ export class CameraRig {
         const f = focus ?? vec(0, 0);
         const zoom = lerp(FOLLOW_ZOOM[0], FOLLOW_ZOOM[1], this.zoom);
         if (this.behind) {
-          desired.set(f.x, terrainHeight(f.x, f.y) + BEHIND_HEIGHT, f.y);
+          desired.set(f.x, this.shape.height(f.x, f.y) + BEHIND_HEIGHT, f.y);
           distance = BEHIND_DISTANCE * zoom * (firing ? BEHIND_FIRE_ZOOM : 1);
           pitch = BEHIND_PITCH + FOLLOW_PITCH_PER_TILT * this.tilt;
           // Sit opposite the way the hero faces.
@@ -103,7 +104,7 @@ export class CameraRig {
         const s = Math.sin(VIEW_YAW);
         desired.set(
           f.x + c * lead.x + s * lead.y,
-          terrainHeight(f.x, f.y) + 0.8,
+          this.shape.height(f.x, f.y) + 0.8,
           f.y + c * lead.y - s * lead.x,
         );
         distance = lerp(FOLLOW_NEAR, FOLLOW_FAR, this.zoomOut) * zoom;
@@ -195,8 +196,9 @@ export class CameraRig {
     const along = (dyPixels * metersPerPixel) / Math.sin(this.pitch);
     const c = Math.cos(this.yaw);
     const s = Math.sin(this.yaw);
-    this.boatFocus.x = clamp(this.boatFocus.x - c * across - s * along, -PAN_LIMIT, PAN_LIMIT);
-    this.boatFocus.z = clamp(this.boatFocus.z + s * across - c * along, -PAN_LIMIT, PAN_LIMIT);
+    const limit = this.shape.reach * 0.8;
+    this.boatFocus.x = clamp(this.boatFocus.x - c * across - s * along, -limit, limit);
+    this.boatFocus.z = clamp(this.boatFocus.z + s * across - c * along, -limit, limit);
   }
 
   /** The point on the island under a screen position (client pixels), or null for the sky. */
@@ -211,7 +213,7 @@ export class CameraRig {
     for (let i = 0; i < 3; i++) {
       this.plane.constant = -height;
       if (!this.raycaster.ray.intersectPlane(this.plane, hit)) return null;
-      height = Math.max(0, terrainHeight(hit.x, hit.z));
+      height = Math.max(0, this.shape.height(hit.x, hit.z));
     }
     return vec(hit.x, hit.z);
   }

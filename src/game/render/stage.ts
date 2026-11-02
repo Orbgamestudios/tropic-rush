@@ -14,13 +14,15 @@ import { LIGHT_DISTANCE, Sky } from "./sky";
 const BLOOM = { strength: 0.3, radius: 0.55, threshold: 0.92 };
 
 /** Sharpest the picture starts: more than this only costs battery on a phone-sized screen. */
-const START_PIXEL_RATIO = 1.75;
+const START_PIXEL_RATIO = 1.5;
 /** Frames slower than this count against the current quality. */
 const SLOW_FRAME = 1 / 40;
 /** Quality steps down after this many seconds of slow frames. */
 const SLOW_SECONDS = 1.5;
 /** A single frame counts for at most this long, so one hitch can't cost a whole quality step. */
 const WORST_FRAME = 0.1;
+/** How many times less often shadows are redrawn on a screen that's sitting still. */
+const CALM_SHADOWS = 4;
 
 const FINISH = {
   uniforms: { tDiffuse: { value: null } },
@@ -62,7 +64,6 @@ export class Stage {
     // The finishing passes do their own antialiasing, so the canvas doesn't need any.
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
-      powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, START_PIXEL_RATIO));
     this.renderer.info.autoReset = false;
@@ -162,10 +163,10 @@ export class Stage {
     this.slowSeconds = 0;
     this.quality++;
     if (this.quality === 1) {
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.4));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.3));
     } else if (this.quality === 2) {
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.15));
-      this.shadowEvery = 3;
+      this.shadowEvery = 4;
       this.sun.shadow.mapSize.set(1024, 1024);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
@@ -195,14 +196,17 @@ export class Stage {
   private quality = 0;
   private composer: EffectComposer | null = null;
   private frameNumber = 0;
-  private shadowEvery = 2;
+  private shadowEvery = 3;
   /** A light has no shadow map yet: draw them this frame, whichever frame it is. */
   private shadowsStale = true;
+  /** Nobody's touching the screen and nothing's fast: shadows can wait much longer. */
+  calm = false;
 
   render(): void {
     this.frameNumber++;
     this.sky.update(performance.now() / 1000);
-    const shadowEvery = this.sky.moonShadows ? this.shadowEvery * 2 : this.shadowEvery;
+    const pace = this.calm ? CALM_SHADOWS : 1;
+    const shadowEvery = (this.sky.moonShadows ? this.shadowEvery * 2 : this.shadowEvery) * pace;
     const dueShadows = this.sky.shadows && this.frameNumber % shadowEvery === 0;
     if (this.shadowsStale || dueShadows) {
       this.renderer.shadowMap.needsUpdate = true;

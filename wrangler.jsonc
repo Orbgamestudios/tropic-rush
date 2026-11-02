@@ -19,12 +19,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "CREW_ISLAND", "class_name": "CrewIsland" },
-      { "name": "ACCOUNT", "class_name": "PlayerAccount" }
+      { "name": "ACCOUNT", "class_name": "PlayerAccount" },
+      { "name": "WORLD", "class_name": "WorldDirectory" }
     ]
   },
   // SQLite-backed Durable Objects are available on Cloudflare's free plan.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["CrewIsland"] },
-    { "tag": "v2", "new_sqlite_classes": ["PlayerAccount"] }
+    { "tag": "v2", "new_sqlite_classes": ["PlayerAccount"] },
+    { "tag": "v3", "new_sqlite_classes": ["WorldDirectory"] }
   ]
 }

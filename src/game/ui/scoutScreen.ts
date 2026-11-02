@@ -7,11 +7,14 @@ import type { ScoutRow } from "../logic/enemyBase";
 import type { RaidBuilding } from "../logic/raid";
 import type { MapIsland } from "../logic/worldMap";
 import { buildingIcon } from "../render/thumbnails";
-import { button, el } from "./kit/dom";
+import { button, el, setLabel } from "./kit/dom";
 import { sfx } from "./kit/fx";
+import { icon } from "./kit/icons";
 
 export interface ScoutHandlers {
   onAttack(island: MapIsland): void;
+  /** Says this player's good to go, or isn't after all, while scouting with a team. */
+  onReady(ready: boolean): void;
   onBack(): void;
   /** Drags the view, in screen pixels. */
   onPan(dx: number, dy: number): void;
@@ -21,7 +24,19 @@ export interface ScoutHandlers {
   onTap(x: number, y: number): RaidBuilding | null;
 }
 
-const HINT = "Drag to look round, pinch to zoom. Red ground is in range of a defense.";
+/** How a team's getting on, while one of them scouts. */
+export interface ScoutTeam {
+  have: number;
+  of: number;
+  ready: number;
+  /** This player has readied up. */
+  mine: boolean;
+  /** Why nobody can ready up yet, if there's a reason. */
+  waiting: string | null;
+}
+
+const HINT =
+  "Drag to look round, pinch to zoom. Red ground is under fire, and snipers reach to their rings.";
 
 /** Further than this and a touch counts as a drag, not a tap. */
 const TAP_SLOP = 8;
@@ -33,8 +48,12 @@ export class ScoutScreen {
   private readonly rating = el("div", "scout-rating");
   private readonly tally = el("div", "scout-tally");
   private readonly info = el("div", "scout-info");
+  private readonly teamBar = el("div", "scout-team");
+  private readonly teamText = el("span", "scout-team-text");
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private island: MapIsland | null = null;
+  private team: ScoutTeam | null = null;
+  private canAttack = true;
   private moved = 0;
   private spread = 0;
 
@@ -61,10 +80,12 @@ export class ScoutScreen {
       size: "lg",
       className: "scout-attack",
       onClick: () => {
-        if (this.island) handlers.onAttack(this.island);
+        if (this.team) handlers.onReady(!this.team.mine);
+        else if (this.island) handlers.onAttack(this.island);
       },
     });
-    const bars = [title, this.tally, back, this.attack];
+    this.teamBar.append(icon("crew", "scout-team-icon"), this.teamText);
+    const bars = [title, this.tally, back, this.attack, this.teamBar];
     for (const bar of bars) bar.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.root.append(this.info, ...bars);
 
@@ -87,7 +108,8 @@ export class ScoutScreen {
   /** `canAttack` is false for a hero who can't take an island alone: a look is still free. */
   show(island: MapIsland, report: readonly ScoutRow[], canAttack = true): void {
     this.island = island;
-    this.attack.disabled = !canAttack;
+    this.canAttack = canAttack;
+    this.setTeam(this.team);
     this.pointers.clear();
     this.name.textContent = island.name;
     this.rating.className = `scout-rating map-${island.difficulty.toLowerCase()}`;
@@ -108,6 +130,17 @@ export class ScoutScreen {
     );
     this.info.textContent = HINT;
     this.root.style.display = "block";
+  }
+
+  /** With a team, the big button says Ready rather than Attack. Null is scouting alone. */
+  setTeam(team: ScoutTeam | null): void {
+    this.team = team;
+    this.teamBar.style.display = team ? "flex" : "none";
+    setLabel(this.attack, team ? (team.mine ? "Not ready" : "Ready") : "Attack");
+    this.attack.disabled = team ? team.waiting !== null : !this.canAttack;
+    if (!team) return;
+    this.teamText.textContent =
+      team.waiting ?? `Team ${team.have}/${team.of} · Ready ${team.ready}/${team.have}`;
   }
 
   hide(): void {

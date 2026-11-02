@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { noCrystals } from "./logic/crystals";
+import { noUpgrades } from "./logic/heroTrees";
 import { NEW_WORLD } from "./logic/worldMap";
 import {
+  clearPhone,
   DEFAULT_CONTROLS,
   DEFAULT_SETTINGS,
   loadAccount,
@@ -25,16 +28,6 @@ function memoryStorage() {
   };
 }
 
-const LEVELS = {
-  rifleman: 1,
-  medic: 1,
-  tank: 1,
-  heavy: 1,
-  bazooka: 1,
-  grenadier: 1,
-  engineer: 1,
-};
-
 const DEFAULTS: SaveData = {
   hero: "rifleman",
   level: 1,
@@ -45,7 +38,10 @@ const DEFAULTS: SaveData = {
   crewCode: "",
   memberId: "",
   gold: 300,
-  heroLevels: LEVELS,
+  crystals: noCrystals(),
+  upgrades: noUpgrades(),
+  blueprints: [],
+  blueprintDrought: 0,
   unlocked: ["rifleman"],
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
@@ -98,6 +94,44 @@ describe("accounts on this phone", () => {
     expect(second.items.get("tropic-rush:crew-layout:v1")).toBe('{"buildings":[]}');
     expect(restoreBundle("not json", second)).toBe(false);
   });
+
+  it("leaves nothing of the last account on a phone", () => {
+    const phone = memoryStorage();
+    writeSave({ ...loadSave(phone), gold: 777 }, phone);
+    phone.items.set("tropic-rush:crew-layout:v1", '{"buildings":[]}');
+    const newcomer = memoryStorage();
+    writeSave({ ...loadSave(newcomer), gold: 5 }, newcomer);
+    expect(restoreBundle(saveBundle(newcomer), phone)).toBe(true);
+    expect(loadSave(phone).gold).toBe(5);
+    expect(phone.items.has("tropic-rush:crew-layout:v1")).toBe(false);
+  });
+
+  it("clears everything but the phone's settings when someone logs out", () => {
+    const phone = memoryStorage();
+    const settings = { ...DEFAULT_SETTINGS, zoom: 0.9 };
+    writeSave(
+      {
+        ...loadSave(phone),
+        nickname: "Ann",
+        memberId: "m-1",
+        crewCode: "ABC234",
+        gold: 9999,
+        world: { ...NEW_WORLD, taken: ["0,0:1"], opened: ["1,0"], progress: 1 },
+        settings,
+      },
+      phone,
+    );
+    phone.items.set("tropic-rush:crew-layout:v1", '{"buildings":[]}');
+    clearPhone(loadSave(phone).settings, phone);
+    const after = loadSave(phone);
+    expect(after.world).toEqual(NEW_WORLD);
+    expect(after.gold).toBe(300);
+    expect(after.nickname).toBe("");
+    expect(after.memberId).toBe("");
+    expect(after.crewCode).toBe("");
+    expect(after.settings.zoom).toBe(0.9);
+    expect(phone.items.has("tropic-rush:crew-layout:v1")).toBe(false);
+  });
 });
 
 describe("resetting the game", () => {
@@ -114,7 +148,8 @@ describe("resetting the game", () => {
         gold: 9999,
         wins: 12,
         unlocked: ["rifleman", "medic", "heavy", "tank"],
-        world: { taken: ["0,0:1"], retaken: {}, opened: ["1,0"], progress: 1 },
+        world: { ...NEW_WORLD, taken: ["0,0:1"], opened: ["1,0"], progress: 1 },
+        crystals: { nature: 4, fire: 3, ice: 2, dark: 1 },
         settings,
       },
       storage,
@@ -125,6 +160,7 @@ describe("resetting the game", () => {
     const after = loadSave(storage);
     expect(after.gold).toBe(300);
     expect(after.wins).toBe(0);
+    expect(after.crystals).toEqual(noCrystals());
     expect(after.unlocked).not.toContain("tank");
     expect(after.world).toEqual(NEW_WORLD);
     expect(after.crewCode).toBe("");
@@ -149,7 +185,10 @@ describe("save", () => {
       crewCode: "ABC234",
       memberId: "m-1",
       gold: 1234,
-      heroLevels: { ...LEVELS, grenadier: 4 },
+      crystals: { nature: 1, fire: 2, ice: 3, dark: 4 },
+      upgrades: { ...noUpgrades(), grenadier: ["grenadier-strong-arm"] },
+      blueprints: ["mortar"],
+      blueprintDrought: 2,
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
       settings: {
         tilt: -0.2,
@@ -179,14 +218,35 @@ describe("save", () => {
           seconds: 90,
           raiders: 2,
           raidersDown: 2,
+          stolen: { gold: 40 },
+          reward: 160,
         },
       },
-      world: { taken: ["0,0:2"], retaken: { "0,0:3": 6 }, opened: ["1,0"], progress: 2 },
+      world: {
+        ...NEW_WORLD,
+        taken: ["0,0:2"],
+        retaken: { "0,0:3": 6 },
+        opened: ["1,0"],
+        progress: 2,
+      },
       loot: { timber: 250 },
       lostIslands: ["Skull Rock"],
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
+  });
+
+  it("hands back what an old save spent on hero levels, once", () => {
+    const storage = memoryStorage();
+    storage.items.set(
+      "tropic-rush:save:v1",
+      JSON.stringify({ gold: 100, heroLevels: { rifleman: 3, heavy: 2 } }),
+    );
+    const loaded = loadSave(storage);
+    expect(loaded.gold).toBe(100 + 120 + 190 + 120);
+    expect(loaded.upgrades.rifleman).toEqual([]);
+    writeSave(loaded, storage);
+    expect(loadSave(storage).gold).toBe(loaded.gold);
   });
 
   it("falls back to defaults for missing or corrupt data", () => {
@@ -256,7 +316,9 @@ describe("save", () => {
         level: 9,
         wins: -2,
         bestDestruction: 400,
-        heroLevels: { rifleman: 50, medic: -1 },
+        upgrades: { rifleman: ["made-up"], medic: "nope" },
+        crystals: { fire: -3, dark: "lots" },
+        blueprints: ["mortar", "goldMine", 7],
         unlocked: ["dragon", "tank"],
       }),
     );
@@ -264,7 +326,7 @@ describe("save", () => {
       ...DEFAULTS,
       level: 3,
       bestDestruction: 100,
-      heroLevels: { ...LEVELS, rifleman: 10 },
+      blueprints: ["mortar"],
       unlocked: ["rifleman", "tank"],
     });
   });

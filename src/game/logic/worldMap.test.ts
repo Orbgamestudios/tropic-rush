@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { CRYSTAL_KINDS } from "./crystals";
+import { ARCHETYPES, type Archetype } from "./islandShapes";
 import {
+  beatRival,
   chartedRegions,
+  dailyTribute,
   islandRadius,
   islandsToNextCloud,
   NEW_WORLD,
+  openSpots,
+  type Rival,
   regionAt,
   retakeIslands,
   sanitizeWorld,
+  settleRivals,
   takeIsland,
+  tributeFor,
   type WorldProgress,
   worldIslands,
 } from "./worldMap";
@@ -171,18 +179,101 @@ describe("raiders retaking islands", () => {
 describe("saved progress", () => {
   it("survives a round trip and drops rubbish", () => {
     const world: WorldProgress = {
+      ...NEW_WORLD,
       taken: ["0,0:1"],
       retaken: { "0,0:2": 7 },
       opened: ["1,0"],
       progress: 2,
+      rivals: { "0,0:3": { code: "ABCDEF", name: "Ann's crew", hq: 4, buildings: [] } },
+      beaten: ["GHJKLM"],
     };
     expect(sanitizeWorld(JSON.parse(JSON.stringify(world)))).toEqual(world);
     expect(sanitizeWorld(null)).toEqual(NEW_WORLD);
     expect(sanitizeWorld({ taken: [1, "a"], retaken: { x: "y" }, opened: "no" })).toEqual({
+      ...NEW_WORLD,
       taken: ["a"],
-      retaken: {},
-      opened: [],
-      progress: 0,
     });
+  });
+});
+
+describe("player islands", () => {
+  const crew = (code: string, hq = 3): Rival => ({
+    code,
+    name: `${code}'s crew`,
+    hq,
+    buildings: [],
+  });
+  const home = () => worldIslands(NEW_WORLD, 3).filter((i) => i.region === "0,0");
+
+  it("keeps a couple of islands in every region for other crews", () => {
+    const players = home().filter((i) => i.rival);
+    expect(players).toHaveLength(2);
+    for (const i of players) {
+      expect(i.archetype).toBe("player");
+      expect(i.tribute).toBeGreaterThan(0);
+    }
+  });
+
+  it("fills them with stand-ins near the player's strength until real crews come", () => {
+    for (const i of home().filter((x) => x.rival)) {
+      expect(i.rival?.code).toBe("");
+      expect(i.rival?.name.length).toBeGreaterThan(0);
+      expect(Math.abs(i.hq - 3)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("gives raider islands a kind, a crystal and no tribute", () => {
+    for (const i of home().filter((x) => !x.rival)) {
+      expect(ARCHETYPES[i.archetype as Archetype]).toBeDefined();
+      expect(CRYSTAL_KINDS).toContain(i.crystal);
+      expect(i.tribute).toBe(0);
+    }
+  });
+
+  it("moves real crews in, but nobody just beaten", () => {
+    const islands = home();
+    const spots = openSpots(islands);
+    const world = settleRivals({ ...NEW_WORLD, beaten: ["AAAAAA"] }, islands, [
+      crew("AAAAAA"),
+      crew("BBBBBB"),
+      crew("CCCCCC"),
+    ]);
+    expect(Object.values(world.rivals).map((r) => r.code)).toEqual(["BBBBBB", "CCCCCC"]);
+    expect(Object.keys(world.rivals)).toEqual(spots.map((s) => s.id));
+    // Nobody's put in two places, or moved once they're there.
+    const again = settleRivals(world, worldIslands(world, 3), [crew("BBBBBB"), crew("DDDDDD")]);
+    expect(again.rivals).toEqual(world.rivals);
+  });
+
+  it("pays a little gold a day for each player island held, and nothing for raider islands", () => {
+    const [player] = home().filter((i) => i.rival);
+    const [raider] = home().filter((i) => !i.rival);
+    if (!player || !raider) throw new Error("no islands");
+    const rivals = { [player.id]: crew("AAAAAA", 5) };
+    const world = { ...NEW_WORLD, rivals, taken: [player.id, raider.id] };
+    expect(dailyTribute(world)).toBe(tributeFor(5));
+    expect(tributeFor(5)).toBeLessThan(300);
+    expect(dailyTribute({ ...NEW_WORLD, taken: [raider.id] })).toBe(0);
+  });
+
+  it("hands a lost player island to another crew, not back to the raiders", () => {
+    const [player] = home().filter((i) => i.rival);
+    if (!player) throw new Error("no player island");
+    const held = takeIsland({ ...NEW_WORLD, rivals: { [player.id]: crew("AAAAAA") } }, player.id);
+    let night = 1;
+    let result = retakeIslands(held, night, 3);
+    while (result.lost.length === 0) result = retakeIslands(held, ++night, 3);
+    expect(result.world.taken).not.toContain(player.id);
+    expect(result.world.retaken[player.id]).toBeUndefined();
+    expect(result.world.rivals[player.id]).toBeUndefined();
+  });
+
+  it("remembers who it's beaten, for a while", () => {
+    const world = beatRival(NEW_WORLD, crew("AAAAAA"));
+    expect(world.beaten).toEqual(["AAAAAA"]);
+    expect(beatRival(NEW_WORLD, { ...crew(""), code: "" })).toEqual(NEW_WORLD);
+    let many = world;
+    for (let i = 0; i < 30; i++) many = beatRival(many, crew(`C${i}`));
+    expect(many.beaten.length).toBeLessThanOrEqual(12);
   });
 });

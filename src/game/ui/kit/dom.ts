@@ -2,6 +2,12 @@
 // currency pills, stat bars and portrait tiles. Styles live in src/styles/kit.css (".ui-*").
 
 import { hapticOnTap } from "../../audio/haptics";
+import {
+  CRYSTAL_KINDS,
+  CRYSTAL_LABELS,
+  type CrystalKind,
+  type Crystals,
+} from "../../logic/crystals";
 import { sfx } from "./fx";
 import { type IconName, icon } from "./icons";
 
@@ -144,6 +150,32 @@ export function backButton(onClick: () => void, label = "Back"): HTMLButtonEleme
   b.addEventListener("pointerdown", () => sfx.press());
   b.addEventListener("click", onClick);
   return b;
+}
+
+/** The owner's crystal art, as a picture. */
+export function crystalIcon(kind: CrystalKind, className = ""): HTMLImageElement {
+  const img = el("img", `crystal-icon ${className}`.trim());
+  img.src = `art/crystals/${kind}.webp`;
+  img.alt = CRYSTAL_LABELS[kind];
+  img.draggable = false;
+  return img;
+}
+
+/** A crystal and how many of it. */
+export function crystalChip(kind: CrystalKind, amount: number, className = ""): HTMLSpanElement {
+  const chip = el("span", `crystal-chip ${className}`.trim());
+  chip.append(crystalIcon(kind), el("span", "crystal-chip-amount", String(amount)));
+  chip.setAttribute("aria-label", `${CRYSTAL_LABELS[kind]} crystals: ${amount}`);
+  return chip;
+}
+
+/** All four crystals in a row, for the top of a screen. */
+export class CrystalWallet {
+  readonly root = el("div", "crystal-wallet");
+
+  set(crystals: Crystals): void {
+    this.root.replaceChildren(...CRYSTAL_KINDS.map((k) => crystalChip(k, crystals[k])));
+  }
 }
 
 /** A dark pill showing an amount with its icon, which counts up or down smoothly. */

@@ -16,22 +16,26 @@ import {
   type Obstacle,
   obstacleById,
   type PlacedBuilding,
+  statueSites,
   TILE,
 } from "../logic/crewIsland";
+import type { CrystalKind } from "../logic/crystals";
 import { formatDuration } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
 import { homeHeight, landingPoints } from "../logic/island";
+import { statueBefore } from "../logic/statues";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { JobPin } from "../ui/crewUi";
 import { buildClouds, type CloudView } from "./clouds";
 import { Fireflies } from "./fireflies";
-import { visibleBox } from "./heroAssets";
+import { tileFit, tileRotation } from "./footprint";
 import { HomeHeroes } from "./homeHeroes";
-import { buildingLamps, LightPool } from "./lightPool";
+import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import { buildingModel, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
-import { buildShore, updateWind } from "./props";
+import { buildShore, homeCliffs, updateWind } from "./props";
+import { CRYSTAL_COLORS, disposeGlint, glintSprite, type StatueModel, statueModel } from "./relics";
 import { homeScenery } from "./scenery";
 import { at, barrel, cyl, flatten, rbox, vertexColored } from "./shapes";
 import { overlayOpacity } from "./sky";
@@ -142,21 +146,11 @@ function scaffold(type: BuildingType, rotated: boolean): THREE.Group {
 }
 
 function makeCrewBuilding(type: BuildingType, rotated: boolean): THREE.Group {
-  const { w, h } = footprint(type, rotated);
   const g = new THREE.Group();
-  const width = w * TILE - 0.3;
-  const depth = h * TILE - 0.3;
   const model = buildingModel(type, true).root;
   // Models face +x; face the beach (+z, towards the camera), or turn a quarter more if rotated.
-  model.rotation.y = -Math.PI / 2 + (rotated ? Math.PI / 2 : 0);
-  const box = visibleBox(model);
-  const size = box.getSize(new THREE.Vector3());
-  const fit = Math.min(
-    1,
-    (width - 0.4) / Math.max(0.1, size.x),
-    (depth - 0.4) / Math.max(0.1, size.z),
-  );
-  model.scale.setScalar(fit);
+  model.rotation.y = tileRotation(rotated);
+  model.scale.setScalar(tileFit(type, rotated, model));
   // Sunk a little, so it doesn't float where the ground rolls away under it.
   model.position.y = -SINK;
   g.add(model);
@@ -188,6 +182,26 @@ const REACH_EDGE_OPACITY = 0.75;
 const PAN_X = 90;
 const PAN_BACK = -82;
 const PAN_FRONT = 78;
+
+/** How far a lost statue sits sunk in the ground, in meters, so only its head shows. */
+const STATUE_SUNK = 2.6;
+/** A hidden statue glints only for someone looking closely, this near. */
+const GLINT_DISTANCE = 70;
+/** Seconds between glints, and how long one lasts. */
+const GLINT_EVERY = 6;
+const GLINT_SECONDS = 0.7;
+
+interface StatueView {
+  kind: CrystalKind;
+  /** What's drawn: lost, found and being restored are all the worn statue. */
+  look: string;
+  model: StatueModel;
+  /** How far it has risen out of the ground, 0 to 1. */
+  rise: number;
+  wanted: number;
+  baseY: number;
+  scale: number;
+}
 
 /** The home island's camera: always at the diamond angle, panned and zoomed by the player. */
 class HomeCamera {
@@ -328,6 +342,15 @@ export class CrewIslandView {
   private readonly tags = new Map<string, HTMLDivElement>();
   private readonly overgrowth: OvergrowthView;
   private readonly heroes: HomeHeroes;
+  private readonly statues = new Map<CrystalKind, StatueView>();
+  private buildingLampList: Lamp[] = [];
+  private statueLampList: Lamp[] = [];
+  /** The next statue to find, which glints now and then in the overgrowth. */
+  private readonly glint = {
+    sprite: null as THREE.Sprite | null,
+    kind: null as CrystalKind | null,
+    timer: GLINT_EVERY,
+  };
 
   constructor(
     private readonly stage: Stage,
@@ -349,6 +372,7 @@ export class CrewIslandView {
     this.root.add(
       this.terrain.root,
       shore,
+      homeCliffs(),
       boat.root,
       this.clouds.root,
       this.grid,
@@ -393,12 +417,12 @@ export class CrewIslandView {
     if (drawn.layout === layout && drawn.hidden === hiddenId && drawn.held === held) return;
     this.drawn = { layout, hidden: hiddenId, held };
     this.overgrowth.sync(layout);
-    this.lights.setLamps(
-      layout.buildings.flatMap((b) => {
-        const { x, y } = buildingCenter(b);
-        return buildingLamps(b.type, x, groundFor(b), y);
-      }),
-    );
+    this.buildingLampList = layout.buildings.flatMap((b) => {
+      const { x, y } = buildingCenter(b);
+      return buildingLamps(b.type, x, groundFor(b), y);
+    });
+    this.syncStatues(layout);
+    this.lights.setLamps([...this.buildingLampList, ...this.statueLampList]);
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
@@ -439,6 +463,98 @@ export class CrewIslandView {
       this.blocks.delete(id);
     }
     if (holders.length === 0) this.placeTags(layout, holders);
+  }
+
+  /** Lost statues sit half-buried and mossy; found ones stand, and restored ones shine. */
+  private syncStatues(layout: CrewLayout): void {
+    this.statueLampList = [];
+    let next: { kind: CrystalKind; x: number; y: number; z: number } | null = null;
+    for (const { statue: kind, patch } of statueSites(layout.relicSeed)) {
+      const s = layout.statues[kind];
+      const look = s.restored ? "restored" : "worn";
+      let view = this.statues.get(kind);
+      const x = GRID_ORIGIN.x + (patch.x + patch.w / 2) * TILE;
+      const y = GRID_ORIGIN.y + (patch.y + patch.h / 2) * TILE;
+      const ground = Math.max(0, homeHeight(x, y));
+      if (!view || view.look !== look) {
+        if (view) this.root.remove(view.model.root);
+        const model = statueModel(kind, s.restored);
+        // Small enough to hide in its patch, and to stand clear of what's built next to it.
+        const scale = Math.min(0.92, (Math.min(patch.w, patch.h) * TILE) / 4.2);
+        model.root.scale.setScalar(scale);
+        model.root.position.set(x, ground, y);
+        this.root.add(model.root);
+        view = { kind, look, model, rise: s.found ? 1 : 0, wanted: 0, baseY: ground, scale };
+        this.statues.set(kind, view);
+      }
+      view.wanted = s.found ? 1 : 0;
+      view.model.gem.visible = s.found;
+      const working = !s.restored && s.doneAt !== null;
+      const scaffolded = view.model.root.getObjectByName("statue-scaffold");
+      if (working && !scaffolded) {
+        const frame = scaffold("watchtower", false);
+        frame.name = "statue-scaffold";
+        frame.scale.setScalar(0.9);
+        view.model.root.add(frame);
+      } else if (!working && scaffolded) view.model.root.remove(scaffolded);
+      if (s.restored) {
+        this.statueLampList.push({
+          x,
+          y: ground,
+          z: y,
+          reach: 16,
+          power: 3,
+          color: CRYSTAL_COLORS[kind],
+          halo: 1.1,
+          height: 5.5 * view.scale,
+          flicker: false,
+        });
+      }
+      const before = statueBefore(kind);
+      const unlocked = before === null || layout.statues[before].found;
+      if (!s.found && unlocked && !next) next = { kind, x, y: ground, z: y };
+    }
+    this.placeGlint(next);
+  }
+
+  private placeGlint(next: { kind: CrystalKind; x: number; y: number; z: number } | null): void {
+    const { glint } = this;
+    if (glint.kind !== (next?.kind ?? null)) {
+      if (glint.sprite) {
+        this.root.remove(glint.sprite);
+        disposeGlint(glint.sprite);
+      }
+      glint.sprite = next ? glintSprite(next.kind) : null;
+      glint.kind = next?.kind ?? null;
+      if (glint.sprite) this.root.add(glint.sprite);
+    }
+    if (next && glint.sprite) {
+      glint.sprite.position.set(next.x, next.y + 2.2, next.z);
+      glint.sprite.visible = false;
+    }
+  }
+
+  /** Statues rising out of the ground, crystals turning, and the odd glint in the leaves. */
+  private updateStatues(dt: number, time: number): void {
+    for (const view of this.statues.values()) {
+      view.rise += (view.wanted - view.rise) * Math.min(1, dt * 1.6);
+      const { root, gem } = view.model;
+      root.position.y = view.baseY - STATUE_SUNK * view.scale * (1 - view.rise);
+      gem.rotation.y = time * 0.6;
+      gem.position.y = 6 + Math.sin(time * 1.3) * 0.12;
+    }
+    const { glint } = this;
+    if (!glint.sprite) return;
+    glint.timer -= dt;
+    if (glint.timer <= -GLINT_SECONDS) glint.timer = GLINT_EVERY + Math.random() * 3;
+    const near = this.camera.distance < GLINT_DISTANCE;
+    const shining = glint.timer < 0 && near;
+    glint.sprite.visible = shining;
+    if (shining) {
+      const k = Math.sin((-glint.timer / GLINT_SECONDS) * Math.PI);
+      glint.sprite.scale.setScalar(0.5 + k * 2.6);
+      glint.sprite.material.opacity = k;
+    }
   }
 
   /** Puts the little upgrade sign on these buildings, at the corner nearest the camera. */
@@ -556,7 +672,10 @@ export class CrewIslandView {
   }
 
   /** Where each clearing job's countdown goes, as fractions of the screen's width and height. */
-  jobPins(layout: Pick<CrewLayout, "jobs" | "builds" | "buildings">, now: number): JobPin[] {
+  jobPins(
+    layout: Pick<CrewLayout, "jobs" | "builds" | "buildings" | "statues" | "relicSeed">,
+    now: number,
+  ): JobPin[] {
     const pins: JobPin[] = [];
     const pin = (
       id: string,
@@ -594,7 +713,25 @@ export class CrewIslandView {
       const c = buildingCenter(b);
       pin(`b:${b.id}`, c.x, c.y, BUILDINGS[b.type].height + 2, job.doneAt, true);
     }
+    for (const { statue, patch } of statueSites(layout.relicSeed)) {
+      const { doneAt, restored } = layout.statues[statue];
+      if (doneAt === null || restored) continue;
+      const cx = GRID_ORIGIN.x + (patch.x + patch.w / 2) * TILE;
+      const cy = GRID_ORIGIN.y + (patch.y + patch.h / 2) * TILE;
+      pin(`s:${statue}`, cx, cy, 8, doneAt, true);
+    }
     return pins;
+  }
+
+  /** Swings the camera over to a statue, for when it's found or picked from the list. */
+  lookAtStatue(layout: Pick<CrewLayout, "relicSeed">, kind: CrystalKind): void {
+    const site = statueSites(layout.relicSeed).find((s) => s.statue === kind);
+    if (!site) return;
+    const { patch } = site;
+    this.camera.lookAt(
+      GRID_ORIGIN.x + (patch.x + patch.w / 2) * TILE,
+      GRID_ORIGIN.y + (patch.y + patch.h / 2) * TILE,
+    );
   }
 
   /** Leaves or stone chips flying off a cleared obstacle. */
@@ -609,6 +746,7 @@ export class CrewIslandView {
     this.heroes.update(dt);
     this.lights.update(dt, time);
     this.fireflies.update(time);
+    this.updateStatues(dt, time);
     const dim = overlayOpacity();
     this.selectionMaterial.opacity = SELECTION_OPACITY * dim;
     this.reachFill.opacity = REACH_FILL_OPACITY * dim;
@@ -626,6 +764,7 @@ export class CrewIslandView {
   dispose(): void {
     // The plants share geometry and materials with other views: dispose them separately.
     this.root.remove(this.overgrowth.root);
+    if (this.glint.sprite) disposeGlint(this.glint.sprite);
     this.lights.dispose();
     this.fireflies.dispose();
     this.overgrowth.dispose();

@@ -1,8 +1,8 @@
 # Hero upgrade trees
 
-**Status: Proposed, planned 2026-11-01, not built yet.** The owner's rules are Decided: a tree for
-each hero, gold plus four crystals, everything unlockable up to a point, and a two-week reset
-beyond it. Every name, number and ability here is a draft to confirm.
+**Status: built 2026-11-02, except Tides.** The owner's rules are Decided: a tree for each hero, gold
+plus four crystals, everything unlockable up to a point, and a two-week reset beyond it. Every name,
+number and ability here is a draft to confirm. The two-week Tides abilities aren't built yet.
 
 These replace hero levels and perks. Today's signature moves all live on as dark-crystal capstones.
 
@@ -23,8 +23,13 @@ Every hero has the same shape, 13 upgrades in all. An upgrade needs the one befo
                      └─ tier 3 ── tier 4 ─┘
 ```
 
-A capstone needs just one of the two tier 4 upgrades below it, and everything can be bought in the
-end.
+A capstone needs just one of the two lines into it, and everything can be bought in the end.
+
+**Checkpoints (Decided 2026-11-02, owner's request):** three small steps sit on each of the 14 lines
+between two upgrades, 42 for each hero, bought in order with gold alone. Each costs a tenth of the
+upgrade its line leads to, and gives +1% (lines into tiers 2 and 3) or +2% (tiers 4 and 5) to health,
+damage, healing, reload or move speed. How fast a burst unloads and how fast a minigun spins up
+count double, because they do less. All 42 together come to about +20% on a hero's main stats.
 
 | Tier         | Gold  | Crystals |
 | ------------ | ----- | -------- |

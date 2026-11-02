@@ -24,7 +24,10 @@ function shotSound(e: Extract<RaidEvent, { type: "shot" }>, state: RaidState): S
     case "mortar":
       return "cannon";
     case "artillery":
+    case "lava":
       return null;
+    case "sniper":
+      return "rifle";
     case "bullet": {
       if (e.team === "enemy") return "turret";
       const owner = state.heroes.find((h) => h.id === e.ownerId);
@@ -76,6 +79,13 @@ export function playRaidEvents(
         break;
       case "mineTriggered":
         sfx.tick();
+        break;
+      case "eruption":
+        playSample("bigblast", 0.9, 0.6);
+        haptic("heavy");
+        break;
+      case "enrage":
+        playSample("bigblast", volume(e.pos) * 0.5, 1.4);
         break;
       default:
         break;

@@ -9,6 +9,7 @@
 // every change with the same functions before accepting it.
 
 import type { BuildingType } from "./buildings";
+import { CRYSTAL_KINDS, type CrystalKind } from "./crystals";
 import {
   allowedCount,
   buildTime,
@@ -28,6 +29,18 @@ import {
 } from "./economy";
 import { isOnGrass, landingPoints, trailPoints } from "./island";
 import { createRng } from "./rng";
+import { BLUEPRINT_TYPES, needsBlueprint } from "./spoils";
+import {
+  newStatues,
+  readStatues,
+  STATUE_CRYSTALS,
+  STATUE_MS,
+  STATUE_STONE,
+  type Statues,
+  statueBefore,
+  statueBuffs,
+  statueSpots,
+} from "./statues";
 import type { Vec2 } from "./vec";
 
 /** One tile is 2 m square. */
@@ -40,44 +53,77 @@ export const HOME_START: Vec2 = { x: -12, y: 16 };
 /** How far the grid reaches from the middle of the island, in meters. */
 const GRID_REACH = { x: 104, y: 88 };
 
-let tileSet: Set<string> | null = null;
-let tileList: { x: number; y: number }[] = [];
-
-function buildTiles(): Set<string> {
+/** Every tile whose four corners are good ground, as "column,row", on the same grid as home. */
+export function gridTiles(
+  good: (x: number, y: number) => boolean,
+  reachX: number = GRID_REACH.x,
+  reachY: number = reachX,
+): Set<string> {
   const set = new Set<string>();
-  tileList = [];
-  const x0 = Math.floor((-GRID_REACH.x - GRID_ORIGIN.x) / TILE);
-  const x1 = Math.ceil((GRID_REACH.x - GRID_ORIGIN.x) / TILE);
-  const y0 = Math.floor((-GRID_REACH.y - GRID_ORIGIN.y) / TILE);
-  const y1 = Math.ceil((GRID_REACH.y - GRID_ORIGIN.y) / TILE);
+  const x0 = Math.floor((-reachX - GRID_ORIGIN.x) / TILE);
+  const x1 = Math.ceil((reachX - GRID_ORIGIN.x) / TILE);
+  const y0 = Math.floor((-reachY - GRID_ORIGIN.y) / TILE);
+  const y1 = Math.ceil((reachY - GRID_ORIGIN.y) / TILE);
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const x = GRID_ORIGIN.x + tx * TILE;
       const y = GRID_ORIGIN.y + ty * TILE;
-      const corners = [
-        [x, y],
-        [x + TILE, y],
-        [x, y + TILE],
-        [x + TILE, y + TILE],
-      ] as const;
-      if (!corners.every(([cx, cy]) => isOnGrass(cx, cy))) continue;
-      set.add(`${tx},${ty}`);
-      tileList.push({ x: tx, y: ty });
+      if (good(x, y) && good(x + TILE, y) && good(x, y + TILE) && good(x + TILE, y + TILE)) {
+        set.add(`${tx},${ty}`);
+      }
     }
   }
   return set;
 }
 
-/** True if a tile can be built on: it's on the island's grass. */
-export function isBuildableTile(tx: number, ty: number): boolean {
+let tileSet: Set<string> | null = null;
+let tileList: { x: number; y: number }[] = [];
+
+function buildTiles(): Set<string> {
+  const set = gridTiles((x, y) => isOnGrass(x, y), GRID_REACH.x, GRID_REACH.y);
+  tileList = [...set].map((key) => {
+    const [x = 0, y = 0] = key.split(",").map(Number);
+    return { x, y };
+  });
+  return set;
+}
+
+/** True if a tile is on the island's grass. */
+function isGrassTile(tx: number, ty: number): boolean {
   tileSet ??= buildTiles();
   return tileSet.has(`${tx},${ty}`);
+}
+
+/** The great boulders on the far side of the island, at the back right of the view. Nothing moves them. */
+export const HOME_CLIFFS: readonly { x: number; y: number; r: number }[] = [
+  { x: 58, y: -29, r: 4.5 },
+  { x: 64, y: -22, r: 6 },
+  { x: 67, y: -12, r: 5 },
+  { x: 62, y: -5, r: 7 },
+  { x: 67, y: 4, r: 5.5 },
+  { x: 60, y: 11, r: 6.5 },
+  { x: 54, y: 19, r: 5 },
+  { x: 54, y: -14, r: 4 },
+];
+
+/** True if a spot on the crew's island lies under the great boulders. */
+export function onHomeCliff(x: number, y: number): boolean {
+  return HOME_CLIFFS.some((c) => Math.hypot(x - c.x, y - c.y) < c.r + 0.6);
+}
+
+function isCliffTile(tx: number, ty: number): boolean {
+  return onHomeCliff(GRID_ORIGIN.x + (tx + 0.5) * TILE, GRID_ORIGIN.y + (ty + 0.5) * TILE);
+}
+
+/** True if a tile can be built on: it's on the island's grass, clear of the great boulders. */
+export function isBuildableTile(tx: number, ty: number): boolean {
+  return isGrassTile(tx, ty) && !isCliffTile(tx, ty);
 }
 
 /** Every buildable tile, row by row from the north. */
 export function buildableTiles(): readonly { x: number; y: number }[] {
   tileSet ??= buildTiles();
-  return tileList;
+  return tileList.filter((t) => !isCliffTile(t.x, t.y));
 }
 
 /** Footprint in tiles (width east-west, depth north-south) before rotating. */
@@ -130,6 +176,27 @@ export interface CrewLayout {
   resources: Purse;
   /** When `resources` was last brought up to date (server time, milliseconds). */
   stamp: number;
+  /** Defenses the crew has discovered how to build, from blueprints won on raids. */
+  blueprints: BuildingType[];
+  /** The island's ancient statues. */
+  statues: Statues;
+  /** Decides which patches hide the statues, so every crew's island hides them differently. */
+  relicSeed: number;
+  /** The last night's raid taken off the books, so several phones can't count it twice. */
+  lastNight: number;
+  /** Rival crews' raids on this island, newest first. */
+  raidLog: RivalRaid[];
+}
+
+/** A rival crew's raid on this island, for the crew to read about later. */
+export interface RivalRaid {
+  by: string;
+  won: boolean;
+  destroyedPercent: number;
+  /** What they carried off, or on a failed attack what the crew got for holding. */
+  stolen: Partial<Purse>;
+  reward: number;
+  at: number;
 }
 
 export interface ClearJob {
@@ -151,7 +218,15 @@ export type LayoutOp =
   | { kind: "clear"; id: string }
   | { kind: "toolUp"; tool: Tool }
   /** Materials brought home from a raid. */
-  | { kind: "loot"; purse: Partial<Purse> };
+  | { kind: "loot"; purse: Partial<Purse> }
+  /** A blueprint won on a raid: the whole crew learns it. */
+  | { kind: "blueprint"; type: BuildingType }
+  /** Crystals given to a statue by whoever's holding them. */
+  | { kind: "offer"; statue: CrystalKind; crystals: number }
+  /** Starts a statue's restoration, once it has its crystals. */
+  | { kind: "restore"; statue: CrystalKind }
+  /** Last night's raid: what the raiders took, and the gold for holding them off. */
+  | { kind: "night"; night: number; stolen: Partial<Purse>; reward: number };
 
 export function footprint(type: BuildingType, rotated: boolean): { w: number; h: number } {
   const f = FOOTPRINTS[type];
@@ -168,10 +243,10 @@ function onGrass(x: number, y: number, w: number, h: number): boolean {
 
 /**
  * True if a building sits wholly on the grass, on cleared ground, without overlapping other
- * buildings.
+ * buildings or a statue.
  */
 export function fits(
-  layout: Pick<CrewLayout, "buildings" | "cleared">,
+  layout: Pick<CrewLayout, "buildings" | "cleared"> & Partial<Pick<CrewLayout, "relicSeed">>,
   candidate: Pick<PlacedBuilding, "id" | "type" | "x" | "y" | "rotated">,
   ignoreId = candidate.id,
 ): boolean {
@@ -181,6 +256,11 @@ export function fits(
   for (const o of obstacles()) {
     if (cleared.has(o.id)) continue;
     if (overlaps(candidate.x, candidate.y, w, h, o)) return false;
+  }
+  if (layout.relicSeed !== undefined) {
+    for (const { patch } of statueSites(layout.relicSeed)) {
+      if (overlaps(candidate.x, candidate.y, w, h, patch)) return false;
+    }
   }
   return layout.buildings.every((b) => {
     if (b.id === ignoreId) return true;
@@ -343,15 +423,16 @@ export function obstacles(): readonly Obstacle[] {
     return false;
   };
   const free = (x: number, y: number, w: number, h: number) => {
-    if (!onGrass(x, y, w, h)) return false;
     for (let ty = y; ty < y + h; ty++)
       for (let tx = x; tx < x + w; tx++) {
+        if (!isGrassTile(tx, ty)) return false;
         if (taken.has(`${tx},${ty}`) || open({ x: tx, y: ty })) return false;
       }
     return true;
   };
   // Row by row, so the patches pack tightly and every tile outside the clearing is covered.
-  for (const t of buildableTiles()) {
+  tileSet ??= buildTiles();
+  for (const t of tileList) {
     if (taken.has(`${t.x},${t.y}`) || open(t)) continue;
     const d = fromStart(t);
     const roll = rng();
@@ -392,8 +473,13 @@ export function obstacles(): readonly Obstacle[] {
   }
   // Ids by position, so they stay the same as long as the island does.
   for (const o of list) o.id = `${o.x}.${o.y}`;
-  obstacleList = list;
-  return list;
+  // Nothing grows out of the great boulders, though the forest comes right up to them.
+  const standing = list.filter(
+    (o) =>
+      !onHomeCliff(GRID_ORIGIN.x + (o.x + o.w / 2) * TILE, GRID_ORIGIN.y + (o.y + o.h / 2) * TILE),
+  );
+  obstacleList = standing;
+  return standing;
 }
 
 let obstacleIndex: Map<string, Obstacle> | null = null;
@@ -402,6 +488,50 @@ let obstacleIndex: Map<string, Obstacle> | null = null;
 export function obstacleById(id: string): Obstacle | undefined {
   obstacleIndex ??= new Map(obstacles().map((o) => [o.id, o]));
   return obstacleIndex.get(id);
+}
+
+interface StatueSite {
+  statue: CrystalKind;
+  patch: Obstacle;
+}
+
+const siteCache = new Map<number, StatueSite[]>();
+
+/** Which patch of overgrowth hides each statue on an island. */
+export function statueSites(relicSeed: number): readonly StatueSite[] {
+  let sites = siteCache.get(relicSeed);
+  if (!sites) {
+    const spots = statueSpots(relicSeed, obstacles());
+    sites = CRYSTAL_KINDS.flatMap((statue) => {
+      const patch = obstacleById(spots[statue] ?? "");
+      return patch ? [{ statue, patch }] : [];
+    });
+    siteCache.set(relicSeed, sites);
+  }
+  return sites;
+}
+
+/** The statue on a tile, if there is one. */
+export function statueAtTile(
+  layout: Pick<CrewLayout, "relicSeed">,
+  tile: { x: number; y: number },
+): CrystalKind | undefined {
+  return statueSites(layout.relicSeed).find(({ patch }) => overlaps(tile.x, tile.y, 1, 1, patch))
+    ?.statue;
+}
+
+/** Why a statue can't start being restored, or null if it can. */
+export function restoreBlocker(
+  layout: Pick<CrewLayout, "statues" | "resources">,
+  kind: CrystalKind,
+): string | null {
+  const s = layout.statues[kind];
+  if (!s.found) return "Not found yet";
+  if (s.restored) return "Already restored";
+  if (s.doneAt !== null) return "Being restored";
+  if (s.crystals < STATUE_CRYSTALS) return `Needs ${STATUE_CRYSTALS} crystals`;
+  if (layout.resources.stone < STATUE_STONE) return "Not enough stone";
+  return null;
 }
 
 /** The uncleared obstacle covering a tile, if any. */
@@ -486,6 +616,10 @@ export function clearBlocker(layout: CrewLayout, o: Obstacle): string | null {
   const tool = TOOLS[spec.tool];
   if (layout.jobs.some((j) => j.id === o.id)) return "Already being cleared";
   if (layout.tools[spec.tool] < o.tier) return `Needs a level ${o.tier} ${tool.label}`;
+  // The statues come to light in their order: a later one stays buried till the one before is found.
+  const site = statueSites(layout.relicSeed).find((s) => s.patch.id === o.id);
+  const before = site ? statueBefore(site.statue) : null;
+  if (before && !layout.statues[before].found) return "Old carved stones won't budge yet";
   if (layout.jobs.length >= workerCount(layout)) return "All your workers are busy";
   if (!canAfford(layout.resources, clearCost(o))) return "Not enough resources";
   return null;
@@ -513,12 +647,6 @@ export function toolBlocker(layout: CrewLayout, tool: Tool): string | null {
   return null;
 }
 
-/** How much of the island's overgrowth is cleared, 0 to 1. */
-export function clearedShare(layout: Pick<CrewLayout, "cleared">): number {
-  const all = obstacles();
-  return all.length ? Math.min(1, layout.cleared.length / all.length) : 1;
-}
-
 // ---------------------------------------------------------------------------------------------
 // Progression
 
@@ -539,17 +667,32 @@ export function capacity(layout: Pick<CrewLayout, "buildings">): Purse {
 }
 
 /** Production per hour of each resource. */
-export function production(layout: Pick<CrewLayout, "buildings">): Purse {
+export function production(
+  layout: Pick<CrewLayout, "buildings"> & Partial<Pick<CrewLayout, "statues">>,
+): Purse {
   const rate: Purse = { gold: 0, timber: 0, stone: 0, scrap: 0 };
+  const boost = statueBuffs(layout.statues).production;
   for (const b of layout.buildings) {
     const r = PRODUCERS[b.type];
-    if (r && b.level > 0) rate[r] += productionPerHour(b.level);
+    if (r && b.level > 0) rate[r] += productionPerHour(b.level) * boost;
   }
   return rate;
 }
 
 /** Resources build up for at most this long between visits. */
 const MAX_IDLE_MS = 7 * 24 * 3600 * 1000;
+
+/** Statues whose two days are up are whole again. */
+function finishStatues(layout: CrewLayout, now: number): CrewLayout {
+  const due = CRYSTAL_KINDS.filter((k) => {
+    const { doneAt, restored } = layout.statues[k];
+    return !restored && doneAt !== null && doneAt <= now;
+  });
+  if (due.length === 0) return layout;
+  const statues = { ...layout.statues };
+  for (const k of due) statues[k] = { ...statues[k], restored: true };
+  return { ...layout, statues };
+}
 
 /** Finished building work: new buildings open, upgrades take effect, tools improve. */
 function finishBuilds(layout: CrewLayout, now: number): CrewLayout {
@@ -572,7 +715,7 @@ function finishBuilds(layout: CrewLayout, now: number): CrewLayout {
 /** Brings the stock up to date: producers fill it until it reaches what storage can hold. */
 export function settle(current: CrewLayout, now: number): CrewLayout {
   if (now <= current.stamp) return current;
-  const layout = finishBuilds(current, now);
+  const layout = finishStatues(finishBuilds(current, now), now);
   const hours = Math.min(MAX_IDLE_MS, now - layout.stamp) / 3_600_000;
   const rate = production(layout);
   const cap = capacity(layout);
@@ -586,11 +729,14 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
   if (finished.length === 0) return { ...layout, resources, stamp: now };
   const cleared = [...layout.cleared];
   const done = new Set(cleared);
+  let { statues } = layout;
   for (const job of finished) {
     const o = obstacleById(job.id);
     if (!o || done.has(o.id)) continue;
     cleared.push(o.id);
     done.add(o.id);
+    const site = statueSites(layout.relicSeed).find((s) => s.patch.id === o.id);
+    if (site) statues = { ...statues, [site.statue]: { ...statues[site.statue], found: true } };
     const gives = clearGives(o);
     for (const r of RESOURCES) resources[r] = Math.min(cap[r], resources[r] + (gives[r] ?? 0));
     for (const b of obstacles()) {
@@ -602,7 +748,7 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
     }
   }
   const jobs = layout.jobs.filter((j) => j.doneAt > now);
-  return { ...layout, resources, cleared, jobs, stamp: now };
+  return { ...layout, resources, cleared, jobs, statues, stamp: now };
 }
 
 /** Why a building can't be built right now, or null if it can (ignoring where it goes). */
@@ -610,6 +756,9 @@ export function buildBlocker(layout: CrewLayout, type: BuildingType): string | n
   const hq = hqLevel(layout);
   const allowed = allowedCount(type, hq);
   const have = layout.buildings.filter((b) => b.type === type).length;
+  if (needsBlueprint(type) && !layout.blueprints.includes(type)) {
+    return "Find its blueprint on a raid";
+  }
   if (allowed === 0) return `Needs headquarters level ${firstHqAllowing(type)}`;
   if (have >= allowed) {
     const next = firstHqAllowing(type, have + 1);
@@ -760,8 +909,101 @@ export function tryOp(
       }
       return { layout: { ...layout, resources } };
     }
+    case "blueprint": {
+      if (!BLUEPRINT_TYPES.includes(op.type)) return { error: "Unknown blueprint" };
+      if (layout.blueprints.includes(op.type)) return { layout };
+      return { layout: { ...layout, blueprints: [...layout.blueprints, op.type] } };
+    }
+    case "offer": {
+      if (!CRYSTAL_KINDS.includes(op.statue)) return { error: "Unknown statue" };
+      const statue = layout.statues[op.statue];
+      if (!statue.found) return { error: "Not found yet" };
+      if (statue.restored || statue.doneAt !== null) return { error: "Doesn't need any more" };
+      if (!Number.isInteger(op.crystals) || op.crystals <= 0) return { error: "Nothing to give" };
+      const crystals = Math.min(STATUE_CRYSTALS, statue.crystals + op.crystals);
+      const statues = { ...layout.statues, [op.statue]: { ...statue, crystals } };
+      return { layout: { ...layout, statues } };
+    }
+    case "restore": {
+      if (!CRYSTAL_KINDS.includes(op.statue)) return { error: "Unknown statue" };
+      const blocker = restoreBlocker(layout, op.statue);
+      if (blocker) return { error: blocker };
+      const statue = { ...layout.statues[op.statue], doneAt: now + STATUE_MS };
+      return {
+        layout: {
+          ...layout,
+          resources: spend(layout.resources, { stone: STATUE_STONE }),
+          statues: { ...layout.statues, [op.statue]: statue },
+        },
+      };
+    }
+    case "night": {
+      // Every phone in the crew plays the same night: the first to report it is the one that counts.
+      if (!Number.isInteger(op.night) || op.night <= layout.lastNight) {
+        return { error: "Already counted" };
+      }
+      const cap = capacity(layout);
+      const resources = { ...layout.resources };
+      for (const r of RESOURCES) {
+        const taken = op.stolen?.[r];
+        if (typeof taken !== "number" || !Number.isFinite(taken) || taken <= 0) continue;
+        resources[r] = Math.max(0, resources[r] - taken);
+      }
+      const reward = Number.isFinite(op.reward) ? Math.max(0, Math.min(op.reward, MOST_LOOT)) : 0;
+      resources.gold = Math.min(cap.gold, resources.gold + reward);
+      return { layout: { ...layout, resources, lastNight: op.night } };
+    }
   }
   return { error: "Unknown change" };
+}
+
+/** Holds on to this many rival raids for the crew to read. */
+const RAID_LOG = 8;
+/** A rival can carry off this share of each resource at most. */
+const MOST_STOLEN = 0.1;
+/** Holding off a rival crew pays this much gold. */
+const REPELLED_GOLD = 60;
+/** An island that's just been plundered can't be robbed again for this long. */
+const PLUNDER_SHIELD_MS = 12 * 3600 * 1000;
+
+/**
+ * A rival crew's raid on this island, as told to the crew server. It never touches a building: all
+ * it can do is carry off a little of the stock, or pay the crew for holding out. Runs on the server.
+ */
+export function applyRivalRaid(
+  current: CrewLayout,
+  raid: { by: string; won: boolean; destroyedPercent: number; loot: Partial<Purse> },
+  now: number,
+): CrewLayout {
+  const layout = settle(current, now);
+  const resources = { ...layout.resources };
+  const stolen: Partial<Purse> = {};
+  let reward = 0;
+  const shielded = layout.raidLog.some(
+    (r) => r.won && Object.keys(r.stolen).length > 0 && now - r.at < PLUNDER_SHIELD_MS,
+  );
+  if (raid.won && !shielded) {
+    for (const r of RESOURCES) {
+      const wanted = raid.loot[r];
+      if (typeof wanted !== "number" || !Number.isFinite(wanted) || wanted <= 0) continue;
+      const taken = Math.floor(Math.min(wanted, resources[r] * MOST_STOLEN));
+      if (taken <= 0) continue;
+      resources[r] -= taken;
+      stolen[r] = taken;
+    }
+  } else if (!raid.won) {
+    reward = REPELLED_GOLD * hqLevel(layout);
+    resources.gold = Math.min(capacity(layout).gold, resources.gold + reward);
+  }
+  const entry: RivalRaid = {
+    by: raid.by,
+    won: raid.won,
+    destroyedPercent: Math.max(0, Math.min(100, Math.round(raid.destroyedPercent))),
+    stolen,
+    reward,
+    at: now,
+  };
+  return { ...layout, resources, raidLog: [entry, ...layout.raidLog].slice(0, RAID_LOG) };
 }
 
 /** Like `tryOp`, returning just the new layout, or null if the change isn't allowed. */
@@ -812,8 +1054,16 @@ export function starterLayout(now = Date.now()): CrewLayout {
     buildings: [spot],
     resources: { ...START_RESOURCES },
     stamp: now,
+    blueprints: [],
+    statues: newStatues(),
+    relicSeed: Math.floor(now / 1000) % 2 ** 31,
+    lastNight: 0,
+    raidLog: [],
   };
 }
+
+/** Islands from before the statues all hide them the same way: nothing was ever found on them. */
+const OLD_RELIC_SEED = 0x5eed;
 
 /** World position (meters) of a building's center. */
 export function buildingCenter(b: Pick<PlacedBuilding, "type" | "x" | "y" | "rotated">): Vec2 {
@@ -862,6 +1112,11 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     builds?: unknown;
     resources?: unknown;
     stamp?: unknown;
+    blueprints?: unknown;
+    statues?: unknown;
+    relicSeed?: unknown;
+    lastNight?: unknown;
+    raidLog?: unknown;
   } | null;
   const raw = data?.buildings;
   if (!Array.isArray(raw)) return starterLayout(now);
@@ -956,7 +1211,44 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const standing = buildings.map((b) =>
     b.level === 0 && !buildJobOn({ builds }, b.id) ? { ...b, level: 1 } : b,
   );
-  return { buildings: standing, cleared, tools, jobs, builds, resources, stamp };
+  // A crew that already has a defense knows how to build another.
+  const rawPrints = Array.isArray(data?.blueprints) ? data.blueprints : [];
+  const blueprints = BLUEPRINT_TYPES.filter(
+    (t) => rawPrints.includes(t) || standing.some((b) => b.type === t),
+  );
+  const relicSeed = Number.isInteger(data?.relicSeed)
+    ? (data?.relicSeed as number)
+    : OLD_RELIC_SEED;
+  const lastNight = Number.isInteger(data?.lastNight) ? (data?.lastNight as number) : 0;
+  return {
+    buildings: standing,
+    cleared,
+    tools,
+    jobs,
+    builds,
+    resources,
+    stamp,
+    blueprints,
+    statues: readStatues(data?.statues),
+    relicSeed,
+    lastNight,
+    raidLog: readRaidLog(data?.raidLog),
+  };
+}
+
+function readRaidLog(value: unknown): RivalRaid[] {
+  if (!Array.isArray(value)) return [];
+  return (value as Partial<RivalRaid>[])
+    .filter((r) => typeof r?.by === "string" && typeof r.at === "number")
+    .slice(0, RAID_LOG)
+    .map((r) => ({
+      by: String(r.by).slice(0, 32),
+      won: r.won === true,
+      destroyedPercent: Number(r.destroyedPercent) || 0,
+      stolen: r.stolen && typeof r.stolen === "object" ? r.stolen : {},
+      reward: Number(r.reward) || 0,
+      at: r.at as number,
+    }));
 }
 
 function readBuilds(value: unknown, buildings: readonly PlacedBuilding[]): BuildJob[] {

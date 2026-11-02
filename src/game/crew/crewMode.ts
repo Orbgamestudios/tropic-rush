@@ -15,7 +15,6 @@ import {
   capacity,
   clearBlocker,
   clearCost,
-  clearedShare,
   clearGives,
   clearTime,
   cornerFor,
@@ -29,8 +28,10 @@ import {
   obstacleById,
   type PlacedBuilding,
   production,
+  restoreBlocker,
   sanitizeLayout,
   settle,
+  statueAtTile,
   TOOL_ORDER,
   TOOLS,
   type Tool,
@@ -43,22 +44,28 @@ import {
   upgradeBlocker,
   workerCount,
 } from "../logic/crewIsland";
+import { CRYSTAL_KINDS, type CrystalKind } from "../logic/crystals";
 import {
   allowedCount,
   buildTime,
   costFor,
   costText,
+  formatAmount,
   formatDuration,
   levelCap,
   nextLevelGain,
   PROGRESSION,
+  type Purse,
+  RESOURCES,
 } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, heroesJoining } from "../logic/heroProgress";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
+import { needsBlueprint } from "../logic/spoils";
+import { STATUE_CRYSTALS, STATUE_STONE, STATUES, statueBefore } from "../logic/statues";
 import { distance, vec } from "../logic/vec";
-import { retakeIslands } from "../logic/worldMap";
+import { dailyTribute, retakeIslands } from "../logic/worldMap";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
 import {
   CREW_CODE_PATTERN,
@@ -91,6 +98,7 @@ type Gesture =
       hitId: string | null;
       obstacleId: string | null;
       hero: HeroKind | null;
+      statue: boolean;
     }
   | { kind: "pan" }
   | { kind: "pinch"; distance: number; midX: number; midY: number };
@@ -134,6 +142,8 @@ export class CrewMode {
   private clockOffset = 0;
   /** Seconds until the resource readouts refresh. */
   private refreshIn = 0;
+  /** A night's raid is waiting to run, as soon as the crew's real island is here. */
+  private nightDue = false;
 
   constructor(
     private readonly stage: Stage,
@@ -146,6 +156,10 @@ export class CrewMode {
       onMenu: () => host.onMenu(),
       onProfile: () => host.onProfile(),
       onMap: () => host.onMap(),
+      onHeroes: () => {
+        const { hero, unlocked } = host.save();
+        host.onHero(unlocked.includes(hero) ? hero : "rifleman");
+      },
       onCreate: (name) => void this.createCrew(name),
       onJoin: (name, code) => this.joinCrew(name, code),
       onOffline: (name) => this.goOffline(name),
@@ -164,6 +178,9 @@ export class CrewMode {
         const raid = this.host.save().nightRaid;
         if (raid) host.onReplay(raid);
       },
+      onStatuesPanel: () => this.showStatues(),
+      onStatueGive: (kind) => this.giveCrystals(kind),
+      onStatueRestore: (kind) => this.restoreStatue(kind),
     });
     surface.addEventListener("pointerdown", (e) => this.onDown(e));
     surface.addEventListener("pointermove", (e) => this.onMove(e));
@@ -199,6 +216,34 @@ export class CrewMode {
     };
   }
 
+  /** Makes a change to the island from a test, straight through the usual rules. */
+  applyForTest(op: LayoutOp): boolean {
+    return this.commit(op);
+  }
+
+  /** Brings a statue to light from a test, and looks at it. */
+  findForTest(kind: CrystalKind): void {
+    const { statues } = this.layout;
+    this.layout = {
+      ...this.layout,
+      statues: { ...statues, [kind]: { ...statues[kind], found: true } },
+    };
+    this.view?.lookAtStatue(this.layout, kind);
+    if (this.view) this.view.camera.distance = 34;
+  }
+
+  /** Moves the island's camera from a test. */
+  lookForTest(x: number, y: number, distance: number): void {
+    this.view?.camera.lookAt(x, y);
+    if (this.view) this.view.camera.distance = distance;
+  }
+
+  /** Runs the island's clock on from a test, so what would take days happens now. */
+  skipForTest(ms: number): void {
+    this.clockOffset += ms;
+    this.refreshEconomy();
+  }
+
   get active(): boolean {
     return this.view !== null;
   }
@@ -216,13 +261,22 @@ export class CrewMode {
     if (save.crewCode && save.nickname) this.connect();
     else this.status = "solo";
     this.refreshTop();
-    if (this.status === "solo") this.bankLoot();
-    this.runDueRaid();
+    this.nightDue = true;
+    if (this.status === "solo") {
+      this.bankLoot();
+      this.runDueRaid();
+    }
     if (save.wins === 0) this.ui.flash("Tap a hero to upgrade them and go raiding");
   }
 
-  /** If a raid night has passed since this phone last looked, that raid happens now. */
+  /**
+   * If a raid night has passed since this phone last looked, that raid happens now. With a crew it
+   * waits for the crew's island to arrive, since that's what the raiders land on, and whichever
+   * crewmate's phone gets there first is the one whose report counts.
+   */
   private runDueRaid(): void {
+    if (!this.nightDue) return;
+    this.nightDue = false;
     const save = this.host.save();
     const night = nightNumber(Date.now());
     if (save.nightChecked === night) return;
@@ -233,8 +287,21 @@ export class CrewMode {
     }
     const nightRaid = runNightRaid(settle(this.layout, this.now()), night, night * 31 + 7);
     this.host.updateSave({ nightChecked: night, nightRaid });
+    const { stolen, reward } = nightRaid.report;
+    this.commit({ kind: "night", night, stolen, reward });
     this.showNightPanel();
+    this.payTribute(save.nightChecked, night);
     this.loseIslands(save.nightChecked, night);
+  }
+
+  /** The player islands the crew holds pay a little gold for each day that's passed. */
+  private payTribute(from: number, to: number): void {
+    const days = Math.min(MOST_NIGHTS, to - from);
+    const gold = dailyTribute(this.host.save().world) * days;
+    if (gold <= 0) return;
+    const { loot } = this.host.save();
+    this.host.updateSave({ loot: { ...loot, gold: (loot.gold ?? 0) + gold } });
+    this.bankLoot();
   }
 
   /** New heroes join as soon as the crew's headquarters reaches their level. */
@@ -261,17 +328,100 @@ export class CrewMode {
     this.ui.flash(`Raiders retook ${lost.join(" and ")}!`);
   }
 
-  /** Hands materials brought back from raids over to the crew's stock. */
+  /**
+   * Hands what's been brought back from raids over to the crew: materials into their stock, as much
+   * as it'll hold, and blueprints into what the whole crew knows.
+   */
   private bankLoot(): void {
-    const { loot } = this.host.save();
+    const { loot, blueprints } = this.host.save();
+    for (const type of blueprints) this.commit({ kind: "blueprint", type });
+    if (blueprints.length > 0) this.host.updateSave({ blueprints: [] });
     if (Object.keys(loot).length === 0) return;
+    const before = settle(this.layout, this.now()).resources;
     if (!this.commit({ kind: "loot", purse: loot })) return;
     this.host.updateSave({ loot: {} });
-    this.ui.flash(`Brought home ${costText(loot)}`);
+    const after = this.layout.resources;
+    const left: Partial<Purse> = {};
+    for (const r of RESOURCES) {
+      const lost = Math.floor(before[r] + (loot[r] ?? 0) - after[r]);
+      if ((loot[r] ?? 0) > 0 && lost > 0) left[r] = lost;
+    }
+    this.ui.flash(
+      Object.keys(left).length > 0
+        ? `Storage full: ${costText(left)} left behind`
+        : `Brought home ${costText(loot)}`,
+    );
   }
 
   private showNightPanel(): void {
-    this.ui.showNight(this.host.save().nightRaid, nextRaidTime(Date.now()));
+    const { raidLog } = this.layout;
+    this.ui.showNight(this.host.save().nightRaid, nextRaidTime(Date.now()), raidLog);
+  }
+
+  /** Opens the statues panel, or brings it up to date. */
+  private showStatues(current = settle(this.layout, this.now())): void {
+    const { crystals } = this.host.save();
+    this.ui.showStatues(
+      CRYSTAL_KINDS.map((kind) => {
+        const s = current.statues[kind];
+        const info = STATUES[kind];
+        const before = statueBefore(kind);
+        const hunting = before === null || current.statues[before].found;
+        const working = s.doneAt !== null && !s.restored;
+        const blocker = restoreBlocker(current, kind);
+        const room = STATUE_CRYSTALS - s.crystals;
+        return {
+          kind,
+          name: info.name,
+          found: s.found,
+          restored: s.restored,
+          text: s.found
+            ? info.boon
+            : hunting
+              ? `Old carvings tell of it ${info.clue}.`
+              : "Find the statue before it first.",
+          status: !s.found
+            ? ""
+            : s.restored
+              ? "Restored"
+              : working
+                ? `Being restored: ${formatDuration((s.doneAt ?? 0) - this.now())} left`
+                : `${s.crystals} of ${STATUE_CRYSTALS} crystals · ${formatAmount(STATUE_STONE)} stone · 2 days`,
+          crystals: s.crystals,
+          need: STATUE_CRYSTALS,
+          have: crystals[kind],
+          canGive: !working && !s.restored && s.found && room > 0 && crystals[kind] > 0,
+          canRestore: !working && blocker === null,
+          blocker:
+            !s.found || working || s.restored || s.crystals < STATUE_CRYSTALS ? null : blocker,
+        };
+      }),
+    );
+  }
+
+  /** Gives a statue as many of the player's crystals as it still needs. */
+  private giveCrystals(kind: CrystalKind): void {
+    const save = this.host.save();
+    const room = STATUE_CRYSTALS - this.layout.statues[kind].crystals;
+    const crystals = Math.min(room, save.crystals[kind]);
+    if (crystals <= 0 || !this.commit({ kind: "offer", statue: kind, crystals })) return;
+    this.host.updateSave({
+      crystals: { ...save.crystals, [kind]: save.crystals[kind] - crystals },
+    });
+    sfx.coin();
+    this.showStatues();
+  }
+
+  private restoreStatue(kind: CrystalKind): void {
+    const result = tryOp(this.layout, { kind: "restore", statue: kind }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      return;
+    }
+    this.commit({ kind: "restore", statue: kind });
+    this.ui.flash(`${STATUES[kind].name}: the work has begun`);
+    this.ui.celebrate();
+    this.showStatues();
   }
 
   /** Runs a raid on the island as it stands, and goes straight to watching it. */
@@ -306,6 +456,7 @@ export class CrewMode {
     this.ui.show(false);
     this.ui.hideJoin();
     this.ui.hideNight();
+    this.ui.hideStatues();
   }
 
   frame(dt: number, time: number): void {
@@ -336,6 +487,7 @@ export class CrewMode {
   private refreshEconomy(): void {
     const current = settle(this.layout, this.now());
     if (current.builds.length !== this.layout.builds.length) this.finishedBuilding(current);
+    this.noticeStatues(current);
     // Finished clearing: the patch comes away with a burst of leaves or chips.
     if (current.jobs.length !== this.layout.jobs.length) {
       for (const job of this.layout.jobs) {
@@ -346,21 +498,21 @@ export class CrewMode {
       }
       this.layout = current;
       writeLocalLayout(current);
-      this.ui.setProgress(clearedShare(current));
     }
     if (this.ui.toolsOpen) this.showToolsPanel(current);
+    if (this.ui.statuesOpen) this.showStatues(current);
     this.ui.setResources(current.resources, capacity(current), production(current));
-    this.ui.setBuilders(current.builds.length, builderCount(current));
     const hq = hqLevel(current);
     this.ui.setChips((type) => {
       const have = current.buildings.filter((b) => b.type === type).length;
       const allowed = allowedCount(type, hq);
       const unlockAt = firstHqAllowing(type);
+      const noPlans = needsBlueprint(type) && !current.blueprints.includes(type);
       return {
         have,
         allowed,
         cost: costText(costFor(type, 1)),
-        locked: allowed === 0 ? `HQ ${unlockAt ?? "–"}` : null,
+        locked: noPlans ? "Blueprint" : allowed === 0 ? `HQ ${unlockAt ?? "–"}` : null,
         blocked: buildBlocker(current, type) !== null,
       };
     });
@@ -372,6 +524,28 @@ export class CrewMode {
         current.buildings.filter((b) => upgradeBlocker(current, b) === null).map((b) => b.id),
       ),
     );
+  }
+
+  /** The big moments: a statue comes to light, or finishes being restored. */
+  private noticeStatues(current: CrewLayout): void {
+    for (const kind of CRYSTAL_KINDS) {
+      const was = this.layout.statues[kind];
+      const now = current.statues[kind];
+      if (now.found && !was.found) {
+        this.view?.lookAtStatue(current, kind);
+        this.ui.flash(`You found the ${STATUES[kind].name}!`);
+        this.ui.celebrate();
+        this.layout = current;
+        writeLocalLayout(current);
+        this.showStatues(current);
+      } else if (now.restored && !was.restored) {
+        this.view?.lookAtStatue(current, kind);
+        this.ui.flash(`The ${STATUES[kind].name} is restored! ${STATUES[kind].boon}`);
+        this.ui.celebrate();
+        this.layout = current;
+        writeLocalLayout(current);
+      }
+    }
   }
 
   /** Says what's just been finished, and takes the finished layout on. */
@@ -464,14 +638,19 @@ export class CrewMode {
         if (by && by !== this.host.save().nickname) this.refreshSelection();
         this.refreshTop();
         this.bankLoot();
+        this.runDueRaid();
       },
-      onReject: (reason) => this.ui.flash(reason),
+      onReject: (reason) => {
+        if (reason !== "Already counted") this.ui.flash(reason);
+      },
       onStatus: (status) => {
         this.status = status;
         if (status === "full") {
           this.host.updateSave({ crewCode: "" });
           this.ui.showJoin(this.host.save().nickname, "That crew already has 5 members.");
         }
+        // No server to wait for: the raiders land on the island as this phone has it.
+        if (status === "offline") this.runDueRaid();
         this.refreshTop();
       },
     });
@@ -492,7 +671,6 @@ export class CrewMode {
       online: connected && m.online,
     }));
     this.ui.setCrew(save.crewCode, members);
-    this.ui.setProgress(clearedShare(this.layout));
   }
 
   /** The player's picture or name has changed: tells the crew, and redraws the bar. */
@@ -521,7 +699,6 @@ export class CrewMode {
     this.layout = next;
     writeLocalLayout(next);
     this.client?.sendOp(op);
-    this.ui.setProgress(clearedShare(next));
     return true;
   }
 
@@ -828,6 +1005,7 @@ export class CrewMode {
       return;
     }
     const obstacle = ground && !hit ? obstacleAtTile(this.layout, tileAt(ground)) : undefined;
+    const statue = ground && !hit && !obstacle ? statueAtTile(this.layout, tileAt(ground)) : null;
     const rect = this.stage.renderer.domElement.getBoundingClientRect();
     this.gesture = {
       kind: "pending",
@@ -836,6 +1014,7 @@ export class CrewMode {
       hitId: hit?.id ?? null,
       obstacleId: obstacle?.id ?? null,
       hero: this.view.heroAt(e.clientX - rect.left, e.clientY - rect.top),
+      statue: Boolean(statue && this.layout.statues[statue].found),
     };
   }
 
@@ -877,6 +1056,7 @@ export class CrewMode {
     const gesture = this.gesture;
     if (gesture?.kind === "pending" && this.pointers.size === 1 && e.type === "pointerup") {
       if (gesture.hero) this.host.onHero(gesture.hero);
+      else if (gesture.statue) this.showStatues();
       else if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
       else {
         this.showClearing(null);

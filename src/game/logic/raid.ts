@@ -2,7 +2,7 @@
 // No engine imports, so the same rules can later run on the multiplayer server. For speed,
 // stepRaid() updates the state object in place instead of returning a new one.
 
-import { BUILDINGS, type BuildingType } from "./buildings";
+import { BUILDINGS, type BuildingType, type DefenseAttack } from "./buildings";
 import { buildingPower, emptyPurse, lootFor, type Purse, RESOURCES } from "./economy";
 import {
   type Ability,
@@ -14,8 +14,8 @@ import {
   START_ENERGY,
 } from "./gunboat";
 import { HEROES, type HeroKind, shotSpread } from "./heroes";
-import { NO_PERKS, type PerkMods } from "./heroProgress";
-import { type IslandLayout, isOnLand, type ObstacleKind } from "./island";
+import { type HeroMods, NO_MODS } from "./heroTrees";
+import { HOME_SHAPE, type IslandLayout, type IslandShape, type ObstacleKind } from "./island";
 import { createRng, type Rng } from "./rng";
 import {
   add,
@@ -39,6 +39,8 @@ const MINE_TRIGGER_RADIUS = 1.4;
 const MINE_FUSE = 0.5;
 const MINE_SPLASH = 2.6;
 const MINE_DAMAGE = 450;
+/** A sniper's sights stop following this long before it fires, leaving time to step aside. */
+const SIGHTS_HELD = 0.25;
 
 /** Heroes slow to this share of their speed while aiming or shooting. */
 const SHOOTING_SPEED = 0.2;
@@ -59,41 +61,94 @@ const CREW_TURRET = {
   speed: 30,
   radius: 0.8,
 };
+/** The Engineer's smaller turret and his decoy: how they differ from a full turret. */
+const POCKET_TURRET = { hp: 450, seconds: 20, damage: 0.6 };
+const DECOY_DRONE = { hp: 2000, seconds: 6, reach: 30 };
+const GADGET_SECONDS = 30;
 const AUTO_FIRE_SECONDS = 0.6;
 
-/** What each hero's signature move does; see the perks in heroProgress.ts. */
+/** What the capstones that carry a hero's signature move do; see heroTrees.ts. */
 const SIGNATURE = {
   /** Sgt. Steele: how far a bullet can jump, and how much of its damage it keeps. */
   ricochetRange: 12,
   ricochetDamage: 0.6,
-  /** Big Mo: every nth round at full spin explodes, by signature tier. */
-  explosiveEvery: [0, 8, 5],
+  /** Big Mo: every nth round at full spin explodes. */
+  explosiveEvery: 6,
   explosiveDamage: 3,
   explosiveSplash: 2.2,
   /** Doc Penny: the health a fallen hero comes back with. */
   angelHealth: 0.4,
-  /** Ace: bomblets per rocket are 1 + 2 × tier. */
+  /** Ace: bomblets per rocket are 1 + 2 × their charges. */
   bombletDamage: 0.25,
   bombletSplash: 1.8,
   /** Mr. Pemberton: each skip goes this far and keeps this much of the blast. */
   skipDistance: 4.5,
   skipDamage: 0.7,
-  /** Gus: a salvaged turret's share of a full turret's time, by tier. */
-  salvageTime: [0, 0.6, 1],
-  /** Tilly & Tank: the shockwave from whatever they destroy, by tier. */
-  shockwaveRadius: [0, 4.5, 7],
-  shockwaveDamage: [0, 270, 450],
+  /** Tilly & Tank: the shockwave from whatever they destroy. */
+  shockwaveRadius: 5.5,
+  shockwaveDamage: 360,
 } as const;
+
+/** The rest of the tree's tricks, all in seconds and shares of something. */
+const TRICKS = {
+  /** Sgt. Steele's Field Dressing, and his Last Stand below this share of health. */
+  dressingWait: 4,
+  dressingHeal: 0.03,
+  lastStandAt: 0.3,
+  lastStandFire: 1.4,
+  lastStandTaken: 0.75,
+  /** Doc Penny. */
+  lingerSeconds: 3,
+  lingerShare: 0.2,
+  overhealMost: 0.2,
+  boostSeconds: 3,
+  iceSpeed: 1.2,
+  adrenalineFire: 1.2,
+  miracleEvery: 5,
+  /** Big Mo. */
+  overdriveAfter: 5,
+  overdriveFire: 1.25,
+  gutHeal: 0.02,
+  rageAt: 500,
+  rageSeconds: 6,
+  rageFire: 1.5,
+  /** Tilly & Tank. */
+  repairsHeal: 0.02,
+  siegeAfter: 2,
+  siegeFire: 1.3,
+  siegeTaken: 0.6,
+  /** Ace. */
+  getawaySeconds: 2,
+  getawaySpeed: 1.3,
+  tapDelay: 0.3,
+  napalmSeconds: 3,
+  napalmShare: 0.14,
+  guidedTurn: 5,
+  /** Mr. Pemberton. */
+  smokeEvery: 5,
+  smokeSeconds: 4,
+  sweeperReach: 2,
+  /** Gus. */
+  overclockFire: 1.3,
+  beamReach: 8,
+  beamHeal: 0.02,
+} as const;
+
+/** Lava burns a share of a hero's health each second. */
+const LAVA_BURN = 0.1;
+/** The mountain goes off this often, throwing burning rock. */
+const ERUPTION_EVERY = 38;
+const LAVA_BOMB = { damage: 260, splash: 4, flight: 2.2, peak: 22 };
 
 export type Team = "crew" | "enemy";
 
 export interface RaidHero {
   id: number;
   kind: HeroKind;
-  /** Damage multiplier from the hero's level and perks (1 at level 1). */
+  /** Damage multiplier: how strong raiders are sent, and the hero's upgrades. */
   power: number;
-  /** What the hero's perks change. */
-  mods: PerkMods;
+  /** What the hero's upgrades change. */
+  mods: HeroMods;
   pos: Vec2;
   /** Radians on the ground plane; 0 is east. */
   facing: number;
@@ -120,10 +175,28 @@ export interface RaidHero {
   targetId: number | null;
   /** The crewmate a medic is locked onto and throwing to. */
   patientId: number | null;
-  /** Rounds fired, for the minigun's explosive belt. */
+  /** Rounds fired, for everything that counts every nth shot. */
   shotCount: number;
   /** Fallen heroes this medic has brought back this raid. */
   saves: number;
+  /** Health soaked up before the real health is touched. */
+  shield: number;
+  /** Seconds since last hit, firing without a break, and standing still. */
+  sinceHit: number;
+  fireTime: number;
+  stillTime: number;
+  /** Damage taken towards going berserk. */
+  rageBuild: number;
+  /** Seconds left of each boost. */
+  rage: number;
+  haste: number;
+  iced: number;
+  pumped: number;
+  /** A second rocket is ready, for a quick double shot. */
+  tapReady: boolean;
+  /** Seconds until the next pocket turret and decoy drone. */
+  pocketIn: number;
+  droneIn: number;
 }
 
 export interface RaidBuilding {
@@ -141,17 +214,22 @@ export interface RaidBuilding {
   /** Where the defense is pointing, in radians. */
   aim: number;
   firing: boolean;
+  /** Where a sniper's sights are while it takes aim, and how long it's been at it. */
+  sights: Vec2 | null;
+  aiming: number;
 }
 
 export type ProjectileKind =
   | "bullet"
+  | "sniper"
   | "rocket"
   | "shell"
   | "harpoon"
   | "grenade"
   | "mortar"
   | "artillery"
-  | "vial";
+  | "vial"
+  | "lava";
 
 export interface Lob {
   from: Vec2;
@@ -179,6 +257,10 @@ export interface Projectile {
   lob: Lob | null;
   /** Ricochets or grenade skips left, or the rocket's cluster tier. */
   charges: number;
+  /** The building a guided rocket is curving towards. */
+  homing: number | null;
+  /** This grenade leaves smoke where it lands. */
+  smoke: boolean;
 }
 
 export interface Mine {
@@ -189,16 +271,26 @@ export interface Mine {
   exploded: boolean;
 }
 
+export type ZoneKind = "heal" | "fire" | "smoke";
+
 export interface Zone {
   id: number;
+  kind: ZoneKind;
   pos: Vec2;
   radius: number;
   time: number;
+  /** Healing a second, on a healing zone. */
   healPerSecond: number;
+  /** Damage a second to buildings, on burning ground. */
+  burnPerSecond: number;
+  ownerId: number;
 }
+
+export type TurretKind = "salvage" | "pocket" | "decoy";
 
 export interface CrewTurret {
   id: number;
+  kind: TurretKind;
   ownerId: number;
   pos: Vec2;
   hp: number;
@@ -230,7 +322,10 @@ export type RaidEvent =
   | { type: "boarded"; heroId: number }
   | { type: "leftBoat"; heroId: number }
   | { type: "boatFire"; ability: Ability; target: Vec2 }
-  | { type: "mineTriggered"; id: number; pos: Vec2 };
+  | { type: "mineTriggered"; id: number; pos: Vec2 }
+  /** A hero's rage or last stand has just come on. */
+  | { type: "enrage"; pos: Vec2 }
+  | { type: "eruption"; pos: Vec2 };
 
 export type RaidStatus = "playing" | "won" | "lost";
 
@@ -255,6 +350,10 @@ export interface RaidState {
   events: RaidEvent[];
   nextId: number;
   rng: Rng;
+  /** The land the raid is on. */
+  shape: IslandShape;
+  /** Seconds until the next eruption, on an island with a volcano. */
+  eruptionIn: number;
 }
 
 export interface HeroInput {
@@ -284,22 +383,23 @@ export const IDLE_INPUT: HeroInput = {
 };
 
 /**
- * `powers` are each hero's level multipliers (see heroPower) and `mods` their perks (see
- * perkMods); missing ones change nothing.
+ * `powers` are how strong each hero is sent in (night raiders start well below a player's heroes)
+ * and `mods` what their upgrades add (see heroMods); missing ones change nothing.
  */
 export function createRaid(
   layout: IslandLayout,
   kinds: readonly HeroKind[],
   powers: readonly number[] = [],
-  mods: readonly PerkMods[] = [],
+  mods: readonly HeroMods[] = [],
 ): RaidState {
   const rng = createRng(layout.seed ^ 0x5bd1e995);
+  const buffs = layout.buffs ?? { health: 1, damage: 1 };
   let nextId = 1;
   const heroes = kinds.map((kind, i): RaidHero => {
     const spec = HEROES[kind];
     const offset = (i - (kinds.length - 1) / 2) * 2.2;
     const power = powers[i] ?? 1;
-    const perks = mods[i] ?? NO_PERKS;
+    const perks = mods[i] ?? NO_MODS;
     const hp = spec.hp * power * perks.hp;
     return {
       id: nextId++,
@@ -325,6 +425,18 @@ export function createRaid(
       autoDistance: 0,
       shotCount: 0,
       saves: 0,
+      shield: 0,
+      sinceHit: 0,
+      fireTime: 0,
+      stillTime: 0,
+      rageBuild: 0,
+      rage: 0,
+      haste: 0,
+      iced: 0,
+      pumped: 0,
+      tapReady: true,
+      pocketIn: GADGET_SECONDS,
+      droneIn: GADGET_SECONDS,
       targetId: null,
       patientId: null,
     };
@@ -333,19 +445,22 @@ export function createRaid(
     const spec = BUILDINGS[b.type];
     const level = b.level ?? 1;
     const power = buildingPower(level);
+    const hp = spec.hp * power * buffs.health;
     return {
       id: nextId++,
       type: b.type,
       level,
-      power,
+      power: power * buffs.damage,
       pos: { ...b.pos },
       radius: spec.radius,
-      hp: spec.hp * power,
-      maxHp: spec.hp * power,
+      hp,
+      maxHp: hp,
       destroyed: false,
       reload: spec.attack ? rng() * spec.attack.reload : 0,
       aim: Math.PI / 2,
       firing: false,
+      sights: null,
+      aiming: 0,
     };
   });
   const obstacles = layout.obstacles.map(
@@ -373,6 +488,8 @@ export function createRaid(
     events: [],
     nextId,
     rng,
+    shape: layout.shape ?? HOME_SHAPE,
+    eruptionIn: ERUPTION_EVERY * 0.6,
   };
 }
 
@@ -393,6 +510,7 @@ export function stepRaid(
   updateProjectiles(state, dt);
   updateMines(state, dt);
   updateZones(state, dt);
+  updateLava(state, dt);
   if (state.status === "playing") {
     if (state.heroes.every((h) => !h.alive)) {
       state.status = "lost";
@@ -426,6 +544,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   if (!hero.alive) return;
   hero.reload = Math.max(0, hero.reload - dt);
   hero.autoFireTime = Math.max(0, hero.autoFireTime - dt);
+  tickTricks(state, hero, dt);
 
   if (input.toggleBoat) toggleBoat(state, hero);
   if (hero.inBoat) {
@@ -490,32 +609,110 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   updateAttack(state, hero, dir, aimDistance, dt);
 }
 
+/** The timers and steady effects of a hero's upgrades, once a step. */
+function tickTricks(state: RaidState, hero: RaidHero, dt: number): void {
+  const m = hero.mods;
+  hero.sinceHit += dt;
+  hero.rage = Math.max(0, hero.rage - dt);
+  hero.haste = Math.max(0, hero.haste - dt);
+  hero.iced = Math.max(0, hero.iced - dt);
+  hero.pumped = Math.max(0, hero.pumped - dt);
+  hero.fireTime = hero.firing ? hero.fireTime + dt : 0;
+  hero.stillTime = hero.moving ? 0 : hero.stillTime + dt;
+  const regen =
+    (m.fieldDressing && hero.sinceHit >= TRICKS.dressingWait ? TRICKS.dressingHeal : 0) +
+    (m.ironGut && hero.firing ? TRICKS.gutHeal : 0) +
+    (m.fieldRepairs && !hero.moving ? TRICKS.repairsHeal : 0);
+  if (regen > 0) healHero(state, hero, hero.maxHp * regen * dt);
+  if (m.repairBeam) repairNearby(state, hero, dt);
+  if (m.pocketTurret) {
+    hero.pocketIn -= dt;
+    if (hero.pocketIn <= 0) {
+      hero.pocketIn = GADGET_SECONDS;
+      placeTurret(state, hero, nearHero(hero), POCKET_TURRET.seconds, "pocket");
+    }
+  }
+  if (m.decoyDrone) {
+    hero.droneIn -= dt;
+    if (hero.droneIn <= 0) {
+      hero.droneIn = GADGET_SECONDS;
+      placeTurret(state, hero, nearHero(hero), DECOY_DRONE.seconds, "decoy");
+    }
+  }
+}
+
+/** A spot just ahead of a hero, for dropping things. */
+function nearHero(hero: RaidHero): Vec2 {
+  return add(hero.pos, fromAngle(hero.facing, 2.4));
+}
+
+/** The Engineer's beam: the Tank and any turret near him slowly mend. */
+function repairNearby(state: RaidState, hero: RaidHero, dt: number): void {
+  for (const t of state.turrets) {
+    if (t.ownerId !== hero.id || distance(t.pos, hero.pos) > TRICKS.beamReach) continue;
+    t.hp = Math.min(t.maxHp, t.hp + t.maxHp * TRICKS.beamHeal * dt);
+  }
+  for (const other of state.heroes) {
+    if (other.kind !== "tank" || distance(other.pos, hero.pos) > TRICKS.beamReach) continue;
+    healHero(state, other, other.maxHp * TRICKS.beamHeal * dt);
+  }
+}
+
+/** How much quicker a hero is firing right now, from whatever's come over them. */
+function fireBoost(hero: RaidHero): number {
+  const m = hero.mods;
+  let boost = 1;
+  if (m.lastStand && hero.hp < hero.maxHp * TRICKS.lastStandAt) boost *= TRICKS.lastStandFire;
+  if (hero.rage > 0) boost *= TRICKS.rageFire;
+  if (m.overdrive && hero.fireTime >= TRICKS.overdriveAfter) boost *= TRICKS.overdriveFire;
+  if (m.siegeMode && hero.stillTime >= TRICKS.siegeAfter) boost *= TRICKS.siegeFire;
+  if (hero.pumped > 0) boost *= TRICKS.adrenalineFire;
+  return boost;
+}
+
+/** Seconds until a hero's next shot. */
+function shotTime(hero: RaidHero, base: number): number {
+  return (base * hero.mods.reload) / fireBoost(hero);
+}
+
+/** A hero's full speed right now. */
+function heroSpeed(hero: RaidHero, slowed: boolean): number {
+  const m = hero.mods;
+  const firing = slowed && hero.rage <= 0 ? m.fireSpeed || SHOOTING_SPEED : 1;
+  const haste = hero.haste > 0 ? TRICKS.getawaySpeed : 1;
+  const iced = hero.iced > 0 ? TRICKS.iceSpeed : 1;
+  return HEROES[hero.kind].speed * m.speed * firing * haste * iced;
+}
+
 /** Walks a hero by the move stick. Guests' phones use this too, to answer the stick at once. */
 export function moveByInput(state: RaidState, hero: RaidHero, input: HeroInput, dt: number): void {
   const move = length(input.move) > 1 ? normalize(input.move) : input.move;
-  const slowed = hero.firing || input.aimPreview !== null;
-  const speed = HEROES[hero.kind].speed * hero.mods.speed * (slowed ? SHOOTING_SPEED : 1);
+  const speed = heroSpeed(hero, hero.firing || input.aimPreview !== null);
   hero.moving = length(move) > 0.05;
   if (hero.moving) moveHero(state, hero, scale(move, speed * dt));
 }
 
 function moveHero(state: RaidState, hero: RaidHero, delta: Vec2): void {
   const r = HEROES[hero.kind].radius;
+  const { shape } = state;
+  const onLand = (p: Vec2, margin: number) => shape.shoreDistance(p.x, p.y) > margin;
   let next = add(hero.pos, delta);
-  if (!isOnLand(next.x, next.y, r)) {
+  if (!onLand(next, r)) {
     // Slide along the shoreline instead of stopping dead.
     const alongX = vec(next.x, hero.pos.y);
     const alongY = vec(hero.pos.x, next.y);
-    if (isOnLand(alongX.x, alongX.y, r)) next = alongX;
-    else if (isOnLand(alongY.x, alongY.y, r)) next = alongY;
+    if (onLand(alongX, r)) next = alongX;
+    else if (onLand(alongY, r)) next = alongY;
     else next = { ...hero.pos };
   }
   for (let pass = 0; pass < 2; pass++) {
     for (const b of state.buildings) if (!b.destroyed) next = pushOut(next, r, b.pos, b.radius);
     for (const o of state.obstacles) next = pushOut(next, r, o.pos, o.radius);
-    for (const t of state.turrets) next = pushOut(next, r, t.pos, CREW_TURRET.radius);
+    for (const t of state.turrets) {
+      if (t.kind !== "decoy") next = pushOut(next, r, t.pos, CREW_TURRET.radius);
+    }
   }
-  if (isOnLand(next.x, next.y, r * 0.5)) hero.pos = next;
+  if (onLand(next, r * 0.5)) hero.pos = next;
 }
 
 function pushOut(pos: Vec2, radius: number, center: Vec2, otherRadius: number): Vec2 {
@@ -528,7 +725,7 @@ function pushOut(pos: Vec2, radius: number, center: Vec2, otherRadius: number): 
 
 /** How far a shot strays this time, in radians: the hero's cone, wider while they're moving. */
 function strayAngle(state: RaidState, hero: RaidHero): number {
-  const spread = shotSpread(hero.kind) * (1 + MOVING_SPREAD * hero.unsteady);
+  const spread = shotSpread(hero.kind, hero.mods.spread) * (1 + MOVING_SPREAD * hero.unsteady);
   return (state.rng() - 0.5) * 2 * spread;
 }
 
@@ -551,6 +748,11 @@ export function aimStretch(hero: RaidHero): { width: number; length: number } {
   };
 }
 
+/** Two shells side by side, for the shots that go out double. */
+function twinOffset(dir: Vec2, gap: number): Vec2 {
+  return vec(-dir.y * gap, dir.x * gap);
+}
+
 function updateAttack(
   state: RaidState,
   hero: RaidHero,
@@ -559,6 +761,7 @@ function updateAttack(
   dt: number,
 ) {
   const atk = HEROES[hero.kind].attack;
+  const m = hero.mods;
   hero.firing = dir !== null;
   switch (atk.kind) {
     case "burst": {
@@ -572,18 +775,18 @@ function updateAttack(
             hero,
             "bullet",
             fromAngle(angleOf(hero.burstDir) + stray),
-            atk.speed,
-            atk.range + hero.mods.range,
+            atk.speed * m.shotSpeed,
+            atk.range + m.range,
             atk.damage * hero.power,
             0,
             1,
           );
           hero.burstLeft--;
-          hero.burstTimer = atk.interval;
-          if (hero.burstLeft === 0) hero.reload = atk.reload * hero.mods.reload;
+          hero.burstTimer = atk.interval * m.unload;
+          if (hero.burstLeft === 0) hero.reload = shotTime(hero, atk.reload);
         }
       } else if (dir && hero.reload <= 0) {
-        hero.burstLeft = atk.shots + hero.mods.shots;
+        hero.burstLeft = atk.shots + m.shots;
         hero.burstTimer = 0;
         hero.burstDir = dir;
       }
@@ -594,71 +797,97 @@ function updateAttack(
         hero.spin = Math.max(0, hero.spin - dt);
         return;
       }
-      hero.spin = Math.min(1, hero.spin + dt / atk.spinUp);
+      hero.spin = Math.min(1, hero.spin + dt / (atk.spinUp * m.spinUp));
       if (hero.reload <= 0) {
         const shotDir = fromAngle(angleOf(dir) + strayAngle(state, hero));
         hero.shotCount++;
-        const every = SIGNATURE.explosiveEvery[hero.mods.signature] ?? 0;
+        const every = m.signature > 0 ? SIGNATURE.explosiveEvery : 0;
         const explosive = every > 0 && hero.spin >= 1 && hero.shotCount % every === 0;
         spawnDirect(
           state,
           hero,
           explosive ? "shell" : "bullet",
           shotDir,
-          atk.speed,
-          atk.range + hero.mods.range,
+          atk.speed * m.shotSpeed,
+          atk.range + m.range,
           atk.damage * hero.power * (explosive ? SIGNATURE.explosiveDamage : 1),
-          explosive ? SIGNATURE.explosiveSplash : 0,
+          explosive ? SIGNATURE.explosiveSplash + m.splash : 0,
           1,
         );
-        hero.reload = lerp(atk.slowInterval, atk.fastInterval, hero.spin) * hero.mods.reload;
+        hero.reload = shotTime(hero, lerp(atk.slowInterval, atk.fastInterval, hero.spin));
       }
       return;
     }
     case "shell": {
       if (dir && hero.reload <= 0) {
         const kind = hero.kind === "bazooka" ? "rocket" : atk.splash > 0 ? "shell" : "bullet";
-        spawnDirect(
-          state,
-          hero,
-          kind,
-          fromAngle(angleOf(dir) + strayAngle(state, hero)),
-          atk.speed,
-          atk.range + hero.mods.range,
-          atk.damage * hero.power,
-          atk.splash,
-          atk.buildingBonus,
-        );
-        hero.reload = atk.reload * hero.mods.reload;
+        hero.shotCount++;
+        const twin = m.twinEvery > 0 && hero.shotCount % m.twinEvery === 0;
+        const shot = fromAngle(angleOf(dir) + strayAngle(state, hero));
+        const fire = (offset: Vec2) =>
+          spawnDirect(
+            state,
+            hero,
+            kind,
+            shot,
+            atk.speed * m.shotSpeed,
+            atk.range + m.range,
+            atk.damage * hero.power,
+            atk.splash > 0 ? atk.splash + m.splash : 0,
+            atk.buildingBonus,
+            offset,
+          );
+        fire(twin ? twinOffset(shot, 0.5) : vec(0, 0));
+        if (twin) fire(twinOffset(shot, -0.5));
+        if (m.getaway) hero.haste = TRICKS.getawaySeconds;
+        if (m.doubleTap && hero.tapReady) {
+          hero.tapReady = false;
+          hero.reload = TRICKS.tapDelay;
+        } else {
+          hero.tapReady = true;
+          hero.reload = shotTime(hero, atk.reload);
+        }
       }
       return;
     }
     case "lob": {
       if (dir && hero.reload <= 0) {
-        const reach = clamp(aimDistance, 3, atk.range + hero.mods.range);
+        const range = atk.range + m.range;
+        const reach = clamp(aimDistance, 3, range);
+        const duration = atk.flightTime * m.flight * (0.55 + (0.45 * reach) / range);
+        hero.shotCount++;
+        const twin = m.twinEvery > 0 && hero.shotCount % m.twinEvery === 0;
+        const smoke = m.smokeShell && hero.shotCount % TRICKS.smokeEvery === 0;
+        const toss = (spot: Vec2) => {
+          const lob = spawnLob(
+            state,
+            "grenade",
+            "crew",
+            hero.id,
+            hero.pos,
+            spot,
+            duration,
+            3 + reach * 0.25,
+            atk.damage * hero.power,
+            atk.splash + m.splash,
+            m.signature,
+          );
+          return lob;
+        };
         const to = throwTarget(state, hero, dir, reach);
-        const duration = atk.flightTime * (0.55 + (0.45 * reach) / (atk.range + hero.mods.range));
-        spawnLob(
-          state,
-          "grenade",
-          "crew",
-          hero.id,
-          hero.pos,
-          to,
-          duration,
-          3 + reach * 0.25,
-          atk.damage * hero.power,
-          atk.splash,
-          hero.mods.signature,
-        );
-        hero.reload = atk.reload * hero.mods.reload;
+        const first = toss(to);
+        if (smoke) markSmoke(state, first);
+        if (twin) toss(add(to, twinOffset(dir, 2.2)));
+        hero.reload = shotTime(hero, atk.reload);
       }
       return;
     }
     case "heal": {
       if (dir && hero.reload <= 0) {
-        const range = atk.range + hero.mods.range;
+        const range = atk.range + m.range;
         const reach = clamp(aimDistance, 0, range);
+        hero.shotCount++;
+        const miracle = m.miracle && hero.shotCount % TRICKS.miracleEvery === 0;
         spawnLob(
           state,
           "vial",
@@ -668,40 +897,98 @@ function updateAttack(
           throwTarget(state, hero, dir, reach),
           atk.flightTime * (0.55 + (0.45 * reach) / range),
           2.5 + reach * 0.2,
-          atk.heal * hero.power,
-          atk.splash,
+          atk.heal * hero.power * m.heal * (miracle ? 2 : 1),
+          (atk.splash + m.splash) * (miracle ? 2 : 1),
         );
-        hero.reload = atk.reload * hero.mods.reload;
+        hero.reload = shotTime(hero, atk.reload);
       }
       return;
     }
   }
 }
 
-function placeTurret(state: RaidState, owner: RaidHero, pos: Vec2, seconds: number): void {
+/** Finds the grenade a lob belongs to and marks it to leave smoke. */
+function markSmoke(state: RaidState, lob: Lob): void {
+  for (const p of state.projectiles) if (p.lob === lob) p.smoke = true;
+}
+
+function placeTurret(
+  state: RaidState,
+  owner: RaidHero,
+  pos: Vec2,
+  seconds: number,
+  kind: TurretKind = "salvage",
+): void {
+  const hp =
+    kind === "pocket" ? POCKET_TURRET.hp : kind === "decoy" ? DECOY_DRONE.hp : CREW_TURRET.hp;
   state.turrets.push({
     id: state.nextId++,
+    kind,
     ownerId: owner.id,
     pos: { ...pos },
-    hp: CREW_TURRET.hp,
-    maxHp: CREW_TURRET.hp,
+    hp,
+    maxHp: hp,
     time: seconds,
     reload: 0,
     aim: owner.facing,
   });
 }
 
-function healHero(state: RaidState, hero: RaidHero, amount: number): void {
-  if (!hero.alive || hero.hp >= hero.maxHp) return;
+function healHero(state: RaidState, hero: RaidHero, amount: number, healer?: RaidHero): void {
+  if (!hero.alive) return;
+  const m = healer?.mods;
+  if (healer && healer !== hero) {
+    if (m?.icePack) hero.iced = TRICKS.boostSeconds;
+    if (m?.adrenaline) hero.pumped = TRICKS.boostSeconds;
+  }
+  const spare = hero.hp + amount - hero.maxHp;
+  if (spare > 0 && m?.overheal) {
+    hero.shield = Math.min(hero.maxHp * TRICKS.overhealMost, hero.shield + spare);
+  }
+  if (hero.hp >= hero.maxHp) return;
   hero.hp = Math.min(hero.maxHp, hero.hp + amount);
   if (state.rng() < 0.15) state.events.push({ type: "heal", pos: { ...hero.pos } });
 }
 
-function damageHero(state: RaidState, hero: RaidHero, amount: number, heavyBonus = 1): void {
+/** What a blow actually comes to, once a hero's armor and moods have had their say. */
+function damageTaken(hero: RaidHero, amount: number, heavyBonus: number, blast: boolean): number {
+  const m = hero.mods;
+  let taken = amount * m.damageTaken;
+  if (HEROES[hero.kind].heavy && !m.harpoonProof) taken *= heavyBonus;
+  if (blast) taken *= m.blastTaken;
+  if (m.lastStand && hero.hp < hero.maxHp * TRICKS.lastStandAt) taken *= TRICKS.lastStandTaken;
+  if (m.siegeMode && hero.stillTime >= TRICKS.siegeAfter) taken *= TRICKS.siegeTaken;
+  return taken;
+}
+
+function damageHero(
+  state: RaidState,
+  hero: RaidHero,
+  amount: number,
+  heavyBonus = 1,
+  blast = false,
+): void {
   if (!hero.alive) return;
-  const spec = HEROES[hero.kind];
-  hero.hp -= amount * (spec.heavy ? heavyBonus : 1);
+  const m = hero.mods;
+  const wasStanding = hero.hp >= hero.maxHp * TRICKS.lastStandAt;
+  let taken = damageTaken(hero, amount, heavyBonus, blast);
+  const soaked = Math.min(hero.shield, taken);
+  hero.shield -= soaked;
+  taken -= soaked;
+  hero.hp -= taken;
+  hero.sinceHit = 0;
   state.events.push({ type: "hit", pos: { ...hero.pos } });
+  if (m.berserk) {
+    hero.rageBuild += taken;
+    if (hero.rageBuild >= TRICKS.rageAt) {
+      hero.rageBuild = 0;
+      hero.rage = TRICKS.rageSeconds;
+      state.events.push({ type: "enrage", pos: { ...hero.pos } });
+    }
+  }
+  if (m.lastStand && wasStanding && hero.hp > 0 && hero.hp < hero.maxHp * TRICKS.lastStandAt) {
+    state.events.push({ type: "enrage", pos: { ...hero.pos } });
+  }
   if (hero.hp <= 0 && !guardianAngel(state, hero)) {
     hero.hp = 0;
     hero.alive = false;
@@ -789,15 +1076,30 @@ function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
       }
       return;
     case "heal":
-      state.zones.push({
-        id: state.nextId++,
-        pos: { ...target },
-        radius: HEAL.radius,
-        time: HEAL.duration,
-        healPerSecond: HEAL.healPerSecond,
-      });
+      addZone(state, "heal", target, HEAL.radius, HEAL.duration, 0, { heal: HEAL.healPerSecond });
       return;
   }
+}
+
+function addZone(
+  state: RaidState,
+  kind: ZoneKind,
+  pos: Vec2,
+  radius: number,
+  time: number,
+  ownerId: number,
+  rate: { heal?: number; burn?: number } = {},
+): void {
+  state.zones.push({
+    id: state.nextId++,
+    kind,
+    pos: { ...pos },
+    radius,
+    time,
+    healPerSecond: rate.heal ?? 0,
+    burnPerSecond: rate.burn ?? 0,
+    ownerId,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -809,23 +1111,65 @@ interface Target {
   turret: CrewTurret | null;
 }
 
+/** Defenses can't aim into smoke, and anyone in it can't be seen. */
+function inSmoke(state: RaidState, pos: Vec2): boolean {
+  return state.zones.some((z) => z.kind === "smoke" && distance(pos, z.pos) <= z.radius);
+}
+
 function findTarget(state: RaidState, from: Vec2, range: number, minRange: number): Target | null {
+  // A decoy in reach draws every gun, whoever else is nearer.
+  for (const turret of state.turrets) {
+    if (turret.kind !== "decoy") continue;
+    const d = distance(from, turret.pos);
+    if (d >= minRange && d <= Math.min(range, DECOY_DRONE.reach)) {
+      return { pos: turret.pos, hero: null, turret };
+    }
+  }
   let best: Target | null = null;
   let bestDistance = Infinity;
   for (const hero of state.heroes) {
     if (!hero.alive) continue;
     const d = distance(from, hero.pos);
     if (d < minRange || d > range + HEROES[hero.kind].radius || d >= bestDistance) continue;
+    if (inSmoke(state, hero.pos)) continue;
     best = { pos: hero.pos, hero, turret: null };
     bestDistance = d;
   }
   for (const turret of state.turrets) {
     const d = distance(from, turret.pos);
     if (d < minRange || d > range || d >= bestDistance) continue;
+    if (inSmoke(state, turret.pos)) continue;
     best = { pos: turret.pos, hero: null, turret };
     bestDistance = d;
   }
   return best;
+}
+
+/**
+ * A sniper takes its time, and anyone can see it doing so: its sights follow a target, hold still
+ * for a moment, and then it fires. Whoever's moved by then is safe.
+ */
+function takeAim(
+  state: RaidState,
+  b: RaidBuilding,
+  atk: Extract<DefenseAttack, { kind: "sniper" }>,
+  target: Vec2,
+  dt: number,
+): void {
+  if (b.reload > 0) return;
+  b.aiming += dt;
+  if (!b.sights || b.aiming < atk.aimTime - SIGHTS_HELD) b.sights = { ...target };
+  const toSights = sub(b.sights, b.pos);
+  b.aim = angleOf(toSights);
+  if (b.aiming < atk.aimTime) return;
+  const dir = normalize(toSights);
+  const muzzle = add(b.pos, scale(dir, b.radius * 0.7));
+  b.sights = null;
+  b.aiming = 0;
+  b.reload = atk.reload;
+  b.firing = true;
+  const damage = atk.damage * b.power;
+  spawnEnemyDirect(state, b, "sniper", muzzle, dir, atk.speed, atk.range + 2, damage, 1);
 }
 
 function updateBuildings(state: RaidState, dt: number): void {
@@ -836,7 +1180,15 @@ function updateBuildings(state: RaidState, dt: number): void {
     b.reload = Math.max(0, b.reload - dt);
     const minRange = atk.kind === "mortar" ? atk.minRange : 0;
     const target = findTarget(state, b.pos, atk.range, minRange);
-    if (!target) continue;
+    if (!target) {
+      b.sights = null;
+      b.aiming = 0;
+      continue;
+    }
+    if (atk.kind === "sniper") {
+      takeAim(state, b, atk, target.pos, dt);
+      continue;
+    }
     const toTarget = sub(target.pos, b.pos);
     b.aim = angleOf(toTarget);
     const dir = normalize(toTarget);
@@ -908,15 +1260,17 @@ function updateCrewTurrets(state: RaidState, dt: number): void {
   for (const t of state.turrets) {
     t.time -= dt;
     t.reload = Math.max(0, t.reload - dt);
+    if (t.kind === "decoy") continue;
     const target = nearestBuilding(state, t.pos, CREW_TURRET.range);
     if (!target) continue;
     const dir = normalize(sub(target.pos, t.pos));
     t.aim = angleOf(dir);
     if (t.reload > 0) continue;
-    t.reload = CREW_TURRET.reload;
+    const owner = state.heroes.find((h) => h.id === t.ownerId);
+    t.reload = CREW_TURRET.reload / (owner?.mods.overclock ? TRICKS.overclockFire : 1);
     const p = makeProjectile(state, "bullet", "crew", t.ownerId, add(t.pos, scale(dir, 0.6)));
     p.vel = scale(dir, CREW_TURRET.speed);
-    p.damage = CREW_TURRET.damage;
+    p.damage = CREW_TURRET.damage * (t.kind === "pocket" ? POCKET_TURRET.damage : 1);
     p.maxDistance = CREW_TURRET.range + 2;
     state.projectiles.push(p);
     state.events.push({
@@ -1068,8 +1422,10 @@ function nearestBuilding(state: RaidState, from: Vec2, range: number): RaidBuild
 
 function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, ownerId: number): void {
   if (b.destroyed || state.status !== "playing") return;
-  b.hp -= amount;
   const owner = state.heroes.find((h) => h.id === ownerId);
+  const m = owner?.mods;
+  b.hp -=
+    amount * (m?.buildingDamage ?? 1) * (BUILDINGS[b.type].attack ? (m?.defenseDamage ?? 1) : 1);
   if (b.hp > 0) return;
   b.hp = 0;
   b.destroyed = true;
@@ -1085,18 +1441,17 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
   if (owner) destroyedBy(state, owner, b);
 }
 
-/** Signature moves set off by knocking a building down. */
+/** Upgrades set off by knocking a building down. */
 function destroyedBy(state: RaidState, owner: RaidHero, b: RaidBuilding): void {
-  const tier = owner.mods.signature;
-  if (owner.kind === "engineer" && tier > 0) {
-    const share = SIGNATURE.salvageTime[tier] ?? 1;
-    placeTurret(state, owner, b.pos, CREW_TURRET.seconds * share);
+  const m = owner.mods;
+  if (m.healOnKill > 0) healHero(state, owner, owner.maxHp * m.healOnKill);
+  if (owner.kind === "engineer" && m.signature > 0) {
+    placeTurret(state, owner, b.pos, CREW_TURRET.seconds);
   }
   // A shockwave can knock the next building down and set off another: that's the fun of it.
-  if (owner.kind === "tank" && tier > 0) {
-    const radius = SIGNATURE.shockwaveRadius[tier] ?? 0;
-    const damage = SIGNATURE.shockwaveDamage[tier] ?? 0;
-    explode(state, b.pos, radius + b.radius, damage, "crew", owner.id, 1, 1);
+  if (owner.kind === "tank" && m.signature > 0) {
+    const radius = SIGNATURE.shockwaveRadius + b.radius;
+    explode(state, b.pos, radius, SIGNATURE.shockwaveDamage, "crew", owner.id, 1, 1);
   }
 }
 
@@ -1125,6 +1480,8 @@ function makeProjectile(
     maxDistance: 0,
     lob: null,
     charges: 0,
+    homing: null,
+    smoke: false,
   };
 }
 
@@ -1138,8 +1495,9 @@ function spawnDirect(
   damage: number,
   splash: number,
   buildingBonus: number,
+  offset: Vec2 = vec(0, 0),
 ): void {
-  const start = add(hero.pos, scale(dir, HEROES[hero.kind].radius + 0.3));
+  const start = add(add(hero.pos, scale(dir, HEROES[hero.kind].radius + 0.3)), offset);
   const p = makeProjectile(state, kind, "crew", hero.id, start);
   p.vel = scale(dir, speed);
   p.damage = damage;
@@ -1147,6 +1505,11 @@ function spawnDirect(
   p.buildingBonus = buildingBonus;
   p.maxDistance = range;
   if (hero.kind === "rifleman" || hero.kind === "bazooka") p.charges = hero.mods.signature;
+  if (kind === "rocket" && hero.mods.guided) {
+    p.homing = hero.targetId;
+    // A curving rocket flies a longer way round than a straight one.
+    p.maxDistance = range * 1.5;
+  }
   state.projectiles.push(p);
   state.events.push({ type: "shot", pos: start, dir, kind, team: "crew", ownerId: hero.id });
 }
@@ -1223,12 +1586,16 @@ function stepProjectile(state: RaidState, p: Projectile, dt: number): boolean {
     return false;
   }
 
+  if (p.homing !== null) steerRocket(state, p, dt);
   const step = scale(p.vel, dt);
   p.pos = add(p.pos, step);
   p.traveled += length(step);
 
-  for (const o of state.obstacles) {
-    if (o.blocksShots && distance(p.pos, o.pos) <= o.radius) return impact(state, p);
+  // A guided rocket curves up and round whatever's in its way.
+  if (p.homing === null) {
+    for (const o of state.obstacles) {
+      if (o.blocksShots && distance(p.pos, o.pos) <= o.radius) return impact(state, p);
+    }
   }
   if (p.team === "crew") {
     for (const b of state.buildings) {
@@ -1266,17 +1633,43 @@ function impact(state: RaidState, p: Projectile): boolean {
   return false;
 }
 
-/** A projectile's blast, and whatever the hero's signature adds to it. */
+/** Turns a guided rocket towards its building, a little each step. */
+function steerRocket(state: RaidState, p: Projectile, dt: number): void {
+  const target = state.buildings.find((b) => b.id === p.homing);
+  if (!target || target.destroyed) {
+    p.homing = null;
+    return;
+  }
+  const speed = length(p.vel);
+  const wanted = angleOf(sub(target.pos, p.pos));
+  const facing = angleOf(p.vel);
+  const turn = clamp(angleDiff(wanted, facing), -TRICKS.guidedTurn * dt, TRICKS.guidedTurn * dt);
+  p.vel = scale(fromAngle(facing + turn), speed);
+}
+
+/** A projectile's blast, and whatever the hero's upgrades add to it. */
 function detonate(state: RaidState, p: Projectile, pos: Vec2): void {
+  const owner = state.heroes.find((h) => h.id === p.ownerId);
   if (p.kind === "vial") {
     state.events.push({ type: "healBurst", pos: { ...pos }, radius: p.splash });
     for (const hero of state.heroes) {
       if (distance(pos, hero.pos) <= p.splash + HEROES[hero.kind].radius)
-        healHero(state, hero, p.damage);
+        healHero(state, hero, p.damage, owner);
+    }
+    if (owner?.mods.lingering) {
+      const heal = p.damage * TRICKS.lingerShare;
+      addZone(state, "heal", pos, p.splash, TRICKS.lingerSeconds, owner.id, { heal });
     }
     return;
   }
   explode(state, pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
+  if (p.kind === "rocket" && owner?.mods.napalm) {
+    const burn = p.damage * TRICKS.napalmShare;
+    addZone(state, "fire", pos, p.splash, TRICKS.napalmSeconds, owner.id, { burn });
+  }
+  if (p.smoke) {
+    addZone(state, "smoke", pos, p.splash + 1.5, TRICKS.smokeSeconds, p.ownerId);
+  }
   if (p.charges === 0) return;
   if (p.kind === "rocket") scatterBomblets(state, p, pos);
   if (p.kind === "grenade" && p.lob) skipGrenade(state, p, p.lob, pos);
@@ -1374,16 +1767,17 @@ function explode(
   } else {
     for (const hero of state.heroes) {
       if (distance(pos, hero.pos) <= radius + HEROES[hero.kind].radius)
-        damageHero(state, hero, damage, heavyBonus);
+        damageHero(state, hero, damage, heavyBonus, true);
     }
     for (const t of state.turrets) {
       if (distance(pos, t.pos) <= radius) t.hp -= damage;
     }
   }
   // Any blast sets off hidden mines it reaches; that's how a Grenadier clears a beach.
+  const sweeper = state.heroes.find((h) => h.id === ownerId)?.mods.mineSweeper;
+  const reach = radius * (sweeper ? TRICKS.sweeperReach : 1) + 0.5;
   for (const mine of state.mines) {
-    if (!mine.exploded && mine.fuse === null && distance(pos, mine.pos) <= radius + 0.5)
-      mine.fuse = 0.15;
+    if (!mine.exploded && mine.fuse === null && distance(pos, mine.pos) <= reach) mine.fuse = 0.15;
   }
 }
 
@@ -1413,10 +1807,59 @@ function updateMines(state: RaidState, dt: number): void {
 function updateZones(state: RaidState, dt: number): void {
   for (const zone of state.zones) {
     zone.time -= dt;
-    for (const hero of state.heroes) {
-      if (distance(hero.pos, zone.pos) <= zone.radius)
-        healHero(state, hero, zone.healPerSecond * dt);
+    if (zone.kind === "heal") {
+      const healer = state.heroes.find((h) => h.id === zone.ownerId);
+      for (const hero of state.heroes) {
+        if (distance(hero.pos, zone.pos) <= zone.radius)
+          healHero(state, hero, zone.healPerSecond * dt, healer);
+      }
+    } else if (zone.kind === "fire") {
+      for (const b of state.buildings) {
+        if (!b.destroyed && distance(zone.pos, b.pos) - b.radius <= zone.radius) {
+          damageBuilding(state, b, zone.burnPerSecond * dt, zone.ownerId);
+        }
+      }
     }
   }
   state.zones = state.zones.filter((z) => z.time > 0);
+}
+
+/** Lava burns anyone who wades in, and the mountain now and then throws fire about. */
+function updateLava(state: RaidState, dt: number): void {
+  const { shape } = state;
+  if (!shape.volcano) return;
+  for (const hero of state.heroes) {
+    if (hero.alive && shape.lava(hero.pos.x, hero.pos.y) > 0.5) {
+      damageHero(state, hero, hero.maxHp * LAVA_BURN * dt);
+    }
+  }
+  state.eruptionIn -= dt;
+  if (state.eruptionIn > 0) return;
+  state.eruptionIn = ERUPTION_EVERY;
+  const vent = shape.volcano.pos;
+  state.events.push({ type: "eruption", pos: { ...vent } });
+  const living = state.heroes.filter((h) => h.alive);
+  const bombs = 4 + Math.floor(state.rng() * 3);
+  for (let i = 0; i < bombs; i++) {
+    // Some come down near the crew, the rest wherever they like.
+    const near = living[i % Math.max(1, living.length)];
+    const scatter = fromAngle(state.rng() * Math.PI * 2, 6 + state.rng() * 12);
+    const spot =
+      near && i % 2 === 0
+        ? add(near.pos, scatter)
+        : add(vent, fromAngle(state.rng() * 6.28, 24 + state.rng() * 40));
+    const lob = spawnLob(
+      state,
+      "lava",
+      "enemy",
+      0,
+      vent,
+      spot,
+      LAVA_BOMB.flight,
+      LAVA_BOMB.peak,
+      LAVA_BOMB.damage,
+      LAVA_BOMB.splash,
+    );
+    lob.t = -i * 0.35;
+  }
 }
