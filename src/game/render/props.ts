@@ -12,6 +12,7 @@ import type { Vec2 } from "../logic/vec";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
 import { merge, painted, vertexColored } from "./shapes";
+import { SKY } from "./sky";
 
 // ---------------------------------------------------------------------------------------------
 // Wind
@@ -30,6 +31,7 @@ export function swaying(dissolve = true): THREE.MeshLambertMaterial {
   const made = swayMaterials.get(dissolve);
   if (made) return made;
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  m.color = SKY.forest.value;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uWind = wind;
     shader.uniforms.uFocus = focus;

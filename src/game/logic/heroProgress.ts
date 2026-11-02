@@ -1,10 +1,10 @@
-// Personal hero progress: each player's heroes level up with gold won on raids, and medals from
-// victories unlock the heroes beyond the starting three. Every level adds health and damage, and
-// levels 3, 5, 7 and 10 each award a perk of that hero's own. Level 5 is the hero's signature
-// move, a new way to play that no one else has, and level 10 makes it stronger.
+// Personal hero progress: each player's heroes level up with gold won on raids, and new heroes
+// join as the crew's headquarters grows. Every level adds health and damage, and levels 3, 5, 7
+// and 10 each award a perk of that hero's own. Level 5 is the hero's signature move, a new way to
+// play that no one else has, and level 10 makes it stronger.
 // Draft numbers, not balanced yet. No engine imports.
 
-import { HEROES, type HeroAttack, type HeroKind, STARTER_HEROES } from "./heroes";
+import { HERO_KINDS, HEROES, type HeroAttack, type HeroKind, STARTER_HEROES } from "./heroes";
 
 export const MAX_HERO_LEVEL = 10;
 
@@ -19,16 +19,24 @@ export const HERO_NAMES: Record<HeroKind, string> = {
   engineer: "Gus",
 };
 
-/** Medals needed to unlock each hero (starters are free). */
-export const UNLOCK_MEDALS: Record<HeroKind, number> = {
-  rifleman: 0,
-  heavy: 0,
-  medic: 0,
-  grenadier: 2,
-  bazooka: 3,
-  engineer: 4,
-  tank: 6,
+/**
+ * The headquarters level each hero joins at. A stand-in for the story arc that will bring them
+ * in later.
+ */
+export const HERO_UNLOCK_HQ: Record<HeroKind, number> = {
+  rifleman: 1,
+  heavy: 3,
+  medic: 6,
+  grenadier: 9,
+  bazooka: 12,
+  engineer: 15,
+  tank: 18,
 };
+
+/** Who a headquarters of this level adds to `unlocked`: heroes are never taken away again. */
+export function heroesJoining(unlocked: readonly HeroKind[], hq: number): HeroKind[] {
+  return HERO_KINDS.filter((k) => HERO_UNLOCK_HQ[k] <= hq && !unlocked.includes(k));
+}
 
 /** What perks change, added up. Multipliers default to 1, additions to 0. */
 export interface PerkMods {
@@ -272,7 +280,6 @@ export function statBars(kind: HeroKind, level: number): HeroStats {
 
 export interface RaidReward {
   gold: number;
-  medals: number;
   /** 0 to 3 stars: 50% destroyed, the headquarters down (a win), everything destroyed. */
   stars: number;
 }
@@ -286,5 +293,5 @@ export function raidReward(
   const stars =
     (destroyedPercent >= 50 ? 1 : 0) + (won ? 1 : 0) + (destroyedPercent >= 100 ? 1 : 0);
   const gold = Math.round(destroyedPercent * 2 * islandLevel + (won ? 150 * islandLevel : 0));
-  return { gold, medals: won ? islandLevel : 0, stars };
+  return { gold, stars };
 }

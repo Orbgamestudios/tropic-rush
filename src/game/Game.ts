@@ -9,6 +9,7 @@ import { loadSamples } from "./audio/samples";
 import { COMBAT_ZOOM_DISTANCE, MAX_FRAME_SECONDS, RESULTS_DELAY, SIM_STEP } from "./config";
 import { type ControlMode, Controls } from "./controls";
 import { CrewMode, newId } from "./crew/crewMode";
+import { guessedPlace, locate, skyText } from "./location";
 import { passwordProblem, usernameProblem } from "./logic/account";
 import { BUILDINGS } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
@@ -30,7 +31,8 @@ import {
   type RaidState,
   stepRaid,
 } from "./logic/raid";
-import { distance, lerp, vec } from "./logic/vec";
+import type { Place } from "./logic/sun";
+import { angleOf, distance, lerp, vec } from "./logic/vec";
 import { type MapIsland, REGION, takeIsland, worldIslands } from "./logic/worldMap";
 import { logIn, logOut, pullSave, pushSave, signUp, verifyPassword } from "./net/account";
 import { CoopSession, HOST_TIMEOUT } from "./net/coopSession";
@@ -47,6 +49,7 @@ import { WorldMapView } from "./render/worldMap";
 import {
   type AccountSession,
   loadAccount,
+  loadPlace,
   loadSave,
   resetGame,
   restoreBundle,
@@ -54,6 +57,7 @@ import {
   type Settings,
   saveBundle,
   writeAccount,
+  writePlace,
   writeSave,
 } from "./save";
 import { ControlsEditor } from "./ui/controlsEditor";
@@ -67,6 +71,7 @@ import { RaidLobby } from "./ui/raidLobby";
 import { ReplayBar } from "./ui/replayBar";
 import { ResultsScreen } from "./ui/results";
 import { ScoutScreen } from "./ui/scoutScreen";
+import { SkyCard } from "./ui/skyCard";
 import { WorldMapScreen } from "./ui/worldMapScreen";
 
 type Phase = "heroes" | "map" | "scout" | "raid" | "ended" | "crew" | "replay";
@@ -95,6 +100,8 @@ const FRAME_WOBBLE = 0.002;
 
 /** How often a signed-in phone checks whether the save has changed. */
 const SYNC_SECONDS = 20;
+/** How long the crew island gets before the game asks about the phone's location. */
+const SKY_CARD_MS = 12_000;
 
 /** Players stop being told how to stop firing after this many wins. */
 const HINT_WINS = 3;
@@ -151,6 +158,7 @@ export class Game {
   private readonly heroes: HeroSelect;
   private readonly results: ResultsScreen;
   private readonly pause: PauseMenu;
+  private readonly skyCard: SkyCard;
   private readonly showcase: Showcase;
   private readonly crew: CrewMode;
   private readonly wipe: HTMLDivElement;
@@ -205,6 +213,11 @@ export class Game {
       },
       settings: () => this.save.settings,
       onSettings: (settings) => this.setSettings(settings),
+      sky: () => ({
+        times: skyText(this.stage.sky.now(), this.skyPlace()),
+        here: Boolean(loadPlace()),
+      }),
+      onSkyLocation: () => this.toggleSkyLocation(),
       onEditControls: () => {
         this.pause.show(false, this.phase !== "crew");
         this.controlsEditor.show(true);
@@ -310,9 +323,37 @@ export class Game {
     });
     this.enterCrew();
     const params = new URLSearchParams(location.search);
+    this.stage.sky.setPlace(this.skyPlace());
+    this.skyCard = new SkyCard(screens, (share) => void this.answerSkyCard(share));
+    if (loadPlace() === undefined && !params.has("testhooks")) this.offerSkyCard();
     if (params.has("testhooks")) this.installTestHooks();
     this.stage.holdQuality = params.has("fullquality");
     requestAnimationFrame(this.frame);
+  }
+
+  /** Where the sky is for: the phone's real place if it's shared one, or else its time zone's. */
+  private skyPlace(): Place {
+    return loadPlace() ?? guessedPlace();
+  }
+
+  /** Waits for a quiet moment on the crew island to ask about the phone's location. */
+  private offerSkyCard(): void {
+    const offer = () => {
+      if (this.phase === "crew") this.skyCard.show();
+      else setTimeout(offer, SKY_CARD_MS);
+    };
+    setTimeout(offer, SKY_CARD_MS);
+  }
+
+  private async answerSkyCard(share: boolean): Promise<void> {
+    writePlace(share ? await locate() : null);
+    this.stage.sky.setPlace(this.skyPlace());
+  }
+
+  private async toggleSkyLocation(): Promise<void> {
+    this.skyCard.hide();
+    writePlace(loadPlace() ? null : await locate());
+    this.stage.sky.setPlace(this.skyPlace());
   }
 
   /**
@@ -325,6 +366,13 @@ export class Game {
       crew: () => this.crew.snapshot(),
       openHeroes: () => this.showHeroes(),
       save: () => this.save,
+      /** Shows this hour of a day (today unless told), or the real time again for null. */
+      sky: (hour: number | null, place?: Place, date?: string) => {
+        if (place) this.stage.sky.setPlace(place);
+        const moment = date ? new Date(`${date}T00:00:00`) : new Date();
+        moment.setHours(Math.floor(hour ?? 0), ((hour ?? 0) % 1) * 60, 0, 0);
+        this.stage.sky.holdClock(hour === null ? null : moment.getTime());
+      },
       /** What one frame costs the graphics chip, across every pass. */
       drawn: () => this.stage.frameCost(),
       /** Joins a crew without the sign-up panel. */
@@ -729,6 +777,7 @@ export class Game {
     this.endRaidWorld();
     this.hideScreens();
     this.phase = "map";
+    this.skyCard.hide();
     this.mapHero = hero;
     const { world, lostIslands } = this.save;
     const islands = worldIslands(world, hqLevel(this.crew.snapshot().layout));
@@ -760,6 +809,7 @@ export class Game {
     this.endRaidWorld();
     this.hideScreens();
     this.phase = "heroes";
+    this.skyCard.hide();
     this.heroes.show(kind);
   }
 
@@ -1052,10 +1102,12 @@ export class Game {
     }
     // Once the player is down, watch whoever is still fighting.
     const watched = hero.alive ? hero : (state.heroes.find((h) => h.alive) ?? hero);
-    const heading = watched.moving || watched.firing ? watched.facing : null;
+    // The behind camera looks where the aim stick does, or else the way the hero's going.
+    const aim = this.phase === "raid" && !this.paused ? this.controls.aimPreview() : null;
+    const heading = aim ? angleOf(aim) : watched.moving || watched.firing ? watched.facing : null;
     this.rig.kick(view.takeTremor());
     this.rig.update(dt, watched.pos, vec(0, -3), heading, watched.firing);
-    view.aim = this.phase === "raid" && !this.paused ? this.controls.aimPreview() : null;
+    view.aim = aim;
     view.update(
       state,
       this.paused ? 0 : dt,
@@ -1102,7 +1154,6 @@ export class Game {
       wins: this.save.wins + (won ? 1 : 0),
       bestDestruction: Math.max(this.save.bestDestruction, percent),
       gold: this.save.gold + reward.gold,
-      medals: this.save.medals + reward.medals,
     });
   }
 

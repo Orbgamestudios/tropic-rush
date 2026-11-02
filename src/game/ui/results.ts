@@ -149,7 +149,6 @@ export class ResultsScreen {
       requestAnimationFrame(tick);
     };
     lootItem("coin", result.reward.gold, "Gold");
-    if (result.reward.medals > 0) lootItem("medal", result.reward.medals, "Medals");
     if (RESOURCES.some((r) => result.materials[r] > 0))
       this.loot.append(costChips(costText(result.materials)));
     this.timers.push(setTimeout(() => (result.won ? sfx.victory() : sfx.defeat()), 150));

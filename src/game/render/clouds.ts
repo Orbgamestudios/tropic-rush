@@ -8,6 +8,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { VIEW_YAW } from "../config";
 import { beachSide, shoreRadius } from "../logic/island";
 import { createRng } from "../logic/rng";
+import { SKY } from "./sky";
 
 const PUFFS = 260;
 
@@ -78,6 +79,7 @@ export function buildClouds(seed: number): CloudView {
     fog: false,
     opacity: 0.9,
   });
+  material.color = SKY.unlit.value;
   const mesh = new THREE.Mesh(geometry ?? new THREE.BufferGeometry(), material);
   mesh.renderOrder = 5;
   root.add(mesh);

@@ -22,6 +22,8 @@ import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
 import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
+import { Fireflies } from "./fireflies";
+import { buildingLamps, LightPool } from "./lightPool";
 import {
   type BuildingModel,
   buildingModel,
@@ -146,6 +148,8 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
 export class RaidView {
   readonly root = new THREE.Group();
   readonly effects: Effects;
+  private readonly lights = new LightPool();
+  private readonly fireflies: Fireflies;
   /** How hard the last blasts should shake the camera; Game takes it each frame. */
   private tremor = 0;
   private trailTick = 0;
@@ -209,8 +213,15 @@ export class RaidView {
     }
     this.clouds = buildClouds(layout.seed);
     this.root.add(this.clouds.root, this.aimView.root);
-    this.effects = new Effects((x, z) => this.ground(x, z));
-    this.root.add(this.terrain.root, this.props, this.effects.root);
+    this.effects = new Effects((x, z) => this.ground(x, z), this.lights);
+    this.fireflies = new Fireflies(layout.seed, this.ground);
+    this.root.add(
+      this.terrain.root,
+      this.props,
+      this.effects.root,
+      this.lights.root,
+      this.fireflies.mesh,
+    );
 
     for (const b of state.buildings) {
       const model = buildingModel(b.type, home !== undefined);
@@ -228,6 +239,7 @@ export class RaidView {
         baseY: model.root.position.y,
       });
     }
+    this.lightBuildings(state);
 
     state.heroes.forEach((h, i) => {
       const model = heroModel(h.kind);
@@ -318,6 +330,7 @@ export class RaidView {
           this.effects.explosion(this.at(e.pos, 1.2), radius * 1.3);
           this.effects.smokeColumn(this.at(e.pos, 0.5), e.buildingType === "headquarters" ? 8 : 4);
           this.shake(e.pos, radius * 0.16, state);
+          this.lightBuildings(state);
           const view = this.buildings.get(e.id);
           if (view) {
             // It comes down rather than vanishing; the rubble grows in under it.
@@ -396,12 +409,25 @@ export class RaidView {
     this.overgrowth?.update(dt);
     this.updateBuildings(state, dt);
     this.updateHeroes(state, dt);
+    this.lights.update(dt, time);
+    this.fireflies.update(time);
     this.updateProjectiles(state);
     this.updateZones(state, time);
     this.updateTurrets(state);
     this.updateMines(state, time);
     this.updateBoat(time);
     this.updateLabels(state, camera, width, height);
+  }
+
+  /** Lamps on everything still standing. */
+  private lightBuildings(state: RaidState): void {
+    this.lights.setLamps(
+      state.buildings
+        .filter((b) => !b.destroyed)
+        .flatMap((b) =>
+          buildingLamps(b.type, b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y, !this.defending),
+        ),
+    );
   }
 
   private updateBuildings(state: RaidState, dt: number): void {
@@ -449,6 +475,9 @@ export class RaidView {
       // Turn smoothly rather than snapping.
       view.facing += angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
       model.root.rotation.y = -view.facing;
+      if (h.alive && this.lights.active) {
+        this.lights.follow(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y, 8, 2.2, 0xffe8c8);
+      }
 
       if (h.alive && h.moving) {
         view.stepTimer -= dt;
@@ -801,6 +830,8 @@ export class RaidView {
     this.labels.clear();
     this.terrain.dispose();
     this.effects.dispose();
+    this.lights.dispose();
+    this.fireflies.dispose();
     disposeGeometries(this.root);
     for (const objects of this.pool.values()) for (const o of objects) disposeGeometries(o);
     for (const t of this.telegraphs.values()) {

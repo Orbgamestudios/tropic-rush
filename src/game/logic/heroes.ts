@@ -185,7 +185,7 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
     hp: 1300,
     speed: 5.4,
     radius: 0.55,
-    attack: { kind: "lob", range: 14, damage: 170, reload: 1.3, splash: 3, flightTime: 0.9 },
+    attack: { kind: "lob", range: 18.6, damage: 170, reload: 1.3, splash: 3, flightTime: 0.9 },
     heavy: false,
   },
   engineer: {
@@ -207,5 +207,5 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
   },
 };
 
-/** Heroes a new player can pick right away (the Barracks unlocks are a later step). */
-export const STARTER_HEROES: readonly HeroKind[] = ["rifleman", "heavy", "medic"];
+/** Heroes a new player can pick right away; the rest come with headquarters levels. */
+export const STARTER_HEROES: readonly HeroKind[] = ["rifleman"];

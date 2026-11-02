@@ -76,9 +76,13 @@ test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
 
 test("won't send a medic to attack on her own", async ({ page }) => {
   await page.goto("/?testhooks");
-  await page.evaluate(() =>
-    (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
-  );
+  await page.evaluate(() => {
+    const { tropicRush } = window as unknown as {
+      tropicRush: { openHeroes(): void; syncNow(changes: { unlocked: string[] }): void };
+    };
+    tropicRush.syncNow({ unlocked: ["rifleman", "medic"] });
+    tropicRush.openHeroes();
+  });
   await page.getByRole("button", { name: "Medic", exact: true }).click();
   await page.getByRole("button", { name: "Raid", exact: true }).click();
   await page.locator(".map-pin:visible").first().click();

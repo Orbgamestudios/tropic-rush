@@ -818,7 +818,6 @@
 .map-screen {
   position: absolute;
   inset: 0;
-  overflow: hidden;
   touch-action: none;
 }
 
@@ -1092,7 +1091,6 @@
 .scout {
   position: absolute;
   inset: 0;
-  overflow: hidden;
   touch-action: none;
 }
 
@@ -1494,6 +1492,63 @@
 }
 
 /* Every settings button, side by side with the sliders so they all fit on a phone. */
+.pause-sky {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pause-sky-times {
+  flex: 1;
+  min-width: 0;
+  color: var(--cream);
+  font-size: 11px;
+  line-height: 1.2;
+  text-shadow: var(--outline-thin);
+}
+
+.pause-sky > .ui-btn {
+  flex: none;
+}
+
+/* The one time the game asks where the phone is. */
+.sky-card {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border: 2px solid var(--brass);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 8px 18px rgb(0 0 0 / 0.45);
+  white-space: nowrap;
+}
+
+.sky-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sky-card-title {
+  color: var(--cream);
+  font-family: var(--display);
+  font-size: 14px;
+  text-shadow: var(--outline-thin);
+}
+
+.sky-card-note {
+  color: var(--cream);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
 .pause-buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;

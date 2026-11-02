@@ -5,7 +5,13 @@
 
 import * as THREE from "three";
 import { HEROES, type HeroKind, shotSpread } from "../logic/heroes";
-import { lockCandidate, patientCandidate, type RaidHero, type RaidState } from "../logic/raid";
+import {
+  aimStretch,
+  lockCandidate,
+  patientCandidate,
+  type RaidHero,
+  type RaidState,
+} from "../logic/raid";
 import { angleOf, type Vec2 } from "../logic/vec";
 
 /** The cone never draws narrower than this either side, so a precise rifle still shows. */
@@ -128,6 +134,9 @@ export class AimView {
       if (preview) {
         cone.position.set(hero.pos.x, y, hero.pos.y);
         cone.rotation.set(-Math.PI / 2, 0, -angleOf(preview));
+        // It opens up as the hero moves, the same as their shots do.
+        const { width, length } = aimStretch(hero);
+        cone.scale.set(length, width, 1);
       }
     }
 

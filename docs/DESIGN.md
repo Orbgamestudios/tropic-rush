@@ -43,6 +43,8 @@ Raids are what matter most. If a co-op raid is fun, everything else builds on it
      until it's destroyed or the hero walks out of range. Dragging to another tower retargets.
      A quick tap locks onto the nearest tower in range; tapping again stops. Heroes slow to 20%
      speed while aiming or shooting (**Decided 2026-11-01**, owner's request).
+     Moving also costs accuracy (**Decided 2026-11-01**, owner's request): a hero's shot cone eases
+     25% wider as they move and back as they stop. Throwers instead scatter longer and wider.
 3. **Gunboat.** **Decided (changed 2026-11-01, owner's request):**
    - It pulls up next to the beach where the crew landed.
    - Only one player can use it at a time.
@@ -145,8 +147,9 @@ sets them apart, and the Tank's Aftershock moved from the end of a ram to whatev
 
 **Proposed:**
 
-- Start with Rifleman, Heavy and Medic; unlock the others at a Barracks on the home island as the
-  HQ levels up.
+- **Unlocks (Decided 2026-11-01, for now, until a story arc brings heroes in):** everyone starts
+  with the Rifleman alone. A new hero joins every three HQ levels: Heavy at 3, Medic at 6, Grenadier
+  at 9, Bazooka at 12, Engineer at 15 and Tank at 18. Medals are gone from the game.
 - Hero levels are personal to each player.
 - As heroes level up, their outfits gain pieces, but silhouettes and headgear stay the same.
 - **Perks (Decided 2026-10-30):** levelling a hero is an event, not just bigger numbers. Each hero
@@ -388,12 +391,13 @@ like theme but polished and simple"):
   anywhere and resize each one. x and y are shares of the screen (0 to 1). Settings
   shows every value, so the owner can send them to become the defaults.
 - **Hero select:**
-  - a roster of 3D-rendered portraits with gear-shaped level badges and medal locks
+  - a roster of 3D-rendered portraits with gear-shaped level badges, and a lock showing the
+    headquarters level that brings each hero in
   - the hero on a stone-and-steel pedestal: drag to spin it, and it drops in when chosen
   - a stats card with HP, Attack, Speed and Range bars (a ghost bar previews the next level)
   - the hero's signature move
   - the hero's perk track
-  - LEVEL UP (gold) or UNLOCK (medals), and RAID, which opens the world map
+  - LEVEL UP (gold), and RAID, which opens the world map
 - **Raid HUD:**
   - a portrait card with a health bar
   - crewmates' portraits under it, with health bars and a KO mark when one falls
@@ -428,14 +432,8 @@ like theme but polished and simple"):
 **Proposed:**
 
 - Players earn gold from raids: destruction × 2 × island level, plus 150 × level for a win.
-- Medals come from wins: one per island level.
 - Gold levels heroes up, from 1 to 10. Each level adds 8% health and damage.
-- Medals unlock the heroes beyond the starting three:
-  - Grenadier: 2
-  - Bazooka: 3
-  - Engineer: 4
-  - Tank: 6
-- Hero levels and both currencies are personal, not shared with the crew.
+- Hero levels and gold are personal, not shared with the crew.
 - Hero names on the cards:
   - Sgt. Steele (Rifleman)
   - Doc Penny (Medic)
@@ -510,6 +508,29 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
 **Proposed:** one world for every crew, regions of 6 to 8 islands, roughly one more HQ level every
 34 map units from home, and progress kept on each phone, not on the crew server. A lost raid can
 be tried again as often as you like, and materials are kept win or lose.
+
+## Day and night
+
+**Decided 2026-11-01:**
+
+- The game's time of day follows the real sun where the player is. The whole game follows it: the
+  crew island, raids, scouting, replays and the world map, but not the hero pedestal, which stays
+  in steady daylight so heroes are easy to look at.
+- The game asks once, in its own small card, to use the phone's location. It's rounded to about
+  10 km, stays on the phone, and never goes in the save or to the server. Saying no gives a sky
+  worked out from the phone's time zone, and Settings can change that answer later.
+- Mornings are pinker and evenings more orange.
+- The moon is real too: it's where the real moon is, in its real phase, and its light and shadows
+  come and go with both. A full moon gives a blue light and soft shadows. A new moon gives no moon
+  light and no shadows, only lamps and starlight, and stars show more. When the moon is below the
+  horizon, it's dark the same way.
+- The jungle goes darker than the open ground at night, so clearings and lit bases stand out.
+- A few fireflies blink over the land after dark.
+- From dusk, buildings keep lamps, heroes carry a soft light, and guns, rockets, fires and
+  explosions throw light on the ground. Storages and land mines stay dark.
+- Battery comes first. The sky updates every few seconds, not every frame. Lamps, flashes and
+  fireflies are small instanced quads, not real lights, and aren't drawn by day. Moon shadows
+  redraw at half the sun's rate, and on moonless nights shadows aren't drawn at all.
 
 ## Art direction
 
@@ -639,8 +660,7 @@ Rifleman's TRELLIS model (arms lowered from its T-pose by a script) on the hero-
 Choices made while building the draft. All are **Proposed**:
 
 - **Island difficulty:** the hero-select screen offers HQ levels 1–3, named Outpost, Fort and
-  Stronghold, shown with 1–3 stars. Rifleman, Heavy and Medic are open from the start; the others
-  unlock with medals (see UI and menus).
+  Stronghold, shown with 1–3 stars.
 - **Cover:** rocks block shots both ways. Sandbags are gone from the game (Decided 2026-11-01).
 - **Non-attacking buildings:** the watchtower doesn't attack, and neither does the headquarters.
 - **Starting energy:** the crew starts with 10 gunboat energy. Defenses give 4–5 when destroyed,

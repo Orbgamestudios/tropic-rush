@@ -62,6 +62,7 @@ interface HeroSnap {
   /** Bit flags: alive, gunboat, moving, firing. */
   s: number;
   spin: number;
+  unsteady: number;
   target: number | null;
 }
 
@@ -144,6 +145,7 @@ export function takeSnapshot(
       hp: h.hp,
       s: (h.alive ? 1 : 0) | (h.inBoat ? 2 : 0) | (h.moving ? 4 : 0) | (h.firing ? 8 : 0),
       spin: h.spin,
+      unsteady: h.unsteady,
       target: h.targetId,
     })),
     buildings,
@@ -211,6 +213,7 @@ export function applySnapshot(
     h.inBoat = (s.s & 2) !== 0;
     h.firing = (s.s & 8) !== 0;
     h.spin = s.spin;
+    h.unsteady = s.unsteady;
     h.targetId = s.target;
     targets[i] = { x: s.x, y: s.y, facing: s.f };
     if (i === seat) {

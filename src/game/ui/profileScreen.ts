@@ -2,6 +2,7 @@
 // crew with its invite code, and their account, which keeps all this safe across phones.
 
 import { AVATARS, type Avatar, avatarUrl } from "../logic/avatars";
+import { HERO_KINDS } from "../logic/heroes";
 import type { SaveData } from "../save";
 import { button, closeOnBackdrop, el, formatNumber, panel, setLabel } from "./kit/dom";
 import { sfx } from "./kit/fx";
@@ -201,7 +202,7 @@ export class ProfileScreen {
       stat("sword2", formatNumber(save.wins), "raids won"),
       stat("island", formatNumber(save.world.taken.length), "islands held"),
       stat("skull", `${save.bestDestruction}%`, "best raid"),
-      stat("medal", formatNumber(save.medals), "medals"),
+      stat("crew", `${save.unlocked.length} of ${HERO_KINDS.length}`, "heroes"),
     );
     this.crewCode.textContent = save.crewCode || "No crew yet";
     setLabel(this.crewButton, save.crewCode ? "Share code" : "Join a crew");

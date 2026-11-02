@@ -24,8 +24,10 @@ import { homeHeight, landingPoints } from "../logic/island";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { JobPin } from "../ui/crewUi";
 import { buildClouds, type CloudView } from "./clouds";
+import { Fireflies } from "./fireflies";
 import { visibleBox } from "./heroAssets";
 import { HomeHeroes } from "./homeHeroes";
+import { buildingLamps, LightPool } from "./lightPool";
 import { buildingModel, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
@@ -289,6 +291,8 @@ export class CrewIslandView {
       sign: THREE.Group | null;
     }
   >();
+  private readonly lights = new LightPool();
+  private readonly fireflies = new Fireflies(7, (x, z) => Math.max(0, homeHeight(x, z)));
   /** What sync() last drew, so a frame where nothing changed costs nothing. */
   private drawn: { layout: CrewLayout | null; hidden: string | null; held: string } = {
     layout: null,
@@ -320,7 +324,7 @@ export class CrewIslandView {
   ) {
     this.camera = new HomeCamera(stage);
     this.heroes = new HomeHeroes(stage);
-    this.root.add(this.heroes.root);
+    this.root.add(this.heroes.root, this.lights.root, this.fireflies.mesh);
     const scenery = homeScenery(HOME_START);
     const landing = landingPoints();
     this.overgrowth = new OvergrowthView(scenery);
@@ -387,6 +391,12 @@ export class CrewIslandView {
     if (drawn.layout === layout && drawn.hidden === hiddenId && drawn.held === held) return;
     this.drawn = { layout, hidden: hiddenId, held };
     this.overgrowth.sync(layout);
+    this.lights.setLamps(
+      layout.buildings.flatMap((b) => {
+        const { x, y } = buildingCenter(b);
+        return buildingLamps(b.type, x, groundFor(b), y);
+      }),
+    );
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
@@ -595,6 +605,8 @@ export class CrewIslandView {
     this.overgrowth.setDistance(this.camera.distance);
     this.overgrowth.update(dt);
     this.heroes.update(dt);
+    this.lights.update(dt, time);
+    this.fireflies.update(time);
     updateWind(time, null);
     this.terrain.update(time);
     this.clouds.update(time);
@@ -608,6 +620,8 @@ export class CrewIslandView {
   dispose(): void {
     // The plants share geometry and materials with other views: dispose them separately.
     this.root.remove(this.overgrowth.root);
+    this.lights.dispose();
+    this.fireflies.dispose();
     this.overgrowth.dispose();
     this.heroes.dispose();
     this.clouds.dispose();

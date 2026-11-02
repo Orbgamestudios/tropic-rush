@@ -49,12 +49,6 @@ const ICONS = {
     <path d="M32 6l5 6 8-2 2 8 8 3-2 8 6 5-6 5 2 8-8 3-2 8-8-2-5 6-5-6-8 2-2-8-8-3 2-8-6-5 6-5-2-8 8-3 2-8 8 2z" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3" stroke-linejoin="round"/>
     <circle cx="32" cy="32" r="9" fill="#3c4656" stroke="${OUTLINE}" stroke-width="3"/>
     <path d="M18 20a18 18 0 0 1 10-6" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity=".75"/>`,
-  medal: (id) => `
-    <defs>${rg(id("a"), "#fff3a8", "#e8a11b")}</defs>
-    <path d="M18 4h12l6 22H24z" fill="#2f6fd6" stroke="${OUTLINE}" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M46 4H34l-6 22h12z" fill="#d6413a" stroke="${OUTLINE}" stroke-width="3" stroke-linejoin="round"/>
-    <circle cx="32" cy="40" r="18" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3"/>
-    <path d="M32 29l3.2 6.5 7.2 1-5.2 5.1 1.2 7.2-6.4-3.4-6.4 3.4 1.2-7.2-5.2-5.1 7.2-1z" fill="#fff6c2" stroke="#b9700b" stroke-width="1.5" stroke-linejoin="round"/>`,
   heart: (id) => `
     <defs>${lg(id("a"), "#8ef06a", "#2c9a2f")}</defs>
     <path d="M32 56S6 40 6 22c0-8 6-14 13-14 6 0 10 4 13 9 3-5 7-9 13-9 7 0 13 6 13 14 0 18-26 34-26 34z" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3.5" stroke-linejoin="round"/>

@@ -17,7 +17,10 @@ const FOLLOW_PITCH_PER_TILT = 0.54;
 const BEHIND_PITCH = 0.42;
 const BEHIND_DISTANCE = 17;
 const BEHIND_HEIGHT = 1.5;
-const BEHIND_TURN_RATE = 2.4;
+const BEHIND_TURN_RATE = 1.7;
+/** How fast it can swing round, in radians a second, and how softly it gets up to speed. */
+const BEHIND_MOST_SPIN = 2;
+const BEHIND_SPIN_EASE = 4.5;
 /** The little push-in while firing. */
 const BEHIND_FIRE_ZOOM = 0.92;
 const FOLLOW_NEAR = 28;
@@ -51,6 +54,8 @@ export class CameraRig {
   private distance = ORBIT_DISTANCE;
   private pitch = ORBIT_PITCH;
   private yaw = 0.5;
+  /** How fast the behind camera is turning, in radians a second. */
+  private spin = 0;
   private readonly raycaster = new THREE.Raycaster();
   private readonly plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
@@ -64,6 +69,7 @@ export class CameraRig {
   /** Jumps straight to the desired view (no easing), e.g. when a raid starts. */
   snap(focus: Vec2 | null): void {
     this.yaw = VIEW_YAW;
+    this.spin = 0;
     this.update(10, focus);
   }
 
@@ -79,7 +85,7 @@ export class CameraRig {
     let distance: number;
     let pitch: number;
     let yaw = VIEW_YAW;
-    let turnRate = 5;
+    const turnRate = 5;
     switch (this.mode) {
       case "follow": {
         const f = focus ?? vec(0, 0);
@@ -90,7 +96,6 @@ export class CameraRig {
           pitch = BEHIND_PITCH + FOLLOW_PITCH_PER_TILT * this.tilt;
           // Sit opposite the way the hero faces.
           yaw = heading === null ? this.yaw : Math.atan2(-Math.cos(heading), -Math.sin(heading));
-          turnRate = BEHIND_TURN_RATE;
           break;
         }
         // Lead is in screen terms: turn it with the view.
@@ -126,10 +131,22 @@ export class CameraRig {
     this.target.lerp(desired, k);
     this.distance = lerp(this.distance, distance, k);
     this.pitch = lerp(this.pitch, pitch, k);
-    this.yaw =
-      this.mode === "orbit"
-        ? yaw
-        : this.yaw + angleDiff(yaw, this.yaw) * (1 - Math.exp(-dt * turnRate));
+    if (this.mode === "follow" && this.behind) {
+      // The spin itself eases in and out, so the view never starts or stops with a jerk.
+      const wanted = clamp(
+        angleDiff(yaw, this.yaw) * BEHIND_TURN_RATE,
+        -BEHIND_MOST_SPIN,
+        BEHIND_MOST_SPIN,
+      );
+      this.spin += (wanted - this.spin) * (1 - Math.exp(-dt * BEHIND_SPIN_EASE));
+      this.yaw += this.spin * dt;
+    } else {
+      this.spin = 0;
+      this.yaw =
+        this.mode === "orbit"
+          ? yaw
+          : this.yaw + angleDiff(yaw, this.yaw) * (1 - Math.exp(-dt * turnRate));
+    }
 
     const cam = this.stage.camera;
     const flat = Math.cos(this.pitch) * this.distance;

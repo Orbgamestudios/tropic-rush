@@ -1,12 +1,14 @@
 // The hero screen, reached by tapping a hero on the island: the roster on the left, the chosen
 // hero turning on a pedestal in the middle, their stats, signature move and perks on the right. Gold levels
-// heroes up, with a reveal for each level and a perk at the milestones; medals unlock new ones.
+// heroes up, with a reveal for each level and a perk at the milestones; new heroes join as the
+// headquarters grows.
 // Raid goes to the world map to pick an island. Nobody brings AI allies: the only crewmates on a
 // raid are other players, who team up from the map.
 
 import { HERO_KINDS, HEROES, type HeroKind } from "../logic/heroes";
 import {
   HERO_NAMES,
+  HERO_UNLOCK_HQ,
   heroStats,
   isSignature,
   levelUpCost,
@@ -14,7 +16,6 @@ import {
   PERKS,
   perkAt,
   statBars,
-  UNLOCK_MEDALS,
 } from "../logic/heroProgress";
 import type { Showcase } from "../render/showcase";
 import { heroPortrait } from "../render/thumbnails";
@@ -47,7 +48,6 @@ export class HeroSelect {
   readonly root = el("div", "screen screen-heroes");
   private readonly fx = el("div", "fx-layer");
   private readonly gold = new CurrencyPill("coin", "Gold");
-  private readonly medals = new CurrencyPill("medal", "Medals");
   private readonly grid = el("div", "heroes-grid");
   private readonly tiles = new Map<HeroKind, HTMLButtonElement>();
   private readonly name = el("div", "heroes-name");
@@ -80,7 +80,7 @@ export class HeroSelect {
     // Top bar.
     const top = el("div", "screen-top");
     const wallet = el("div", "screen-wallet");
-    wallet.append(this.gold.root, this.medals.root);
+    wallet.append(this.gold.root);
     const back = backButton(() => host.onBack());
 
     // Roster.
@@ -171,7 +171,6 @@ export class HeroSelect {
   show(kind?: HeroKind): void {
     const save = this.host.save();
     this.gold.set(save.gold, false);
-    this.medals.set(save.medals, false);
     this.root.style.display = "grid";
     this.showcase.show(true);
     this.choose(kind ?? (save.unlocked.includes(save.hero) ? save.hero : "rifleman"), true);
@@ -203,8 +202,7 @@ export class HeroSelect {
       tile.querySelector(".ui-tile-lock")?.remove();
       if (isLocked) {
         const lock = el("span", "ui-tile-lock");
-        lock.append(icon("lock"), el("span", "ui-tile-lock-text", String(UNLOCK_MEDALS[k])));
-        lock.querySelector(".ui-tile-lock-text")?.before(icon("medal", "ui-tile-lock-medal"));
+        lock.append(icon("lock"), el("span", "ui-tile-lock-text", `HQ ${HERO_UNLOCK_HQ[k]}`));
         tile.append(lock);
       } else {
         tile.append(levelBadge(save.heroLevels[k]));
@@ -235,12 +233,12 @@ export class HeroSelect {
     this.signatureText.textContent = move?.text ?? "";
     this.refreshPerks(kind, level);
 
-    // Level up, or unlock with medals.
+    // Level up, or say which headquarters brings this hero in.
     if (!unlocked) {
-      setLabel(this.levelUp, "Unlock");
-      this.levelCost.replaceChildren(icon("medal"), el("span", "", String(UNLOCK_MEDALS[kind])));
-      this.levelUp.disabled = save.medals < UNLOCK_MEDALS[kind];
-      this.levelUp.classList.replace("ui-btn-steel", "ui-btn-gold");
+      setLabel(this.levelUp, "Locked");
+      this.levelCost.replaceChildren(el("span", "", `HQ ${HERO_UNLOCK_HQ[kind]}`));
+      this.levelUp.disabled = true;
+      this.levelUp.classList.replace("ui-btn-gold", "ui-btn-steel");
     } else if (level >= MAX_HERO_LEVEL) {
       setLabel(this.levelUp, "Max level");
       this.levelCost.replaceChildren();
@@ -257,7 +255,6 @@ export class HeroSelect {
     }
     this.start.disabled = !unlocked;
     this.gold.set(save.gold);
-    this.medals.set(save.medals);
   }
 
   /** The four milestones: earned ones lit, and the next one's words underneath. */
@@ -290,21 +287,9 @@ export class HeroSelect {
   private upgrade(): void {
     const save = this.host.save();
     const kind = this.hero;
-    if (!save.unlocked.includes(kind)) {
-      const price = UNLOCK_MEDALS[kind];
-      if (save.medals < price) {
-        sfx.error();
-        return;
-      }
-      this.host.update({ medals: save.medals - price, unlocked: [...save.unlocked, kind] });
-      sfx.levelUp();
-      this.celebrate();
-      this.refresh();
-      return;
-    }
     const level = save.heroLevels[kind];
     const price = levelUpCost(level);
-    if (level >= MAX_HERO_LEVEL || save.gold < price) {
+    if (!save.unlocked.includes(kind) || level >= MAX_HERO_LEVEL || save.gold < price) {
       sfx.error();
       return;
     }

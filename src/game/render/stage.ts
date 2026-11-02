@@ -9,6 +9,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { COLORS } from "./palette";
+import { LIGHT_DISTANCE, Sky } from "./sky";
 
 const BLOOM = { strength: 0.3, radius: 0.55, threshold: 0.92 };
 
@@ -51,6 +52,7 @@ export class Stage {
   readonly camera = new THREE.PerspectiveCamera(38, 1, 0.5, 700);
   readonly sun: THREE.DirectionalLight;
   readonly fog: THREE.Fog;
+  readonly sky: Sky;
   width = 1;
   height = 1;
   /** Keeps full quality however slow frames are, for screenshots in test browsers. */
@@ -72,11 +74,11 @@ export class Stage {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(COLORS.sky);
     this.fog = new THREE.Fog(COLORS.sky, 60, 170);
     this.scene.fog = this.fog;
 
-    this.scene.add(new THREE.HemisphereLight(0xe4f6ff, 0xd2c08f, 1.25));
+    const fill = new THREE.HemisphereLight(0xe4f6ff, 0xd2c08f, 1.25);
+    this.scene.add(fill);
     this.sun = new THREE.DirectionalLight(0xfff0d4, 2.3);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1536, 1536);
@@ -86,6 +88,7 @@ export class Stage {
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 180;
     this.scene.add(this.sun, this.sun.target);
+    this.sky = new Sky(this.scene, this.sun, fill, this.fog);
 
     this.composer = this.buildComposer();
     new ResizeObserver(() => this.resize()).observe(container);
@@ -127,7 +130,7 @@ export class Stage {
 
   /** Keeps crisp shadows around what the camera is looking at. */
   focusShadows(target: THREE.Vector3, size: number): void {
-    this.sun.position.copy(target).add(new THREE.Vector3(-28, 48, 34));
+    this.sun.position.copy(target).addScaledVector(this.sky.direction, LIGHT_DISTANCE);
     this.sun.target.position.copy(target);
     const cam = this.sun.shadow.camera;
     if (cam.right !== size) {
@@ -198,7 +201,10 @@ export class Stage {
 
   render(): void {
     this.frameNumber++;
-    if (this.shadowsStale || this.frameNumber % this.shadowEvery === 0) {
+    this.sky.update(performance.now() / 1000);
+    const shadowEvery = this.sky.moonShadows ? this.shadowEvery * 2 : this.shadowEvery;
+    const dueShadows = this.sky.shadows && this.frameNumber % shadowEvery === 0;
+    if (this.shadowsStale || dueShadows) {
       this.renderer.shadowMap.needsUpdate = true;
       this.shadowsStale = false;
     }

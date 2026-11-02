@@ -16,6 +16,7 @@ import {
   type WorldProgress,
 } from "../logic/worldMap";
 import { cloudTexture } from "./clouds";
+import { type Lamp, LightPool } from "./lightPool";
 import { buildingModel, gunboatModel } from "./models";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
@@ -29,6 +30,7 @@ import {
   swaying,
 } from "./props";
 import { merge, vertexColored } from "./shapes";
+import { SKY } from "./sky";
 import type { Stage } from "./stage";
 
 const PITCH = 1.12;
@@ -43,9 +45,12 @@ const BUILD_REACH = { x: 1.4, y: 1.5 } as const;
 const CLOUD_PUFFS = 22;
 const CLOUD_LIFT_SECONDS = 2.6;
 const SMOKE_STEPS = 4;
+const CREW_LIGHT = 0xffc680;
+const RAIDER_LIGHT = 0xff6a3c;
 
 const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uTime;
+  uniform vec3 uUnlit;
   varying vec3 vWorld;
   uniform sampler2D uNoise;
   float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
@@ -56,7 +61,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
     float a = noise(p * 0.22 + vec2(uTime * 0.08, 0.0));
     float b = noise(p * 0.55 - vec2(0.0, uTime * 0.06));
     color += vec3(0.5, 0.75, 0.95) * smoothstep(0.66, 0.74, a * 0.55 + b * 0.45) * 0.035;
-    gl_FragColor = vec4(color, 1.0);
+    gl_FragColor = vec4(color * uUnlit, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -296,6 +301,7 @@ export class WorldMapView {
     depthWrite: false,
   });
   private readonly boat = gunboatModel();
+  private readonly lights = new LightPool();
   /** One per step of the rising loop, so each puff can fade as it goes. */
   private readonly smokeMaterials: THREE.SpriteMaterial[] = [];
   private readonly smoke: Smoke[] = [];
@@ -310,7 +316,7 @@ export class WorldMapView {
 
   constructor(private readonly stage: Stage) {
     this.ocean = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uNoise: { value: noiseTexture() } },
+      uniforms: { uTime: { value: 0 }, uNoise: { value: noiseTexture() }, uUnlit: SKY.unlit },
       vertexShader: /* glsl */ `
         varying vec3 vWorld;
         void main() {
@@ -327,7 +333,8 @@ export class WorldMapView {
     sea.rotateX(-Math.PI / 2);
     this.sea = new THREE.Mesh(sea, this.ocean);
     this.sea.renderOrder = -1;
-    this.root.add(this.sea, this.regionRoot, this.cloudRoot);
+    this.shallows.color = SKY.unlit.value;
+    this.root.add(this.sea, this.regionRoot, this.cloudRoot, this.lights.root);
 
     // Home in the middle, and the gunboat at anchor beside it.
     const home = newBatch();
@@ -356,6 +363,7 @@ export class WorldMapView {
       depthTest: false,
       fog: false,
     });
+    this.cloudMaterial.color = SKY.unlit.value;
     this.root.visible = false;
     stage.scene.add(this.root);
   }
@@ -367,6 +375,7 @@ export class WorldMapView {
     reveal: readonly string[] = [],
   ): void {
     this.islands = islands;
+    this.lightIslands(islands);
     const { open } = chartedRegions(world);
     const spots = open.map((key) => key.split(",").map(Number) as [number, number]);
     const columns = spots.map(([c]) => c);
@@ -472,14 +481,36 @@ export class WorldMapView {
     }
   }
 
+  /** After dark, a lit camp on every island, and the crew's own in warmer colors. */
+  private lightIslands(islands: readonly MapIsland[]): void {
+    const lamp = (x: number, z: number, reach: number, color: number): Lamp => ({
+      x,
+      y: 0.5,
+      z,
+      reach,
+      power: 1.8,
+      color,
+      halo: 1.6,
+      height: 1.5,
+      flicker: false,
+    });
+    this.lights.setLamps([
+      lamp(0, 0, 9, CREW_LIGHT),
+      ...islands.map((i) =>
+        lamp(i.x, i.y, islandRadius(i.size) * 1.3, i.taken ? CREW_LIGHT : RAIDER_LIGHT),
+      ),
+    ]);
+  }
+
   show(on: boolean): void {
     if (on === this.root.visible) return;
     this.root.visible = on;
-    const { scene } = this.stage;
+    const { scene, sky } = this.stage;
+    sky.cover("map", on);
     if (on) {
       this.savedBackground = scene.background;
       this.savedFog = scene.fog;
-      scene.background = new THREE.Color(0x0a2f5a);
+      scene.background = sky.mapBackground;
       scene.fog = null;
     } else {
       scene.background = this.savedBackground;
@@ -512,6 +543,7 @@ export class WorldMapView {
 
   update(time: number, dt: number): void {
     (this.ocean.uniforms.uTime as THREE.IUniform<number>).value = time;
+    this.lights.update(dt, time);
     this.cloudRoot.position.x = Math.sin(time * 0.05) * 3;
     this.cloudRoot.position.z = Math.cos(time * 0.04) * 2;
     this.boat.root.position.set(Math.sin(time * 0.1) * 1.5 + 9, 0.1, 6.5);

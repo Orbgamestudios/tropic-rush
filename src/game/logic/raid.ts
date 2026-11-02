@@ -42,6 +42,12 @@ const MINE_DAMAGE = 450;
 
 /** Heroes slow to this share of their speed while aiming or shooting. */
 const SHOOTING_SPEED = 0.2;
+/** On the move, shots stray this much wider, coming on and easing off over this many seconds. */
+const MOVING_SPREAD = 0.25;
+const STEADY_SECONDS = 0.5;
+/** On the move, a throw can land this far off: a share of its length, and radians to the side. */
+const THROW_LENGTH_SCATTER = 0.2;
+const THROW_WIDTH_SCATTER = 0.12;
 /** A released aim locks onto a building this far either side of it at least (radians). */
 const LOCK_TOLERANCE = 0.22;
 const CREW_TURRET = {
@@ -105,6 +111,8 @@ export interface RaidHero {
   burstDir: Vec2;
   /** Minigun spin-up, 0 to 1. */
   spin: number;
+  /** How much moving is throwing off their aim: 0 steady, 1 at the worst. */
+  unsteady: number;
   autoFireTime: number;
   autoDir: Vec2;
   autoDistance: number;
@@ -311,6 +319,7 @@ export function createRaid(
       burstTimer: 0,
       burstDir: vec(0, -1),
       spin: 0,
+      unsteady: 0,
       autoFireTime: 0,
       autoDir: vec(0, -1),
       autoDistance: 0,
@@ -424,6 +433,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     hero.firing = false;
     hero.burstLeft = 0;
     hero.spin = 0;
+    hero.unsteady = 0;
     hero.targetId = null;
     hero.patientId = null;
     if (input.boatAbility) fireAbility(state, input.boatAbility.ability, input.boatAbility.target);
@@ -432,6 +442,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
 
   const spec = HEROES[hero.kind];
   moveByInput(state, hero, input, dt);
+  hero.unsteady = clamp(hero.unsteady + (hero.moving ? dt : -dt) / STEADY_SECONDS, 0, 1);
 
   // Locking on: let go of a drag to lock onto the building in that direction, or tap to lock
   // onto the nearest tower (tapping the same one again stops). A medic locks onto crewmates.
@@ -515,6 +526,31 @@ function pushOut(pos: Vec2, radius: number, center: Vec2, otherRadius: number): 
   return add(center, scale(normalize(sub(pos, center)), min));
 }
 
+/** How far a shot strays this time, in radians: the hero's cone, wider while they're moving. */
+function strayAngle(state: RaidState, hero: RaidHero): number {
+  const spread = shotSpread(hero.kind) * (1 + MOVING_SPREAD * hero.unsteady);
+  return (state.rng() - 0.5) * 2 * spread;
+}
+
+/** Where a throw lands: right on the mark standing still, anywhere round it on the move. */
+function throwTarget(state: RaidState, hero: RaidHero, dir: Vec2, reach: number): Vec2 {
+  const wide = (state.rng() - 0.5) * 2 * THROW_WIDTH_SCATTER * hero.unsteady;
+  const long = (state.rng() - 0.5) * 2 * THROW_LENGTH_SCATTER * hero.unsteady;
+  return add(hero.pos, fromAngle(angleOf(dir) + wide, reach * (1 + long)));
+}
+
+/** How much wider and longer a hero's aim cone is right now, for drawing it. */
+export function aimStretch(hero: RaidHero): { width: number; length: number } {
+  const kind = HEROES[hero.kind].attack.kind;
+  if (kind !== "lob" && kind !== "heal") {
+    return { width: 1 + MOVING_SPREAD * hero.unsteady, length: 1 };
+  }
+  return {
+    width: 1 + (THROW_WIDTH_SCATTER / shotSpread(hero.kind)) * hero.unsteady,
+    length: 1 + THROW_LENGTH_SCATTER * hero.unsteady,
+  };
+}
+
 function updateAttack(
   state: RaidState,
   hero: RaidHero,
@@ -530,7 +566,7 @@ function updateAttack(
         hero.firing = true;
         hero.burstTimer -= dt;
         if (hero.burstTimer <= 0) {
-          const stray = (state.rng() - 0.5) * 2 * shotSpread(hero.kind);
+          const stray = strayAngle(state, hero);
           spawnDirect(
             state,
             hero,
@@ -560,8 +596,7 @@ function updateAttack(
       }
       hero.spin = Math.min(1, hero.spin + dt / atk.spinUp);
       if (hero.reload <= 0) {
-        const spread = (state.rng() - 0.5) * 2 * atk.spread;
-        const shotDir = fromAngle(angleOf(dir) + spread);
+        const shotDir = fromAngle(angleOf(dir) + strayAngle(state, hero));
         hero.shotCount++;
         const every = SIGNATURE.explosiveEvery[hero.mods.signature] ?? 0;
         const explosive = every > 0 && hero.spin >= 1 && hero.shotCount % every === 0;
@@ -587,7 +622,7 @@ function updateAttack(
           state,
           hero,
           kind,
-          dir,
+          fromAngle(angleOf(dir) + strayAngle(state, hero)),
           atk.speed,
           atk.range + hero.mods.range,
           atk.damage * hero.power,
@@ -601,7 +636,7 @@ function updateAttack(
     case "lob": {
       if (dir && hero.reload <= 0) {
         const reach = clamp(aimDistance, 3, atk.range + hero.mods.range);
-        const to = add(hero.pos, scale(dir, reach));
+        const to = throwTarget(state, hero, dir, reach);
         const duration = atk.flightTime * (0.55 + (0.45 * reach) / (atk.range + hero.mods.range));
         spawnLob(
           state,
@@ -630,7 +665,7 @@ function updateAttack(
           "crew",
           hero.id,
           hero.pos,
-          add(hero.pos, scale(dir, reach)),
+          throwTarget(state, hero, dir, reach),
           atk.flightTime * (0.55 + (0.45 * reach) / range),
           2.5 + reach * 0.2,
           atk.heal * hero.power,

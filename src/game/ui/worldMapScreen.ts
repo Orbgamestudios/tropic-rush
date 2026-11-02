@@ -194,12 +194,7 @@ export class WorldMapScreen {
     this.cardRating.className = `map-card-rating map-${island.difficulty.toLowerCase()}`;
     this.cardRating.textContent = `${island.difficulty} · Headquarters ${island.hq}`;
     const loot = el("span", "map-fact");
-    loot.append(
-      icon("coin", "map-fact-icon"),
-      el("span", "", String(island.reward.gold)),
-      icon("medal", "map-fact-icon"),
-      el("span", "", String(island.reward.medals)),
-    );
+    loot.append(icon("coin", "map-fact-icon"), el("span", "", String(island.reward.gold)));
     const guns = el("span", "map-fact");
     guns.append(icon("shield", "map-fact-icon"), el("span", "", `${island.defenses} defenses`));
     this.cardFacts.replaceChildren(guns, loot);

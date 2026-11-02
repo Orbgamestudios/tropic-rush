@@ -4,12 +4,14 @@ import {
   DEFAULT_CONTROLS,
   DEFAULT_SETTINGS,
   loadAccount,
+  loadPlace,
   loadSave,
   resetGame,
   restoreBundle,
   type SaveData,
   saveBundle,
   writeAccount,
+  writePlace,
   writeSave,
 } from "./save";
 
@@ -43,9 +45,8 @@ const DEFAULTS: SaveData = {
   crewCode: "",
   memberId: "",
   gold: 300,
-  medals: 0,
   heroLevels: LEVELS,
-  unlocked: ["rifleman", "medic", "heavy"],
+  unlocked: ["rifleman"],
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
   nightRaid: null,
@@ -53,6 +54,26 @@ const DEFAULTS: SaveData = {
   loot: {},
   lostIslands: [],
 };
+
+describe("the player's place, for the sky", () => {
+  it("tells asking from a no from a yes, and keeps it out of the save", () => {
+    const storage = memoryStorage();
+    expect(loadPlace(storage)).toBeUndefined();
+    writePlace(null, storage);
+    expect(loadPlace(storage)).toBeNull();
+    writePlace({ lat: 40.7, lon: -74 }, storage);
+    expect(loadPlace(storage)).toEqual({ lat: 40.7, lon: -74 });
+    expect(JSON.stringify(saveBundle(storage))).not.toContain("40.7");
+  });
+
+  it("ignores anything that isn't a place on Earth", () => {
+    const storage = memoryStorage();
+    storage.items.set("tropic-rush:place:v1", '{"lat":400,"lon":0}');
+    expect(loadPlace(storage)).toBeUndefined();
+    storage.items.set("tropic-rush:place:v1", "not json");
+    expect(loadPlace(storage)).toBeUndefined();
+  });
+});
 
 describe("accounts on this phone", () => {
   it("remembers who's signed in, apart from the save", () => {
@@ -128,7 +149,6 @@ describe("save", () => {
       crewCode: "ABC234",
       memberId: "m-1",
       gold: 1234,
-      medals: 5,
       heroLevels: { ...LEVELS, grenadier: 4 },
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
       settings: {
@@ -245,7 +265,7 @@ describe("save", () => {
       level: 3,
       bestDestruction: 100,
       heroLevels: { ...LEVELS, rifleman: 10 },
-      unlocked: ["rifleman", "medic", "tank", "heavy"],
+      unlocked: ["rifleman", "tank"],
     });
   });
 

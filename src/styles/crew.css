@@ -532,7 +532,6 @@
 .crew-pin-layer {
   position: absolute;
   inset: 0;
-  overflow: hidden;
   pointer-events: none;
 }
 
@@ -813,7 +812,6 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  overflow: hidden;
 }
 
 .crew-zone-label {

@@ -11,6 +11,7 @@ import { smoothstep } from "../logic/vec";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
+import { SKY } from "./sky";
 
 const RINGS = 84;
 const SEGMENTS = 200;
@@ -194,6 +195,9 @@ const WATER_FRAGMENT = /* glsl */ `
   uniform vec3 uMid;
   uniform vec3 uDeep;
   uniform vec3 uSunDir;
+  uniform vec3 uUnlit;
+  uniform vec3 uGlint;
+  uniform vec3 uHorizon;
   varying vec3 vWorld;
 
   uniform sampler2D uNoise;
@@ -217,8 +221,7 @@ const WATER_FRAGMENT = /* glsl */ `
                                  (n2 - 0.5) * 0.4 - (n1 - 0.5) * 0.22));
     vec3 view = normalize(cameraPosition - vWorld);
     vec3 halfDir = normalize(uSunDir + view);
-    float glint = pow(max(dot(normal, halfDir), 0.0), 160.0);
-    color += vec3(1.0, 0.97, 0.88) * glint * 1.1;
+    vec3 glint = uGlint * pow(max(dot(normal, halfDir), 0.0), 160.0) * 1.1;
     // Caustic shimmer over the sand in the shallows.
     float caustic = pow(1.0 - abs(noise(p * 0.9 + t * 0.4) - noise(p * 0.9 - t * 0.3 + 7.0)), 6.0);
     color += vec3(0.85, 1.0, 0.95) * caustic * 0.22 * (1.0 - smoothstep(0.0, 10.0, dist));
@@ -233,6 +236,9 @@ const WATER_FRAGMENT = /* glsl */ `
                 * smoothstep(0.35, 0.7, noise(p * 0.7 + t * 0.25));
     float foam = clamp(shoreFoam * (0.6 + 0.4 * lace) + waves, 0.0, 1.0);
     color = mix(color, vec3(1.0), foam * 0.9);
+    // Lit by the hour, reflecting more of the sky the flatter you look across it.
+    float edgeOn = 1.0 - max(view.y, 0.0);
+    color = mix(color * uUnlit, uHorizon, edgeOn * edgeOn * edgeOn * 0.5) + glint;
 
     // Clear over the sand, more solid in deep water.
     float alpha = mix(0.38, 0.95, smoothstep(0.0, 18.0, dist));
@@ -267,7 +273,6 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
         uShallow: { value: new THREE.Color(0x8eeadb) },
         uMid: { value: new THREE.Color(0x3cc6d2) },
         uDeep: { value: new THREE.Color(0x1689b8) },
-        uSunDir: { value: new THREE.Vector3(-28, 48, 34).normalize() },
       },
     ]),
     vertexShader: WATER_VERTEX,
@@ -275,6 +280,10 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
   });
   (material.uniforms.uShore as THREE.IUniform<THREE.Texture>).value = shore;
   material.uniforms.uNoise = { value: noiseTexture() };
+  material.uniforms.uSunDir = SKY.direction;
+  material.uniforms.uUnlit = SKY.unlit;
+  material.uniforms.uGlint = SKY.glint;
+  material.uniforms.uHorizon = SKY.horizon;
   const water = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), material);
   water.rotation.x = -Math.PI / 2;
   water.renderOrder = 1;

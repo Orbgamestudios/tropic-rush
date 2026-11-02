@@ -108,6 +108,7 @@ body {
 #game .screen-pause,
 #game .screen-lobby,
 #game .screen-profile,
+#game .levelup,
 #game .screen-results,
 #game .crew-join {
   box-sizing: border-box;
@@ -147,7 +148,6 @@ img {
 
 .labels {
   pointer-events: none;
-  overflow: hidden;
 }
 
 /*
@@ -189,7 +189,6 @@ img {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  overflow: hidden;
   z-index: 30;
 }
 

@@ -49,6 +49,10 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   - `models.ts` holds the placeholder building models; `heroModels.ts` the hero models (swap
     these for GLBs). `riflemanAnimator.ts` moves the Rifleman's rig procedurally: arms follow
     the rifle by inverse kinematics, so there are no animation clips.
+  - `sky.ts` follows the real sun (`logic/sun.ts`, placed by `location.ts`): the scene's lights,
+    fog and dome, and the shared `SKY` values that unlit materials multiply by, updated every few
+    seconds. `lightPool.ts` fakes lamps and flashes after dark with soft discs, so nothing adds a
+    real light. Anything unlit that should dim at night needs `SKY.unlit`.
   - `effects.ts` is every short-lived effect: instanced quads from one generated texture atlas,
     plus instanced debris. Colours above 1 glow through the bloom, so keep them modest.
   - `scenery.ts` maps the trail, the base's clearing and the jungle; `terrain.ts` (ground and
@@ -130,7 +134,8 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   the owner tests on their iPhone through the deployed Cloudflare URL.
 - Software-rendered test browsers manage only a few frames per second, so real-time play is in slow
   motion there. Open the game with `?testhooks` to get `window.tropicRush.{state, teleport,
-  advance, boom}` for screenshot scripts: place the hero, fast-forward the rules, set off a blast.
+  advance, boom, sky}` for screenshot scripts: place the hero, fast-forward the rules, set off a
+  blast, show an hour of the day.
 
 ## iOS constraints
 

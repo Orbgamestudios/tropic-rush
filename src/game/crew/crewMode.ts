@@ -54,6 +54,7 @@ import {
   PROGRESSION,
 } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
+import { HERO_NAMES, heroesJoining } from "../logic/heroProgress";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import { distance, vec } from "../logic/vec";
@@ -70,6 +71,7 @@ import { CrewIslandView } from "../render/crewIslandView";
 import type { Stage } from "../render/stage";
 import { loadLocalLayout, type SaveData, writeLocalLayout } from "../save";
 import { CrewUi } from "../ui/crewUi";
+import { sfx } from "../ui/kit/fx";
 
 interface Drag {
   kind: "place" | "move";
@@ -235,6 +237,15 @@ export class CrewMode {
     this.loseIslands(save.nightChecked, night);
   }
 
+  /** New heroes join as soon as the crew's headquarters reaches their level. */
+  private welcomeHeroes(save: SaveData): void {
+    const joining = heroesJoining(save.unlocked, hqLevel(this.layout));
+    if (joining.length === 0) return;
+    this.host.updateSave({ unlocked: [...save.unlocked, ...joining] });
+    this.ui.flash(`${joining.map((k) => HERO_NAMES[k]).join(" and ")} joined the crew!`);
+    sfx.levelUp();
+  }
+
   /** Each night since the last look, raiders may have retaken some of the crew's islands. */
   private loseIslands(from: number, to: number): void {
     let { world } = this.host.save();
@@ -303,6 +314,7 @@ export class CrewMode {
     const others = this.holds.filter((h) => h.memberId !== save.memberId);
     const hidden = this.drag?.kind === "move" ? this.drag.building.id : null;
     this.view.sync(this.layout, hidden, others);
+    this.welcomeHeroes(save);
     this.view.syncHeroes(save.unlocked, this.layout);
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));

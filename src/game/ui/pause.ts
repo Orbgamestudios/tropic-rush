@@ -12,6 +12,10 @@ export interface PauseHandlers {
   onRetreat(): void;
   settings(): Settings;
   onSettings(settings: Settings): void;
+  /** Today's sunrise and sunset, and whether they're for where the phone really is. */
+  sky(): { times: string; here: boolean };
+  /** Starts or stops using the phone's location for the sky. */
+  onSkyLocation(): Promise<void>;
   onEditControls(): void;
   /** The signed-in username, if any. */
   username(): string | null;
@@ -44,6 +48,8 @@ export class PauseMenu {
   private readonly musicButton: HTMLButtonElement;
   private readonly hapticsButton: HTMLButtonElement;
   private readonly cameraMode: HTMLButtonElement;
+  private readonly skyTimes = el("span", "pause-sky-times");
+  private readonly skyButton: HTMLButtonElement;
   private inRaid = true;
   private readonly sliders: Record<"tilt" | "zoom" | "uiScale", Slider>;
 
@@ -162,11 +168,23 @@ export class PauseMenu {
         onClick: () => this.page("main"),
       }),
     );
+    this.skyButton = button({
+      label: "Use my location",
+      icon: "map",
+      variant: "steel",
+      size: "sm",
+    });
+    this.skyButton.addEventListener("click", () => {
+      void handlers.onSkyLocation().then(() => this.refresh());
+    });
+    const sky = el("div", "pause-sky");
+    sky.append(this.skyTimes, this.skyButton);
     const sliders = el("div", "pause-sliders");
     sliders.append(
       this.sliders.tilt.input.closest(".pause-slider") ?? el("div"),
       this.sliders.zoom.input.closest(".pause-slider") ?? el("div"),
       this.sliders.uiScale.input.closest(".pause-slider") ?? el("div"),
+      sky,
     );
     this.options.append(sliders, buttons);
 
@@ -280,6 +298,9 @@ export class PauseMenu {
     setLabel(this.musicButton, s.musicMuted ? "Music off" : "Music on");
     setLabel(this.hapticsButton, s.haptics ? "Vibration on" : "Vibration off");
     setLabel(this.cameraMode, s.camera === "top" ? "Camera: top" : "Camera: behind");
+    const { times, here } = this.handlers.sky();
+    this.skyTimes.textContent = times;
+    setLabel(this.skyButton, here ? "Use time zone" : "Use my location");
   }
 
   private slider(

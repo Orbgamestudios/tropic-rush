@@ -3,6 +3,7 @@ import { type Purse, RESOURCES } from "./logic/economy";
 import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
 import { MAX_HERO_LEVEL } from "./logic/heroProgress";
 import type { NightRaid } from "./logic/nightRaid";
+import type { Place } from "./logic/sun";
 import { NEW_WORLD, sanitizeWorld, type WorldProgress } from "./logic/worldMap";
 
 // Bump the version suffix if the shape of SaveData changes incompatibly.
@@ -24,8 +25,6 @@ export interface SaveData {
   memberId: string;
   /** Personal gold, won on raids and spent levelling heroes. */
   gold: number;
-  /** Personal medals, won with victories and spent unlocking heroes. */
-  medals: number;
   /** Each hero's level (1 to 10). */
   heroLevels: Record<HeroKind, number>;
   /** Heroes this player can pick. */
@@ -148,7 +147,6 @@ const DEFAULT_SAVE: SaveData = {
   crewCode: "",
   memberId: "",
   gold: 300,
-  medals: 0,
   heroLevels: startLevels(),
   unlocked: starters(),
   settings: DEFAULT_SETTINGS,
@@ -223,7 +221,6 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       crewCode: text(parsed.crewCode, 6),
       memberId: text(parsed.memberId, 64),
       gold: parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold),
-      medals: count(parsed.medals),
       heroLevels,
       unlocked,
       settings: readSettings(parsed.settings),
@@ -267,6 +264,7 @@ export function resetGame(
 
 const LAYOUT_KEY = "tropic-rush:crew-layout:v1";
 const ACCOUNT_KEY = "tropic-rush:account:v1";
+const PLACE_KEY = "tropic-rush:place:v1";
 
 /** Who's signed in on this phone. Kept apart from the save, so it never leaves the phone with it. */
 export interface AccountSession {
@@ -274,6 +272,29 @@ export interface AccountSession {
   username: string;
   /** When this phone last matched the server, by the server's clock. */
   syncedAt: number;
+}
+
+/**
+ * The player's answer on sharing their location, for the sky: a place, or null for no. Undefined
+ * means they haven't been asked. It's kept out of the save, which goes to the account server.
+ */
+export function loadPlace(storage: Storage = localStorage): Place | null | undefined {
+  try {
+    const value = JSON.parse(storage.getItem(PLACE_KEY) ?? "false");
+    if (value === null) return null;
+    const ok = Math.abs(value?.lat) <= 90 && Math.abs(value?.lon) <= 180;
+    return ok ? { lat: value.lat, lon: value.lon } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writePlace(place: Place | null, storage: Storage = localStorage): void {
+  try {
+    storage.setItem(PLACE_KEY, JSON.stringify(place));
+  } catch {
+    // Without storage the question just comes up again next time.
+  }
 }
 
 export function loadAccount(storage: Storage = localStorage): AccountSession | null {

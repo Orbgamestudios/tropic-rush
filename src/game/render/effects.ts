@@ -3,6 +3,8 @@
 // layers (glowing and solid), so a busy fight costs a few draw calls and makes no garbage.
 
 import * as THREE from "three";
+import type { LightPool } from "./lightPool";
+import { SKY } from "./sky";
 
 const GRID = 4;
 
@@ -255,6 +257,7 @@ const VERTEX = /* glsl */ `
 const FRAGMENT = /* glsl */ `
   uniform sampler2D uAtlas;
   uniform float uShade;
+  uniform vec3 uUnlit;
   varying vec2 vUv;
   varying vec4 vColor;
   varying float vHeight;
@@ -262,7 +265,7 @@ const FRAGMENT = /* glsl */ `
     float a = texture2D(uAtlas, vUv).a * vColor.a;
     if (a < 0.004) discard;
     // Smoke is lit from above; glowing particles light themselves.
-    gl_FragColor = vec4(vColor.rgb * mix(1.0, 0.68 + 0.5 * vHeight, uShade), a);
+    gl_FragColor = vec4(vColor.rgb * uUnlit * mix(1.0, 0.68 + 0.5 * vHeight, uShade), a);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -284,6 +287,8 @@ class Layer {
     blending: THREE.Blending,
     shade: number,
     order: number,
+    /** Dims with the hour; glowing things don't. */
+    unlit: { value: THREE.Color } = { value: new THREE.Color(1, 1, 1) },
   ) {
     const quad = new THREE.PlaneGeometry(1, 1);
     this.geometry.index = quad.index;
@@ -302,7 +307,7 @@ class Layer {
     this.geometry.instanceCount = 0;
     atlas ??= drawAtlas();
     this.material = new THREE.ShaderMaterial({
-      uniforms: { uAtlas: { value: atlas }, uShade: { value: shade } },
+      uniforms: { uAtlas: { value: atlas }, uShade: { value: shade }, uUnlit: unlit },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
       transparent: true,
@@ -543,21 +548,38 @@ export class Effects {
   readonly root = new THREE.Group();
   /** Where the land is, so blasts can leave their mark on it. */
   private readonly groundAt: (x: number, z: number) => number;
-  private readonly solid = new Layer(340, THREE.NormalBlending, 1, 5);
+  private readonly solid = new Layer(340, THREE.NormalBlending, 1, 5, SKY.unlit);
   private readonly glow = new Layer(460, THREE.AdditiveBlending, 0, 6);
-  private readonly marks = new Layer(36, THREE.NormalBlending, 0, 1);
+  private readonly marks = new Layer(36, THREE.NormalBlending, 0, 1, SKY.unlit);
   private readonly debris = new Debris(90);
   private emitters: Emitter[] = [];
 
-  constructor(groundAt: (x: number, z: number) => number = () => 0) {
+  constructor(
+    groundAt: (x: number, z: number) => number = () => 0,
+    private readonly lights: LightPool | null = null,
+  ) {
     this.groundAt = groundAt;
     this.root.add(this.marks.mesh, this.debris.mesh, this.solid.mesh, this.glow.mesh);
+  }
+
+  /** Light thrown on the ground under `pos`, after dark. */
+  private light(
+    pos: THREE.Vector3,
+    color: number,
+    reach: number,
+    power: number,
+    life: number,
+  ): void {
+    const { lights } = this;
+    if (!lights?.active) return;
+    lights.flash(pos.x, this.groundAt(pos.x, pos.z), pos.z, color, reach, power, life);
   }
 
   /** A fireball that rolls up into smoke, with a shockwave, sparks, debris and a scorch mark. */
   explosion(pos: THREE.Vector3, radius: number): void {
     const r = Math.max(0.8, radius);
     const { x, y, z } = pos;
+    this.light(pos, 0xffa35c, 5 + r * 2, 2.4, 0.5);
     this.glow.add({ x, y, z, life: 0.12, from: r * 1.8, to: r * 2.6, cell: STAR, ramp: FLASH });
     this.glow.add({ x, y, z, life: 0.3, from: r * 1.6, to: r * 2.6, cell: GLOW, ramp: HEAT });
 
@@ -698,6 +720,7 @@ export class Effects {
 
   /** A jagged star of flame at the barrel, and a wisp of gun smoke after it. */
   muzzle(pos: THREE.Vector3, color = 0xffe08a, size = 0.28): void {
+    this.light(pos, color, 3.5 + size * 8, 2.6, 0.1);
     const ramp = glowOf(color);
     const { x, y, z } = pos;
     this.glow.add({ x, y, z, life: 0.075, from: size * 3.4, to: size * 4.2, cell: STAR, ramp });
@@ -814,6 +837,7 @@ export class Effects {
   /** What a rocket or shell leaves behind it in the air. */
   trail(pos: THREE.Vector3, fiery: boolean): void {
     const { x, y, z } = pos;
+    if (fiery) this.light(pos, 0xffa050, 4.5, 2, 0.08);
     if (fiery) this.glow.add({ x, y, z, life: 0.2, from: 0.8, to: 0.3, cell: GLOW, ramp: HEAT });
     this.solid.add({
       x,
@@ -833,6 +857,7 @@ export class Effects {
 
   /** A lick of flame and smoke from a building that's badly hurt. */
   burn(pos: THREE.Vector3, spread: number): void {
+    this.light(pos, 0xff7a30, 6 + spread * 2, 1.5, 0.45);
     spot.set(pos.x + between(-spread, spread), pos.y, pos.z + between(-spread, spread));
     const { x, y, z } = spot;
     this.glow.add({

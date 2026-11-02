@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { MAX_HQ_LEVEL } from "./economy";
 import { HERO_KINDS } from "./heroes";
 import {
   HERO_NAMES,
+  HERO_UNLOCK_HQ,
+  heroesJoining,
   heroPower,
   heroStats,
   isStarter,
@@ -12,15 +15,26 @@ import {
   perkMods,
   raidReward,
   statBars,
-  UNLOCK_MEDALS,
 } from "./heroProgress";
 
 describe("hero progress", () => {
-  it("names every hero and makes the starters free", () => {
+  it("names every hero and starts with the Rifleman alone", () => {
     for (const kind of HERO_KINDS) {
       expect(HERO_NAMES[kind].length).toBeGreaterThan(0);
-      expect(UNLOCK_MEDALS[kind] === 0).toBe(isStarter(kind));
+      expect(HERO_UNLOCK_HQ[kind] === 1).toBe(isStarter(kind));
     }
+    expect(HERO_KINDS.filter(isStarter)).toEqual(["rifleman"]);
+  });
+
+  it("brings in a hero every few headquarters levels", () => {
+    expect(heroesJoining(["rifleman"], 2)).toEqual([]);
+    expect(heroesJoining(["rifleman"], 3)).toEqual(["heavy"]);
+    expect(heroesJoining(["rifleman", "heavy"], 3)).toEqual([]);
+    expect(heroesJoining(["rifleman", "heavy"], 6)).toEqual(["medic"]);
+    expect(heroesJoining(["rifleman"], 20)).toHaveLength(HERO_KINDS.length - 1);
+    const levels = Object.values(HERO_UNLOCK_HQ).sort((a, b) => a - b);
+    expect(new Set(levels).size).toBe(HERO_KINDS.length);
+    expect(Math.max(...levels)).toBeLessThanOrEqual(MAX_HQ_LEVEL);
   });
 
   it("grows stronger and costlier each level", () => {
@@ -46,9 +60,8 @@ describe("hero progress", () => {
   it("pays more for more destruction and a win", () => {
     const lost = raidReward(false, 40, 1);
     const won = raidReward(true, 100, 1);
-    expect(lost).toEqual({ gold: 80, medals: 0, stars: 0 });
+    expect(lost).toEqual({ gold: 80, stars: 0 });
     expect(won.stars).toBe(3);
-    expect(won.medals).toBe(1);
     expect(won.gold).toBeGreaterThan(lost.gold);
     expect(raidReward(true, 100, 3).gold).toBeGreaterThan(won.gold);
   });

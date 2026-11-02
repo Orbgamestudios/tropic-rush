@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { BUILDINGS } from "./buildings";
 import { generateIsland } from "./enemyBase";
 import { abilityCost, START_ENERGY } from "./gunboat";
-import type { HeroKind } from "./heroes";
+import { HEROES, type HeroKind } from "./heroes";
 import { perkMods } from "./heroProgress";
 import { type IslandLayout, isOnLand, type PlacedBuilding } from "./island";
 import {
+  aimStretch,
   createRaid,
   destructionPercent,
   type HeroInput,
@@ -13,7 +14,7 @@ import {
   type RaidState,
   stepRaid,
 } from "./raid";
-import { distance, normalize, sub, type Vec2, vec } from "./vec";
+import { distance, normalize, scale, sub, type Vec2, vec } from "./vec";
 
 const DT = 1 / 60;
 
@@ -140,6 +141,89 @@ describe("aiming and locking on", () => {
   });
 });
 
+describe("aiming on the move", () => {
+  const north = vec(0, -1);
+  /** How far off the aim each shot goes, in radians. */
+  const strays = (kind: HeroKind, moving: boolean) => {
+    const state = raid([], [kind]);
+    const found = new Set<number>();
+    for (let t = 0; t < 30; t += DT) {
+      stepRaid(state, [input({ aim: north, move: moving ? vec(0.01, 0.06) : vec(0, 0) })], DT);
+      for (const e of state.events) {
+        if (e.type === "shot") found.add(Math.atan2(e.dir.x, -e.dir.y));
+      }
+      hero(state).pos = vec(0, 0);
+    }
+    return Math.max(...[...found].map(Math.abs));
+  };
+
+  it("eases off a hero's accuracy as they move, and brings it back as they stop", () => {
+    const state = raid([]);
+    run(state, 0.1, [input({ move: vec(1, 0) })]);
+    const partway = hero(state).unsteady;
+    expect(partway).toBeGreaterThan(0);
+    expect(partway).toBeLessThan(1);
+    run(state, 1, [input({ move: vec(1, 0) })]);
+    expect(hero(state).unsteady).toBe(1);
+    run(state, 0.1);
+    expect(hero(state).unsteady).toBeLessThan(1);
+    expect(hero(state).unsteady).toBeGreaterThan(0);
+    run(state, 1);
+    expect(hero(state).unsteady).toBe(0);
+  });
+
+  it("spreads shots about a quarter wider on the move", () => {
+    const still = strays("heavy", false);
+    const moving = strays("heavy", true);
+    expect(moving).toBeGreaterThan(still * 1.1);
+    expect(moving).toBeLessThanOrEqual(0.1 * 1.25 + 1e-6);
+  });
+
+  it("drops a throw on the mark standing still, and scatters it long and wide on the move", () => {
+    const landings = (moving: boolean) => {
+      const state = raid([], ["grenadier"]);
+      const spots: Vec2[] = [];
+      for (let t = 0; t < 40; t += DT) {
+        stepRaid(
+          state,
+          [input({ aim: scale(north, 0.5), move: moving ? vec(0.1, 0) : vec(0, 0) })],
+          DT,
+        );
+        hero(state).pos = vec(0, 0);
+        for (const p of state.projectiles) {
+          if (p.lob && p.lob.t <= DT * 1.5) spots.push(p.lob.to);
+        }
+      }
+      return spots;
+    };
+    for (const spot of landings(false)) {
+      expect(spot.x).toBeCloseTo(0);
+      expect(spot.y).toBeCloseTo(-9.3);
+    }
+    const scattered = landings(true);
+    const across = scattered.map((s) => s.x);
+    const along = scattered.map((s) => s.y);
+    expect(Math.max(...across) - Math.min(...across)).toBeGreaterThan(1);
+    expect(Math.max(...along) - Math.min(...along)).toBeGreaterThan(1);
+  });
+
+  it("gives the Grenadier a third more range", () => {
+    expect(HEROES.grenadier.attack.range).toBeCloseTo(14 * 1.33, 1);
+  });
+
+  it("draws the aim cone wider on the move, and longer too for a thrower", () => {
+    const rifle = raid([], ["rifleman"]);
+    expect(aimStretch(hero(rifle))).toEqual({ width: 1, length: 1 });
+    hero(rifle).unsteady = 1;
+    expect(aimStretch(hero(rifle))).toEqual({ width: 1.25, length: 1 });
+    const grenadier = raid([], ["grenadier"]);
+    hero(grenadier).unsteady = 1;
+    const { width, length } = aimStretch(hero(grenadier));
+    expect(width).toBeGreaterThan(1.25);
+    expect(length).toBeGreaterThan(1);
+  });
+});
+
 describe("raid combat", () => {
   it("lets heroes destroy buildings for energy, and wins when the HQ falls", () => {
     const state = raid([
@@ -203,7 +287,7 @@ describe("raid combat", () => {
 
   it("lets explosions clear mines safely", () => {
     const state = raid([], ["grenadier"], { mines: [vec(0, -9)] });
-    run(state, 2, [input({ aim: vec(0, -9 / 14) })]);
+    run(state, 2, [input({ aim: vec(0, -9 / 18.6) })]);
     expect(state.mines[0]?.exploded).toBe(true);
     expect(hero(state).hp).toBe(hero(state).maxHp);
   });
