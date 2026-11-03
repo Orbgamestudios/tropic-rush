@@ -290,8 +290,9 @@ test("buys the first upgrade, and holds the next back for a better headquarters"
   const buy = page.locator(".tree-buy");
   await expect(page.locator(".tree-spec-name")).toHaveText("Basic Training");
   await buy.click();
-  // Four branches start from it; their first checkpoints lead to tier 2, at headquarters 2.
-  await expect(page.locator(".tree-path")).toHaveCount(4);
+  // The trunk, its two branches and their four; the first checkpoint leads to tier 2, at
+  // headquarters 2.
+  await expect(page.locator(".tree-path")).toHaveCount(7);
   await page.locator(".tree-step").first().click();
   await expect(page.locator(".tree-spec-path")).toHaveText(/checkpoint/i);
   await expect(page.locator(".tree-spec-note")).toHaveText("Needs headquarters 2");

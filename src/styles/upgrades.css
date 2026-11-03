@@ -113,7 +113,7 @@
 
 .tree-board {
   position: relative;
-  width: 2000px;
+  width: 1600px;
   height: 100%;
 }
 
@@ -151,6 +151,10 @@
   color: #9bb2d4;
   text-shadow: var(--outline-thin);
   pointer-events: none;
+}
+
+.tree-path-core {
+  color: var(--gold-text);
 }
 
 .tree-path-nature {

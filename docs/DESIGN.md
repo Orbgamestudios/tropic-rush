@@ -33,8 +33,8 @@ These were explicitly left out to keep the first version to a basic structure:
 
 **Decided** unless a line says otherwise. The numbers are first passes.
 
-- **Hero trees** replace hero levels and perks: see `docs/HERO_TREES.md`. Three small checkpoints sit
-  on each line between two upgrades, bought with gold, in order.
+- **Hero trees** replace hero levels and perks: see `docs/HERO_TREES.md`. Small checkpoints sit
+  on each line between two upgrades, bought with gold, in order (one a line since 2026-11-03).
 - **Crystals:** nature, fire, ice and dark, won from enemy headquarters.
 - **Enemy islands** have their own shapes, not the crew island's: cove, hook, keyhole, twin, volcano,
   atoll, ridge and chain, each with its own way in. Bases are laid out on tiles. Tree cover grows
@@ -126,11 +126,24 @@ These were explicitly left out to keep the first version to a basic structure:
   a log harpoon in sandbags to polished steel with lights and a radar dish. When it fires, the
   bowstring snaps forward and the harpoon on the stock goes; a second later the next one slides on,
   and the string draws back, ready by the end of its reload.
-- **Headquarters modeled:** ten looks, a new one every second level of its twenty: a plank shack
-  under a tin roof, a shack with a lean-to and a lookout, a log cabin, a two-storey timber house
-  with towers on stilts, plated walls with drum towers, painted steel, and at the end polished domes
-  over a glass control room with a radar dish. No sandbags. The world map keeps its tiny plain
-  headquarters, baked into the map's islands.
+- **Headquarters modeled:** ten looks, a new one every second level of its twenty. **Changed
+  2026-11-03:** no rust, no shiny metal and no towers on the corners. A plank shack under a flat
+  sheet-metal roof, then a lean-to and a radio mast, then a log cabin; from the fourth look a
+  two-storey block with a flat roof inside a parapet, a deck in front of the upper floor, wings down
+  its sides from the fifth and a lookout room on top from the sixth, glass from the seventh, and a
+  radar dish on the last. Roofs, parapets, doors, banners and the flag are painted, so a crew's
+  headquarters is blue and a raider's red. The world map keeps its tiny plain headquarters, baked
+  into the map's islands.
+- **Defenses tidied (2026-11-03):** the gun turret, mortar and harpoon launcher lose their rusty
+  and corrugated metal for flat plate, and their sandbags, which were most of what a model cost to
+  draw: the first five looks stand on the bare ground and the sixth on a concrete pad. All three
+  are 15% bigger, on pads the same size as before, so they still fit their tiles.
+- **Hero trees reshaped (2026-11-03):** one line, Basics, up to headquarters 5; then two branches,
+  Assault and Survival, to headquarters 11; then each splits into two of the hero's four last
+  branches, with the same specials and capstones as before. 22 upgrades and 21 checkpoints a hero,
+  down from 37 and 72, each worth more, so a hero ends about as strong as before. Upgrades cost the
+  crystal of what they do, not of their branch, except on the last four. Everything bought on the
+  four-branch trees was given back. See `docs/HERO_TREES.md`.
 
 ## Added 2026-11-02, seventh batch (owner's requests)
 
@@ -210,7 +223,8 @@ These were explicitly left out to keep the first version to a basic structure:
   need a little gold there before they do anything, whether defense or gunboat weapon, and it opens
   every hero's upgrade tree. Older crews keep every defense they already knew, but gunboat weapons
   go back to the two everyone starts with, and the rest have to be found again. Raiders don't build laboratories.
-- **Upgrade tree:** the board is 1,500 wide and scrolls sideways, opening on the next thing to buy.
+- **Upgrade tree:** the board scrolls sideways, opening on the next thing to buy. It's 1,600
+  wide since the trees were reshaped on 2026-11-03.
 - **Night:** brighter all round, and building lamps reach 40% further and shine 20% brighter.
 - **The beach:** what's lying on it comes and goes with the tide: three lots on a beach, each
   swapped every 12 hours, four hours apart, so nothing stays much longer and the whole beach never

@@ -1,13 +1,14 @@
-// The hero upgrade trees (docs/HERO_TREES.md): every hero has one first upgrade, then four branches
-// of nine more, one for each crystal: nature keeps a hero alive, fire hits harder, ice is quicker,
-// and dark holds the tricks. Each branch is paid for in its own crystal, with gold, and two small
-// checkpoints sit on each line between upgrades, bought with gold and in order. Each tier opens
-// at a headquarters level, so a hero is only as strong as the islands its crew can reach. No
-// engine imports.
+// The hero upgrade trees (docs/HERO_TREES.md): a trunk of four upgrades up to headquarters 5, then
+// two branches, Assault and Survival, which split again after headquarters 11 into the hero's four
+// last branches, each with its own specials and capstone. An upgrade costs gold and the crystal of
+// what it does: nature for staying alive, fire for hitting harder, ice for being quicker, and on the
+// last branches whichever crystal the branch is. A small checkpoint sits on each line between
+// upgrades, bought with gold. Each tier opens at a headquarters level, so a hero is only as strong
+// as the islands its crew can reach. No engine imports.
 
 import { CRYSTAL_KINDS, type CrystalCost, type CrystalKind, type Crystals } from "./crystals";
 import { HERO_KINDS, type HeroKind } from "./heroes";
-import { OLD_CRYSTAL_ORDER, OLD_UPGRADE_COSTS } from "./oldTrees";
+import { branchTreeCost, OLD_CRYSTAL_ORDER, OLD_UPGRADE_COSTS } from "./oldTrees";
 
 /** What a hero's upgrades add up to. Multipliers start at 1, additions and tricks at 0. */
 export interface HeroMods {
@@ -175,10 +176,8 @@ export interface TreeUpgrade {
   needs: readonly string[];
   mods: Partial<HeroMods>;
   icon: UpgradeIcon;
-  /** The branch it's on, for the screen. Null for the first upgrade. */
+  /** The stretch of the tree it's on, for the screen. Null for the first upgrade. */
   path: string | null;
-  /** Which crystal the branch is: null for the first upgrade. */
-  branch: CrystalKind | null;
   /** Where it goes on the screen: 0 to 9 across, 0 to 3 down. */
   column: number;
   row: number;
@@ -186,12 +185,14 @@ export interface TreeUpgrade {
   line: CheckpointSpot | null;
 }
 
-/** How far along a branch goes: the first upgrade, then nine more on each branch. */
+/** How far up the tree goes: the trunk to tier 4, two branches to 7, then four to 10. */
 export const TIERS = 10;
+const TRUNK_END = 4;
+const SPLIT_END = 7;
 
 /** Gold, crystals and the headquarters level each tier needs. */
-const TIER_GOLD = [0, 150, 400, 700, 1100, 1600, 2300, 3200, 4400, 6000, 8000] as const;
-const TIER_CRYSTALS = [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5] as const;
+const TIER_GOLD = [0, 150, 500, 900, 1400, 2200, 3200, 4400, 6000, 8000, 11000] as const;
+const TIER_CRYSTALS = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6] as const;
 /**
  * A hero is only as strong as the islands its crew can reach: each tier opens at a headquarters
  * level, and the last only near the top.
@@ -207,21 +208,17 @@ export function tierHq(tier: number): number {
   return TIER_HQ[tier] ?? 1;
 }
 
-const CHECKPOINTS_PER_LINE = 2;
 /** Gold for a checkpoint, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_GOLD = [0, 0, 300, 450, 650, 900, 1200, 1600, 2100, 2700, 3400] as const;
+const CHECKPOINT_GOLD = [0, 0, 300, 500, 800, 1100, 1500, 2000, 2600, 3400, 4400] as const;
 /** How strong a checkpoint is in percent, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_PERCENT = [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2] as const;
+const CHECKPOINT_PERCENT = [0, 0, 3, 3, 4, 4, 4, 5, 5, 5, 6] as const;
 /** Percent for percent, these do far less than the rest, so they get twice as much. */
 const SLIGHT_STAT = 2;
 /** The Heavy's upgrades that make his gun stronger do this much of what everyone else's do. */
 const HEAVY_GUN = 0.85;
 
-/** Where the checkpoints sit along a line, on a branch or bending out to one from the first. */
-const ALONG_LINE: Record<"straight" | "out", readonly number[]> = {
-  straight: [0.35, 0.65],
-  out: [0.5, 0.75],
-};
+/** Where a line's checkpoint sits along it: halfway, or further on where it bends out to a branch. */
+const ALONG_LINE: Record<"straight" | "out", number> = { straight: 0.5, out: 0.6 };
 
 /** The curve from one spot on the board to another, in columns and rows. */
 export function lineAt(
@@ -312,26 +309,27 @@ const up = (
 const special = (name: string, text: string, icon: UpgradeIcon, mods: Partial<HeroMods>): Draft =>
   up(name, text, {}, icon, mods);
 
-/** What a hero's branch is called, and the two special upgrades on it: at tier 6 and at the end. */
+/**
+ * One of a hero's four last branches: what it's called, the special that opens it at tier 8, and
+ * its capstone at the end.
+ */
 interface BranchDraft {
   name: string;
-  six: Draft;
-  ten: Draft;
+  opener: Draft;
+  capstone: Draft;
 }
 
 interface TreeDraft {
   first: Draft;
+  /** The four last branches, each with its crystal. */
   branches: Record<CrystalKind, BranchDraft>;
-  /** Tier 5 on the ice branch: whatever makes this hero's weapon quicker. */
+  /** The trunk's last upgrade: whatever makes this hero's weapon quicker. */
   quick: Draft;
-  /** Tier 5 on the fire branch, for heroes whose shots burst: a wider blast. */
+  /** Midway up Assault, for heroes whose shots burst: a wider blast. */
   wide?: Draft;
-  /** Tier 5 on the nature branch, for a healer: stronger healing. */
+  /** Midway up Survival, for a healer: stronger healing. */
   mend?: Draft;
 }
-
-/** The branches, in order down the screen. */
-export const BRANCHES: readonly CrystalKind[] = ["nature", "fire", "ice", "dark"];
 
 const TREES: Record<HeroKind, TreeDraft> = {
   rifleman: {
@@ -342,8 +340,8 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Survivor",
-        six: special("Thick Vest", "Takes 15% less damage.", "shield", { damageTaken: 0.85 }),
-        ten: special(
+        opener: special("Thick Vest", "Takes 15% less damage.", "shield", { damageTaken: 0.85 }),
+        capstone: special(
           "Last Stand",
           "Enrages below 30% health: fires 40% faster and takes 25% less damage.",
           "skull",
@@ -352,25 +350,29 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       fire: {
         name: "Marksman",
-        six: special("Deadeye", "+25% damage to defenses.", "crosshair", { defenseDamage: 1.25 }),
-        ten: special("Steady Hands", "One more bullet in every burst.", "barrage", { shots: 1 }),
+        opener: special("Deadeye", "+25% damage to defenses.", "crosshair", {
+          defenseDamage: 1.25,
+        }),
+        capstone: special("Steady Hands", "One more bullet in every burst.", "barrage", {
+          shots: 1,
+        }),
       },
       ice: {
         name: "Skirmisher",
-        six: special("Run and Gun", "Moves at 40% speed while firing, not 20%.", "speed", {
+        opener: special("Run and Gun", "Moves at 40% speed while firing, not 20%.", "speed", {
           fireSpeed: 0.4,
         }),
-        ten: special("Fast Unload", "Bursts fire 40% quicker.", "clock", { reload: 0.6 }),
+        capstone: special("Fast Unload", "Bursts fire 40% quicker.", "clock", { reload: 0.6 }),
       },
       dark: {
         name: "Veteran",
-        six: special(
+        opener: special(
           "Field Dressing",
           "Heals 3% a second after 4 seconds without being hit.",
           "medkit",
           { fieldDressing: true },
         ),
-        ten: special("Ricochet", "Bullets bounce off a building into the next one.", "star", {
+        capstone: special("Ricochet", "Bullets bounce off a building into the next one.", "star", {
           signature: 1,
         }),
       },
@@ -383,13 +385,13 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Field Hospital",
-        six: special(
+        opener: special(
           "Lingering Dose",
           "Healing carries on for 3 seconds after the bottle lands.",
           "clock",
           { lingering: true },
         ),
-        ten: special(
+        capstone: special(
           "Overheal",
           "Healing past full health becomes a shield worth up to 20% health.",
           "shield",
@@ -398,8 +400,8 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       fire: {
         name: "Alchemist",
-        six: special("Wide Splash", "Bottles burst 1.5 m wider.", "range", { splash: 1.5 }),
-        ten: special(
+        opener: special("Wide Splash", "Bottles burst 1.5 m wider.", "range", { splash: 1.5 }),
+        capstone: special(
           "Miracle Bottle",
           "Every 5th bottle heals double, and bursts twice as wide.",
           "skull",
@@ -408,19 +410,24 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       ice: {
         name: "Combat Medic",
-        six: special("Ice Pack", "Healed crewmates move 20% faster for 3 seconds.", "speed", {
+        opener: special("Ice Pack", "Healed crewmates move 20% faster for 3 seconds.", "speed", {
           icePack: true,
         }),
-        ten: special("Adrenaline", "Healed crewmates fire 20% faster for 3 seconds.", "energy", {
-          adrenaline: true,
-        }),
+        capstone: special(
+          "Adrenaline",
+          "Healed crewmates fire 20% faster for 3 seconds.",
+          "energy",
+          {
+            adrenaline: true,
+          },
+        ),
       },
       dark: {
         name: "Guardian",
-        six: special("Corrosive Acid", "+25% damage to defenses.", "flame", {
+        opener: special("Corrosive Acid", "+25% damage to defenses.", "flame", {
           defenseDamage: 1.25,
         }),
-        ten: special(
+        capstone: special(
           "Guardian Angel",
           "Twice a raid, a fallen hero gets back up with 40% health.",
           "star",
@@ -435,34 +442,41 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Juggernaut",
-        six: special("Harpoon Hide", "Harpoons lose their bonus damage against him.", "shield", {
+        opener: special("Harpoon Hide", "Harpoons lose their bonus damage against him.", "shield", {
           harpoonProof: true,
         }),
-        ten: special("Iron Gut", "Heals 2% a second while firing.", "medkit", { ironGut: true }),
+        capstone: special("Iron Gut", "Heals 2% a second while firing.", "medkit", {
+          ironGut: true,
+        }),
       },
       fire: {
         name: "Gunner",
-        six: special("Tight Barrels", "40% less spread.", "crosshair", { spread: 0.6 }),
-        ten: special("Overdrive", "After 5 seconds of non-stop fire, fires 21% faster.", "energy", {
-          overdrive: true,
-        }),
+        opener: special("Tight Barrels", "40% less spread.", "crosshair", { spread: 0.6 }),
+        capstone: special(
+          "Overdrive",
+          "After 5 seconds of non-stop fire, fires 21% faster.",
+          "energy",
+          {
+            overdrive: true,
+          },
+        ),
       },
       ice: {
         name: "Rolling Fire",
-        six: special("Rolling Thunder", "Moves at 45% speed while firing.", "speed", {
+        opener: special("Rolling Thunder", "Moves at 45% speed while firing.", "speed", {
           fireSpeed: 0.45,
         }),
-        ten: special("Hair Trigger", "Spins up 34% faster.", "gear", { spinUp: 0.66 }),
+        capstone: special("Hair Trigger", "Spins up 34% faster.", "gear", { spinUp: 0.66 }),
       },
       dark: {
         name: "Berserker",
-        six: special(
+        opener: special(
           "Berserk",
           "Enrages after taking 500 damage: for 6 seconds, fires 43% faster and can't be slowed.",
           "skull",
           { berserk: true },
         ),
-        ten: special("Explosive Belt", "At full spin, every 6th round explodes.", "star", {
+        capstone: special("Explosive Belt", "At full spin, every 6th round explodes.", "star", {
           signature: 1,
         }),
       },
@@ -475,10 +489,10 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Fortress",
-        six: special("Field Repairs", "Heals 2% a second while standing still.", "hammer", {
+        opener: special("Field Repairs", "Heals 2% a second while standing still.", "hammer", {
           fieldRepairs: true,
         }),
-        ten: special(
+        capstone: special(
           "Siege Mode",
           "After 2 seconds standing still: fires 30% faster and takes 40% less damage.",
           "skull",
@@ -487,24 +501,26 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       fire: {
         name: "Wrecker",
-        six: special("Bunker Buster", "+30% damage to buildings.", "hammer", {
+        opener: special("Bunker Buster", "+30% damage to buildings.", "hammer", {
           buildingDamage: 1.3,
         }),
-        ten: special("Twin Barrels", "Every 4th shot fires two shells.", "barrage", {
+        capstone: special("Twin Barrels", "Every 4th shot fires two shells.", "barrage", {
           twinEvery: 4,
         }),
       },
       ice: {
         name: "Panzer",
-        six: special("Bulldozer", "Moves at 45% speed while firing.", "speed", { fireSpeed: 0.45 }),
-        ten: special("Autoloader", "Fires 25% faster.", "clock", { reload: 0.75 }),
+        opener: special("Bulldozer", "Moves at 45% speed while firing.", "speed", {
+          fireSpeed: 0.45,
+        }),
+        capstone: special("Autoloader", "Fires 25% faster.", "clock", { reload: 0.75 }),
       },
       dark: {
         name: "Siege Engine",
-        six: special("Reactive Armor", "Takes 20% less from blasts.", "shield", {
+        opener: special("Reactive Armor", "Takes 20% less from blasts.", "shield", {
           blastTaken: 0.8,
         }),
-        ten: special(
+        capstone: special(
           "Aftershock",
           "Whatever it destroys goes up in a shockwave that can set off the next.",
           "star",
@@ -520,33 +536,40 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Daredevil",
-        six: special("Blast Shield", "Takes 25% less from blasts.", "shield", { blastTaken: 0.75 }),
-        ten: special("Second Wind", "Destroying a building heals 15%.", "medkit", {
+        opener: special("Blast Shield", "Takes 25% less from blasts.", "shield", {
+          blastTaken: 0.75,
+        }),
+        capstone: special("Second Wind", "Destroying a building heals 15%.", "medkit", {
           healOnKill: 0.15,
         }),
       },
       fire: {
         name: "Demolition",
-        six: special("Napalm", "Blasts leave fire burning for 3 seconds.", "flame", {
+        opener: special("Napalm", "Blasts leave fire burning for 3 seconds.", "flame", {
           napalm: true,
         }),
-        ten: special("Cluster Warhead", "Rockets throw out 5 bomblets where they burst.", "star", {
-          signature: 2,
-        }),
+        capstone: special(
+          "Cluster Warhead",
+          "Rockets throw out 5 bomblets where they burst.",
+          "star",
+          {
+            signature: 2,
+          },
+        ),
       },
       ice: {
         name: "Hit and Run",
-        six: special("Fast Rockets", "Rockets fly 40% faster.", "rocket", { shotSpeed: 1.4 }),
-        ten: special("Getaway", "+30% move speed for 2 seconds after each shot.", "speed", {
+        opener: special("Fast Rockets", "Rockets fly 40% faster.", "rocket", { shotSpeed: 1.4 }),
+        capstone: special("Getaway", "+30% move speed for 2 seconds after each shot.", "speed", {
           getaway: true,
         }),
       },
       dark: {
         name: "Trickshot",
-        six: special("Double Tap", "Holds two rockets before reloading.", "barrage", {
+        opener: special("Double Tap", "Holds two rockets before reloading.", "barrage", {
           doubleTap: true,
         }),
-        ten: special(
+        capstone: special(
           "Guided Rocket",
           "Rockets curve round cover to reach a locked target.",
           "skull",
@@ -562,10 +585,10 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Old Campaigner",
-        six: special("Tea Break", "Destroying a building heals 15%.", "medkit", {
+        opener: special("Tea Break", "Destroying a building heals 15%.", "medkit", {
           healOnKill: 0.15,
         }),
-        ten: special(
+        capstone: special(
           "Last Orders",
           "Enrages below 30% health: throws 40% faster and takes 25% less damage.",
           "skull",
@@ -574,27 +597,27 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       fire: {
         name: "Ordnance",
-        six: special("Twin Grenades", "Every 3rd throw is two grenades.", "grenade", {
+        opener: special("Twin Grenades", "Every 3rd throw is two grenades.", "grenade", {
           twinEvery: 3,
         }),
-        ten: special("Skipping Stone", "Grenades skip on for two more blasts.", "star", {
+        capstone: special("Skipping Stone", "Grenades skip on for two more blasts.", "star", {
           signature: 2,
         }),
       },
       ice: {
         name: "Quick March",
-        six: special("Short Fuse", "Grenades land 40% sooner.", "clock", { flight: 0.6 }),
-        ten: special("Rapid Lob", "Throws 30% faster.", "clock", { reload: 0.7 }),
+        opener: special("Short Fuse", "Grenades land 40% sooner.", "clock", { flight: 0.6 }),
+        capstone: special("Rapid Lob", "Throws 30% faster.", "clock", { reload: 0.7 }),
       },
       dark: {
         name: "Saboteur",
-        six: special(
+        opener: special(
           "Mine Sweeper",
           "Shows every mine, and blasts set them off from twice as far.",
           "crosshair",
           { mineSweeper: true },
         ),
-        ten: special(
+        capstone: special(
           "Smoke Shell",
           "Every 5th grenade leaves smoke: defenses can't aim into it for 4 seconds.",
           "smoke",
@@ -609,19 +632,24 @@ const TREES: Record<HeroKind, TreeDraft> = {
     branches: {
       nature: {
         name: "Medic Bay",
-        six: special("Patch Up", "Destroying a building heals 10%.", "medkit", {
+        opener: special("Patch Up", "Destroying a building heals 10%.", "medkit", {
           healOnKill: 0.1,
         }),
-        ten: special("Repair Beam", "Slowly repairs the Tank and turrets near him.", "hammer", {
-          repairBeam: true,
-        }),
+        capstone: special(
+          "Repair Beam",
+          "Slowly repairs the Tank and turrets near him.",
+          "hammer",
+          {
+            repairBeam: true,
+          },
+        ),
       },
       fire: {
         name: "Salvager",
-        six: special("Armor Piercing", "+25% damage to defenses.", "crosshair", {
+        opener: special("Armor Piercing", "+25% damage to defenses.", "crosshair", {
           defenseDamage: 1.25,
         }),
-        ten: special(
+        capstone: special(
           "Salvage",
           "Everything he destroys comes back as his turret for a while.",
           "star",
@@ -630,15 +658,15 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       ice: {
         name: "Mechanic",
-        six: special("Overclock", "His turrets fire 30% faster.", "energy", { overclock: true }),
-        ten: special("Rapid Fire", "Fires 25% faster.", "clock", { reload: 0.75 }),
+        opener: special("Overclock", "His turrets fire 30% faster.", "energy", { overclock: true }),
+        capstone: special("Rapid Fire", "Fires 25% faster.", "clock", { reload: 0.75 }),
       },
       dark: {
         name: "Gadgeteer",
-        six: special("Pocket Turret", "Drops a small turret every 30 seconds.", "turret", {
+        opener: special("Pocket Turret", "Drops a small turret every 30 seconds.", "turret", {
           pocketTurret: true,
         }),
-        ten: special(
+        capstone: special(
           "Decoy Drone",
           "Every 30 seconds, a drone draws the defenses' fire for 6 seconds.",
           "skull",
@@ -649,58 +677,51 @@ const TREES: Record<HeroKind, TreeDraft> = {
   },
 };
 
-/** One plain step up a branch: a name, and how much of which stat in percent. */
+/** One plain step: a name, and how much of which stat in percent. */
 type Step = readonly [
   name: string,
-  stat: "hp" | "taken" | "damage" | "defense" | "speed" | "reload" | "building",
+  stat: "hp" | "taken" | "damage" | "defense" | "speed" | "reload",
   percent: number,
 ];
 
-/**
- * The plain steps up each branch, at tiers 2, 3, 4, 5, 7, 8 and 9, round its specials at 6 and
- * 10. Nature keeps a hero alive, fire hits harder, ice is quicker and dark is a bit of everything.
- */
-const STEPS: Record<CrystalKind, readonly Step[]> = {
-  nature: [
-    ["Hardy", "hp", 6],
-    ["Brace", "taken", 5],
-    ["Sturdy", "hp", 7],
-    ["Mend", "hp", 5],
-    ["Iron Will", "hp", 9],
-    ["Bulwark", "taken", 7],
-    ["Unbreakable", "hp", 10],
+/** The trunk's plain steps, at tiers 2 and 3, before the hero's own at 4. */
+const TRUNK_STEPS: readonly Step[] = [
+  ["Hardy", "hp", 20],
+  ["Sharp", "damage", 15],
+];
+
+/** The two ways the trunk splits, and which two of a hero's last branches each leads on to. */
+const SPLITS = [
+  { name: "Assault", row: 0.5, leaves: ["fire", "ice"] },
+  { name: "Survival", row: 2.5, leaves: ["nature", "dark"] },
+] as const;
+type Split = (typeof SPLITS)[number]["name"];
+
+/** The plain steps up each of the first two branches, at tiers 5, 6 and 7. */
+const SPLIT_STEPS: Record<Split, readonly [Step, Step, Step]> = {
+  Assault: [
+    ["Fierce", "damage", 12],
+    ["Breaker", "defense", 15],
+    ["Brisk", "reload", 12],
   ],
-  fire: [
-    ["Sharp", "damage", 5],
-    ["Breaker", "defense", 10],
-    ["Fierce", "damage", 6],
-    ["Payload", "building", 10],
-    ["Ferocity", "damage", 8],
-    ["Siegebreaker", "defense", 12],
-    ["Devastation", "damage", 10],
-  ],
-  ice: [
-    ["Nimble", "speed", 5],
-    ["Brisk", "reload", 5],
-    ["Swift", "speed", 6],
-    ["Quick", "reload", 5],
-    ["Fleet", "reload", 6],
-    ["Rapid", "speed", 8],
-    ["Lightning", "reload", 8],
-  ],
-  dark: [
-    ["Shadow", "damage", 4],
-    ["Cunning", "reload", 5],
-    ["Grit", "hp", 5],
-    ["Edge", "damage", 5],
-    ["Dread", "reload", 6],
-    ["Menace", "hp", 6],
-    ["Nightfall", "damage", 6],
+  Survival: [
+    ["Sturdy", "hp", 15],
+    ["Brace", "taken", 10],
+    ["Swift", "speed", 18],
   ],
 };
 
-/** Which tiers of a branch are plain steps: the specials sit at 6 and 10. */
-const STEP_TIERS = [2, 3, 4, 5, 7, 8, 9] as const;
+/** The plain step at tier 9 of each last branch, between its opener and its capstone. */
+const LEAF_STEPS: Record<CrystalKind, Step> = {
+  nature: ["Unbreakable", "hp", 15],
+  fire: ["Devastation", "damage", 12],
+  ice: ["Lightning", "reload", 12],
+  dark: ["Nightfall", "damage", 10],
+};
+
+const TRUNK = "Basics";
+const TRUNK_ROW = 1.5;
+const LEAF_ROW: Record<CrystalKind, number> = { fire: 0, ice: 1, nature: 2, dark: 3 };
 
 function step(kind: HeroKind, [name, stat, base]: Step): Draft {
   const gun = stat === "damage" || stat === "reload";
@@ -716,8 +737,6 @@ function step(kind: HeroKind, [name, stat, base]: Step): Draft {
       return up(name, `+${percent}% damage.`, {}, "sword", { damage: more });
     case "defense":
       return up(name, `+${percent}% damage to defenses.`, {}, "crosshair", { defenseDamage: more });
-    case "building":
-      return up(name, `+${percent}% damage to buildings.`, {}, "hammer", { buildingDamage: more });
     case "speed":
       return up(name, `+${percent}% move speed.`, {}, "speed", { speed: more });
     case "reload":
@@ -727,9 +746,25 @@ function step(kind: HeroKind, [name, stat, base]: Step): Draft {
   }
 }
 
-/** What each branch's checkpoints give, round and round along it. */
-function checkpointStats(kind: HeroKind, branch: CrystalKind): readonly CheckpointStat[] {
-  switch (branch) {
+/** Off the last branches, an upgrade is paid for in the crystal of what it does. */
+function crystalFor(mods: Partial<HeroMods>): CrystalKind {
+  if (mods.hp || mods.damageTaken || mods.heal) return "nature";
+  if (mods.damage || mods.defenseDamage || mods.splash) return "fire";
+  return "ice";
+}
+
+/** What a stretch's checkpoints give, round and round along it. */
+function checkpointStats(
+  kind: HeroKind,
+  path: Split | "trunk" | CrystalKind,
+): readonly CheckpointStat[] {
+  switch (path) {
+    case "trunk":
+      return ["health", "damage", "reload"];
+    case "Assault":
+      return ["damage", "reload"];
+    case "Survival":
+      return kind === "medic" ? ["heal", "speed", "health"] : ["health", "speed"];
     case "nature":
       return kind === "medic" ? ["health", "heal"] : ["health"];
     case "fire":
@@ -745,86 +780,86 @@ function checkpointStats(kind: HeroKind, branch: CrystalKind): readonly Checkpoi
   }
 }
 
-/** The draft at one tier of a branch. */
-function branchDraft(kind: HeroKind, branch: CrystalKind, tier: number): Draft {
+/** The upgrade at a tier of the trunk, or of one of the two branches it splits into. */
+function coreDraft(kind: HeroKind, split: Split | null, tier: number): Draft {
   const tree = TREES[kind];
-  const b = tree.branches[branch];
-  if (tier === 6) return b.six;
-  if (tier === TIERS) return b.ten;
-  // Tier 5 is where a hero's own kind of weapon gets its turn, if it has one.
-  if (tier === 5) {
-    if (branch === "ice") return tree.quick;
-    if (branch === "fire" && tree.wide) return tree.wide;
-    if (branch === "nature" && tree.mend) return tree.mend;
+  if (!split) {
+    const plain = TRUNK_STEPS[tier - 2];
+    return tier === TRUNK_END || !plain ? tree.quick : step(kind, plain);
   }
-  const at = STEP_TIERS.indexOf(tier as (typeof STEP_TIERS)[number]);
-  const plain = STEPS[branch][at];
-  if (!plain) throw new Error(`No step for tier ${tier}`);
-  return step(kind, plain);
+  const at = tier - TRUNK_END - 1;
+  // Midway up each is where a hero's own kind of weapon gets its turn, if it has one.
+  if (at === 1 && split === "Assault" && tree.wide) return tree.wide;
+  if (at === 1 && split === "Survival" && tree.mend) return tree.mend;
+  return step(kind, SPLIT_STEPS[split][at] ?? SPLIT_STEPS[split][0]);
+}
+
+/** The upgrade at a tier of one of the last branches. */
+function leafDraft(kind: HeroKind, leaf: CrystalKind, tier: number): Draft {
+  const branch = TREES[kind].branches[leaf];
+  if (tier === SPLIT_END + 1) return branch.opener;
+  if (tier === TIERS) return branch.capstone;
+  return step(kind, LEAF_STEPS[leaf]);
 }
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z]+/g, "-");
 
 function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
-  const { first, branches } = TREES[kind];
+  const tree = TREES[kind];
   const out: TreeUpgrade[] = [];
-  // Ids changed with the four branches, so nothing from the old trees is taken for something new.
-  const idOf = (name: string) => `${kind}:${slug(name)}`;
+  // Ids changed again with the trunk, so nothing from the four-branch trees is taken for something new.
+  const idOf = (name: string) => `${kind}/${slug(name)}`;
   const start: TreeUpgrade = {
-    ...first,
-    id: idOf(first.name),
+    ...tree.first,
+    id: idOf(tree.first.name),
     tier: 1,
     gold: upgradeGold(1),
     hq: tierHq(1),
     needs: [],
     path: null,
-    branch: null,
     column: 0,
-    row: 1.5,
+    row: TRUNK_ROW,
     line: null,
   };
   out.push(start);
-  BRANCHES.forEach((branch, row) => {
-    const { name: path } = branches[branch];
-    const stats = checkpointStats(kind, branch);
-    let made = 0;
-    let previous = start;
-    for (let tier = 2; tier <= TIERS; tier++) {
-      const draft = branchDraft(kind, branch, tier);
+  /** Carries on from an upgrade along one stretch, a checkpoint then an upgrade each tier. */
+  const extend = (
+    from: TreeUpgrade,
+    path: string,
+    stats: readonly CheckpointStat[],
+    row: number,
+    tiers: readonly [number, number],
+    draftAt: (tier: number) => Draft,
+    pays: (draft: Draft) => CrystalKind,
+  ): TreeUpgrade => {
+    let previous = from;
+    for (let tier = tiers[0]; tier <= tiers[1]; tier++) {
+      const draft = draftAt(tier);
       const id = idOf(draft.name);
       const column = tier - 1;
-      const bend = previous.row === row ? "straight" : "out";
-      let needs = previous.id;
-      for (let n = 0; n < CHECKPOINTS_PER_LINE; n++) {
-        const stat = stats[made % stats.length] ?? "health";
-        const at = ALONG_LINE[bend][n] ?? 0.5;
-        const stepId = `${kind}:${branch}-${made}`;
-        out.push({
-          ...checkpoint(kind, stat, CHECKPOINT_PERCENT[tier] ?? 0),
-          id: stepId,
-          tier: 0,
-          gold: CHECKPOINT_GOLD[tier] ?? 0,
-          hq: tierHq(tier),
-          needs: [needs],
-          path,
-          branch,
-          ...lineAt(previous, { column, row }, at),
-          line: { from: previous.id, to: id, at },
-        });
-        needs = stepId;
-        made++;
-      }
+      const at = ALONG_LINE[previous.row === row ? "straight" : "out"];
+      const made = tier - tiers[0];
+      const stepId = `${kind}/${slug(path)}-${made}`;
+      out.push({
+        ...checkpoint(kind, stats[made % stats.length] ?? "health", CHECKPOINT_PERCENT[tier] ?? 0),
+        id: stepId,
+        tier: 0,
+        gold: CHECKPOINT_GOLD[tier] ?? 0,
+        hq: tierHq(tier),
+        needs: [previous.id],
+        path,
+        ...lineAt(previous, { column, row }, at),
+        line: { from: previous.id, to: id, at },
+      });
       const upgrade: TreeUpgrade = {
         ...draft,
-        // Every upgrade on a branch is paid for in its own crystal.
-        crystals: { [branch]: TIER_CRYSTALS[tier] ?? 1 },
+        crystals: { [pays(draft)]: TIER_CRYSTALS[tier] ?? 1 },
         id,
         tier,
         gold: upgradeGold(tier),
         hq: tierHq(tier),
-        needs: [needs],
+        needs: [stepId],
         path,
-        branch,
         column,
         row,
         line: null,
@@ -832,7 +867,40 @@ function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
       out.push(upgrade);
       previous = upgrade;
     }
-  });
+    return previous;
+  };
+  const byWhatItDoes = (draft: Draft) => crystalFor(draft.mods);
+  const trunk = extend(
+    start,
+    TRUNK,
+    checkpointStats(kind, "trunk"),
+    TRUNK_ROW,
+    [2, TRUNK_END],
+    (tier) => coreDraft(kind, null, tier),
+    byWhatItDoes,
+  );
+  for (const split of SPLITS) {
+    const fork = extend(
+      trunk,
+      split.name,
+      checkpointStats(kind, split.name),
+      split.row,
+      [TRUNK_END + 1, SPLIT_END],
+      (tier) => coreDraft(kind, split.name, tier),
+      byWhatItDoes,
+    );
+    for (const leaf of split.leaves) {
+      extend(
+        fork,
+        tree.branches[leaf].name,
+        checkpointStats(kind, leaf),
+        LEAF_ROW[leaf],
+        [SPLIT_END + 1, TIERS],
+        (tier) => leafDraft(kind, leaf, tier),
+        () => leaf,
+      );
+    }
+  }
   return out;
 }
 
@@ -845,12 +913,33 @@ export function heroTree(kind: HeroKind): readonly TreeUpgrade[] {
   return BUILT.get(kind) ?? [];
 }
 
-/** The names of a hero's four branches, in the order of BRANCHES. */
-export function treePaths(kind: HeroKind): readonly string[] {
-  return BRANCHES.map((b) => TREES[kind].branches[b].name);
+/** A named stretch of the tree, and where its name goes on the board. */
+export interface TreePath {
+  name: string;
+  /** The crystal's color for one of the four last branches, and plain for the rest. */
+  tone: CrystalKind | "core";
+  column: number;
+  row: number;
 }
 
-/** The best upgrade on each branch: the one at its end. */
+/** The trunk, the two branches it splits into, and the four last branches after those. */
+export function treePaths(kind: HeroKind): readonly TreePath[] {
+  const { branches } = TREES[kind];
+  return [
+    { name: TRUNK, tone: "core", column: 1, row: TRUNK_ROW },
+    ...SPLITS.flatMap((split): TreePath[] => [
+      { name: split.name, tone: "core", column: TRUNK_END, row: split.row },
+      ...split.leaves.map((leaf) => ({
+        name: branches[leaf].name,
+        tone: leaf,
+        column: SPLIT_END,
+        row: LEAF_ROW[leaf],
+      })),
+    ]),
+  ];
+}
+
+/** The best upgrade on each last branch: the one at its end. */
 export function capstones(kind: HeroKind): readonly TreeUpgrade[] {
   return heroTree(kind).filter((u) => u.tier === TIERS);
 }
@@ -901,7 +990,7 @@ export function heroMods(kind: HeroKind, owned: readonly string[]): HeroMods {
   return out;
 }
 
-/** What a set of upgrades cost: gold and crystals. Ones from the old trees cost what they did. */
+/** What a set of upgrades cost: gold and crystals. Ones from older trees cost what they did. */
 function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystals: CrystalCost } {
   const tree = new Map(heroTree(kind).map((u) => [u.id, u]));
   const old = OLD_UPGRADE_COSTS[kind];
@@ -917,7 +1006,12 @@ function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystal
       for (const k of CRYSTAL_KINDS) addCrystals(k, now.crystals[k] ?? 0);
       continue;
     }
-    const before = id.startsWith(`${kind}-`) ? old[id.slice(kind.length + 1)] : undefined;
+    const name = id.slice(kind.length + 1);
+    const before = id.startsWith(`${kind}-`)
+      ? old[name]
+      : id.startsWith(`${kind}:`)
+        ? branchTreeCost(kind, name)
+        : undefined;
     if (!before) continue;
     const [coins = 0, ...gems] = before;
     gold += coins;
@@ -930,7 +1024,7 @@ function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystal
 
 /**
  * Keeps the upgrades that are still to be had and that the headquarters allows, each with what
- * comes before it, and says what the rest cost, to give back: upgrades from the old trees, and
+ * comes before it, and says what the rest cost, to give back: upgrades from older trees, and
  * any above what the headquarters lets a hero have. Untrusted data is fine.
  */
 export function trimUpgrades(
@@ -972,5 +1066,6 @@ export function noUpgrades(): Record<HeroKind, string[]> {
   >;
 }
 
-/** Upgrades and checkpoints together: the first, then nine of each on four branches. */
-export const UPGRADES_PER_HERO = 1 + BRANCHES.length * (TIERS - 1) * (1 + CHECKPOINTS_PER_LINE);
+/** Upgrades and checkpoints together: 22 upgrades, and a checkpoint on the line into each but the first. */
+export const UPGRADES_PER_HERO =
+  2 * (TRUNK_END + SPLITS.length * (SPLIT_END - TRUNK_END + 2 * (TIERS - SPLIT_END))) - 1;

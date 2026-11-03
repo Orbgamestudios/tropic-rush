@@ -1,6 +1,7 @@
-// What every upgrade in the hero trees cost before they were rebuilt with four crystal branches
-// (2026-11-03): gold, then nature, fire, ice and dark crystals. Saves still holding one of these
-// get it all back. Kept only for that, and safe to delete once old saves are long gone.
+// What every upgrade in older hero trees cost: first the two-path trees, then the four-branch trees
+// that followed them (2026-11-03): gold, then nature, fire, ice and dark crystals. Saves still
+// holding one of these get it all back. Kept only for that, and safe to delete once old saves are
+// long gone.
 
 import type { CrystalKind } from "./crystals";
 import type { HeroKind } from "./heroes";
@@ -409,3 +410,380 @@ export const OLD_UPGRADE_COSTS: Record<HeroKind, Record<string, readonly number[
     "decoy-drone": [4000, 4, 0, 0, 4],
   },
 };
+
+// What every upgrade in the four-branch trees cost (2026-11-03): the first upgrade, then nine up
+// each of the nature, fire, ice and dark branches, paid for in that branch's crystal, with two
+// checkpoints bought with gold alone on the line into each. Ids were `${kind}:${name}` and, for
+// the checkpoints, `${kind}:${branch}-${n}`.
+
+const BRANCH_GOLD = [0, 150, 400, 700, 1100, 1600, 2300, 3200, 4400, 6000, 8000] as const;
+const BRANCH_CRYSTALS = [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5] as const;
+const BRANCH_CHECKPOINT_GOLD = [0, 0, 300, 450, 650, 900, 1200, 1600, 2100, 2700, 3400] as const;
+
+/** Each hero's first upgrade and its crystal, then each branch's upgrades from tier 2 to 10. */
+const BRANCH_TREES: Record<
+  HeroKind,
+  { first: readonly [string, CrystalKind]; branches: Record<CrystalKind, readonly string[]> }
+> = {
+  rifleman: {
+    first: ["basic-training", "nature"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "mend",
+        "thick-vest",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "last-stand",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "payload",
+        "deadeye",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "steady-hands",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "smooth-action",
+        "run-and-gun",
+        "fleet",
+        "rapid",
+        "lightning",
+        "fast-unload",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "field-dressing",
+        "dread",
+        "menace",
+        "nightfall",
+        "ricochet",
+      ],
+    },
+  },
+  medic: {
+    first: ["steady-hand", "nature"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "strong-brew",
+        "lingering-dose",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "overheal",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "payload",
+        "wide-splash",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "miracle-bottle",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "flat-throw",
+        "ice-pack",
+        "fleet",
+        "rapid",
+        "lightning",
+        "adrenaline",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "corrosive-acid",
+        "dread",
+        "menace",
+        "nightfall",
+        "guardian-angel",
+      ],
+    },
+  },
+  tank: {
+    first: ["extra-plating", "nature"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "mend",
+        "field-repairs",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "siege-mode",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "bigger-bang",
+        "bunker-buster",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "twin-barrels",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "hot-charge",
+        "bulldozer",
+        "fleet",
+        "rapid",
+        "lightning",
+        "autoloader",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "reactive-armor",
+        "dread",
+        "menace",
+        "nightfall",
+        "aftershock",
+      ],
+    },
+  },
+  heavy: {
+    first: ["warm-up", "fire"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "mend",
+        "harpoon-hide",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "iron-gut",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "payload",
+        "tight-barrels",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "overdrive",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "greased-barrels",
+        "rolling-thunder",
+        "fleet",
+        "rapid",
+        "lightning",
+        "hair-trigger",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "berserk",
+        "dread",
+        "menace",
+        "nightfall",
+        "explosive-belt",
+      ],
+    },
+  },
+  bazooka: {
+    first: ["quick-loader", "fire"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "mend",
+        "blast-shield",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "second-wind",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "bigger-bang",
+        "napalm",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "cluster-warhead",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "hot-motor",
+        "fast-rockets",
+        "fleet",
+        "rapid",
+        "lightning",
+        "getaway",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "double-tap",
+        "dread",
+        "menace",
+        "nightfall",
+        "guided-rocket",
+      ],
+    },
+  },
+  grenadier: {
+    first: ["bigger-charge", "fire"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "mend",
+        "tea-break",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "last-orders",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "bigger-bang",
+        "twin-grenades",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "skipping-stone",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "light-grenades",
+        "short-fuse",
+        "fleet",
+        "rapid",
+        "lightning",
+        "rapid-lob",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "mine-sweeper",
+        "dread",
+        "menace",
+        "nightfall",
+        "smoke-shell",
+      ],
+    },
+  },
+  engineer: {
+    first: ["spare-parts", "fire"],
+    branches: {
+      nature: [
+        "hardy",
+        "brace",
+        "sturdy",
+        "mend",
+        "patch-up",
+        "iron-will",
+        "bulwark",
+        "unbreakable",
+        "repair-beam",
+      ],
+      fire: [
+        "sharp",
+        "breaker",
+        "fierce",
+        "payload",
+        "armor-piercing",
+        "ferocity",
+        "siegebreaker",
+        "devastation",
+        "salvage",
+      ],
+      ice: [
+        "nimble",
+        "brisk",
+        "swift",
+        "oiled-gears",
+        "overclock",
+        "fleet",
+        "rapid",
+        "lightning",
+        "rapid-fire",
+      ],
+      dark: [
+        "shadow",
+        "cunning",
+        "grit",
+        "edge",
+        "pocket-turret",
+        "dread",
+        "menace",
+        "nightfall",
+        "decoy-drone",
+      ],
+    },
+  },
+};
+
+/** What one upgrade of a four-branch tree cost: gold, then crystals in OLD_CRYSTAL_ORDER. */
+export function branchTreeCost(kind: HeroKind, name: string): readonly number[] | undefined {
+  const { first, branches } = BRANCH_TREES[kind];
+  const crystals = (kind: CrystalKind, n: number) =>
+    OLD_CRYSTAL_ORDER.map((k) => (k === kind ? n : 0));
+  if (name === first[0]) return [BRANCH_GOLD[1], ...crystals(first[1], 1)];
+  const checkpoint = /^(nature|fire|ice|dark)-(\d+)$/.exec(name);
+  if (checkpoint) {
+    const gold = BRANCH_CHECKPOINT_GOLD[2 + Math.floor(Number(checkpoint[2]) / 2)];
+    return gold ? [gold] : undefined;
+  }
+  for (const branch of OLD_CRYSTAL_ORDER) {
+    const tier = branches[branch].indexOf(name) + 2;
+    if (tier >= 2) return [BRANCH_GOLD[tier] ?? 0, ...crystals(branch, BRANCH_CRYSTALS[tier] ?? 0)];
+  }
+  return undefined;
+}

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { CRYSTAL_KINDS, type CrystalKind, noCrystals } from "./crystals";
 import { HERO_KINDS, type HeroKind } from "./heroes";
 import {
-  BRANCHES,
   canBuy,
   capstones,
   heroMods,
@@ -44,41 +43,61 @@ function withPath(kind: HeroKind, name: string): string[] {
 }
 
 describe("hero trees", () => {
-  it("gives every hero a first upgrade, then four branches of nine, one for each crystal", () => {
+  it("grows a trunk to headquarters 5, splits in two, then each in two again", () => {
     for (const kind of HERO_KINDS) {
       const tree = heroTree(kind);
       expect(tree).toHaveLength(UPGRADES_PER_HERO);
-      const tiers = [2, 3, 4, 5, 6, 7, 8, 9, 10];
-      expect(majorUpgrades(kind).map((u) => u.tier)).toEqual([
-        1,
-        ...tiers,
-        ...tiers,
-        ...tiers,
-        ...tiers,
-      ]);
-      // Two checkpoints on each of the 36 lines.
-      expect(tree.filter((u) => u.line)).toHaveLength(72);
+      expect(UPGRADES_PER_HERO).toBe(43);
+      const last = [8, 9, 10];
+      const split = [5, 6, 7, ...last, ...last];
+      expect(majorUpgrades(kind).map((u) => u.tier)).toEqual([1, 2, 3, 4, ...split, ...split]);
+      // One checkpoint on each of the 21 lines.
+      expect(tree.filter((u) => u.line)).toHaveLength(21);
       expect(new Set(tree.map((u) => u.id)).size).toBe(UPGRADES_PER_HERO);
-      expect(treePaths(kind)).toHaveLength(4);
-      for (const branch of BRANCHES) {
-        const on = majorUpgrades(kind).filter((u) => u.branch === branch);
-        expect(on, `${kind} ${branch}`).toHaveLength(9);
-        // Each branch is paid for in its own crystal, and only that one.
+      // Up to headquarters 5 there's only one way to go.
+      const early = tree.filter((u) => u.hq <= 5);
+      for (const u of early) expect(u.path ?? "Basics").toBe("Basics");
+      expect(tree.filter((u) => u.tier > 0 && u.tier <= 7 && u.hq > 5).map((u) => u.path)).toEqual([
+        "Assault",
+        "Assault",
+        "Assault",
+        "Survival",
+        "Survival",
+        "Survival",
+      ]);
+      const paths = treePaths(kind);
+      expect(paths.map((p) => p.tone)).toEqual([
+        "core",
+        "core",
+        "fire",
+        "ice",
+        "core",
+        "nature",
+        "dark",
+      ]);
+      for (const p of paths.filter((p) => p.tone !== "core")) {
+        const on = majorUpgrades(kind).filter((u) => u.path === p.name);
+        expect(
+          on.map((u) => u.tier),
+          p.name,
+        ).toEqual(last);
+        // The last branches are paid for in their own crystal; the rest in whatever fits.
         const paid = crystalsIn(on);
-        for (const k of CRYSTAL_KINDS) {
-          if (k === branch) expect(paid[k]).toBe(23);
-          else expect(paid[k]).toBe(0);
-        }
+        for (const k of CRYSTAL_KINDS) expect(paid[k]).toBe(k === p.tone ? 15 : 0);
       }
+      const used = crystalsIn(majorUpgrades(kind).filter((u) => u.tier > 1 && u.tier <= 7));
+      expect(used.nature, kind).toBeGreaterThan(0);
+      expect(used.fire, kind).toBeGreaterThan(0);
+      expect(used.ice, kind).toBeGreaterThan(0);
     }
   });
 
-  it("costs 110,950 gold a tree, and 106,400 more for the checkpoints", () => {
+  it("costs 122,550 gold a tree, and 52,400 more for the checkpoints", () => {
     for (const kind of HERO_KINDS) {
       const gold = majorUpgrades(kind).reduce((sum, u) => sum + u.gold, 0);
-      expect(gold).toBe(110_950);
+      expect(gold).toBe(122_550);
       const steps = heroTree(kind).filter((u) => u.line);
-      expect(steps.reduce((sum, u) => sum + u.gold, 0)).toBe(106_400);
+      expect(steps.reduce((sum, u) => sum + u.gold, 0)).toBe(52_400);
       for (const u of steps) expect(u.crystals).toEqual({});
     }
   });
@@ -110,8 +129,8 @@ describe("hero trees", () => {
   it("makes each line's checkpoints come in order, and an upgrade need its line", () => {
     const tree = heroTree("rifleman");
     const path = withPath("rifleman", "Deadeye");
-    // First, then tiers 2 to 6 on the fire branch, with two checkpoints before each.
-    expect(path).toHaveLength(1 + 5 * 3);
+    // First, then tiers 2 to 8 up the trunk, Assault and Marksman, a checkpoint before each.
+    expect(path).toHaveLength(1 + 7 * 2);
     for (let have = 0; have < path.length; have++) {
       const next = tree.find((u) => u.id === path[have]);
       if (!next) throw new Error("missing upgrade");
@@ -135,12 +154,12 @@ describe("hero trees", () => {
     expect(canBuy("medic", first, [], 150, noCrystals(), 1)).toBe(false);
     expect(canBuy("medic", first, [first.id], 150, rich, 1)).toBe(false);
     expect(canBuy("medic", second, [], 9999, rich, TOP_HQ)).toBe(false);
-    // The first checkpoint on a branch leads to tier 2, which opens at headquarters 2.
+    // The first checkpoint leads to tier 2, which opens at headquarters 2.
     expect(canBuy("medic", second, [first.id], 9999, rich, 1)).toBe(false);
     expect(canBuy("medic", second, [first.id], 9999, rich, 2)).toBe(true);
   });
 
-  it("puts the specials at tier 6 and the end of each branch, the end the strongest", () => {
+  it("opens each last branch with a special and ends it with a capstone", () => {
     for (const kind of HERO_KINDS) {
       const tops = capstones(kind);
       expect(tops).toHaveLength(4);
@@ -176,7 +195,7 @@ describe("hero trees", () => {
     expect(rifle.unload).toBeLessThan(1);
     // The Heavy's gun gets 15% less from what makes guns stronger.
     const heavy = heroTree("heavy").find((u) => u.name === "Sharp");
-    expect(heavy?.mods.damage).toBeCloseTo(1.043);
+    expect(heavy?.mods.damage).toBeCloseTo(1.128);
   });
 
   it("every upgrade does something", () => {
@@ -195,8 +214,8 @@ describe("hero trees", () => {
       for (const a of tree) {
         for (const b of tree) {
           if (a === b) continue;
-          // In pixels on a 2,000-wide board on the phone: far enough apart to tap either one.
-          const gap = Math.hypot((a.column - b.column) * 208, (a.row - b.row) * 75);
+          // In pixels on a 1,600-wide board on the phone: far enough apart to tap either one.
+          const gap = Math.hypot((a.column - b.column) * 166, (a.row - b.row) * 75);
           expect(gap, `${a.id} ${b.id}`).toBeGreaterThan(36);
         }
       }
@@ -205,30 +224,45 @@ describe("hero trees", () => {
 
   it("drops unknown upgrades, anything cut off from the tree, and anything past the cap", () => {
     expect(readOwned("rifleman", "nonsense")).toEqual([]);
-    expect(readOwned("rifleman", ["rifleman:basic-training", "made-up"])).toEqual([
-      "rifleman:basic-training",
+    expect(readOwned("rifleman", ["rifleman/basic-training", "made-up"])).toEqual([
+      "rifleman/basic-training",
     ]);
-    expect(readOwned("rifleman", ["rifleman:deadeye"])).toEqual([]);
+    expect(readOwned("rifleman", ["rifleman/deadeye"])).toEqual([]);
     const path = withPath("rifleman", "Deadeye");
     expect(readOwned("rifleman", [...path].reverse())).toEqual(path);
-    // Deadeye is tier 6, which opens at headquarters 9.
-    expect(readOwned("rifleman", path, 8)).not.toContain("rifleman:deadeye");
+    // Deadeye is tier 8, which opens at headquarters 13.
+    expect(readOwned("rifleman", path, 12)).not.toContain("rifleman/deadeye");
   });
 
-  it("gives back what's dropped: old trees at their old prices, the rest at today's", () => {
+  it("gives back what's dropped: older trees at their old prices, the rest at today's", () => {
     const old = trimUpgrades("rifleman", ["rifleman-basic-training", "rifleman-step-0-0"]);
     expect(old.owned).toEqual([]);
     expect(old.refund).toEqual({ gold: 650, crystals: { nature: 1 } });
     // Each crystal comes back as the kind it was: Deadeye took five fire.
     expect(trimUpgrades("rifleman", ["rifleman-deadeye"]).refund.crystals).toEqual({ fire: 5 });
+    // And from the four-branch trees, as they were then.
+    const branched = trimUpgrades("rifleman", [
+      "rifleman:basic-training",
+      "rifleman:nature-0",
+      "rifleman:nature-1",
+      "rifleman:hardy",
+      "rifleman:fire-17",
+      "rifleman:deadeye",
+      "rifleman:fast-unload",
+    ]);
+    expect(branched.owned).toEqual([]);
+    expect(branched.refund).toEqual({
+      gold: 150 + 300 + 300 + 400 + 3400 + 2300 + 8000,
+      crystals: { nature: 2, fire: 2, ice: 5 },
+    });
     const path = withPath("rifleman", "Deadeye");
-    const capped = trimUpgrades("rifleman", path, 8);
+    const capped = trimUpgrades("rifleman", path, 12);
     const dropped = heroTree("rifleman").filter(
       (u) => path.includes(u.id) && !capped.owned.includes(u.id),
     );
     expect(dropped.map((u) => u.name)).toContain("Deadeye");
     expect(capped.refund.gold).toBe(dropped.reduce((sum, u) => sum + u.gold, 0));
-    expect(capped.refund.crystals).toEqual({ fire: 2 });
+    expect(capped.refund.crystals).toEqual({ fire: 4 });
     expect(trimUpgrades("rifleman", path, TOP_HQ).refund).toEqual({ gold: 0, crystals: {} });
   });
 });

@@ -1,13 +1,12 @@
 // The hero's upgrade tree, in the style of the owner's mockup: brass-rimmed tiles joined by lines
 // of small checkpoints, which light up gold as they're bought, the chosen one on a cream spec card
-// at the right, and the wallet in the corner. From the first upgrade it branches four ways, one
-// for each crystal. The board is much wider than the screen, and scrolls sideways.
+// at the right, and the wallet in the corner. A trunk splits in two, and each of those in two again.
+// The board is wider than the screen, and scrolls sideways.
 
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES } from "../logic/heroProgress";
 import {
-  BRANCHES,
   canBuy,
   heroTree,
   lineAt,
@@ -219,14 +218,14 @@ export class UpgradeTree {
       this.board.append(node);
       this.nodes.set(u.id, node);
     }
-    // Each branch's name in its crystal's color, above where it starts.
-    treePaths(kind).forEach((name, row) => {
-      const label = el("div", `tree-path tree-path-${BRANCHES[row]}`, name);
-      const { x, y } = spot({ column: 1, row });
+    // Each stretch's name above where it starts, the last four in their crystals' colors.
+    for (const path of treePaths(kind)) {
+      const label = el("div", `tree-path tree-path-${path.tone}`, path.name);
+      const { x, y } = spot(path);
       label.style.left = `${x * 100}%`;
       label.style.top = `${(y - 0.11) * 100}%`;
       this.board.append(label);
-    });
+    }
   }
 
   refresh(): void {

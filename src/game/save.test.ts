@@ -226,7 +226,7 @@ describe("save", () => {
       memberId: "m-1",
       gold: 1234,
       crystals: { nature: 1, fire: 2, ice: 3, dark: 4 },
-      upgrades: { ...noUpgrades(), grenadier: ["grenadier:bigger-charge"] },
+      upgrades: { ...noUpgrades(), grenadier: ["grenadier/bigger-charge"] },
       blueprints: ["mortar"],
       blueprintDrought: 2,
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],

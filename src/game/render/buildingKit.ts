@@ -1,5 +1,5 @@
 // Buildings modeled in Blender by scripts/blender/make_buildings.py: ten stages each, from scrap wood
-// and sandbags to polished steel, packed by scripts/pack-buildings.mjs. The gunboat and what it fires
+// to polished steel, packed by scripts/pack-buildings.mjs. The gunboat and what it fires
 // come from there too. Every one is drawn from one shared texture, with the light baked into its
 // corners, so a stage costs a draw call for each part that moves on its own. Until a file arrives, or
 // for buildings not modeled yet, models.ts builds the old one from primitives.

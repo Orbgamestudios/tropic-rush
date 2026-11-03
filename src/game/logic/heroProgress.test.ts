@@ -45,7 +45,7 @@ describe("hero progress", () => {
 
   it("shows upgrades in a hero's stats", () => {
     const start = heroStats("rifleman", []);
-    const trained = heroStats("rifleman", ["rifleman:basic-training"]);
+    const trained = heroStats("rifleman", ["rifleman/basic-training"]);
     expect(trained.hp).toBeGreaterThan(start.hp);
     const full = heroStats("rifleman", everything("rifleman"));
     expect(full.hp).toBeGreaterThan(trained.hp);
@@ -56,7 +56,7 @@ describe("hero progress", () => {
   });
 
   it("counts healing as a medic's attack", () => {
-    const owned = ["medic:steady-hand"];
+    const owned = ["medic/steady-hand"];
     expect(heroStats("medic", owned).dps).toBeGreaterThan(heroStats("medic", []).dps);
   });
 

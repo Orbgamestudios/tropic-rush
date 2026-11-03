@@ -21,7 +21,7 @@ const SEATS: Seat[] = [
     member: "b",
     name: "Bob",
     hero: "heavy",
-    upgrades: ["heavy:warm-up", "heavy:nature-0", "heavy:nature-1", "heavy:hardy"],
+    upgrades: ["heavy/warm-up", "heavy/basics-0", "heavy/hardy"],
   },
 ];
 
@@ -35,7 +35,7 @@ describe("raiding together", () => {
     const { host } = pair();
     expect(host.heroes.map((h) => h.kind)).toEqual(["rifleman", "heavy"]);
     expect(host.heroes[0]?.mods.hp).toBe(1);
-    expect(host.heroes[1]?.mods.hp).toBeCloseTo(1.01 * 1.01 * 1.06);
+    expect(host.heroes[1]?.mods.hp).toBeCloseTo(1.03 * 1.2);
     expect(host.heroes[1]?.mods.spinUp).toBeCloseTo(0.83);
   });
 

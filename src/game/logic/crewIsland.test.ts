@@ -169,7 +169,7 @@ describe("sharing heroes", () => {
     const op = (id: string) => ({ kind: "heroUpgrade", hero: "rifleman", id }) as const;
     const one = applyOp(start, op(first.id), NOW);
     if (!one) throw new Error("refused");
-    // The first checkpoint on a branch leads to tier 2, which opens at headquarters 2.
+    // The first checkpoint leads to tier 2, which opens at headquarters 2.
     expect(tryOp(one, op(step.id), NOW)).toEqual({ error: "Needs headquarters 2" });
     expect(applyOp(island(2), op(first.id), NOW)).not.toBeNull();
   });

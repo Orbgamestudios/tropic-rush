@@ -1,143 +1,156 @@
 # Hero upgrade trees
 
-**Status: rebuilt 2026-11-03 with four crystal branches, except Tides.** The owner's rules are
-Decided: a tree for each hero, gold plus four crystals, twice as long as the first trees, branching
-four ways from the first upgrade, one branch for each crystal, no upgrade that adds range, and
-every tier held back until the headquarters reaches a level, so a hero is only as strong as the
-islands the crew can reach. Every name and number here is a draft to confirm. The two-week Tides
-abilities aren't built yet.
+**Status: reshaped 2026-11-03, except Tides.** The owner's rules are Decided: a tree for each hero,
+gold plus four crystals, no upgrade that adds range, and every tier held back until the
+headquarters reaches a level, so a hero is only as strong as the islands the crew can reach. Since
+the reshape, the tree is one line until headquarters 5, splits in two, and splits again after
+headquarters 12, so it's simpler for new players; it's more compact; and it isn't sorted by
+crystal. Every name and number here is a draft to confirm. The two-week Tides abilities aren't
+built yet.
 
 The owner's reference art is `docs/concept/ui-upgrade-tree.webp` for the screen and
 `docs/concept/crystals.png` for the crystals. They like the crystal design specifically.
 
 ## How a tree works
 
-Every hero has the same shape: a first upgrade, then four branches of nine upgrades each, tiers 2
-to 10, 37 in all. Each branch is a straight line, and an upgrade needs the one before it.
+Every hero has the same shape, 22 upgrades in all. An upgrade needs the one before it on its line.
 
 ```
-              ┌── nature: tier 2 ─ 3 ─ 4 ─ 5 ─ 6 ─ 7 ─ 8 ─ 9 ─ capstone
-              ├── fire:   tier 2 ─ 3 ─ 4 ─ 5 ─ 6 ─ 7 ─ 8 ─ 9 ─ capstone
-   first ─────┤
-              ├── ice:    tier 2 ─ 3 ─ 4 ─ 5 ─ 6 ─ 7 ─ 8 ─ 9 ─ capstone
-              └── dark:   tier 2 ─ 3 ─ 4 ─ 5 ─ 6 ─ 7 ─ 8 ─ 9 ─ capstone
+                                                 ┌── last branch: 8 ─ 9 ─ capstone
+                          ┌── Assault:  5 ─ 6 ─ 7┤
+                          │                      └── last branch: 8 ─ 9 ─ capstone
+   first ─ 2 ─ 3 ─ 4 ─────┤
+     (the trunk, Basics)  │                      ┌── last branch: 8 ─ 9 ─ capstone
+                          └── Survival: 5 ─ 6 ─ 7┤
+                                                 └── last branch: 8 ─ 9 ─ capstone
 ```
 
-- **Nature** keeps a hero alive: health, less damage taken, healing.
-- **Fire** hits harder: damage, extra damage to defenses and to buildings, bigger blasts.
-- **Ice** is quicker: move speed, fire rate, and whatever makes the hero's weapon quicker.
-- **Dark** is a bit of everything, and holds the tricks.
+- **The trunk** (Basics), up to headquarters 5: the hero's first upgrade, more health, more
+  damage, then whatever makes the hero's own weapon quicker.
+- **Assault** and **Survival**, headquarters 7 to 11: Assault hits harder and fires faster, with a
+  wider blast for heroes whose shots burst; Survival is health, less damage taken (stronger healing
+  for the Medic) and move speed.
+- **The four last branches**, headquarters 13 to 19, are the hero's own: Assault leads on to their
+  fire and ice branches, Survival to their nature and dark ones. Each opens with a special, has a
+  plain step, and ends in a capstone.
 
-Each branch is paid for in its own crystal and gold. The hero's special upgrades sit at tier 6 and
-at the end of each branch; tier 5 is where the hero's own weapon gets its turn (a burst unloading,
-a minigun spinning, a blast widening, healing); the rest are plain steps. The Heavy's upgrades
-that make his gun stronger do 15% less, as since 2026-11-03.
+**Crystals:** an upgrade on the trunk or the first two branches is paid for in the crystal of what
+it does: nature for health and healing, fire for damage and blasts, ice for speed and fire rate.
+Each last branch is paid for in its own crystal. The first upgrade keeps the crystal it always had.
+The Heavy's upgrades that make his gun stronger do 15% less, as since 2026-11-03.
 
-| Tier | Gold  | Crystals | Opens at headquarters |
-| ---- | ----- | -------- | --------------------- |
-| 1    | 150   | 1        | 1                     |
-| 2    | 400   | 1        | 2                     |
-| 3    | 700   | 1        | 3                     |
-| 4    | 1,100 | 2        | 5                     |
-| 5    | 1,600 | 2        | 7                     |
-| 6    | 2,300 | 2        | 9                     |
-| 7    | 3,200 | 3        | 11                    |
-| 8    | 4,400 | 3        | 13                    |
-| 9    | 6,000 | 4        | 16                    |
-| 10   | 8,000 | 5        | 19                    |
+| Tier | Gold   | Crystals | Its checkpoint | Opens at headquarters |
+| ---- | ------ | -------- | -------------- | --------------------- |
+| 1    | 150    | 1        | -              | 1                     |
+| 2    | 500    | 1        | 300            | 2                     |
+| 3    | 900    | 2        | 500            | 3                     |
+| 4    | 1,400  | 2        | 800            | 5                     |
+| 5    | 2,200  | 3        | 1,100          | 7                     |
+| 6    | 3,200  | 3        | 1,500          | 9                     |
+| 7    | 4,400  | 4        | 2,000          | 11                    |
+| 8    | 6,000  | 4        | 2,600          | 13                    |
+| 9    | 8,000  | 5        | 3,400          | 16                    |
+| 10   | 11,000 | 6        | 4,400          | 19                    |
 
-A tree costs 110,950 gold and 23 of each crystal, plus the first upgrade's one.
+A tree costs 122,550 gold for its upgrades and 52,400 for its checkpoints.
 
-**Checkpoints:** two small steps sit on each of the 36 lines between upgrades, 72 for each hero,
-bought in order with gold alone, and opening with the upgrade they lead to. They cost 300 gold on
-the lines into tier 2, rising to 3,400 into tier 10, 106,400 gold a hero, and give 1% (tiers 2 to
-5) or 2% (6 to 10): health on nature, damage on fire, fire rate and speed on ice, and a bit of each
-on dark. How fast a burst unloads and how fast a minigun spins up count double, because they do
-less.
+**Checkpoints:** one small step sits on each of the 21 lines between upgrades, bought with gold
+alone and opening with the upgrade it leads to. It gives 3% (on the trunk) to 6% (into a
+capstone): health, damage and fire rate on the trunk, damage and fire rate on Assault, health and
+speed on Survival, and on the last branches what that branch is about. How fast a burst unloads and
+how fast a minigun spins up count double, because they do less.
 
-**Fully upgraded,** a hero has about 1.9 to 2.7 times their health, 2 to 2.4 times their damage,
-and fires 1.5 to 2.7 times as fast, depending on the hero. Only at headquarters 19.
+**Fully upgraded,** a hero has about 2 to 2.5 times their health and 2 to 2.4 times their damage,
+and fires 1.5 to 2.6 times as fast, depending on the hero: about what the four-branch trees gave,
+with a little less on the way up. Only at headquarters 19.
 
-**Old saves:** everything bought on the old two-path trees was given back when these came in: the
-crystals to the player, and the gold to the island, paid into its stock as there's room for it. An
-upgrade a headquarters doesn't yet allow is given back the same way.
+**Old saves:** everything bought on an older tree, the two-path trees or the four-branch trees,
+was given back when this one came in: the crystals to the player, and the gold to the island, paid
+into its stock as there's room for it. An upgrade a headquarters doesn't yet allow is given back the
+same way.
 
 ## Rifleman: Sgt. Steele
 
-First: **Basic Training**, +10% health.
+First: **Basic Training**, +10% health. Last on the trunk: **Smooth Action**, bullets leave a burst
+20% quicker.
 
-| Branch           | Tier 5                                                | Tier 6                                                                   | Capstone (tier 10)                                                                    |
-| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Nature: Survivor | **Mend**: +5% health.                                 | **Thick Vest**: Takes 15% less damage.                                   | **Last Stand**: Enrages below 30% health: fires 40% faster and takes 25% less damage. |
-| Fire: Marksman   | **Payload**: +10% damage to buildings.                | **Deadeye**: +25% damage to defenses.                                    | **Steady Hands**: One more bullet in every burst.                                     |
-| Ice: Skirmisher  | **Smooth Action**: Bullets leave a burst 20% quicker. | **Run and Gun**: Moves at 40% speed while firing, not 20%.               | **Fast Unload**: Bursts fire 40% quicker.                                             |
-| Dark: Veteran    | **Edge**: +5% damage.                                 | **Field Dressing**: Heals 3% a second after 4 seconds without being hit. | **Ricochet**: Bullets bounce off a building into the next one.                        |
+| Last branch      | Opens with (tier 8)                                                      | Capstone (tier 10)                                                                    |
+| ---------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Fire: Marksman   | **Deadeye**: +25% damage to defenses.                                    | **Steady Hands**: One more bullet in every burst.                                     |
+| Ice: Skirmisher  | **Run and Gun**: Moves at 40% speed while firing, not 20%.               | **Fast Unload**: Bursts fire 40% quicker.                                             |
+| Nature: Survivor | **Thick Vest**: Takes 15% less damage.                                   | **Last Stand**: Enrages below 30% health: fires 40% faster and takes 25% less damage. |
+| Dark: Veteran    | **Field Dressing**: Heals 3% a second after 4 seconds without being hit. | **Ricochet**: Bullets bounce off a building into the next one.                        |
 
 ## Medic: Doc Penny
 
-First: **Steady Hand**, +15% healing.
+First: **Steady Hand**, +15% healing. Last on the trunk: **Flat Throw**, bottles land 15% sooner.
+Midway up Survival: **Strong Brew**, +12% healing.
 
-| Branch                 | Tier 5                                   | Tier 6                                                                       | Capstone (tier 10)                                                              |
-| ---------------------- | ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Nature: Field Hospital | **Strong Brew**: +12% healing.           | **Lingering Dose**: Healing carries on for 3 seconds after the bottle lands. | **Overheal**: Healing past full health becomes a shield worth up to 20% health. |
-| Fire: Alchemist        | **Payload**: +10% damage to buildings.   | **Wide Splash**: Bottles burst 1.5 m wider.                                  | **Miracle Bottle**: Every 5th bottle heals double, and bursts twice as wide.    |
-| Ice: Combat Medic      | **Flat Throw**: Bottles land 15% sooner. | **Ice Pack**: Healed crewmates move 20% faster for 3 seconds.                | **Adrenaline**: Healed crewmates fire 20% faster for 3 seconds.                 |
-| Dark: Guardian         | **Edge**: +5% damage.                    | **Corrosive Acid**: +25% damage to defenses.                                 | **Guardian Angel**: Twice a raid, a fallen hero gets back up with 40% health.   |
+| Last branch            | Opens with (tier 8)                                                          | Capstone (tier 10)                                                              |
+| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Fire: Alchemist        | **Wide Splash**: Bottles burst 1.5 m wider.                                  | **Miracle Bottle**: Every 5th bottle heals double, and bursts twice as wide.    |
+| Ice: Combat Medic      | **Ice Pack**: Healed crewmates move 20% faster for 3 seconds.                | **Adrenaline**: Healed crewmates fire 20% faster for 3 seconds.                 |
+| Nature: Field Hospital | **Lingering Dose**: Healing carries on for 3 seconds after the bottle lands. | **Overheal**: Healing past full health becomes a shield worth up to 20% health. |
+| Dark: Guardian         | **Corrosive Acid**: +25% damage to defenses.                                 | **Guardian Angel**: Twice a raid, a fallen hero gets back up with 40% health.   |
 
 ## Tank: Tilly & Tank
 
-First: **Extra Plating**, +15% health.
+First: **Extra Plating**, +15% health. Last on the trunk: **Hot Charge**, shells fly 20% faster.
+Midway up Assault: **Bigger Bang**, +0.5 m splash.
 
-| Branch             | Tier 5                                 | Tier 6                                                     | Capstone (tier 10)                                                                          |
-| ------------------ | -------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Nature: Fortress   | **Mend**: +5% health.                  | **Field Repairs**: Heals 2% a second while standing still. | **Siege Mode**: After 2 seconds standing still: fires 30% faster and takes 40% less damage. |
-| Fire: Wrecker      | **Bigger Bang**: +0.5 m splash.        | **Bunker Buster**: +30% damage to buildings.               | **Twin Barrels**: Every 4th shot fires two shells.                                          |
-| Ice: Panzer        | **Hot Charge**: Shells fly 20% faster. | **Bulldozer**: Moves at 45% speed while firing.            | **Autoloader**: Fires 25% faster.                                                           |
-| Dark: Siege Engine | **Edge**: +5% damage.                  | **Reactive Armor**: Takes 20% less from blasts.            | **Aftershock**: Whatever it destroys goes up in a shockwave that can set off the next.      |
+| Last branch        | Opens with (tier 8)                                        | Capstone (tier 10)                                                                          |
+| ------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Fire: Wrecker      | **Bunker Buster**: +30% damage to buildings.               | **Twin Barrels**: Every 4th shot fires two shells.                                          |
+| Ice: Panzer        | **Bulldozer**: Moves at 45% speed while firing.            | **Autoloader**: Fires 25% faster.                                                           |
+| Nature: Fortress   | **Field Repairs**: Heals 2% a second while standing still. | **Siege Mode**: After 2 seconds standing still: fires 30% faster and takes 40% less damage. |
+| Dark: Siege Engine | **Reactive Armor**: Takes 20% less from blasts.            | **Aftershock**: Whatever it destroys goes up in a shockwave that can set off the next.      |
 
 ## Heavy: Big Mo
 
-First: **Warm Up**, minigun spins up 17% faster.
+First: **Warm Up**, minigun spins up 17% faster. Last on the trunk: **Greased Barrels**, spins up
+17% faster.
 
-| Branch             | Tier 5                                    | Tier 6                                                                                             | Capstone (tier 10)                                                 |
-| ------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Nature: Juggernaut | **Mend**: +5% health.                     | **Harpoon Hide**: Harpoons lose their bonus damage against him.                                    | **Iron Gut**: Heals 2% a second while firing.                      |
-| Fire: Gunner       | **Payload**: +10% damage to buildings.    | **Tight Barrels**: 40% less spread.                                                                | **Overdrive**: After 5 seconds of non-stop fire, fires 21% faster. |
-| Ice: Rolling Fire  | **Greased Barrels**: Spins up 17% faster. | **Rolling Thunder**: Moves at 45% speed while firing.                                              | **Hair Trigger**: Spins up 34% faster.                             |
-| Dark: Berserker    | **Edge**: +4.3% damage.                   | **Berserk**: Enrages after taking 500 damage: for 6 seconds, fires 43% faster and can't be slowed. | **Explosive Belt**: At full spin, every 6th round explodes.        |
+| Last branch        | Opens with (tier 8)                                                                                | Capstone (tier 10)                                                 |
+| ------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Fire: Gunner       | **Tight Barrels**: 40% less spread.                                                                | **Overdrive**: After 5 seconds of non-stop fire, fires 21% faster. |
+| Ice: Rolling Fire  | **Rolling Thunder**: Moves at 45% speed while firing.                                              | **Hair Trigger**: Spins up 34% faster.                             |
+| Nature: Juggernaut | **Harpoon Hide**: Harpoons lose their bonus damage against him.                                    | **Iron Gut**: Heals 2% a second while firing.                      |
+| Dark: Berserker    | **Berserk**: Enrages after taking 500 damage: for 6 seconds, fires 43% faster and can't be slowed. | **Explosive Belt**: At full spin, every 6th round explodes.        |
 
 ## Bazooka: Ace
 
-First: **Quick Loader**, reloads 10% faster.
+First: **Quick Loader**, reloads 10% faster. Last on the trunk: **Hot Motor**, rockets fly 20%
+faster. Midway up Assault: **Bigger Bang**, +0.5 m splash.
 
-| Branch            | Tier 5                                 | Tier 6                                               | Capstone (tier 10)                                                     |
-| ----------------- | -------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------- |
-| Nature: Daredevil | **Mend**: +5% health.                  | **Blast Shield**: Takes 25% less from blasts.        | **Second Wind**: Destroying a building heals 15%.                      |
-| Fire: Demolition  | **Bigger Bang**: +0.5 m splash.        | **Napalm**: Blasts leave fire burning for 3 seconds. | **Cluster Warhead**: Rockets throw out 5 bomblets where they burst.    |
-| Ice: Hit and Run  | **Hot Motor**: Rockets fly 20% faster. | **Fast Rockets**: Rockets fly 40% faster.            | **Getaway**: +30% move speed for 2 seconds after each shot.            |
-| Dark: Trickshot   | **Edge**: +5% damage.                  | **Double Tap**: Holds two rockets before reloading.  | **Guided Rocket**: Rockets curve round cover to reach a locked target. |
+| Last branch       | Opens with (tier 8)                                  | Capstone (tier 10)                                                     |
+| ----------------- | ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| Fire: Demolition  | **Napalm**: Blasts leave fire burning for 3 seconds. | **Cluster Warhead**: Rockets throw out 5 bomblets where they burst.    |
+| Ice: Hit and Run  | **Fast Rockets**: Rockets fly 40% faster.            | **Getaway**: +30% move speed for 2 seconds after each shot.            |
+| Nature: Daredevil | **Blast Shield**: Takes 25% less from blasts.        | **Second Wind**: Destroying a building heals 15%.                      |
+| Dark: Trickshot   | **Double Tap**: Holds two rockets before reloading.  | **Guided Rocket**: Rockets curve round cover to reach a locked target. |
 
 ## Grenadier: Mr. Pemberton
 
-First: **Bigger Charge**, +10% damage.
+First: **Bigger Charge**, +10% damage. Last on the trunk: **Light Grenades**, grenades land 15%
+sooner. Midway up Assault: **Bigger Bang**, +0.5 m splash.
 
-| Branch                 | Tier 5                                        | Tier 6                                                                         | Capstone (tier 10)                                                                         |
-| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| Nature: Old Campaigner | **Mend**: +5% health.                         | **Tea Break**: Destroying a building heals 15%.                                | **Last Orders**: Enrages below 30% health: throws 40% faster and takes 25% less damage.    |
-| Fire: Ordnance         | **Bigger Bang**: +0.5 m splash.               | **Twin Grenades**: Every 3rd throw is two grenades.                            | **Skipping Stone**: Grenades skip on for two more blasts.                                  |
-| Ice: Quick March       | **Light Grenades**: Grenades land 15% sooner. | **Short Fuse**: Grenades land 40% sooner.                                      | **Rapid Lob**: Throws 30% faster.                                                          |
-| Dark: Saboteur         | **Edge**: +5% damage.                         | **Mine Sweeper**: Shows every mine, and blasts set them off from twice as far. | **Smoke Shell**: Every 5th grenade leaves smoke: defenses can't aim into it for 4 seconds. |
+| Last branch            | Opens with (tier 8)                                                            | Capstone (tier 10)                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Fire: Ordnance         | **Twin Grenades**: Every 3rd throw is two grenades.                            | **Skipping Stone**: Grenades skip on for two more blasts.                                  |
+| Ice: Quick March       | **Short Fuse**: Grenades land 40% sooner.                                      | **Rapid Lob**: Throws 30% faster.                                                          |
+| Nature: Old Campaigner | **Tea Break**: Destroying a building heals 15%.                                | **Last Orders**: Enrages below 30% health: throws 40% faster and takes 25% less damage.    |
+| Dark: Saboteur         | **Mine Sweeper**: Shows every mine, and blasts set them off from twice as far. | **Smoke Shell**: Every 5th grenade leaves smoke: defenses can't aim into it for 4 seconds. |
 
 ## Engineer: Gus
 
-First: **Spare Parts**, fires 10% faster.
+First: **Spare Parts**, fires 10% faster. Last on the trunk: **Oiled Gears**, shots fly 20% faster.
 
-| Branch            | Tier 5                                 | Tier 6                                                    | Capstone (tier 10)                                                                 |
-| ----------------- | -------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Nature: Medic Bay | **Mend**: +5% health.                  | **Patch Up**: Destroying a building heals 10%.            | **Repair Beam**: Slowly repairs the Tank and turrets near him.                     |
-| Fire: Salvager    | **Payload**: +10% damage to buildings. | **Armor Piercing**: +25% damage to defenses.              | **Salvage**: Everything he destroys comes back as his turret for a while.          |
-| Ice: Mechanic     | **Oiled Gears**: Shots fly 20% faster. | **Overclock**: His turrets fire 30% faster.               | **Rapid Fire**: Fires 25% faster.                                                  |
-| Dark: Gadgeteer   | **Edge**: +5% damage.                  | **Pocket Turret**: Drops a small turret every 30 seconds. | **Decoy Drone**: Every 30 seconds, a drone draws the defenses' fire for 6 seconds. |
+| Last branch       | Opens with (tier 8)                                       | Capstone (tier 10)                                                                 |
+| ----------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Fire: Salvager    | **Armor Piercing**: +25% damage to defenses.              | **Salvage**: Everything he destroys comes back as his turret for a while.          |
+| Ice: Mechanic     | **Overclock**: His turrets fire 30% faster.               | **Rapid Fire**: Fires 25% faster.                                                  |
+| Nature: Medic Bay | **Patch Up**: Destroying a building heals 10%.            | **Repair Beam**: Slowly repairs the Tank and turrets near him.                     |
+| Dark: Gadgeteer   | **Pocket Turret**: Drops a small turret every 30 seconds. | **Decoy Drone**: Every 30 seconds, a drone draws the defenses' fire for 6 seconds. |
 
 ## The two-week reset: Tides
 
