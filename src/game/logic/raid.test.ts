@@ -370,34 +370,57 @@ describe("raid combat", () => {
 describe("sprinting", () => {
   const north = vec(0, -1);
 
-  it("runs faster for a moment, even through firing, then has to recharge", () => {
+  it("is a little quicker for as long as it's held, then runs out", () => {
     const walking = raid([]);
     const sprinting = raid([]);
-    stepRaid(sprinting, [input({ sprint: true })], DT);
     run(walking, 1, [input({ move: north })]);
-    run(sprinting, 1, [input({ move: north })]);
-    expect(hero(sprinting).pos.y).toBeLessThan(hero(walking).pos.y * 1.5);
-    run(sprinting, SPRINT.seconds, [input({ move: north })]);
-    expect(hero(sprinting).sprint).toBe(0);
-    expect(hero(sprinting).sprintIn).toBeGreaterThan(SPRINT.recharge - 2);
-
-    const shooting = raid([]);
-    const dashing = raid([]);
-    stepRaid(dashing, [input({ sprint: true })], DT);
-    run(shooting, 1, [input({ move: vec(1, 0), aim: north })]);
-    run(dashing, 1, [input({ move: vec(1, 0), aim: north })]);
-    expect(hero(dashing).pos.x).toBeGreaterThan(hero(shooting).pos.x * 3);
+    run(sprinting, 1, [input({ move: north, sprint: true })]);
+    const ratio = hero(sprinting).pos.y / hero(walking).pos.y;
+    expect(ratio).toBeCloseTo(SPRINT.speed, 1);
+    run(sprinting, SPRINT.seconds, [input({ move: north, sprint: true })]);
+    expect(hero(sprinting).sprinting).toBe(false);
   });
 
-  it("won't start again until it's recharged", () => {
+  it("stops the moment it's let go, keeping what's left of it", () => {
     const state = raid([]);
-    stepRaid(state, [input({ sprint: true })], DT);
-    run(state, SPRINT.seconds + 1);
-    stepRaid(state, [input({ sprint: true })], DT);
-    expect(hero(state).sprint).toBe(0);
-    run(state, SPRINT.recharge);
-    stepRaid(state, [input({ sprint: true })], DT);
-    expect(hero(state).sprint).toBeGreaterThan(0);
+    run(state, 1, [input({ move: north, sprint: true })]);
+    stepRaid(state, [input({ move: north })], DT);
+    expect(hero(state).sprinting).toBe(false);
+    expect(hero(state).sprintLeft).toBeCloseTo(SPRINT.seconds - 1, 1);
+    run(state, 0.5, [input({ move: north, sprint: true })]);
+    expect(hero(state).sprinting).toBe(true);
+  });
+
+  it("doesn't go anywhere standing still", () => {
+    const state = raid([]);
+    run(state, 1, [input({ sprint: true })]);
+    expect(hero(state).sprinting).toBe(false);
+    expect(hero(state).sprintLeft).toBe(SPRINT.seconds);
+  });
+
+  it("can shoot on the run, with the aim all over the place", () => {
+    const walking = raid([]);
+    const sprinting = raid([]);
+    run(walking, 1, [input({ move: north, aim: north })]);
+    run(sprinting, 1, [input({ move: north, aim: north, sprint: true })]);
+    expect(hero(sprinting).sprinting).toBe(true);
+    expect(aimStretch(hero(sprinting)).width).toBeGreaterThan(aimStretch(hero(walking)).width * 2);
+    expect(hero(sprinting).pos.y).toBeLessThan(hero(walking).pos.y * 2);
+  });
+
+  it("refills slowly, and won't start again on the last drop", () => {
+    const state = raid([]);
+    run(state, SPRINT.seconds + 0.5, [input({ move: north, sprint: true })]);
+    expect(hero(state).sprinting).toBe(false);
+    const tillReady = (SPRINT.least / SPRINT.seconds) * SPRINT.recharge;
+    run(state, tillReady - 1, [input({ move: north })]);
+    stepRaid(state, [input({ move: north, sprint: true })], DT);
+    expect(hero(state).sprinting).toBe(false);
+    run(state, 1, [input({ move: north })]);
+    stepRaid(state, [input({ move: north, sprint: true })], DT);
+    expect(hero(state).sprinting).toBe(true);
+    run(state, SPRINT.recharge + 1);
+    expect(hero(state).sprintLeft).toBe(SPRINT.seconds);
   });
 });
 

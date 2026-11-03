@@ -147,6 +147,8 @@ const HINT_WINS = 3;
 const FULL_FRAME_MS = 1000 / 60;
 const CALM_FRAME_MS = 1000 / 30;
 const FRAME_SLACK_MS = 2;
+/** Screens with so little on them that they can be sharper for less than a fight costs. */
+const LIGHT_PHASES: readonly string[] = ["heroes", "tree", "map"];
 /** How long after the last touch a screen counts as sitting still. */
 const CALM_AFTER_MS = 1500;
 
@@ -176,6 +178,8 @@ export class Game {
   private mapHero: HeroKind = "rifleman";
   private treeHero: HeroKind = "rifleman";
   private raidTarget: MapIsland | null = null;
+  /** The island picked to attack, while the hero screen asks who's going. */
+  private attacking: MapIsland | null = null;
   /** Regions the last win opened: their cloud lifts next time the map is shown. */
   private reveal: string | null = null;
   /** Which of the raid's heroes is this phone's player. */
@@ -267,7 +271,7 @@ export class Game {
     );
     this.hud = new Hud(container, {
       onBoat: () => this.controls.pressBoat(),
-      onSprint: () => this.controls.pressSprint(),
+      onSprint: (held) => this.controls.holdSprint(held),
       onAbility: (ability) => this.controls.selectAbility(ability),
       onPause: () => this.setPaused(true),
     });
@@ -277,9 +281,10 @@ export class Game {
       save: () => this.save,
       gold: () => this.crew.gold(),
       update: (changes) => this.updateSave(changes),
-      onBack: () => this.go(() => this.goHome()),
-      onStart: (hero) => this.go(() => this.showMap(hero)),
+      onBack: () => this.go(() => (this.attacking ? this.showMap(this.mapHero) : this.goHome())),
+      onStart: (hero) => this.go(() => this.setOff(hero)),
       onUpgrades: (hero) => this.go(() => this.showTree(hero)),
+      blocker: (hero) => this.soloBlocker(hero),
       onTrade: () => this.crystalSwap.show(true),
     });
     this.tree = new UpgradeTree(screens, {
@@ -287,7 +292,7 @@ export class Game {
       save: () => this.save,
       gold: () => this.crew.gold(),
       buy: (kind, upgrade) => this.buyUpgrade(kind, upgrade),
-      onBack: () => this.go(() => this.showHeroes(this.treeHero)),
+      onBack: () => this.go(() => this.showHeroes(this.treeHero, this.attacking)),
     });
     this.crystalSwap = new CrystalSwap(screens, {
       save: () => this.save,
@@ -339,7 +344,7 @@ export class Game {
       onZoom: (factor) => this.mapView.zoom(factor),
       screen: (x, y) => this.mapView.screen(x, y),
       moves: () => this.mapView.moves,
-      soloBlocker: () => this.soloBlocker(),
+      soloBlocker: () => this.soloBlocker(this.mapHero),
       crewOnline: () => this.crewOnline(),
     });
     this.lobbyView = new RaidLobby(screens, {
@@ -533,6 +538,10 @@ export class Game {
         this.showcase.move = { ...AT_EASE, ...move };
         this.showcase.closeUp = closeUp;
       },
+      /** Puts the raid copy of each hero on the pedestal, not the detailed one. */
+      heroRaidCopy: (on: boolean) => {
+        this.showcase.raidCopy = on;
+      },
       /** Brings the camera right up to the hero on the pedestal: how far off, and how high. */
       heroLook: (distance: number, height: number) => {
         this.showcase.look = { distance, height };
@@ -548,6 +557,18 @@ export class Game {
           triangles += (index?.count ?? attributes.position?.count ?? 0) / 3;
         });
         return { calls, triangles };
+      },
+      /** The picture on screen right now, drawn afresh, as an image. */
+      snapshot: () => {
+        this.stage.render();
+        return this.stage.renderer.domElement.toDataURL("image/jpeg", 0.92);
+      },
+      /** Starts a raid with any hero, even one who can't go alone, for looking at them in one. */
+      raidAs: (kind: HeroKind) => {
+        const [island] = worldIslands(this.save.world, 1).filter((i) => !i.taken && !i.rival);
+        if (!island) return;
+        if (this.crew.active) this.crew.exit();
+        this.startRaid(kind, island);
       },
       /** Has the hero on the pedestal fire or throw once. */
       heroShot: () => this.showcase.shot(),
@@ -948,10 +969,21 @@ export class Game {
     return Boolean(this.lobby && this.isHost() && this.lobby.seats.length > 1);
   }
 
-  /** Attack from the map or a scout: straight in alone, but a team scouts and readies up first. */
+  /** Attack from the map or a scout: a last look at who's going, or a team scouts and readies up. */
   private attack(island: MapIsland): void {
     if (this.withParty()) this.openLobby(island);
-    else this.go(() => this.startRaid(this.mapHero, island));
+    else this.go(() => this.showHeroes(this.mapHero, island));
+  }
+
+  /** The hero screen's big button: on to the island if one's been picked, or else to the map. */
+  private setOff(hero: HeroKind): void {
+    const island = this.attacking;
+    this.mapHero = hero;
+    if (!island) this.showMap(hero);
+    else if (this.withParty()) {
+      this.showMap(hero);
+      this.openLobby(island);
+    } else this.startRaid(hero, island);
   }
 
   /** From the lobby to a look at the island, for anyone on the team. */
@@ -1238,8 +1270,8 @@ export class Game {
   }
 
   /** A medic can't hurt a building, so she can't take an island without a crewmate. */
-  private soloBlocker(): string | null {
-    return this.mapHero === "medic"
+  private soloBlocker(hero: HeroKind): string | null {
+    return hero === "medic"
       ? "Doc Penny can't hurt buildings: team up, or pick another hero."
       : null;
   }
@@ -1307,14 +1339,15 @@ export class Game {
     this.enterCrew();
   }
 
-  private showHeroes(kind?: HeroKind): void {
+  private showHeroes(kind?: HeroKind, attacking: MapIsland | null = null): void {
     if (this.crew.active) this.crew.exit();
     this.endRaidWorld();
     this.hideScreens();
     this.phase = "heroes";
+    this.attacking = attacking;
     this.skyCard.hide();
     this.rallyIn = 0;
-    this.heroes.show(kind);
+    this.heroes.show(kind, attacking !== null);
   }
 
   private showTree(kind: HeroKind): void {
@@ -1382,7 +1415,7 @@ export class Game {
     this.endRaidWorld();
     this.hideScreens();
     const { layout, state } = this.loadRaid(this.mapHero, target);
-    this.dangerMap = new DangerMap(state, "scout");
+    this.dangerMap = new DangerMap(state);
     if (this.view) {
       this.view.root.add(this.dangerMap.root);
       this.view.showBars = false;
@@ -1396,7 +1429,7 @@ export class Game {
       ),
     );
     this.phase = "scout";
-    this.scout.show(target, scoutReport(layout.buildings), this.soloBlocker() === null);
+    this.scout.show(target, scoutReport(layout.buildings), this.soloBlocker(this.mapHero) === null);
     this.drawLobby();
   }
 
@@ -1573,6 +1606,7 @@ export class Game {
     this.last = now;
     this.time += dt;
     this.stage.calm = calm;
+    this.stage.setLight(LIGHT_PHASES.includes(this.phase));
     // The real frame time, so a device that's struggling badly drops quality straight away.
     if (!calm) this.stage.adaptQuality(frameTime);
     music.play(this.trackForPhase());

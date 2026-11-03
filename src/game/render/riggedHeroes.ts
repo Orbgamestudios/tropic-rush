@@ -89,6 +89,11 @@ export interface RiggedBody {
   bone(name: string): THREE.Object3D;
 }
 
+/** Whether this copy of a hero's body has arrived. */
+export function hasBody(kind: HeroKind, detailed: boolean): boolean {
+  return (detailed ? menuBodies : raidBodies).has(kind);
+}
+
 /** A fresh copy of a hero's body, if theirs has arrived. */
 export function riggedBody(kind: HeroKind, detailed: boolean): RiggedBody | null {
   const template = (detailed ? menuBodies.get(kind) : undefined) ?? raidBodies.get(kind);

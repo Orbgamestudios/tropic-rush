@@ -31,8 +31,6 @@ export interface HeroArm {
   hand: THREE.Object3D;
   upperLength: number;
   foreLength: number;
-  /** Where the hand ends up when they're down. */
-  rest: THREE.Vector3;
   /** On a skinned model the arm is bones, and these are the ways they lie at rest. */
   bones: { upperRest: THREE.Vector3; foreRest: THREE.Vector3; handRest: THREE.Vector3 } | null;
   /** The bone that closes the hand round what it's holding, on a skinned model. */
@@ -326,7 +324,6 @@ function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof
     if (!look.bareArms) fore.add(at(capsule(0.1, 0.05, look.shirt), 0, -foreLength * 0.26, 0));
     const palm = ball(0.1, 0x4a3a2c, 10);
     body.add(upperArm, fore, palm);
-    const rest = v(0.02, hip - 0.02, side * 0.46 * k);
     arms.push({
       shoulder,
       upper: upperArm,
@@ -334,7 +331,6 @@ function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof
       hand: palm,
       upperLength,
       foreLength,
-      rest,
       bones: null,
       fingers: null,
       palm: 0,
@@ -534,29 +530,30 @@ function bazookaTube(): THREE.Group {
 
 function healingBottle(): THREE.Group {
   const g = new THREE.Group();
+  // Slim enough for a hand to close round.
   const flask = turned(
     [
-      [0.001, -0.14],
-      [0.09, -0.14],
-      [0.115, -0.11],
-      [0.115, 0.05],
-      [0.085, 0.11],
-      [0.04, 0.14],
-      [0.038, 0.21],
-      [0.001, 0.21],
+      [0.001, -0.13],
+      [0.07, -0.13],
+      [0.085, -0.1],
+      [0.085, 0.05],
+      [0.065, 0.1],
+      [0.03, 0.125],
+      [0.028, 0.18],
+      [0.001, 0.18],
     ],
     0x4fd070,
     16,
   );
   g.add(flask);
-  g.add(at(cyl(0.045, 0.04, 0.05, 0x8a6a48, 10), 0, 0.225, 0));
-  // A white label with a red cross, facing out of her hand.
-  g.add(at(cyl(0.118, 0.118, 0.1, WHITE, 16), 0, -0.03, 0));
+  g.add(at(cyl(0.034, 0.03, 0.045, 0x8a6a48, 10), 0, 0.195, 0));
+  // A white label with a red cross, up above her fingers.
+  g.add(at(cyl(0.088, 0.088, 0.075, WHITE, 16), 0, 0.03, 0));
   for (const [w, h] of [
-    [0.09, 0.03],
-    [0.03, 0.09],
+    [0.06, 0.02],
+    [0.02, 0.06],
   ] as const) {
-    g.add(at(rbox(0.012, h, w, 0xd8362a), 0.118, -0.03, 0));
+    g.add(at(rbox(0.01, h, w, 0xd8362a), 0.087, 0.03, 0));
   }
   return baked(g);
 }
@@ -806,7 +803,6 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
       hand: handBone,
       upperLength: foreBone.position.length(),
       foreLength: handBone.position.length(),
-      rest: v(0.02, bone(`leg${suffix}`).position.y - 0.02, side * 0.46),
       fingers: bone(`tips${suffix}`),
       palm: bone(`tips${suffix}`).position.length() * HAND_SIZE,
       side,

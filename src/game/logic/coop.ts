@@ -47,7 +47,6 @@ export function holdInput(held: HeroInput, next: HeroInput): HeroInput {
     autoAim: held.autoAim || next.autoAim,
     toggleBoat: held.toggleBoat || next.toggleBoat,
     boatAbility: next.boatAbility ?? held.boatAbility,
-    sprint: held.sprint || next.sprint,
   };
 }
 
@@ -59,7 +58,6 @@ export function afterStep(input: HeroInput): HeroInput {
     autoAim: false,
     toggleBoat: false,
     boatAbility: null,
-    sprint: false,
   };
 }
 
@@ -77,8 +75,8 @@ interface HeroSnap {
   rage: number;
   haste: number;
   iced: number;
-  sprint: number;
-  sprintIn: number;
+  sprinting: boolean;
+  sprintLeft: number;
 }
 
 type ProjectileSnap = [
@@ -173,8 +171,8 @@ export function takeSnapshot(
       rage: h.rage,
       haste: h.haste,
       iced: h.iced,
-      sprint: h.sprint,
-      sprintIn: h.sprintIn,
+      sprinting: h.sprinting,
+      sprintLeft: h.sprintLeft,
     })),
     buildings,
     sights,
@@ -250,8 +248,8 @@ export function applySnapshot(
     h.rage = s.rage;
     h.haste = s.haste;
     h.iced = s.iced;
-    h.sprint = s.sprint;
-    h.sprintIn = s.sprintIn;
+    h.sprinting = s.sprinting;
+    h.sprintLeft = s.sprintLeft;
     targets[i] = { x: s.x, y: s.y, facing: s.f };
     if (i === seat) {
       if (distance(h.pos, s) > SNAP_BACK) h.pos = { x: s.x, y: s.y };

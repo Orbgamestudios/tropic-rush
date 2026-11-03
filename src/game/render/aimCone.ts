@@ -48,6 +48,8 @@ const CONE_FRAGMENT = /* glsl */ `
     float sweep = smoothstep(0.08, 0.0, abs(fract(r - uTime * 0.9) - 0.5) - 0.42) * 0.12;
     float alpha = (fill + rim * 0.75 + sweep) * smoothstep(0.0, 0.12, r);
     gl_FragColor = vec4(1.0, 1.0, mix(0.72, 1.0, uLive), alpha * mix(0.45, 1.0, uLive));
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -97,6 +99,8 @@ const RETICLE_FRAGMENT = /* glsl */ `
     vec3 color = mix(vec3(0.03, 0.05, 0.1), uColor, max(shape, wave));
     float alpha = max(max(shape, edge * 0.75), max(wave, glow * step(r, 1.0)));
     gl_FragColor = vec4(color, alpha * uFade);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 

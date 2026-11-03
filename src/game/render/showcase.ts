@@ -6,7 +6,8 @@
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
 import { AT_EASE, type HeroAnimator, type HeroMove } from "./heroAnimator";
-import { menuHero } from "./heroAssets";
+import { heroOnHand, type MenuHero } from "./heroAssets";
+import { hasBody, loadMenuBody, loadRigs } from "./riggedHeroes";
 import type { Stage } from "./stage";
 
 function backdropTexture(): THREE.CanvasTexture {
@@ -58,6 +59,17 @@ function backdropTexture(): THREE.CanvasTexture {
   return texture;
 }
 
+/** The things a hero gets up to on the pedestal, in turn, and when each shot goes off in one. */
+const ACTS = [
+  { seconds: 1.5, move: { ...AT_EASE, cheering: true }, shots: [] },
+  { seconds: 2.2, move: { ...AT_EASE, aiming: true }, shots: [0.8, 1.05, 1.3] },
+  { seconds: 1.3, move: { ...AT_EASE }, shots: [] },
+] as const;
+const CHECK_WEAPON = 2;
+/** How long they stand about between them, at least, and how much longer at most. */
+const REST_SECONDS = 2.5;
+const REST_MORE = 3.5;
+
 /** A radar screen behind the hero: rings, cross hairs and a sweeping beam with a fading trail. */
 function radar(): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
   const material = new THREE.ShaderMaterial({
@@ -86,6 +98,8 @@ function radar(): { mesh: THREE.Mesh; material: THREE.ShaderMaterial } {
         float glow = rings * 0.22 + cross * 0.18 + beam * 0.35 + edge * 0.4;
         vec3 color = mix(vec3(0.35, 0.6, 0.95), vec3(0.55, 0.9, 1.0), beam);
         gl_FragColor = vec4(color, glow * smoothstep(1.0, 0.75, r) + edge * 0.3);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
@@ -228,6 +242,11 @@ export class Showcase {
   private readonly floor: THREE.Mesh;
   private hero: THREE.Object3D | null = null;
   private animator: HeroAnimator | null = null;
+  private act = 0;
+  /** Seconds into what they're doing, or below zero while they wait to do it. */
+  private acting = 0;
+  /** A shot's kick on a hero with no skeleton to take it, dying away. */
+  private jolt = 0;
   /** What the hero on the pedestal is doing: standing at ease, unless a test says otherwise. */
   move: HeroMove = AT_EASE;
   /** Brings the camera in, for a test to look at the hero. */
@@ -288,13 +307,27 @@ export class Showcase {
     }
   }
 
-  /** Puts a hero on the pedestal (it drops in with a little bounce). */
+  /**
+   * Puts a hero on the pedestal (it drops in with a little bounce). The detailed model can take a
+   * while on a slow connection or never come at all, so whatever's here already goes up straight
+   * away, and the detailed one takes over when it lands.
+   */
   async setHero(kind: HeroKind): Promise<void> {
     if (kind === this.kind) return;
     this.kind = kind;
     const token = ++this.token;
-    const { holder: model, animator } = await menuHero(kind, true);
-    if (token !== this.token) return;
+    const detailed = !this.raidCopy;
+    this.stand(kind, heroOnHand(kind, detailed));
+    this.drop = 0;
+    // A cheer as they land, and it goes round from there.
+    this.act = 0;
+    this.acting = -0.45;
+    if (hasBody(kind, detailed)) return;
+    await (detailed ? loadMenuBody(kind) : loadRigs());
+    if (token === this.token) this.stand(kind, heroOnHand(kind, detailed));
+  }
+
+  private stand(kind: HeroKind, { holder: model, animator }: MenuHero): void {
     if (this.hero) this.turntable.remove(this.hero);
     this.animator = animator;
     // Face the camera (models face +x; the camera looks along -z).
@@ -302,8 +335,32 @@ export class Showcase {
     if (kind === "tank") model.scale.multiplyScalar(0.55);
     this.hero = model;
     this.turntable.add(model);
-    this.drop = 0;
   }
+
+  /** What the hero's doing now: standing about, and every so often something else. */
+  private perform(dt: number): HeroMove {
+    if (this.move !== AT_EASE) return this.move;
+    const was = this.acting;
+    this.acting += dt;
+    if (this.acting < 0) return AT_EASE;
+    const { seconds, move, shots } = ACTS[this.act] ?? ACTS[0];
+    if (this.acting >= seconds) {
+      this.act = (this.act + 1) % ACTS.length;
+      this.acting = -REST_SECONDS - Math.random() * REST_MORE;
+      return AT_EASE;
+    }
+    const thrown = this.animator?.throws ?? false;
+    for (const shot of thrown ? shots.slice(0, 1) : shots) {
+      if (was >= shot || this.acting < shot) continue;
+      this.animator?.shot();
+      this.jolt = 1;
+    }
+    if (this.act === CHECK_WEAPON) return { ...move, reload: 1 - this.acting / seconds };
+    return move;
+  }
+
+  /** Shows the light copy a raid uses, for a test to look at it up close. */
+  raidCopy = false;
 
   /** Puts the camera somewhere else, for a test to look closely. */
   look: { distance: number; height: number } | null = null;
@@ -350,7 +407,11 @@ export class Showcase {
       const bounce = Math.sin(t * Math.PI * 2.2) * (1 - t) * 0.08;
       this.leap = Math.max(0, this.leap - dt * 1.4);
       this.hero.position.y = fall + bounce + Math.sin(this.leap * Math.PI) * 0.9;
-      this.animator?.update(dt, this.move);
+      const move = this.perform(dt);
+      this.animator?.update(dt, move);
+      // The Tank just sits there running, and rocks back on its tracks when it fires.
+      this.jolt *= Math.exp(-dt * 7);
+      if (!this.animator) this.hero.rotation.z = Math.sin(time * 31) * 0.0012 + this.jolt * 0.07;
     }
     (this.radar.material.uniforms.uTime as THREE.IUniform<number>).value = time;
     const pulse = 0.65 + Math.sin(time * 2.4) * 0.25 + this.leap;

@@ -87,7 +87,7 @@ export class Controls {
   private pendingLock: Vec2 | null = null;
   private lastHero: Vec2 | null = null;
   private pendingBoat = false;
-  private pendingSprint = false;
+  private sprintHeld = false;
   private heldMove = vec(0, 0);
   private pendingAbility: { ability: Ability; target: Vec2 } | null = null;
   private readonly leftVisual: { base: HTMLElement; knob: HTMLElement };
@@ -136,8 +136,8 @@ export class Controls {
     this.pendingBoat = true;
   }
 
-  pressSprint(): void {
-    this.pendingSprint = true;
+  holdSprint(held: boolean): void {
+    this.sprintHeld = held;
   }
 
   selectAbility(ability: Ability): void {
@@ -198,9 +198,8 @@ export class Controls {
       autoAim: this.pendingAutoAim,
       toggleBoat: this.pendingBoat,
       boatAbility: this.pendingAbility,
-      sprint: this.pendingSprint,
+      sprint: this.sprintHeld || this.keys.has("shift"),
     };
-    this.pendingSprint = false;
     this.pendingAutoAim = false;
     this.pendingLock = null;
     this.pendingBoat = false;
@@ -230,7 +229,6 @@ export class Controls {
       if (this.mode === "off") return;
       if (key === "e") this.pendingBoat = true;
       if (key === "q" || key === "f") this.pendingAutoAim = true;
-      if (key === "shift") this.pendingSprint = true;
       const index = ["1", "2", "3"].indexOf(key);
       const ability = ABILITY_ORDER[index];
       if (ability) this.selectedAbility = ability;
@@ -374,6 +372,7 @@ export class Controls {
     this.right = null;
     this.pan = null;
     this.mouse.down = false;
+    this.sprintHeld = false;
     this.goHome(this.leftVisual);
     this.goHome(this.rightVisual);
   }

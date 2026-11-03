@@ -47,8 +47,12 @@ const SHOOTING_SPEED = 0.2;
 /** On the move, shots stray this much wider, coming on and easing off over this many seconds. */
 const MOVING_SPREAD = 0.66;
 const STEADY_SECONDS = 0.5;
-/** The sprint button: this much quicker for this long, then a slow wait for the next one. */
-export const SPRINT = { seconds: 2.5, speed: 1.7, recharge: 20 } as const;
+/**
+ * The sprint button, held down: this much quicker, for this many seconds of it. An empty tank fills
+ * in `recharge` seconds, and has to reach `least` before they can go again. Shooting on the run is
+ * allowed, but with `shake` times the wobble of walking and firing.
+ */
+export const SPRINT = { seconds: 2.5, speed: 1.3, recharge: 20, least: 0.5, shake: 4 } as const;
 /** On the move, a throw can land this far off: a share of its length, and radians to the side. */
 const THROW_LENGTH_SCATTER = 0.2;
 const THROW_WIDTH_SCATTER = 0.12;
@@ -204,9 +208,9 @@ export interface RaidHero {
   /** Seconds until the next pocket turret and decoy drone. */
   pocketIn: number;
   droneIn: number;
-  /** Seconds left of a sprint, and until the next one is ready. */
-  sprint: number;
-  sprintIn: number;
+  /** Whether they're sprinting, and how many seconds of it they have left. */
+  sprinting: boolean;
+  sprintLeft: number;
 }
 
 export interface RaidBuilding {
@@ -385,7 +389,7 @@ export interface HeroInput {
   /** Open the gunboat's view, or go back to the hero. */
   toggleBoat: boolean;
   boatAbility: { ability: Ability; target: Vec2 } | null;
-  /** The sprint button. */
+  /** Whether the sprint button's held down. */
   sprint: boolean;
 }
 
@@ -455,8 +459,8 @@ export function createRaid(
       tapReady: true,
       pocketIn: GADGET_SECONDS,
       droneIn: GADGET_SECONDS,
-      sprint: 0,
-      sprintIn: 0,
+      sprinting: false,
+      sprintLeft: SPRINT.seconds,
       targetId: null,
       patientId: null,
     };
@@ -574,18 +578,19 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
     if (hero.inBoat) toggleBoat(state, hero);
     hero.moving = false;
     hero.firing = false;
+    hero.sprinting = false;
     hero.targetId = null;
     hero.patientId = null;
     return;
   }
 
   if (input.toggleBoat) toggleBoat(state, hero);
+  sprint(state, hero, input, dt);
   // On the gunboat a hero can't move or pick a new target, but keeps firing at what they're on.
   if (hero.inBoat) {
     hero.moving = false;
     if (input.boatAbility) fireAbility(state, input.boatAbility.ability, input.boatAbility.target);
   } else {
-    if (input.sprint) startSprint(state, hero);
     moveByInput(state, hero, input, dt);
     lockOn(state, hero, input);
   }
@@ -634,11 +639,17 @@ function lockOn(state: RaidState, hero: RaidHero, input: HeroInput): void {
   }
 }
 
-function startSprint(state: RaidState, hero: RaidHero): void {
-  if (hero.sprintIn > 0) return;
-  hero.sprint = SPRINT.seconds;
-  hero.sprintIn = SPRINT.seconds + SPRINT.recharge;
-  state.events.push({ type: "sprint", heroId: hero.id, pos: { ...hero.pos } });
+/** Spends the sprint while the button's held on the move. */
+function sprint(state: RaidState, hero: RaidHero, input: HeroInput, dt: number): void {
+  const wanted = input.sprint && length(input.move) > 0.05 && !hero.inBoat;
+  const going = wanted && hero.sprintLeft >= (hero.sprinting ? dt : SPRINT.least);
+  if (going && !hero.sprinting) {
+    state.events.push({ type: "sprint", heroId: hero.id, pos: { ...hero.pos } });
+  }
+  hero.sprinting = going;
+  hero.sprintLeft = going
+    ? hero.sprintLeft - dt
+    : Math.min(SPRINT.seconds, hero.sprintLeft + (dt * SPRINT.seconds) / SPRINT.recharge);
 }
 
 /** The timers and steady effects of a hero's upgrades, once a step. */
@@ -649,8 +660,6 @@ function tickTricks(state: RaidState, hero: RaidHero, dt: number): void {
   hero.haste = Math.max(0, hero.haste - dt);
   hero.iced = Math.max(0, hero.iced - dt);
   hero.pumped = Math.max(0, hero.pumped - dt);
-  hero.sprint = Math.max(0, hero.sprint - dt);
-  hero.sprintIn = Math.max(0, hero.sprintIn - dt);
   hero.fireTime = hero.firing ? hero.fireTime + dt : 0;
   hero.stillTime = hero.moving ? 0 : hero.stillTime + dt;
   const regen =
@@ -712,11 +721,11 @@ function shotTime(hero: RaidHero, base: number): number {
 /** A hero's full speed right now. */
 function heroSpeed(hero: RaidHero, slowed: boolean): number {
   const m = hero.mods;
-  const sprinting = hero.sprint > 0;
-  const firing = slowed && hero.rage <= 0 && !sprinting ? m.fireSpeed || SHOOTING_SPEED : 1;
+  const firing = slowed && hero.rage <= 0 && !hero.sprinting ? m.fireSpeed || SHOOTING_SPEED : 1;
   const haste = hero.haste > 0 ? TRICKS.getawaySpeed : 1;
   const iced = hero.iced > 0 ? TRICKS.iceSpeed : 1;
-  return HEROES[hero.kind].speed * m.speed * firing * haste * iced * (sprinting ? SPRINT.speed : 1);
+  const sprint = hero.sprinting ? SPRINT.speed : 1;
+  return HEROES[hero.kind].speed * m.speed * firing * haste * iced * sprint;
 }
 
 /** Walks a hero by the move stick. Guests' phones use this too, to answer the stick at once. */
@@ -758,16 +767,19 @@ function pushOut(pos: Vec2, radius: number, center: Vec2, otherRadius: number): 
   return add(center, scale(normalize(sub(pos, center)), min));
 }
 
+/** How much a hero's moving is throwing their aim off, where 1 is walking and firing. */
+const wobble = (hero: RaidHero) => hero.unsteady * (hero.sprinting ? SPRINT.shake : 1);
+
 /** How far a shot strays this time, in radians: the hero's cone, wider while they're moving. */
 function strayAngle(state: RaidState, hero: RaidHero): number {
-  const spread = shotSpread(hero.kind, hero.mods.spread) * (1 + MOVING_SPREAD * hero.unsteady);
+  const spread = shotSpread(hero.kind, hero.mods.spread) * (1 + MOVING_SPREAD * wobble(hero));
   return (state.rng() - 0.5) * 2 * spread;
 }
 
 /** Where a throw lands: right on the mark standing still, anywhere round it on the move. */
 function throwTarget(state: RaidState, hero: RaidHero, dir: Vec2, reach: number): Vec2 {
-  const wide = (state.rng() - 0.5) * 2 * THROW_WIDTH_SCATTER * hero.unsteady;
-  const long = (state.rng() - 0.5) * 2 * THROW_LENGTH_SCATTER * hero.unsteady;
+  const wide = (state.rng() - 0.5) * 2 * THROW_WIDTH_SCATTER * wobble(hero);
+  const long = (state.rng() - 0.5) * 2 * THROW_LENGTH_SCATTER * wobble(hero);
   return add(hero.pos, fromAngle(angleOf(dir) + wide, reach * (1 + long)));
 }
 
@@ -775,11 +787,11 @@ function throwTarget(state: RaidState, hero: RaidHero, dir: Vec2, reach: number)
 export function aimStretch(hero: RaidHero): { width: number; length: number } {
   const kind = HEROES[hero.kind].attack.kind;
   if (kind !== "lob" && kind !== "heal") {
-    return { width: 1 + MOVING_SPREAD * hero.unsteady, length: 1 };
+    return { width: 1 + MOVING_SPREAD * wobble(hero), length: 1 };
   }
   return {
-    width: 1 + (THROW_WIDTH_SCATTER / shotSpread(hero.kind)) * hero.unsteady,
-    length: 1 + THROW_LENGTH_SCATTER * hero.unsteady,
+    width: 1 + (THROW_WIDTH_SCATTER / shotSpread(hero.kind)) * wobble(hero),
+    length: 1 + THROW_LENGTH_SCATTER * wobble(hero),
   };
 }
 

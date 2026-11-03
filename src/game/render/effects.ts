@@ -544,6 +544,77 @@ function glowOf(color: number): Ramp {
   return ramp;
 }
 
+/** How long a fallen hero's skull of smoke hangs in the air, how far up, and how big. */
+const SKULL = { seconds: 1.5, rise: 3.4, size: 3.2 } as const;
+
+let skullArt: THREE.CanvasTexture | null = null;
+
+/** A skull made of soft puffs of smoke, with its eyes and teeth rubbed out of it. */
+function skullTexture(): THREE.CanvasTexture {
+  if (skullArt) return skullArt;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const g = canvas.getContext("2d");
+  if (g) {
+    const puff = (x: number, y: number, r: number) => {
+      const soft = g.createRadialGradient(x, y, r * 0.35, x, y, r);
+      soft.addColorStop(0, "rgba(228, 231, 236, 0.9)");
+      soft.addColorStop(0.6, "rgba(198, 203, 212, 0.5)");
+      soft.addColorStop(1, "rgba(170, 176, 188, 0)");
+      g.fillStyle = soft;
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.fill();
+    };
+    // The dome of the head, the cheeks, and the jaw.
+    puff(128, 104, 86);
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI * (1.05 + (i / 8) * 0.9);
+      puff(128 + Math.cos(a) * 66, 104 + Math.sin(a) * 62, 38);
+    }
+    puff(82, 136, 42);
+    puff(174, 136, 42);
+    puff(128, 150, 52);
+    for (let i = 0; i < 4; i++) puff(92 + i * 24, 188, 26);
+    // Wisps curling off the edge, and a tail trailing away under the jaw.
+    for (let i = 0; i < 16; i++) {
+      const a = i * 2.4;
+      const r = 84 + (i % 3) * 7;
+      puff(128 + Math.cos(a) * r, 112 + Math.sin(a) * r * 0.95, 13 + (i % 4) * 4);
+    }
+    for (let i = 0; i < 4; i++) puff(128 + Math.sin(i * 2.1) * 16, 214 + i * 11, 18 - i * 3);
+    g.globalCompositeOperation = "destination-out";
+    const hole = (x: number, y: number, rx: number, ry: number) => {
+      g.save();
+      g.translate(x, y);
+      g.scale(rx, ry);
+      const soft = g.createRadialGradient(0, 0, 0.55, 0, 0, 1);
+      soft.addColorStop(0, "rgba(0, 0, 0, 1)");
+      soft.addColorStop(1, "rgba(0, 0, 0, 0)");
+      g.fillStyle = soft;
+      g.beginPath();
+      g.arc(0, 0, 1, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    };
+    hole(92, 116, 28, 32);
+    hole(164, 116, 28, 32);
+    hole(128, 158, 11, 17);
+    for (let i = 0; i < 3; i++) hole(104 + i * 24, 196, 5, 24);
+  }
+  skullArt = new THREE.CanvasTexture(canvas);
+  skullArt.colorSpace = THREE.SRGBColorSpace;
+  return skullArt;
+}
+
+interface Skull {
+  sprite: THREE.Sprite;
+  from: number;
+  age: number;
+}
+
 export class Effects {
   readonly root = new THREE.Group();
   /** Where the land is, so blasts can leave their mark on it. */
@@ -553,6 +624,7 @@ export class Effects {
   private readonly marks = new Layer(36, THREE.NormalBlending, 0, 1, SKY.unlit);
   private readonly debris = new Debris(90);
   private emitters: Emitter[] = [];
+  private skulls: Skull[] = [];
 
   constructor(
     groundAt: (x: number, z: number) => number = () => 0,
@@ -896,6 +968,47 @@ export class Effects {
     });
   }
 
+  /** A fallen hero going up in smoke: a burst at their feet, and a skull rising out of it. */
+  skull(pos: THREE.Vector3): void {
+    for (let i = 0; i < 9; i++) {
+      spot.set(pos.x + between(-0.7, 0.7), pos.y + between(0.2, 1.6), pos.z + between(-0.7, 0.7));
+      this.rise(spot, i % 2 ? SOOT : BILLOW, 1.1, 2.2, 0.7);
+    }
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: skullTexture(),
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        fog: false,
+        opacity: 0,
+      }),
+    );
+    sprite.position.copy(pos);
+    sprite.renderOrder = 7;
+    this.root.add(sprite);
+    this.skulls.push({ sprite, from: pos.y + 1.4, age: 0 });
+  }
+
+  private updateSkulls(dt: number): void {
+    for (const skull of this.skulls) {
+      skull.age += dt;
+      const t = Math.min(1, skull.age / SKULL.seconds);
+      const { sprite } = skull;
+      // Quick to form, hanging there a moment, then thinning away as it rises.
+      const up = 1 - (1 - t) ** 2;
+      sprite.position.y = skull.from + up * SKULL.rise;
+      sprite.scale.setScalar(SKULL.size * (0.7 + 0.45 * up));
+      sprite.material.opacity = Math.min(0.92, t * 8) * (1 - Math.max(0, (t - 0.5) / 0.5) ** 2);
+      sprite.material.rotation = Math.sin(skull.age * 3) * 0.06;
+      if (t >= 1) {
+        this.root.remove(sprite);
+        sprite.material.dispose();
+      }
+    }
+    this.skulls = this.skulls.filter((skull) => skull.age < SKULL.seconds);
+  }
+
   /** Smoke rising from a destroyed building for a few seconds, burning at first. */
   smokeColumn(pos: THREE.Vector3, seconds: number, fire = true): void {
     this.emitters.push({ pos: pos.clone(), time: seconds, timer: 0, fire });
@@ -912,6 +1025,7 @@ export class Effects {
       if (e.fire && e.time > 1.5) this.burn(e.pos, 1);
     }
     this.emitters = this.emitters.filter((e) => e.time > 0);
+    this.updateSkulls(dt);
     this.marks.update(dt);
     this.solid.update(dt);
     this.glow.update(dt);
@@ -924,5 +1038,7 @@ export class Effects {
     this.glow.dispose();
     this.debris.dispose();
     this.emitters = [];
+    for (const { sprite } of this.skulls) sprite.material.dispose();
+    this.skulls = [];
   }
 }

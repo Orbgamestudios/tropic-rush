@@ -39,12 +39,14 @@
     "mpg123-decoder": "^1.0.3",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.35.5",
+    "three-mesh-bvh": "^0.9.17",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.5",
     "workbox-window": "^7.4.1",
-    "wrangler": "^4.155.0"
+    "wrangler": "^4.155.0",
+    "xatlasjs": "^0.2.0"
   },
   "dependencies": {
     "three": "^0.186.1"

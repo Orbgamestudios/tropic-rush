@@ -114,16 +114,43 @@ the hero screen. Their hands are large in the art, so the game scales them down 
 The Tank goes through the same script but lists a height and a middle instead of joints, so it comes
 out as one solid piece with no skeleton. Its turret doesn't turn on its own.
 
-Don't turn on the simplifier's `Permissive` flag to get raid models smaller. It reaches 5,000
-triangles easily, but TRELLIS textures are many small patches, and collapsing across their seams
-smears them into streaks all over the hero. The models that stop short of the target stop there
-because of those seams.
+Raid copies are made in four steps, because TRELLIS textures are many small patches and their seams
+stop a simplifier well short of its target: weld the seams, simplify, unwrap afresh with xatlas, then
+bake a new texture from the full model at twice the size and scale it down. Never use the
+simplifier's `Permissive` flag without that bake: collapsing across seams smears the old texture all
+over the hero. The head is simplified apart from the body, to 1,800 triangles against the body's
+3,600, and unwrapped 1.7 times too big so it gets more of the texture. With one shared budget the
+face flattens and the eyes smear. The Tank has no head, and gets 7,000 for its hard edges.
+
+A head turns as one piece. Nothing above the neck can go with the chest, and bone weights stop
+blending a little over the neck, or the chin stays behind and the face warps as the head turns.
 
 How a hero holds something is a `Grip` in `heroAnimator.ts`: where the palm goes, the way the hand
 reaches it, and the way the palm faces, all in the weapon's own axes. Heroes' arms are short and all
 different, so a weapon that's held out too far pulls in until both hands reach it. Weapons are built
 in `heroModels.ts` and baked into one mesh. `tropicRush.heroLook(distance, height)` puts the camera
-right up to the hero on the pedestal, and `tropicRush.heroCost(kind)` says what they take to draw.
+right up to the hero on the pedestal, `tropicRush.heroRaidCopy(true)` puts the raid copy there
+instead, `tropicRush.raidAs(kind)` starts a raid with anyone, Medic included, and
+`tropicRush.snapshot()` renders a frame and hands it back as an image. `tropicRush.heroCost(kind)`
+says what a hero takes to draw.
+
+Nothing waits on a model. A hero screen shows the best copy that's arrived and swaps the detailed
+one in when it lands, and a raid that starts before the light copies arrive uses block figures. Keep
+those working: `human()` in `heroModels.ts` only runs on a slow connection, and a browser test
+loads the game with every model blocked to make sure it still does.
+
+## The picture and battery
+
+Everything draws straight to the screen with the browser's own antialiasing. There's no bloom and no
+pass over the finished picture, because each of those is a whole screen of extra work on every
+frame. So a custom shader finishes its own color with `#include <tonemapping_fragment>` and
+`#include <colorspace_fragment>`, or it comes out too dark. The vignette is a page element, and the
+touch of extra color is part of tone mapping, in `stage.ts`.
+
+Quality steps down during fights if frames stay under 27 a second, and never comes back up. That
+limit sits under 30 on purpose: Low Power Mode holds an iPhone to exactly 30, which is no reason to
+spoil the picture. The hero screen, tree and map have little to draw and aren't affected: they stay
+at 2× sharpness and get their savings from running at 30 frames when nobody's touching them.
 
 ## Testing tips
 

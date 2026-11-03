@@ -117,6 +117,21 @@ body {
   padding: var(--bleed-top) var(--bleed-right) var(--bleed-bottom) var(--bleed-left);
 }
 
+/* The corners, darkened softly. Laid over the canvas, as a pass over the picture costs battery. */
+.stage-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    83% 100% at 50% 50%,
+    transparent 32%,
+    rgb(0 0 0 / 0.03) 44%,
+    rgb(0 0 0 / 0.1) 56%,
+    rgb(0 0 0 / 0.18) 68%,
+    rgb(0 0 0 / 0.22) 80%
+  );
+}
+
 #game canvas {
   display: block;
 }

@@ -50,6 +50,8 @@ export function buildTileGrid(): THREE.Mesh {
         vec2 grid = abs(fract(cell - 0.5) - 0.5) / fwidth(cell);
         float line = 1.0 - min(min(grid.x, grid.y), 1.0);
         gl_FragColor = vec4(1.0, 1.0, 0.92, line * 0.45);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

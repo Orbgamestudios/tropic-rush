@@ -1,8 +1,9 @@
 // The hero screen, reached by tapping a hero on the island: the roster on the left, the chosen
 // hero turning on a pedestal in the middle, their stats and capstones on the right. Upgrades opens
 // their tree, and new heroes join as the headquarters grows.
-// Raid goes to the world map to pick an island. Nobody brings AI allies: the only crewmates on a
-// raid are other players, who team up from the map.
+// Raid goes to the world map to pick an island, and attacking one comes back here to confirm who's
+// going. Nobody brings AI allies: the only crewmates on a raid are other players, who team up from
+// the map.
 
 import { HERO_KINDS, HEROES, type HeroKind } from "../logic/heroes";
 import {
@@ -38,8 +39,10 @@ export interface HeroSelectHost {
   gold(): number;
   update(changes: Partial<SaveData>): void;
   onBack(): void;
-  /** Raid with this hero: on to the world map. */
+  /** Raid with this hero: on to the world map, or the island already picked. */
   onStart(hero: HeroKind): void;
+  /** Why this hero can't go alone, if they can't. */
+  blocker(hero: HeroKind): string | null;
   /** Opens this hero's upgrade tree. */
   onUpgrades(hero: HeroKind): void;
   onTrade(): void;
@@ -70,7 +73,10 @@ export class HeroSelect {
   private readonly upgrades: HTMLButtonElement;
   private readonly upgradeCount = el("span", "heroes-cost");
   private readonly start: HTMLButtonElement;
+  private readonly hint = el("div", "heroes-spin-hint", "Drag to spin");
   private hero: HeroKind = "rifleman";
+  /** An island's been picked, and this is the last look at who's going. */
+  private attacking = false;
 
   constructor(
     parent: HTMLElement,
@@ -130,7 +136,7 @@ export class HeroSelect {
       icon("anchorGold", "heroes-name-badge"),
     );
     nameplate.append(nameRow, this.role);
-    stageArea.append(el("div", "heroes-spin-hint", "Drag to spin"), nameplate);
+    stageArea.append(this.hint, nameplate);
 
     // Stats & info.
     const info = panel("Technical specs", "heroes-info");
@@ -174,8 +180,10 @@ export class HeroSelect {
   }
 
   /** Opens on a hero: the one tapped on the island, or the last one used. */
-  show(kind?: HeroKind): void {
+  show(kind?: HeroKind, attacking = false): void {
     const save = this.host.save();
+    this.attacking = attacking;
+    this.hint.textContent = attacking ? "Who's going?" : "Drag to spin";
     this.gold.set(this.host.gold(), false);
     this.root.style.display = "grid";
     this.showcase.show(true);
@@ -236,7 +244,9 @@ export class HeroSelect {
     this.upgrades.disabled = !unlocked;
     setLabel(this.upgrades, unlocked ? "Upgrades" : "Locked");
     this.upgradeCount.textContent = unlocked ? treeProgress(owned) : `HQ ${HERO_UNLOCK_HQ[kind]}`;
-    this.start.disabled = !unlocked;
+    const blocked = this.attacking && this.host.blocker(kind) !== null;
+    this.start.disabled = !unlocked || blocked;
+    setLabel(this.start, blocked ? "Needs a crew" : this.attacking ? "Attack" : "Raid");
     this.gold.set(this.host.gold());
     this.crystals.set(save.crystals);
   }

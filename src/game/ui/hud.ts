@@ -25,7 +25,7 @@ import { type IconName, icon } from "./kit/icons";
 
 export interface HudHandlers {
   onBoat(): void;
-  onSprint(): void;
+  onSprint(held: boolean): void;
   onAbility(ability: Ability): void;
   onPause(): void;
 }
@@ -150,13 +150,20 @@ export class Hud {
     });
     hapticOnTap(this.boatButton);
 
-    // The sprint button answers the moment it's touched: a thumb coming off a stick won't wait.
+    // Held down for as long as the thumb's on it, even if it slides off the button. A thumb coming
+    // off a stick won't wait, so it answers the moment it's touched.
     this.sprintButton.setAttribute("aria-label", "Sprint");
     this.sprintButton.append(
       icon("speed", "hud-sprint-icon"),
       el("span", "hud-round-label", "Sprint"),
     );
-    this.sprintButton.addEventListener("pointerdown", () => handlers.onSprint());
+    this.sprintButton.addEventListener("pointerdown", (e) => {
+      this.sprintButton.setPointerCapture(e.pointerId);
+      handlers.onSprint(true);
+    });
+    for (const end of ["pointerup", "pointercancel", "lostpointercapture"]) {
+      this.sprintButton.addEventListener(end, () => handlers.onSprint(false));
+    }
     hapticOnTap(this.sprintButton);
 
     // Gunboat abilities.
@@ -293,13 +300,13 @@ export class Hud {
     this.boatButton.style.display = canBoard || hero.inBoat ? "flex" : "none";
     this.boatButton.setAttribute("aria-label", hero.inBoat ? "Back to your hero" : "Gunboat");
     this.boatLabel.textContent = hero.inBoat ? "Back" : "Gunboat";
-    const charge = Math.round((1 - hero.sprintIn / (SPRINT.seconds + SPRINT.recharge)) * 60) / 60;
+    const charge = Math.round((hero.sprintLeft / SPRINT.seconds) * 60) / 60;
     if (charge !== this.shownCharge) {
       this.shownCharge = charge;
       this.sprintButton.style.setProperty("--charge", String(charge));
-      this.sprintButton.classList.toggle("ready", charge >= 1);
     }
-    this.sprintButton.classList.toggle("running", hero.sprint > 0);
+    this.sprintButton.classList.toggle("ready", hero.sprintLeft >= SPRINT.least);
+    this.sprintButton.classList.toggle("running", hero.sprinting);
     this.sprintButton.style.display = hero.alive && !hero.inBoat ? "flex" : "none";
     this.trayHint.textContent =
       hero.hp < this.startOfView ? "You're under fire!" : "Tap the island to fire";

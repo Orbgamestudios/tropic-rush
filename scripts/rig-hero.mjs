@@ -4,6 +4,11 @@
 // two copies: a light one for raids and a detailed one for the hero screen. The Tank is one solid
 // piece, so it lists a size instead of joints and gets no skeleton.
 //
+// TRELLIS textures come in hundreds of small patches, and a mesh can't be simplified across the
+// seams between them without smearing them. So the light copy isn't simplified with its texture:
+// its seams are welded shut, its shape is simplified freely, it's unwrapped afresh into a few large
+// patches, and the art is carried over by finding, for each pixel, the same spot on the full model.
+//
 //   node scripts/rig-hero.mjs rifleman
 //
 // Joints are [sideways, up, forward] as shares of the model's height, read off its outline. Limbs
@@ -16,6 +21,10 @@ import { ALL_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { meshopt } from "@gltf-transform/functions";
 import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
 import sharp from "sharp";
+import * as THREE from "three";
+import { MeshBVH } from "three-mesh-bvh";
+import { Api } from "xatlasjs/dist/node/api.mjs";
+import createXAtlasModule from "xatlasjs/dist/node/xatlas.js";
 
 const HEROES = {
   rifleman: {
@@ -125,19 +134,29 @@ const HEROES = {
     out: "public/models/tank",
     height: 2.6,
     middle: -0.1,
+    // Hard edges take more triangles than people do, and it's the biggest thing on the beach.
+    raidTriangles: 7000,
   },
 };
 
 /** The two copies written: light for raids, detailed for the hero screen. */
 const COPIES = [
-  { suffix: "rig", triangles: 5000, texture: 512, quality: 80 },
-  { suffix: "hi", triangles: 32000, texture: 1024, quality: 90 },
+  { suffix: "rig", triangles: 3600, headTriangles: 1800, texture: 512, quality: 80, rebake: true },
+  { suffix: "hi", triangles: 32000, texture: 1024, quality: 90, rebake: false },
 ];
 const HERO_HEIGHT = 2.25;
 /** Passes of blending each vertex's bones with its neighbors', so joints bend softly. */
 const WEIGHT_PASSES = 30;
+/** How far over the neck a head becomes one rigid piece, as a share of a hero's height. */
+const NECK_BLEND = 0.025;
 /** How far along the hand the knuckles are. */
 const KNUCKLES = 0.42;
+/** How much larger a head is unwrapped than it really is, for a bigger share of the texture. */
+const HEAD_ROOM = 1.7;
+/** A texture's baked this many times too fine and scaled down, which evens out the sampling. */
+const BAKE_FINER = 2;
+/** Passes of spreading a baked texture's edges outward, so its patches don't bleed. */
+const BAKE_SPREAD = 12;
 /** Pieces with less than this share of the triangles are thrown away. */
 const SCRAP = 0.0005;
 /** So is anything this flat lying this close to the ground, as shares of height: a modeled shadow. */
@@ -329,6 +348,24 @@ function smoothWeights(mesh, weights, boneCount) {
   return out;
 }
 
+/**
+ * A head turns as one piece. Blending bones is right for a bending joint, but on a face it leaves
+ * the chin behind the nose, so it stops a little way above the neck.
+ */
+function rigidHead(mesh, weights, hard, bones) {
+  const boneCount = bones.length;
+  const head = bones.findIndex((b) => b.name === "head");
+  const neck = bones[head].at[1];
+  for (let i = 0; i < weights.length / boneCount; i++) {
+    if (hard[i * boneCount + head] !== 1) continue;
+    const over = (mesh.positions[i * 3 + 1] / HERO_HEIGHT - neck) / NECK_BLEND;
+    const rigid = Math.min(1, Math.max(0, over));
+    for (let b = 0; b < boneCount; b++) weights[i * boneCount + b] *= 1 - rigid;
+    weights[i * boneCount + head] += rigid;
+  }
+  return weights;
+}
+
 /** The four bones that matter most to each vertex, as the file wants them. */
 function topFour(weights, boneCount) {
   const count = weights.length / boneCount;
@@ -391,6 +428,258 @@ function reduced(mesh, skin, triangles) {
   return { mesh: out, skin: skin && { joints, weights } };
 }
 
+/** The mesh with every seam welded shut: one vertex to a spot, and no texture. */
+function welded(mesh, skin) {
+  const { group, count } = spots(mesh);
+  const out = {
+    positions: new Float32Array(count * 3),
+    normals: new Float32Array(count * 3),
+    joints: new Uint8Array(count * 4),
+    weights: new Float32Array(count * 4),
+  };
+  for (let i = group.length - 1; i >= 0; i--) {
+    const g = group[i];
+    out.positions.set(mesh.positions.subarray(i * 3, i * 3 + 3), g * 3);
+    out.normals.set(mesh.normals.subarray(i * 3, i * 3 + 3), g * 3);
+    if (skin) {
+      out.joints.set(skin.joints.subarray(i * 4, i * 4 + 4), g * 4);
+      out.weights.set(skin.weights.subarray(i * 4, i * 4 + 4), g * 4);
+    }
+  }
+  const kept = [];
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const [a, b, c] = [mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]].map(
+      (v) => group[v],
+    );
+    if (a !== b && b !== c && a !== c) kept.push(a, b, c);
+  }
+  return { ...out, indices: Uint32Array.from(kept) };
+}
+
+/** Unwraps a mesh afresh into a few large patches, returning each new corner's old vertex. */
+function unwrapped(indices, positions, size) {
+  return new Promise((resolve) => {
+    const XAtlas = Api(createXAtlasModule);
+    const atlas = new XAtlas(() => {
+      atlas.createAtlas();
+      atlas.addMesh(Uint16Array.from(indices), positions);
+      resolve(atlas.generateAtlas({}, { resolution: size, padding: 4, bilinear: true }));
+    });
+  });
+}
+
+/** Paints a new texture for a new unwrap by finding each pixel's spot on the full model. */
+async function bakedTexture(full, flat, positions, indices, uvs, size, quality) {
+  const source = await sharp(flat.texture.getImage())
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const { width, height } = source.info;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(full.positions.slice(), 3));
+  geometry.setIndex(new THREE.BufferAttribute(full.indices.slice(), 1));
+  const bvh = new MeshBVH(geometry);
+  const faces = geometry.index.array;
+  const pixels = new Uint8Array(size * size * 3);
+  const filled = new Uint8Array(size * size);
+  const point = new THREE.Vector3();
+  const hit = {};
+  const tri = new THREE.Triangle();
+  const [a, b, c] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const bary = new THREE.Vector3();
+  const corner = (i) => [uvs[i * 2] * size, uvs[i * 2 + 1] * size];
+  for (let t = 0; t < indices.length; t += 3) {
+    const [i0, i1, i2] = [indices[t], indices[t + 1], indices[t + 2]];
+    const [p0, p1, p2] = [corner(i0), corner(i1), corner(i2)];
+    const area = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (p1[1] - p0[1]);
+    if (Math.abs(area) < 1e-6) continue;
+    const xs = [p0[0], p1[0], p2[0]];
+    const ys = [p0[1], p1[1], p2[1]];
+    const x0 = Math.max(0, Math.floor(Math.min(...xs)) - 1);
+    const x1 = Math.min(size - 1, Math.ceil(Math.max(...xs)) + 1);
+    const y0 = Math.max(0, Math.floor(Math.min(...ys)) - 1);
+    const y1 = Math.min(size - 1, Math.ceil(Math.max(...ys)) + 1);
+    // A pixel just outside still takes the nearest of the triangle, so patches have no gaps.
+    const slack = 1.2 / Math.sqrt(Math.abs(area));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const px = x + 0.5;
+        const py = y + 0.5;
+        const w1 = ((px - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (py - p0[1])) / area;
+        const w2 = ((p1[0] - p0[0]) * (py - p0[1]) - (px - p0[0]) * (p1[1] - p0[1])) / area;
+        const w0 = 1 - w1 - w2;
+        if (w0 < -slack || w1 < -slack || w2 < -slack) continue;
+        const k = y * size + x;
+        if (filled[k]) continue;
+        const [u0, u1, u2] = [Math.max(0, w0), Math.max(0, w1), Math.max(0, w2)];
+        const sum = u0 + u1 + u2;
+        for (let axis = 0; axis < 3; axis++) {
+          const v =
+            (positions[i0 * 3 + axis] * u0 +
+              positions[i1 * 3 + axis] * u1 +
+              positions[i2 * 3 + axis] * u2) /
+            sum;
+          point.setComponent(axis, v);
+        }
+        bvh.closestPointToPoint(point, hit);
+        const f = hit.faceIndex * 3;
+        const [v0, v1, v2] = [faces[f], faces[f + 1], faces[f + 2]];
+        a.fromArray(full.positions, v0 * 3);
+        b.fromArray(full.positions, v1 * 3);
+        c.fromArray(full.positions, v2 * 3);
+        tri.set(a, b, c);
+        tri.getBarycoord(hit.point, bary);
+        const su =
+          full.uvs[v0 * 2] * bary.x + full.uvs[v1 * 2] * bary.y + full.uvs[v2 * 2] * bary.z;
+        const sv =
+          full.uvs[v0 * 2 + 1] * bary.x +
+          full.uvs[v1 * 2 + 1] * bary.y +
+          full.uvs[v2 * 2 + 1] * bary.z;
+        const sx = Math.min(width - 1, Math.max(0, Math.floor(su * width)));
+        const sy = Math.min(height - 1, Math.max(0, Math.floor(sv * height)));
+        const from = (sy * width + sx) * 3;
+        pixels.set(source.data.subarray(from, from + 3), k * 3);
+        filled[k] = 1;
+      }
+    }
+  }
+  // Colors run on past each patch's edge, so a blurred lookup never picks up the gap between.
+  for (let pass = 0; pass < BAKE_SPREAD; pass++) {
+    const was = filled.slice();
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const k = y * size + x;
+        if (was[k]) continue;
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+          const n = ny * size + nx;
+          if (!was[n]) continue;
+          pixels.set(pixels.subarray(n * 3, n * 3 + 3), k * 3);
+          filled[k] = 1;
+          break;
+        }
+      }
+    }
+  }
+  return sharp(Buffer.from(pixels), { raw: { width: size, height: size, channels: 3 } })
+    .resize(size / BAKE_FINER, size / BAKE_FINER)
+    .webp({ quality })
+    .toBuffer();
+}
+
+/** Part of a welded mesh, down to this many triangles, with the edge it shares left alone. */
+function simplifiedPart(whole, indices, triangles, flags) {
+  return MeshoptSimplifier.simplifyWithAttributes(
+    indices,
+    whole.positions,
+    3,
+    whole.normals,
+    3,
+    [0.6, 0.6, 0.6],
+    null,
+    triangles * 3,
+    0.2,
+    flags,
+  );
+}
+
+/** The welded mesh's triangles, split into the head's and everyone else's. */
+function splitAtNeck(whole) {
+  const head = bones?.findIndex((b) => b.name === "head") ?? -1;
+  const onHead = (v) => whole.joints[v * 4] === head;
+  const parts = { head: [], body: [] };
+  for (let i = 0; i < whole.indices.length; i += 3) {
+    const [a, b, c] = whole.indices.subarray(i, i + 3);
+    (onHead(a) && onHead(b) && onHead(c) ? parts.head : parts.body).push(a, b, c);
+  }
+  return { head: Uint32Array.from(parts.head), body: Uint32Array.from(parts.body) };
+}
+
+/** Spots to unwrap from, with the head blown up so the face gets more of the texture. */
+function roomForTheFace(positions, isHead) {
+  const center = [0, 0, 0];
+  let count = 0;
+  for (let v = 0; v < positions.length / 3; v++) {
+    if (!isHead(v)) continue;
+    count++;
+    for (let axis = 0; axis < 3; axis++) center[axis] += positions[v * 3 + axis];
+  }
+  const out = positions.slice();
+  if (count === 0) return out;
+  for (let v = 0; v < positions.length / 3; v++) {
+    if (!isHead(v)) continue;
+    for (let axis = 0; axis < 3; axis++) {
+      const middle = center[axis] / count;
+      out[v * 3 + axis] = middle + (positions[v * 3 + axis] - middle) * HEAD_ROOM;
+    }
+  }
+  return out;
+}
+
+/** The light copy: simplified with no seams in the way, unwrapped afresh and repainted. */
+async function rebaked(full, flat, skin, { triangles: most, headTriangles, texture, quality }) {
+  const triangles = hero.raidTriangles ?? most;
+  const whole = welded(full, skin);
+  // A head gets a share of its own, or a whole-body budget flattens the face.
+  const parts = splitAtNeck(whole);
+  const hasHead = parts.head.length > 0;
+  const [body, error] = simplifiedPart(whole, parts.body, triangles, hasHead ? ["LockBorder"] : []);
+  const [face] = hasHead
+    ? simplifiedPart(whole, parts.head, headTriangles, ["LockBorder"])
+    : [new Uint32Array(0)];
+  const cut = new Uint32Array(body.length + face.length);
+  cut.set(body);
+  cut.set(face, body.length);
+  const used = new Map();
+  const remapped = new Uint32Array(cut.length);
+  cut.forEach((v, i) => {
+    if (!used.has(v)) used.set(v, used.size);
+    remapped[i] = used.get(v);
+  });
+  const positions = new Float32Array(used.size * 3);
+  for (const [v, i] of used) positions.set(whole.positions.subarray(v * 3, v * 3 + 3), i * 3);
+  const old = [...used.keys()];
+  const headBone = bones?.findIndex((b) => b.name === "head") ?? -1;
+  const unwrapFrom = roomForTheFace(positions, (i) => whole.joints[old[i] * 4] === headBone);
+  const atlas = await unwrapped(remapped, unwrapFrom, texture);
+  const [made] = atlas.meshes;
+  console.log(
+    `  ${cut.length / 3} triangles, error ${error.toFixed(4)}, ${made.vertexCount} vertices, ${atlas.atlasCount} atlas ${atlas.width}x${atlas.height}`,
+  );
+  const out = {
+    positions: new Float32Array(made.vertexCount * 3),
+    normals: new Float32Array(made.vertexCount * 3),
+    uvs: Float32Array.from(made.vertex.coords1),
+    indices: Uint32Array.from(made.index),
+  };
+  const joints = new Uint8Array(made.vertexCount * 4);
+  const weights = new Float32Array(made.vertexCount * 4);
+  made.oldIndexes.forEach((was, i) => {
+    const v = old[was];
+    out.positions.set(whole.positions.subarray(v * 3, v * 3 + 3), i * 3);
+    out.normals.set(whole.normals.subarray(v * 3, v * 3 + 3), i * 3);
+    joints.set(whole.joints.subarray(v * 4, v * 4 + 4), i * 4);
+    weights.set(whole.weights.subarray(v * 4, v * 4 + 4), i * 4);
+  });
+  const image = await bakedTexture(
+    full,
+    flat,
+    out.positions,
+    out.indices,
+    out.uvs,
+    texture * BAKE_FINER,
+    quality,
+  );
+  return { mesh: out, skin: skin && { joints, weights }, image };
+}
+
 /** Drops unused vertices, stands the model on the ground and turns it to face +x. */
 function placed(mesh) {
   const { positions, normals, uvs, indices } = mesh;
@@ -441,7 +730,7 @@ function skeleton(joints) {
   const bones = [
     { name: "root", parent: null, at: [0, 0, 0] },
     { name: "lower", parent: "root", at: [0, 0, 0], from: middle(j.hip), to: j.waist, reach: 0.16 },
-    { name: "upper", parent: "root", at: j.waist, to: j.neck, reach: 0.2 },
+    { name: "upper", parent: "root", at: j.waist, to: j.neck, reach: 0.2, below: j.neck[1] },
     { name: "head", parent: "upper", at: j.neck, to: j.top, reach: 0.15 },
   ];
   for (const [suffix, side] of [
@@ -618,14 +907,20 @@ console.log(`${name}: ${flat.indices.length / 3} triangles`);
 const full = placed(dropScraps(flat));
 smoothNormals(full);
 const bones = hero.joints ? skeleton(hero.joints) : null;
+const hard = bones && skinWeights(full, bones);
 const skin =
-  bones && topFour(smoothWeights(full, skinWeights(full, bones), bones.length), bones.length);
+  bones &&
+  topFour(rigidHead(full, smoothWeights(full, hard, bones.length), hard, bones), bones.length);
 for (const copy of COPIES) {
-  const made = reduced(full, skin, copy.triangles);
-  const image = await sharp(flat.texture.getImage())
-    .resize(copy.texture, copy.texture, { fit: "inside" })
-    .webp({ quality: copy.quality })
-    .toBuffer();
+  const made = copy.rebake
+    ? await rebaked(full, flat, skin, copy)
+    : reduced(full, skin, copy.triangles);
+  const image =
+    made.image ??
+    (await sharp(flat.texture.getImage())
+      .resize(copy.texture, copy.texture, { fit: "inside" })
+      .webp({ quality: copy.quality })
+      .toBuffer());
   const glb = await write(made.mesh, made.skin, bones, image);
   const out = `${hero.out}-${copy.suffix}.glb`;
   writeFileSync(out, glb);

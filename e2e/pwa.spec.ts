@@ -27,6 +27,20 @@ async function openMap(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Raid", exact: true }).click();
 }
 
+test("gets through to a raid with block figures when no models load", async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/*.glb", (route) => route.abort());
+
+  await openMap(page);
+  await page.locator("button.map-pin:visible").first().click();
+  await page.getByRole("button", { name: "Attack" }).click();
+  await page.locator(".heroes-start").click();
+  await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
+  expect(errors).toEqual([]);
+});
+
 test("picks a hero and starts a raid", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -40,6 +54,7 @@ test("picks a hero and starts a raid", async ({ page }) => {
   await page.getByRole("button", { name: "Raid", exact: true }).click();
   await page.locator("button.map-pin:visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
+  await page.locator(".heroes-start").click();
 
   const timer = page.locator(".hud-objective-time");
   await expect(timer).toBeVisible();
@@ -68,6 +83,7 @@ test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
   await openMap(page);
   await page.locator("button.map-pin:visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
+  await page.locator(".heroes-start").click();
   const boat = page.locator(".hud-boat");
   await expect(boat).toBeVisible({ timeout: 60_000 });
   await boat.click();
@@ -100,6 +116,7 @@ test("scouts an island, then attacks it", async ({ page }) => {
   await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
 
   await page.locator(".scout-attack").click();
+  await page.locator(".heroes-start").click();
   await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".scout-tile").first()).toBeHidden();
   expect(errors).toEqual([]);

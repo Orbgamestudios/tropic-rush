@@ -65,7 +65,8 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Starting strength:** every hero starts at 85% of the old health and damage, so first islands
   take some care. The upgrades and checkpoints earn it back.
 - **Hero models:** all seven heroes use real TRELLIS.2 models, in menus and in raids: about 32,000
-  triangles on the hero screen and 5,000 to 9,000 in a raid. The six on foot have skeletons. The
+  triangles on the hero screen and about 5,400 in a raid, a third of them on the head, or 7,000 for
+  the Tank, whose hard edges take more. The six on foot have skeletons. The
   Tank is one solid piece. Hands close on what they hold, each weapon is one mesh, and a hero costs
   two draw calls however detailed their gear.
 - **Grass:** big swathes of light and deep green, shared by the ground and the plants on it, with
@@ -75,17 +76,38 @@ These were explicitly left out to keep the first version to a basic structure:
   levels up. It reaches its deepest spot by headquarters 16.
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
+## Added 2026-11-02, third batch (owner's requests)
+
+- **Sprint:** hold to sprint: 30% faster for as long as it's held, up to 2.5 seconds, and whatever's
+  left stays for next time. An empty tank takes 20 seconds to fill and needs half a second in it
+  before it'll go again. It's allowed while shooting, but with four times the wobble of walking and
+  firing, which is why the aim cone blows wide open.
+- **Reach in a fight:** each defense draws its own thin line along the ground again, the stretch near
+  the hero, in amber for snipers, with a second line round a mortar's blind spot. Nothing's
+  filled in, so overlapping guns stay readable.
+- **Gunboat:** every damaged building on screen shows its health bar from the boat.
+- **Falling:** nobody lies down. A fallen hero, the Tank included, goes up in a puff of smoke shaped
+  like a skull, which rises for about a second and a half and fades.
+- **Attacking:** Attack on an island or a scout opens the hero screen, with the button now saying
+  Attack, to confirm who's going. A Medic on her own gets Needs a crew there instead.
+- **The hero screen:** each hero cheers as they land, then aims and fires, or checks their weapon,
+  every few seconds. A hero always shows at once: the detailed copy takes over when it arrives.
+- **Running:** weight rolls from foot to foot, the pelvis tilts, the chest leans off the mark and
+  rocks back at the stop, heroes bank into turns, and what they carry swings with the stride.
+- **Music:** the world map is now a riff on the theme too, with an eight-bar double-time breakdown in
+  the middle: its chords come round twice as fast, at the same pitch. The raid track's hi-hat is
+  mostly gone.
+
 ## Added 2026-11-02, second batch (owner's requests)
 
 - **Aiming:** letting go with nothing in the arc now does nothing, instead of firing a volley. A
   Medic can still throw a bottle at the ground, since that's how she heals herself.
-- **Sprint:** a button above and to the right of the fire pad, or Shift. 70% faster for 2.5 seconds,
-  even while firing, then 20 seconds to recharge. Those numbers were Claude's choice.
+- **Sprint:** a button above and to the right of the fire pad, or Shift. See the third batch.
 - **Gunboat:** a hero keeps firing at what they're locked onto while their player is on the boat.
-- **Danger on the ground:** every defense's reach is merged into one shape with one outline, red
-  for guns and amber for snipers, so a big base no longer disappears under rings. Tapping a defense
-  while scouting still shows its own reach. Health bars now only show on what's been hit nearby,
-  what the hero's firing at, and the headquarters.
+- **Danger on the ground:** while scouting, every defense's reach is merged into one shape with one
+  outline, red for guns and amber for snipers, so a big base no longer disappears under rings.
+  Tapping a defense still shows its own reach. Health bars only show on what's been hit nearby,
+  what the hero's firing at, and the headquarters. In a fight, see the third batch.
 - **Taking a base:** each building that falls takes 4% off the headquarters, but never below 10% of
   its health, so the last blow is the player's. When the headquarters falls the base is taken: the
   guns stop, the crew can't be hurt or lose, and every building left explodes one at a time outward
@@ -99,11 +121,11 @@ These were explicitly left out to keep the first version to a basic structure:
   Trade button on the hero and upgrade screens.
 - **Checkpoints:** see "Checkpoints" in `docs/HERO_TREES.md`.
 - **Music:** the crew island and the hero screens share the old hero screen song, which the owner
-  likes best, and it carries on without restarting between them. Scouting and raids are riffs on
-  it: scouting has it muffled under a field drum corps, and a raid has it sped up to 120 over the
+  likes best, and it carries on without restarting between them. The map, scouting and raids are riffs on
+  it: the map plays it up front, scouting has it muffled under a field drum corps, and a raid has it sped up to 120 over the
   old scouting drum loop. That loop used to run 18 ms over, into the next bar's first kick, which
   sounded as a stutter every seven seconds; it's now a true four bars. Winning is bugles and drums.
-  All three are made by `scripts/make-music.mjs`, and nobody has listened to them yet but the
+  All of them are made by `scripts/make-music.mjs`, and nobody has listened to them yet but the
   owner: Claude can only measure them.
 
 ## Raids (the core of the game)
@@ -459,8 +481,8 @@ like theme but polished and simple"):
 - **Behind-the-hero camera** (Settings → Camera, **Decided** as an option): lower and closer,
   swinging round to follow the hero's heading, with a small push-in while firing. Sticks turn
   with the view, so pushing up always goes forward.
-- **Finishing effects:** soft bloom on bright things, a gentle vignette, softer shadows. They
-  switch off on devices that can't keep up.
+- **Finishing effects:** a gentle vignette and softer shadows. Bloom was taken out to save battery.
+  Sharpness and then shadows step down on devices that can't keep up in a fight.
 - **Controls editor** (Settings → Controls, **Decided**): drag the move stick and fire stick
   anywhere and resize each one. x and y are shares of the screen (0 to 1). Settings
   shows every value, so the owner can send them to become the defaults.

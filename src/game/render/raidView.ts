@@ -25,7 +25,7 @@ import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
 import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
-import { DangerMap } from "./dangerMap";
+import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
@@ -70,8 +70,9 @@ interface HeroView {
   speed: number;
   stepTimer: number;
   walk: number;
-  fallen: number;
   facing: number;
+  /** How fast they're turning, in radians a second. */
+  turn: number;
   ring: THREE.Mesh;
 }
 
@@ -232,7 +233,7 @@ export class RaidView {
   private readonly mines = new Map<number, THREE.Mesh>();
   private readonly boat: { root: THREE.Group; cannon: THREE.Object3D };
   /** Fading circles for how far defenses shoot; not on the crew's own island. */
-  private readonly reach: DangerMap | null;
+  private readonly reach: DefenseReach | null;
   private readonly boatHeading: number;
   private cannonAim: number;
   private ringPulse = 0;
@@ -321,8 +322,8 @@ export class RaidView {
         speed: 0,
         stepTimer: 0,
         walk: 0,
-        fallen: 0,
         facing: h.facing,
+        turn: 0,
         ring,
       });
     });
@@ -334,8 +335,8 @@ export class RaidView {
       this.mines.set(m.id, mesh);
     }
 
-    this.reach = home ? null : new DangerMap(state, "raid");
-    if (this.reach) this.root.add(this.reach.root);
+    this.reach = home ? null : new DefenseReach(state);
+    if (this.reach) this.root.add(this.reach.mesh);
 
     this.boat = gunboatModel();
     const toLand = sub(layout.spawn, layout.boat);
@@ -405,6 +406,9 @@ export class RaidView {
           break;
         case "sprint":
           this.effects.footstep(this.at(e.pos, 0));
+          break;
+        case "heroDown":
+          this.effects.skull(this.at(e.pos, 0));
           break;
         case "destroyed": {
           const radius = BUILDINGS[e.buildingType].radius;
@@ -637,32 +641,34 @@ export class RaidView {
       const view = this.heroes.get(h.id);
       if (!view) continue;
       const { model, ring } = view;
+      // Nobody lies about: a fallen hero has gone up in smoke.
+      model.root.visible = h.alive;
+      if (!h.alive) {
+        ring.visible = false;
+        continue;
+      }
       model.root.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y);
       ring.visible = h.alive && !this.defending;
       ring.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y) + 0.06, h.pos.y);
       ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
       // Turn smoothly rather than snapping.
-      view.facing += angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
+      const turned = angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
+      view.facing += turned;
+      view.turn = dt > 0 ? turned / dt : 0;
       model.root.rotation.y = -view.facing;
-      if (h.alive && this.lights.active) {
+      if (this.lights.active) {
         this.lights.follow(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y, 8, 2.2, 0xffe8c8);
       }
 
-      if (h.alive && h.moving) {
+      if (h.moving) {
         view.stepTimer -= dt;
         if (view.stepTimer <= 0) {
-          view.stepTimer = h.sprint > 0 ? 0.08 : 0.2;
+          view.stepTimer = h.sprinting ? 0.12 : 0.2;
           this.effects.footstep(this.at(h.pos, 0));
         }
       }
       if (view.animator) {
         this.animateHero(view, view.animator, h, state, dt);
-        continue;
-      }
-      if (!h.alive) {
-        view.fallen = Math.min(1, view.fallen + dt * 3);
-        model.body.rotation.x = (view.fallen * Math.PI) / 2.2;
-        model.body.position.y = -view.fallen * 0.2;
         continue;
       }
       const speed = HEROES[h.kind].speed;
@@ -700,8 +706,8 @@ export class RaidView {
       heading,
       aiming: h.firing || (this.aim !== null && h === state.heroes[this.seat]),
       reload: attack.kind === "burst" && h.burstLeft === 0 ? Math.min(1, h.reload / reloadTime) : 0,
-      down: !h.alive,
       cheering: state.status === "won" || state.conquest !== null,
+      turn: view.turn,
     });
   }
 
@@ -971,12 +977,13 @@ export class RaidView {
     const focus = (
       state.heroes[this.seat]?.alive ? state.heroes[this.seat] : state.heroes.find((h) => h.alive)
     )?.pos;
+    const aboard = state.heroes[this.seat]?.inBoat ?? false;
     for (const b of state.buildings) {
       if (b.destroyed) continue;
       // A dense base would be all bars: only what's been hit nearby, what the hero's firing at,
-      // and the headquarters.
+      // and the headquarters. From the gunboat nothing's nearby, and the whole base is the fight.
       const damaged = b.hp < b.maxHp;
-      const near = focus ? distance(focus, b.pos) < 22 : false;
+      const near = aboard || (focus ? distance(focus, b.pos) < 22 : false);
       const aimedAt = state.heroes[this.seat]?.targetId === b.id;
       if (!(damaged && near) && !aimedAt && b.type !== "headquarters") continue;
       const p = this.screenPosition(b.pos, BUILDINGS[b.type].height + 0.9, camera, width, height);

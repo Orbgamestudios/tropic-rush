@@ -26,10 +26,8 @@ export interface MenuHero {
   animator: HeroAnimator | null;
 }
 
-/** A fresh copy of a hero's model, the detailed one if the hero's going to be seen up close. */
-export async function menuHero(kind: HeroKind, detailed = false): Promise<MenuHero> {
-  await loadRigs();
-  if (detailed) await loadMenuBody(kind);
+/** A hero as things stand: the best copy that's arrived, or the block figure if none has. */
+export function heroOnHand(kind: HeroKind, detailed: boolean): MenuHero {
   const { root, rig } = heroModel(kind, detailed);
   const box = visibleBox(root);
   const height = box.max.y - box.min.y;
@@ -40,4 +38,11 @@ export async function menuHero(kind: HeroKind, detailed = false): Promise<MenuHe
   const holder = new THREE.Group();
   holder.add(root);
   return { holder, animator: rig && new HeroAnimator(rig) };
+}
+
+/** A fresh copy of a hero's model, the detailed one if the hero's going to be seen up close. */
+export async function menuHero(kind: HeroKind, detailed = false): Promise<MenuHero> {
+  await loadRigs();
+  if (detailed) await loadMenuBody(kind);
+  return heroOnHand(kind, detailed);
 }

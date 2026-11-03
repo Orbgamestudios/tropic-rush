@@ -13,6 +13,7 @@ const LEVEL = 0.5;
 const ONCE: readonly Track[] = ["win"];
 /** How long the exact loops are. Their files carry this many seconds more of it at either end. */
 const LOOPS: Partial<Record<Track, number>> = {
+  map: 85.333333,
   scout: 85.333333,
   raid: 64,
 };
