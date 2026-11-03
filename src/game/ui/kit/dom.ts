@@ -85,6 +85,45 @@ export function layerPlacer(
 }
 
 /** Calls `close` when a press lands on the overlay's dimmed background, not on what's on it. */
+/** How long a panel or card takes to leave. The same in the CSS. */
+export const CLOSE_MS = 150;
+
+const closing = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+/** Brings up a panel or card. Its CSS animates it in, as anything that's just appeared. */
+export function openSoftly(node: HTMLElement, display = "flex"): void {
+  const pending = closing.get(node);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    closing.delete(node);
+    node.classList.remove("ui-closing");
+  }
+  node.style.display = display;
+}
+
+/** Plays a panel or card's way out, then takes it off the screen. */
+export function closeSoftly(node: HTMLElement): void {
+  if (closing.has(node)) return;
+  if (!node.style.display || node.style.display === "none") {
+    node.style.display = "none";
+    return;
+  }
+  node.classList.add("ui-closing");
+  closing.set(
+    node,
+    setTimeout(() => {
+      closing.delete(node);
+      node.classList.remove("ui-closing");
+      node.style.display = "none";
+    }, CLOSE_MS),
+  );
+}
+
+/** True if a panel's up, and not already on its way out. */
+export function isOpen(node: HTMLElement): boolean {
+  return node.style.display === "flex" && !closing.has(node);
+}
+
 export function closeOnBackdrop(overlay: HTMLElement, close: () => void): void {
   overlay.addEventListener("pointerdown", (e) => {
     if (e.target === overlay) close();

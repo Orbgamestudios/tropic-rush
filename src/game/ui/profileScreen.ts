@@ -4,7 +4,16 @@
 import { AVATARS, type Avatar, avatarUrl } from "../logic/avatars";
 import { HERO_KINDS } from "../logic/heroes";
 import type { SaveData } from "../save";
-import { button, closeOnBackdrop, el, formatNumber, panel, setLabel } from "./kit/dom";
+import {
+  button,
+  closeOnBackdrop,
+  closeSoftly,
+  el,
+  formatNumber,
+  openSoftly,
+  panel,
+  setLabel,
+} from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
@@ -231,7 +240,8 @@ export class ProfileScreen {
   }
 
   show(on: boolean): void {
-    this.root.style.display = on ? "flex" : "none";
+    if (on) openSoftly(this.root);
+    else closeSoftly(this.root);
     if (on) this.refresh();
   }
 

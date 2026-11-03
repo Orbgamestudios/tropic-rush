@@ -37,11 +37,13 @@ function fetchBody(kind: HeroKind, copy: "rig" | "hi"): Promise<THREE.Object3D |
 function dress(scene: THREE.Object3D, detailed: boolean): void {
   scene.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
-    const { map } = o.material as THREE.MeshStandardMaterial;
+    const { map, normalMap } = o.material as THREE.MeshStandardMaterial;
+    // Seen from a raid's high camera, a texture blurs along the ground without this.
+    if (map) map.anisotropy = 4;
     // Lambert in a raid: it's all the phone can spare. The hero screen has only the hero to draw.
     o.material = detailed
       ? new THREE.MeshStandardMaterial({ map, roughness: 0.72, metalness: 0 })
-      : new THREE.MeshLambertMaterial({ map });
+      : new THREE.MeshLambertMaterial({ map, normalMap });
     o.castShadow = true;
     // The art has its own shading, and a skinned body shadowing itself only ever makes blotches.
     o.receiveShadow = false;

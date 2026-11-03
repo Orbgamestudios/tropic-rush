@@ -12,7 +12,7 @@ import {
   type MapIsland,
   type WorldProgress,
 } from "../logic/worldMap";
-import { button, CrystalWallet, el, layerPlacer } from "./kit/dom";
+import { button, CLOSE_MS, CrystalWallet, el, layerPlacer } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
 
@@ -68,6 +68,7 @@ export class WorldMapScreen {
   private readonly pinLayer = el("div", "map-pins");
   private readonly homePin = el("div", "map-pin map-home-pin");
   private readonly card = el("div", "map-card");
+  private cardShutting: ReturnType<typeof setTimeout> | null = null;
   private readonly cardName = el("div", "map-card-name");
   private readonly cardKind = el("div", "map-card-kind");
   private readonly cardRating = el("div", "map-card-rating");
@@ -238,7 +239,17 @@ export class WorldMapScreen {
 
   private select(island: MapIsland | null): void {
     this.selected = island;
-    this.card.classList.toggle("open", island !== null);
+    if (this.cardShutting) clearTimeout(this.cardShutting);
+    this.cardShutting = null;
+    if (island) {
+      this.card.classList.remove("ui-closing");
+      this.card.classList.add("open");
+    } else if (this.card.classList.contains("open")) {
+      this.card.classList.add("ui-closing");
+      this.cardShutting = setTimeout(() => {
+        this.card.classList.remove("open", "ui-closing");
+      }, CLOSE_MS);
+    }
     for (const { island: i, node } of this.pins) node.classList.toggle("selected", i === island);
     if (!island) return;
     // Opposite the island, so the card never covers the place it's about.

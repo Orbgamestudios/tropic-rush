@@ -65,8 +65,8 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Starting strength:** every hero starts at 85% of the old health and damage, so first islands
   take some care. The upgrades and checkpoints earn it back.
 - **Hero models:** all seven heroes use real TRELLIS.2 models, in menus and in raids: about 32,000
-  triangles on the hero screen and about 5,400 in a raid, a third of them on the head, or 7,000 for
-  the Tank, whose hard edges take more. The six on foot have skeletons. The
+  triangles on the hero screen, the full source model, and about 15,000 in a raid, nearly half of
+  them on the head, with a normal map baked from the full model. The six on foot have skeletons. The
   Tank is one solid piece. Hands close on what they hold, each weapon is one mesh, and a hero costs
   two draw calls however detailed their gear.
 - **Grass:** big swathes of light and deep green, shared by the ground and the plants on it, with
@@ -76,6 +76,18 @@ These were explicitly left out to keep the first version to a basic structure:
   levels up. It reaches its deepest spot by headquarters 16.
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
+## Added 2026-11-02, fifth batch (owner's requests)
+
+- **Hero models:** the owner found them too undetailed, with features broken by too few triangles.
+  Raid copies went from 5,400 to 15,000 triangles, 512 to 1024 textures, and gained a normal map.
+- **Gunboat upgrades:** every weapon goes from level 1 to 6 at the laboratory, for gold, at
+  headquarters 4, 8, 11, 15 and 18, so 3 or 4 headquarters levels apart. Artillery, Medkit and
+  Barrage gain 15% a level, the Shock Grenade half a second of stun and the Smokescreen a second and
+  a half of cover. The prices are Claude's choice, from 400 gold up to 4,000.
+- **Panels:** everything that isn't a full screen change eases in and out: the laboratory, tools,
+  statues, night raid, trade, pause, profile and lobby panels, the selection, clearing and island
+  cards, and the build menu. Only opacity and movement, for a fifth of a second or so.
+
 ## Added 2026-11-02, fourth batch (owner's requests)
 
 - **Clearing:** a patch can only be cleared if it touches open ground: the first clearing, the trail,
@@ -85,8 +97,7 @@ These were explicitly left out to keep the first version to a basic structure:
   Grenade, Barrage and Smokescreen, each from a blueprint on a raider base. Only the next one in line
   can turn up. The Shock Grenade stuns every defense in a circle for 4 seconds, and the Smokescreen
   hides heroes in one for 10. Both circles are 6 tiles across. Friendly heroes aren't stunned: that
-  was Claude's call, since a crewmate could otherwise lock up the team. Those are base levels; nothing
-  raises them yet.
+  was Claude's call, since a crewmate could otherwise lock up the team.
 - **Laboratory:** a 3 x 3 building, one per crew, from headquarters 1. Blueprints won on raids now
   need a little gold there before they do anything, whether defense or gunboat weapon, and it opens
   every hero's upgrade tree. Older crews keep every defense they already knew, but gunboat weapons

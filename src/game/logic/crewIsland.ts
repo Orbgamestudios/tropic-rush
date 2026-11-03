@@ -28,7 +28,14 @@ import {
   spend,
   storageCapacity,
 } from "./economy";
-import { ABILITY_ORDER, type Ability } from "./gunboat";
+import {
+  ABILITY_ORDER,
+  type Ability,
+  type Arsenal,
+  MAX_WEAPON_LEVEL,
+  WEAPON_LEVEL_HQ,
+  weaponUpGold,
+} from "./gunboat";
 import { HERO_KINDS, type HeroKind } from "./heroes";
 import { heroTree, lockedBy, noUpgrades, readOwned } from "./heroTrees";
 import { isOnGrass, landingPoints, trailPoints } from "./island";
@@ -185,6 +192,8 @@ export interface CrewLayout {
   blueprints: Blueprint[];
   /** Blueprints the laboratory has turned into something the crew can use. */
   researched: Blueprint[];
+  /** Gunboat weapons upgraded past their first level. */
+  weaponLevels: Arsenal;
   /** Every hero's upgrades, which the whole crew shares: one person buys, everyone has it. */
   upgrades: Record<HeroKind, string[]>;
   /** The island's ancient statues. */
@@ -232,6 +241,8 @@ export type LayoutOp =
   | { kind: "blueprint"; type: Blueprint }
   /** The laboratory works a blueprint up into the real thing. */
   | { kind: "research"; type: Blueprint }
+  /** The laboratory takes a gunboat weapon up a level. */
+  | { kind: "weaponUp"; weapon: Ability }
   /** A hero upgrade for the whole crew. `pay` takes its gold from the island; without it, it's one
    * a crewmate brought along from before they joined. */
   | { kind: "heroUpgrade"; hero: HeroKind; id: string; pay?: boolean }
@@ -851,9 +862,31 @@ export function researchBlocker(
   return null;
 }
 
-/** The gunboat weapons a crew can use: the first, and whatever it's researched since. */
-export function gunboatWeapons(layout: Pick<CrewLayout, "researched">): Ability[] {
-  return ABILITY_ORDER.filter((a) => a === "artillery" || layout.researched.includes(a));
+/** The gunboat weapons a crew can use, the first and whatever it's researched since, by level. */
+export function gunboatWeapons(layout: Pick<CrewLayout, "researched" | "weaponLevels">): Arsenal {
+  const arsenal: Arsenal = {};
+  for (const a of ABILITY_ORDER) {
+    if (a === "artillery" || layout.researched.includes(a))
+      arsenal[a] = layout.weaponLevels[a] ?? 1;
+  }
+  return arsenal;
+}
+
+/** Why a gunboat weapon can't go up a level right now, or null if it can. */
+export function weaponUpBlocker(
+  layout: Pick<CrewLayout, "buildings" | "researched" | "resources" | "weaponLevels">,
+  weapon: Ability,
+): string | null {
+  const level = gunboatWeapons(layout)[weapon];
+  if (!level) return "Research it first";
+  if (level >= MAX_WEAPON_LEVEL) return "Highest level";
+  if (!layout.buildings.some((b) => b.type === "laboratory" && b.level > 0)) {
+    return "Build a laboratory";
+  }
+  const needs = WEAPON_LEVEL_HQ[level] ?? 1;
+  if (hqLevel(layout) < needs) return `Needs headquarters ${needs}`;
+  if (!canAfford(layout.resources, { gold: weaponUpGold(level) })) return "Not enough gold";
+  return null;
 }
 
 /** The lowest headquarters level that allows `count` of a building, or null if none does. */
@@ -1048,6 +1081,18 @@ export function tryOp(
       if (layout.blueprints.includes(op.type)) return { layout };
       return { layout: { ...layout, blueprints: [...layout.blueprints, op.type] } };
     }
+    case "weaponUp": {
+      const blocker = weaponUpBlocker(layout, op.weapon);
+      if (blocker) return { error: blocker };
+      const level = gunboatWeapons(layout)[op.weapon] ?? 1;
+      return {
+        layout: {
+          ...layout,
+          resources: spend(layout.resources, { gold: weaponUpGold(level) }),
+          weaponLevels: { ...layout.weaponLevels, [op.weapon]: level + 1 },
+        },
+      };
+    }
     case "research": {
       if (!BLUEPRINT_TYPES.includes(op.type)) return { error: "Unknown blueprint" };
       const blocker = researchBlocker(layout, op.type);
@@ -1220,6 +1265,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     stamp: now,
     blueprints: [],
     researched: [],
+    weaponLevels: {},
     upgrades: noUpgrades(),
     statues: newStatues(),
     relicSeed: Math.floor(now / 1000) % 2 ** 31,
@@ -1286,6 +1332,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     stamp?: unknown;
     blueprints?: unknown;
     researched?: unknown;
+    weaponLevels?: Partial<Record<Ability, unknown>>;
     upgrades?: Partial<Record<HeroKind, unknown>>;
     statues?: unknown;
     relicSeed?: unknown;
@@ -1395,6 +1442,13 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const researched = BLUEPRINT_TYPES.filter(
     (t) => rawResearch.includes(t) || (!isWeapon(t) && standing.some((b) => b.type === t)),
   );
+  const weaponLevels: Arsenal = {};
+  for (const a of ABILITY_ORDER) {
+    const v = data?.weaponLevels?.[a];
+    if (Number.isInteger(v) && (v as number) > 1) {
+      weaponLevels[a] = Math.min(MAX_WEAPON_LEVEL, v as number);
+    }
+  }
   const relicSeed = Number.isInteger(data?.relicSeed)
     ? (data?.relicSeed as number)
     : OLD_RELIC_SEED;
@@ -1409,6 +1463,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     stamp,
     blueprints,
     researched,
+    weaponLevels,
     upgrades: readUpgrades(data?.upgrades),
     statues: readStatues(data?.statues),
     relicSeed,

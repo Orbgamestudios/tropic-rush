@@ -20,6 +20,7 @@ import {
   cornerFor,
   firstHqAllowing,
   fits,
+  gunboatWeapons,
   hqLevel,
   hqNeeds,
   type LayoutOp,
@@ -45,6 +46,7 @@ import {
   toolTime,
   tryOp,
   upgradeBlocker,
+  weaponUpBlocker,
   workerCount,
 } from "../logic/crewIsland";
 import { CRYSTAL_KINDS, type CrystalKind } from "../logic/crystals";
@@ -61,15 +63,22 @@ import {
   type Purse,
   RESOURCES,
 } from "../logic/economy";
-import { ABILITIES } from "../logic/gunboat";
+import {
+  ABILITIES,
+  ABILITY_ORDER,
+  type Ability,
+  MAX_WEAPON_LEVEL,
+  WEAPON_GAIN,
+  weaponUpGold,
+} from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
 import {
-  BLUEPRINT_TYPES,
   type Blueprint,
   blueprintName,
+  DEFENSE_BLUEPRINTS,
   isWeapon,
   needsBlueprint,
 } from "../logic/spoils";
@@ -87,7 +96,7 @@ import {
 import { CrewIslandView } from "../render/crewIslandView";
 import type { Stage } from "../render/stage";
 import { loadLocalLayout, type SaveData, writeLocalLayout } from "../save";
-import { CrewUi } from "../ui/crewUi";
+import { CrewUi, type ResearchRow } from "../ui/crewUi";
 import { sfx } from "../ui/kit/fx";
 
 interface Drag {
@@ -197,6 +206,7 @@ export class CrewMode {
       onStatueRestore: (kind) => this.restoreStatue(kind),
       onLabPanel: () => this.showLabPanel(),
       onResearch: (type) => this.research(type),
+      onWeaponUp: (weapon) => this.weaponUp(weapon),
       onLabTree: (kind) => {
         this.ui.hideLab();
         host.onTree(kind);
@@ -845,7 +855,22 @@ export class CrewMode {
   }
 
   private showLabPanel(current = settle(this.layout, this.now())): void {
-    const rows = BLUEPRINT_TYPES.map((type) => {
+    const arsenal = gunboatWeapons(current);
+    const rows: ResearchRow[] = [...ABILITY_ORDER, ...DEFENSE_BLUEPRINTS].map((type) => {
+      const level = isWeapon(type) ? arsenal[type] : undefined;
+      if (isWeapon(type) && level) {
+        const blocker = weaponUpBlocker(current, type);
+        const top = level >= MAX_WEAPON_LEVEL;
+        return {
+          type,
+          name: `${ABILITIES[type].name} ${level}`,
+          note: top ? "Highest level" : (blocker ?? WEAPON_GAIN[type]),
+          cost: top ? "" : costText({ gold: weaponUpGold(level) }),
+          done: top,
+          blocker,
+          action: "Upgrade",
+        };
+      }
       const done = current.researched.includes(type);
       const blocker = researchBlocker(current, type);
       const found = current.blueprints.includes(type);
@@ -854,16 +879,27 @@ export class CrewMode {
         type,
         name: blueprintName(type),
         note: done ? "Researched" : found ? (blocker ?? what) : "Find its blueprint on a raid",
-        cost: found ? costText(researchCost(type)) : "",
+        cost: found && !done ? costText(researchCost(type)) : "",
         done,
         blocker,
+        action: "Research",
       };
     });
-    // Weapons first: they're what the laboratory is mostly for.
-    this.ui.showLab(
-      [...rows.filter((r) => isWeapon(r.type)), ...rows.filter((r) => !isWeapon(r.type))],
-      this.host.save().unlocked,
-    );
+    this.ui.showLab(rows, this.host.save().unlocked);
+  }
+
+  private weaponUp(weapon: Ability): void {
+    const result = tryOp(this.layout, { kind: "weaponUp", weapon }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      return;
+    }
+    this.commit({ kind: "weaponUp", weapon });
+    const level = gunboatWeapons(this.layout)[weapon];
+    this.ui.flash(`${ABILITIES[weapon].name} is now level ${level}!`);
+    this.ui.celebrate();
+    this.refreshEconomy();
+    this.showLabPanel();
   }
 
   private research(type: Blueprint): void {

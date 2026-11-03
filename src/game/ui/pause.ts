@@ -3,7 +3,16 @@
 // apply as you drag.
 
 import { DEFAULT_SETTINGS, type Settings, TILT_RANGE, UI_SCALE_RANGE } from "../save";
-import { button, closeOnBackdrop, confirmTap, el, panel, setLabel } from "./kit/dom";
+import {
+  button,
+  closeOnBackdrop,
+  closeSoftly,
+  confirmTap,
+  el,
+  openSoftly,
+  panel,
+  setLabel,
+} from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
 
@@ -222,7 +231,8 @@ export class PauseMenu {
 
   /** Opens or closes the menu. Outside a raid there's nothing to retreat from. */
   show(on: boolean, inRaid = true): void {
-    this.root.style.display = on ? "flex" : "none";
+    if (on) openSoftly(this.root);
+    else closeSoftly(this.root);
     this.inRaid = inRaid;
     this.retreat.style.display = inRaid ? "" : "none";
     this.resetGame.style.display = inRaid ? "none" : "";

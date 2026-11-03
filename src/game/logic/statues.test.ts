@@ -19,8 +19,10 @@ import {
   starterLayout,
   statueSites,
   tileAt,
+  weaponUpBlocker,
 } from "./crewIsland";
 import { CRYSTAL_KINDS, type CrystalKind } from "./crystals";
+import { MAX_WEAPON_LEVEL, WEAPON_LEVEL_HQ, weaponUpGold } from "./gunboat";
 import { STATUE_CRYSTALS, STATUE_MS, STATUE_STONE, statueBuffs } from "./statues";
 
 const NOW = 1_000_000_000_000;
@@ -250,12 +252,37 @@ describe("blueprints", () => {
   });
 
   it("starts the gunboat with artillery, and adds what's been researched, in order", () => {
-    expect(gunboatWeapons(island())).toEqual(["artillery"]);
-    expect(gunboatWeapons(island({ researched: ["smoke", "heal"] }))).toEqual([
-      "artillery",
-      "heal",
-      "smoke",
-    ]);
+    expect(gunboatWeapons(island())).toEqual({ artillery: 1 });
+    expect(gunboatWeapons(island({ researched: ["smoke", "heal"] }))).toEqual({
+      artillery: 1,
+      heal: 1,
+      smoke: 1,
+    });
+  });
+
+  it("levels gunboat weapons up, 3 or 4 headquarters levels apart", () => {
+    for (let i = 1; i < WEAPON_LEVEL_HQ.length; i++) {
+      const step = (WEAPON_LEVEL_HQ[i] ?? 0) - (WEAPON_LEVEL_HQ[i - 1] ?? 0);
+      expect([3, 4]).toContain(step);
+    }
+    const at = (hq: number, level = 1) => {
+      const [first, ...rest] = starterLayout(NOW).buildings;
+      return island({
+        resources: { gold: 90_000, timber: 0, stone: 0, scrap: 0 },
+        buildings: [{ ...first, level: hq } as (typeof rest)[number], lab, ...rest],
+        weaponLevels: level > 1 ? { artillery: level } : {},
+      });
+    };
+    expect(weaponUpBlocker(at(3), "artillery")).toMatch(/headquarters 4/);
+    expect(weaponUpBlocker(at(4), "artillery")).toBeNull();
+    expect(weaponUpBlocker(at(4), "shock")).toMatch(/Research/);
+    expect(weaponUpBlocker(at(7, 2), "artillery")).toMatch(/headquarters 8/);
+    expect(weaponUpBlocker(at(20, MAX_WEAPON_LEVEL), "artillery")).toMatch(/Highest/);
+    const up = applyOp(at(4), { kind: "weaponUp", weapon: "artillery" }, NOW);
+    if (!up) throw new Error("refused");
+    expect(gunboatWeapons(up).artillery).toBe(2);
+    expect(up.resources.gold).toBe(90_000 - weaponUpGold(1));
+    expect(sanitizeLayout(up, NOW).weaponLevels).toEqual({ artillery: 2 });
   });
 
   it("keeps what an older crew knew, but not gunboat weapons it never researched", () => {
@@ -266,7 +293,7 @@ describe("blueprints", () => {
     };
     const read = sanitizeLayout(old, NOW);
     expect(read.researched).toEqual(["mortar"]);
-    expect(gunboatWeapons(read)).toEqual(["artillery"]);
+    expect(gunboatWeapons(read)).toEqual({ artillery: 1 });
   });
 
   it("counts what an older island already has as known", () => {

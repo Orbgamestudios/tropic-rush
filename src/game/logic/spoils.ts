@@ -30,7 +30,7 @@ export function needsBlueprint(type: BuildingType): boolean {
 }
 
 export function isWeapon(type: Blueprint): type is Ability {
-  return (GUNBOAT_BLUEPRINTS as readonly Blueprint[]).includes(type);
+  return (ABILITY_ORDER as readonly Blueprint[]).includes(type);
 }
 
 export function blueprintName(type: Blueprint): string {

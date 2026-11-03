@@ -819,3 +819,135 @@
   transform: translateX(-50%);
   pointer-events: none;
 }
+
+/* ---------- Panels coming and going ----------
+   Only opacity and movement, which the phone's graphics chip handles alone, and only for a moment.
+   Anything here plays by itself as its panel appears; dom.ts adds ui-closing to see it out. */
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-pop-in {
+  0% {
+    opacity: 0;
+    translate: 0 14px;
+    scale: 0.9;
+  }
+
+  70% {
+    opacity: 1;
+    translate: 0 -2px;
+    scale: 1.015;
+  }
+
+  100% {
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+@keyframes ui-pop-out {
+  to {
+    opacity: 0;
+    translate: 0 10px;
+    scale: 0.94;
+  }
+}
+
+@keyframes ui-rise-in {
+  0% {
+    opacity: 0;
+    translate: 0 26px;
+  }
+
+  70% {
+    opacity: 1;
+    translate: 0 -3px;
+  }
+
+  100% {
+    translate: 0 0;
+  }
+}
+
+@keyframes ui-rise-out {
+  to {
+    opacity: 0;
+    translate: 0 22px;
+  }
+}
+
+.crew-join,
+.swap,
+.screen-pause,
+.screen-profile,
+.screen-lobby,
+.levelup {
+  animation: ui-fade-in 180ms ease-out;
+}
+
+.crew-join > .ui-panel,
+.swap > .ui-panel,
+.screen-pause > .ui-panel,
+.screen-profile > .ui-panel,
+.screen-lobby > .ui-panel {
+  animation: ui-pop-in 260ms ease-out;
+}
+
+.ui-closing {
+  pointer-events: none;
+  animation: ui-fade-out 150ms ease-in forwards;
+}
+
+.ui-closing > .ui-panel {
+  animation: ui-pop-out 150ms ease-in forwards;
+}
+
+.crew-selection,
+.crew-clearing,
+.crew-drawer,
+.lobby-banner,
+.hud-tray-box {
+  animation: ui-rise-in 240ms ease-out;
+}
+
+.crew-selection.ui-closing,
+.crew-clearing.ui-closing,
+.crew-drawer.ui-closing,
+.lobby-banner.ui-closing {
+  animation: ui-rise-out 150ms ease-in forwards;
+}
+
+.map-card.ui-closing {
+  animation: ui-pop-out 150ms ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crew-join,
+  .crew-join > .ui-panel,
+  .swap,
+  .swap > .ui-panel,
+  .screen-pause,
+  .screen-pause > .ui-panel,
+  .screen-profile,
+  .screen-profile > .ui-panel,
+  .screen-lobby,
+  .screen-lobby > .ui-panel,
+  .levelup,
+  .crew-selection,
+  .crew-clearing,
+  .crew-drawer,
+  .lobby-banner,
+  .hud-tray-box {
+    animation: none;
+  }
+}

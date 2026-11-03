@@ -317,7 +317,7 @@ export class Hud {
     this.tray.classList.toggle("active", hero.inBoat);
     for (const [ability, { button, cost }] of this.abilityButtons) {
       const price = nextAbilityCost(state, ability);
-      button.style.display = state.gunboat.includes(ability) ? "" : "none";
+      button.style.display = state.gunboat[ability] ? "" : "none";
       cost.textContent = String(price);
       button.classList.toggle("selected", hero.inBoat && ability === selected);
       button.classList.toggle("unaffordable", price > state.energy);

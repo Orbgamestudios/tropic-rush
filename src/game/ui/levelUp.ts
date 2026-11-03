@@ -2,7 +2,7 @@
 // brings. Tap to carry on.
 
 import type { TreeUpgrade } from "../logic/heroTrees";
-import { button, el } from "./kit/dom";
+import { button, closeSoftly, el, openSoftly } from "./kit/dom";
 import { icon } from "./kit/icons";
 
 export class LevelUpReveal {
@@ -47,10 +47,10 @@ export class LevelUpReveal {
       el("div", "levelup-card-text", upgrade.text),
     );
     this.perk.replaceChildren(card);
-    this.root.style.display = "flex";
+    openSoftly(this.root);
   }
 
   hide(): void {
-    this.root.style.display = "none";
+    closeSoftly(this.root);
   }
 }

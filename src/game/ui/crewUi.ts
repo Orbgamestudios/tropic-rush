@@ -12,6 +12,7 @@ import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import type { RivalRaid, Tool } from "../logic/crewIsland";
 import type { CrystalKind } from "../logic/crystals";
 import { costText, formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
+import type { Ability } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES } from "../logic/heroProgress";
 import type { NightRaid } from "../logic/nightRaid";
@@ -21,14 +22,18 @@ import { buildingIcon, heroPortrait } from "../render/thumbnails";
 import { ABILITY_ICONS } from "./hud";
 import {
   button,
+  CLOSE_MS,
   closeOnBackdrop,
+  closeSoftly,
   confirmTap,
   costChips,
   crystalChip,
   crystalIcon,
   el,
+  isOpen,
   layerPlacer,
   levelBadge,
+  openSoftly,
   panel,
   setLabel,
 } from "./kit/dom";
@@ -64,6 +69,7 @@ export interface CrewUiHandlers {
   onStatueRestore(kind: CrystalKind): void;
   onLabPanel(): void;
   onResearch(type: Blueprint): void;
+  onWeaponUp(weapon: Ability): void;
   /** Opens a hero's upgrade tree, from the laboratory. */
   onLabTree(kind: HeroKind): void;
 }
@@ -76,8 +82,9 @@ export interface ResearchRow {
   note: string;
   cost: string;
   done: boolean;
-  /** Why it can't be researched yet, or null. */
+  /** Why it can't be done yet, or null. */
   blocker: string | null;
+  action: "Research" | "Upgrade";
 }
 
 /** A row of the statues panel. */
@@ -260,6 +267,7 @@ export class CrewUi {
   private crewCode = "";
   private lastCrewKey = "";
   private drawerOpen = false;
+  private drawerShutting: ReturnType<typeof setTimeout> | null = null;
   private selecting = false;
   private category: Category = "defenses";
 
@@ -632,6 +640,7 @@ export class CrewUi {
       this.statuesPanel,
       this.fx,
     );
+    this.drawer.classList.add("closed");
     this.setDrawer(false);
     closeOnBackdrop(this.join, () => this.hideJoin());
     closeOnBackdrop(this.toolsPanel, () => this.hideTools());
@@ -688,7 +697,16 @@ export class CrewUi {
 
   private setDrawer(open: boolean): void {
     this.drawerOpen = open;
-    this.drawer.classList.toggle("closed", !open);
+    if (this.drawerShutting) clearTimeout(this.drawerShutting);
+    this.drawerShutting = null;
+    if (open) this.drawer.classList.remove("closed", "ui-closing");
+    else if (!this.drawer.classList.contains("closed")) {
+      this.drawer.classList.add("ui-closing");
+      this.drawerShutting = setTimeout(() => {
+        this.drawer.classList.add("closed");
+        this.drawer.classList.remove("ui-closing");
+      }, CLOSE_MS);
+    }
     this.buildButton.classList.toggle("open", open);
     this.buildLabel.textContent = open ? "Close" : "Build";
     this.buildButton.setAttribute("aria-label", open ? "Close build menu" : "Build");
@@ -758,12 +776,12 @@ export class CrewUi {
   showJoin(nickname: string, error = ""): void {
     this.nameInput.value = nickname;
     this.joinError.textContent = error;
-    this.join.style.display = "flex";
+    openSoftly(this.join);
     if (error) sfx.error();
   }
 
   hideJoin(): void {
-    this.join.style.display = "none";
+    closeSoftly(this.join);
   }
 
   /** Everyone's picture, with a green glow round whoever's online. */
@@ -829,21 +847,21 @@ export class CrewUi {
         return row;
       }),
     );
-    this.night.style.display = "flex";
+    openSoftly(this.night);
   }
 
   hideNight(): void {
-    this.night.style.display = "none";
+    closeSoftly(this.night);
   }
 
   get statuesOpen(): boolean {
-    return this.statuesPanel.style.display === "flex";
+    return isOpen(this.statuesPanel);
   }
 
   /** Opens the statues panel, or brings it up to date while it's open. */
   showStatues(rows: readonly StatueRow[]): void {
     const key = JSON.stringify(rows);
-    this.statuesPanel.style.display = "flex";
+    openSoftly(this.statuesPanel);
     if (key === this.lastStatuesKey) return;
     this.lastStatuesKey = key;
     this.statueRows.replaceChildren(...rows.map((row) => this.statueRow(row)));
@@ -892,19 +910,19 @@ export class CrewUi {
   }
 
   hideStatues(): void {
-    this.statuesPanel.style.display = "none";
+    closeSoftly(this.statuesPanel);
   }
 
   /** True while the tools panel is open. */
   get labOpen(): boolean {
-    return this.labPanel.style.display === "flex";
+    return isOpen(this.labPanel);
   }
 
   /** Opens the laboratory, or refreshes it while it's open. */
   showLab(rows: readonly ResearchRow[], heroes: readonly HeroKind[]): void {
     // Rebuilt only when something's changed: a button replaced under a finger loses its tap.
     const key = JSON.stringify([rows, heroes]);
-    this.labPanel.style.display = "flex";
+    openSoftly(this.labPanel);
     if (key === this.lastLabKey) return;
     this.lastLabKey = key;
     const column = (title: string, list: readonly ResearchRow[]) => {
@@ -953,12 +971,16 @@ export class CrewUi {
     words.append(el("div", "crew-tool-name", r.name), el("div", "crew-tool-level", r.note));
     row.append(picture, words);
     if (!r.done && r.cost) {
+      const { type } = r;
       const go = button({
-        label: "Research",
+        label: r.action,
         variant: "green",
         size: "sm",
-        aria: `Research ${r.name}`,
-        onClick: () => this.handlers.onResearch(r.type),
+        aria: `${r.action} ${r.name}`,
+        onClick: () =>
+          r.action === "Upgrade" && isWeapon(type)
+            ? this.handlers.onWeaponUp(type)
+            : this.handlers.onResearch(type),
       });
       go.disabled = r.blocker !== null;
       row.append(costChips(r.cost), go);
@@ -967,11 +989,11 @@ export class CrewUi {
   }
 
   hideLab(): void {
-    this.labPanel.style.display = "none";
+    closeSoftly(this.labPanel);
   }
 
   get toolsOpen(): boolean {
-    return this.toolsPanel.style.display === "flex";
+    return isOpen(this.toolsPanel);
   }
 
   /** Sparkles and a chime over the middle of the screen. */
@@ -985,7 +1007,8 @@ export class CrewUi {
 
   /** Shows the clearing panel for a tapped obstacle, or hides it. */
   setClearing(info: ClearInfo | null): void {
-    this.clearing.style.display = info ? "flex" : "none";
+    if (info) openSoftly(this.clearing);
+    else closeSoftly(this.clearing);
     const busy = info !== null || this.selecting;
     this.drawer.style.display = busy ? "none" : "";
     this.buildButton.style.display = busy ? "none" : "";
@@ -1007,7 +1030,7 @@ export class CrewUi {
   showTools(tools: readonly ToolInfo[], workers: string): void {
     // Rebuilt only when something's changed: a button replaced under a finger loses its tap.
     const key = workers + JSON.stringify(tools);
-    this.toolsPanel.style.display = "flex";
+    openSoftly(this.toolsPanel);
     if (key === this.lastToolsKey) return;
     this.lastToolsKey = key;
     this.toolWorkers.textContent = `${workers}. Better tools reach further out and work faster.`;
@@ -1038,7 +1061,7 @@ export class CrewUi {
   }
 
   hideTools(): void {
-    this.toolsPanel.style.display = "none";
+    closeSoftly(this.toolsPanel);
   }
 
   /** Places the countdowns over the patches being cleared; call every frame. */
@@ -1079,7 +1102,8 @@ export class CrewUi {
     canRemove: boolean,
   ): void {
     this.selecting = info !== null;
-    this.selection.style.display = info ? "flex" : "none";
+    if (info) openSoftly(this.selection);
+    else closeSoftly(this.selection);
     this.drawer.style.display = info ? "none" : "";
     this.buildButton.style.display = info ? "none" : "";
     this.fitMapButton();

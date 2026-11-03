@@ -118,9 +118,20 @@ Raid copies are made in four steps, because TRELLIS textures are many small patc
 stop a simplifier well short of its target: weld the seams, simplify, unwrap afresh with xatlas, then
 bake a new texture from the full model at twice the size and scale it down. Never use the
 simplifier's `Permissive` flag without that bake: collapsing across seams smears the old texture all
-over the hero. The head is simplified apart from the body, to 1,800 triangles against the body's
-3,600, and unwrapped 1.7 times too big so it gets more of the texture. With one shared budget the
-face flattens and the eyes smear. The Tank has no head, and gets 7,000 for its hard edges.
+over the hero. The head is simplified apart from the body, to 7,000 triangles against the body's
+8,000, and unwrapped 1.7 times too big so it gets more of the texture. With one shared budget the
+face flattens and the eyes smear. The Tank has no head, and gets 14,000.
+
+Raid copies also carry a 512 normal map, baked from the full model the same way as the color. That's
+what stops them looking low-poly: at 5,000 triangles round glasses came out octagonal and hair and
+cheeks showed flat facets, and no amount of texture hides that. It's baked in the same frame
+three.js builds in its shader for a mesh with no tangents, so no tangents are stored, and
+`MeshLambertMaterial` takes a normal map with no trouble. At 16,000 triangles with its weapon a hero
+is about 15% of what a raid draws: the player looks at them more than anything else, so that's
+money well spent.
+
+The source models top out at about 57,000 triangles and a 1024 texture, which the hero screen copy
+now uses in full. Going further means generating them again at a higher texture size.
 
 A head turns as one piece. Nothing above the neck can go with the chest, and bone weights stop
 blending a little over the neck, or the chin stays behind and the face warps as the head turns.

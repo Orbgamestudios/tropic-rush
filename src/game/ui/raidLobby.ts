@@ -4,7 +4,7 @@
 
 import type { Seat } from "../logic/coop";
 import { HEROES, type HeroKind } from "../logic/heroes";
-import { button, el, panel } from "./kit/dom";
+import { button, closeSoftly, el, openSoftly, panel } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
 
@@ -104,13 +104,14 @@ export class RaidLobby {
   /** Says who's heading out, or takes the banner away with null. */
   invite(message: string | null): void {
     if (message && this.banner.style.display === "none") sfx.coin();
-    this.banner.style.display = message ? "flex" : "none";
+    if (message) openSoftly(this.banner);
+    else closeSoftly(this.banner);
     if (message) this.bannerText.textContent = message;
   }
 
   show(lobby: LobbyStatus): void {
     const { island, seats, ready, team, message, heroes, mine } = lobby;
-    this.root.style.display = "flex";
+    openSoftly(this.root);
     this.title.textContent = island ?? "Choosing an island";
     this.count.textContent = `${seats.length}/${team}`;
     this.seats.replaceChildren(
@@ -153,6 +154,6 @@ export class RaidLobby {
   }
 
   hide(): void {
-    this.root.style.display = "none";
+    closeSoftly(this.root);
   }
 }

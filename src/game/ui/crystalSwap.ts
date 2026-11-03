@@ -6,10 +6,12 @@ import type { SaveData } from "../save";
 import {
   button,
   closeOnBackdrop,
+  closeSoftly,
   crystalChip,
   crystalIcon,
   el,
   formatNumber,
+  openSoftly,
   panel,
 } from "./kit/dom";
 import { sfx } from "./kit/fx";
@@ -67,7 +69,8 @@ export class CrystalSwap {
   }
 
   show(on: boolean): void {
-    this.root.style.display = on ? "flex" : "none";
+    if (on) openSoftly(this.root);
+    else closeSoftly(this.root);
     if (on) this.draw();
   }
 

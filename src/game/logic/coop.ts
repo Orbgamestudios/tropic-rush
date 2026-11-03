@@ -3,7 +3,7 @@
 // hero straight away and sliding everything else along between snapshots. The only allies on a
 // raid are real people like this: there are no AI crewmates. No engine imports.
 
-import type { Ability } from "./gunboat";
+import type { Arsenal } from "./gunboat";
 import type { HeroKind } from "./heroes";
 import { heroMods } from "./heroTrees";
 import type { IslandLayout } from "./island";
@@ -34,7 +34,7 @@ export interface Seat {
 export function createCoopRaid(
   layout: IslandLayout,
   seats: readonly Seat[],
-  gunboat?: readonly Ability[],
+  gunboat?: Arsenal,
 ): RaidState {
   return createRaid(
     layout,

@@ -5,16 +5,20 @@
 import { BUILDINGS, type BuildingType, type DefenseAttack } from "./buildings";
 import { buildingPower, emptyPurse, lootFor, type Purse, RESOURCES } from "./economy";
 import {
-  ABILITY_ORDER,
   type Ability,
   ARTILLERY,
+  type Arsenal,
   abilityCost,
   BARRAGE,
   boatShellFlightTime,
+  FULL_ARSENAL,
   HEAL,
   SHOCK,
   SMOKE,
   START_ENERGY,
+  smokeSeconds,
+  stunSeconds,
+  weaponPower,
 } from "./gunboat";
 import { HEROES, type HeroKind, shotSpread } from "./heroes";
 import { type HeroMods, NO_MODS } from "./heroTrees";
@@ -373,8 +377,8 @@ export interface RaidState {
   /** Materials carried off so far, from mills and storages broken. Kept win or lose. */
   loot: Purse;
   abilityUses: Record<Ability, number>;
-  /** The gunboat weapons this crew has. */
-  gunboat: readonly Ability[];
+  /** The gunboat weapons this crew has, and their levels. */
+  gunboat: Arsenal;
   /** What happened during the last step, for effects and sounds. */
   events: RaidEvent[];
   nextId: number;
@@ -427,7 +431,7 @@ export function createRaid(
   kinds: readonly HeroKind[],
   powers: readonly number[] = [],
   mods: readonly HeroMods[] = [],
-  gunboat: readonly Ability[] = ABILITY_ORDER,
+  gunboat: Arsenal = FULL_ARSENAL,
 ): RaidState {
   const rng = createRng(layout.seed ^ 0x5bd1e995);
   const buffs = layout.buffs ?? { health: 1, damage: 1 };
@@ -1099,7 +1103,9 @@ function toggleBoat(state: RaidState, hero: RaidHero): void {
 
 function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
   const cost = nextAbilityCost(state, ability);
-  if (state.energy < cost || !state.gunboat.includes(ability)) return;
+  const level = state.gunboat[ability];
+  if (state.energy < cost || !level) return;
+  const power = weaponPower(level);
   state.energy -= cost;
   state.abilityUses[ability]++;
   state.events.push({ type: "boatFire", ability, target: { ...target } });
@@ -1131,7 +1137,7 @@ function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
         target,
         flight,
         16,
-        ARTILLERY.damage,
+        ARTILLERY.damage * power,
         ARTILLERY.splash,
       );
       return;
@@ -1150,20 +1156,22 @@ function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
           add(target, offset),
           flight,
           16,
-          BARRAGE.damage,
+          BARRAGE.damage * power,
           BARRAGE.splash,
         );
         lob.t = -i * BARRAGE.stagger;
       }
       return;
     case "heal":
-      addZone(state, "heal", target, HEAL.radius, HEAL.duration, 0, { heal: HEAL.healPerSecond });
+      addZone(state, "heal", target, HEAL.radius, HEAL.duration, 0, {
+        heal: HEAL.healPerSecond * power,
+      });
       return;
     case "shock":
-      canister({ kind: "shock", radius: SHOCK.radius, seconds: SHOCK.seconds });
+      canister({ kind: "shock", radius: SHOCK.radius, seconds: stunSeconds(level) });
       return;
     case "smoke":
-      canister({ kind: "smoke", radius: SMOKE.radius, seconds: SMOKE.seconds });
+      canister({ kind: "smoke", radius: SMOKE.radius, seconds: smokeSeconds(level) });
       return;
   }
 }

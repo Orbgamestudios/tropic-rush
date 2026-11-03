@@ -440,10 +440,21 @@ describe("the gunboat's weapons", () => {
   };
 
   it("only fires what the crew has researched", () => {
-    const state = createRaid(layout([]), ["rifleman"], [], [], ["artillery"]);
+    const state = createRaid(layout([]), ["rifleman"], [], [], { artillery: 1 });
     fire(state, "smoke");
     expect(state.energy).toBe(START_ENERGY);
     expect(state.abilityUses.smoke).toBe(0);
+  });
+
+  it("hits harder and lasts longer at higher levels", () => {
+    const shock = createRaid(layout([]), ["rifleman"], [], [], { shock: 3 });
+    fire(shock, "shock", vec(0, -8));
+    landed(shock);
+    expect(shock.zones[0]?.time).toBeGreaterThan(SHOCK.seconds + 0.8);
+    const smoke = createRaid(layout([]), ["rifleman"], [], [], { smoke: 4 });
+    fire(smoke, "smoke", vec(0, -8));
+    landed(smoke);
+    expect(smoke.zones[0]?.time).toBeGreaterThan(SMOKE.seconds + 4);
   });
 
   it("is 6 tiles across, either way", () => {

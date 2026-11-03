@@ -8,6 +8,8 @@
 // seams between them without smearing them. So the light copy isn't simplified with its texture:
 // its seams are welded shut, its shape is simplified freely, it's unwrapped afresh into a few large
 // patches, and the art is carried over by finding, for each pixel, the same spot on the full model.
+// The full model's surface is carried over the same way, as a normal map, so the light copy shades
+// like the full one: folds, noses and rims keep their form with a fraction of the triangles.
 //
 //   node scripts/rig-hero.mjs rifleman
 //
@@ -135,14 +137,14 @@ const HEROES = {
     height: 2.6,
     middle: -0.1,
     // Hard edges take more triangles than people do, and it's the biggest thing on the beach.
-    raidTriangles: 7000,
+    raidTriangles: 14000,
   },
 };
 
 /** The two copies written: light for raids, detailed for the hero screen. */
 const COPIES = [
-  { suffix: "rig", triangles: 3600, headTriangles: 1800, texture: 512, quality: 80, rebake: true },
-  { suffix: "hi", triangles: 32000, texture: 1024, quality: 90, rebake: false },
+  { suffix: "rig", triangles: 8000, headTriangles: 7000, texture: 1024, quality: 84, rebake: true },
+  { suffix: "hi", triangles: 57000, texture: 1024, quality: 92, rebake: false },
 ];
 const HERO_HEIGHT = 2.25;
 /** Passes of blending each vertex's bones with its neighbors', so joints bend softly. */
@@ -151,6 +153,9 @@ const WEIGHT_PASSES = 30;
 const NECK_BLEND = 0.025;
 /** How far along the hand the knuckles are. */
 const KNUCKLES = 0.42;
+/** The normal map is this many times smaller than the color texture, each way. */
+const RELIEF_SMALLER = 2;
+const RELIEF_QUALITY = 86;
 /** How much larger a head is unwrapped than it really is, for a bigger share of the texture. */
 const HEAD_ROOM = 1.7;
 /** A texture's baked this many times too fine and scaled down, which evens out the sampling. */
@@ -396,7 +401,7 @@ function reduced(mesh, skin, triangles) {
     3,
     [0.6, 0.6, 0.6],
     null,
-    triangles * 3,
+    Math.min(triangles * 3, indices.length),
     // Never past this, or across a seam in the texture: its patches would smear into each other.
     0.1,
     [],
@@ -468,8 +473,12 @@ function unwrapped(indices, positions, size) {
   });
 }
 
-/** Paints a new texture for a new unwrap by finding each pixel's spot on the full model. */
-async function bakedTexture(full, flat, positions, indices, uvs, size, quality) {
+/**
+ * Paints new textures for a new unwrap by finding each pixel's spot on the full model: its color,
+ * and how its surface faces there compared with the light copy's. That comparison is made in the
+ * same frame three.js builds in its shader for a mesh with no tangents, so it needs none stored.
+ */
+async function bakedTextures(full, flat, { positions, normals, indices, uvs }, size, quality) {
   const source = await sharp(flat.texture.getImage())
     .removeAlpha()
     .raw()
@@ -481,18 +490,40 @@ async function bakedTexture(full, flat, positions, indices, uvs, size, quality) 
   const bvh = new MeshBVH(geometry);
   const faces = geometry.index.array;
   const pixels = new Uint8Array(size * size * 3);
+  const relief = new Uint8Array(size * size * 3);
   const filled = new Uint8Array(size * size);
   const point = new THREE.Vector3();
   const hit = {};
   const tri = new THREE.Triangle();
   const [a, b, c] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
   const bary = new THREE.Vector3();
+  const [p, edgeA, edgeB] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const [low, high, across, along] = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ];
+  const [perpA, perpB, facing] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const frame = new THREE.Matrix3();
+  const blended = (out, array, stride, [i, j, k], [u, v, w]) => {
+    for (let axis = 0; axis < stride; axis++) {
+      const value = array[i * stride + axis] * u + array[j * stride + axis] * v;
+      out.setComponent(axis, value + array[k * stride + axis] * w);
+    }
+    return out;
+  };
   const corner = (i) => [uvs[i * 2] * size, uvs[i * 2 + 1] * size];
   for (let t = 0; t < indices.length; t += 3) {
     const [i0, i1, i2] = [indices[t], indices[t + 1], indices[t + 2]];
     const [p0, p1, p2] = [corner(i0), corner(i1), corner(i2)];
     const area = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (p1[1] - p0[1]);
     if (Math.abs(area) < 1e-6) continue;
+    p.fromArray(positions, i0 * 3);
+    edgeA.fromArray(positions, i1 * 3).sub(p);
+    edgeB.fromArray(positions, i2 * 3).sub(p);
+    const [ax, ay] = [uvs[i1 * 2] - uvs[i0 * 2], uvs[i1 * 2 + 1] - uvs[i0 * 2 + 1]];
+    const [bx, by] = [uvs[i2 * 2] - uvs[i0 * 2], uvs[i2 * 2 + 1] - uvs[i0 * 2 + 1]];
     const xs = [p0[0], p1[0], p2[0]];
     const ys = [p0[1], p1[1], p2[1]];
     const x0 = Math.max(0, Math.floor(Math.min(...xs)) - 1);
@@ -511,16 +542,9 @@ async function bakedTexture(full, flat, positions, indices, uvs, size, quality) 
         if (w0 < -slack || w1 < -slack || w2 < -slack) continue;
         const k = y * size + x;
         if (filled[k]) continue;
-        const [u0, u1, u2] = [Math.max(0, w0), Math.max(0, w1), Math.max(0, w2)];
-        const sum = u0 + u1 + u2;
-        for (let axis = 0; axis < 3; axis++) {
-          const v =
-            (positions[i0 * 3 + axis] * u0 +
-              positions[i1 * 3 + axis] * u1 +
-              positions[i2 * 3 + axis] * u2) /
-            sum;
-          point.setComponent(axis, v);
-        }
+        const sum = Math.max(0, w0) + Math.max(0, w1) + Math.max(0, w2);
+        const shares = [w0, w1, w2].map((w) => Math.max(0, w) / sum);
+        blended(point, positions, 3, [i0, i1, i2], shares);
         bvh.closestPointToPoint(point, hit);
         const f = hit.faceIndex * 3;
         const [v0, v1, v2] = [faces[f], faces[f + 1], faces[f + 2]];
@@ -539,6 +563,25 @@ async function bakedTexture(full, flat, positions, indices, uvs, size, quality) 
         const sy = Math.min(height - 1, Math.max(0, Math.floor(sv * height)));
         const from = (sy * width + sx) * 3;
         pixels.set(source.data.subarray(from, from + 3), k * 3);
+        blended(low, normals, 3, [i0, i1, i2], shares).normalize();
+        blended(high, full.normals, 3, [v0, v1, v2], [bary.x, bary.y, bary.z]).normalize();
+        perpB.crossVectors(edgeB, low);
+        perpA.crossVectors(low, edgeA);
+        across.copy(perpB).multiplyScalar(ax).addScaledVector(perpA, bx);
+        along.copy(perpB).multiplyScalar(ay).addScaledVector(perpA, by);
+        const scale = Math.sqrt(Math.max(across.lengthSq(), along.lengthSq())) || 1;
+        across.divideScalar(scale);
+        along.divideScalar(scale);
+        frame
+          .set(across.x, along.x, low.x, across.y, along.y, low.y, across.z, along.z, low.z)
+          .invert();
+        facing.copy(high).applyMatrix3(frame);
+        // Anything facing away has found the wrong layer of the model, such as the far side of a rim.
+        if (!(facing.z > 0.1)) facing.set(0, 0, 1);
+        facing.normalize();
+        relief[k * 3] = Math.round((facing.x * 0.5 + 0.5) * 255);
+        relief[k * 3 + 1] = Math.round((facing.y * 0.5 + 0.5) * 255);
+        relief[k * 3 + 2] = Math.round((facing.z * 0.5 + 0.5) * 255);
         filled[k] = 1;
       }
     }
@@ -562,16 +605,30 @@ async function bakedTexture(full, flat, positions, indices, uvs, size, quality) 
           const n = ny * size + nx;
           if (!was[n]) continue;
           pixels.set(pixels.subarray(n * 3, n * 3 + 3), k * 3);
+          relief.set(relief.subarray(n * 3, n * 3 + 3), k * 3);
           filled[k] = 1;
           break;
         }
       }
     }
   }
-  return sharp(Buffer.from(pixels), { raw: { width: size, height: size, channels: 3 } })
+  for (let k = 0; k < size * size; k++) {
+    if (filled[k]) continue;
+    relief[k * 3] = 128;
+    relief[k * 3 + 1] = 128;
+    relief[k * 3 + 2] = 255;
+  }
+  const raw = { raw: { width: size, height: size, channels: 3 } };
+  const image = await sharp(Buffer.from(pixels), raw)
     .resize(size / BAKE_FINER, size / BAKE_FINER)
+    .sharpen({ sigma: 0.7 })
     .webp({ quality })
     .toBuffer();
+  const reliefImage = await sharp(Buffer.from(relief), raw)
+    .resize(size / BAKE_FINER / RELIEF_SMALLER, size / BAKE_FINER / RELIEF_SMALLER)
+    .webp({ quality: RELIEF_QUALITY })
+    .toBuffer();
+  return { image, reliefImage };
 }
 
 /** Part of a welded mesh, down to this many triangles, with the edge it shares left alone. */
@@ -668,16 +725,8 @@ async function rebaked(full, flat, skin, { triangles: most, headTriangles, textu
     joints.set(whole.joints.subarray(v * 4, v * 4 + 4), i * 4);
     weights.set(whole.weights.subarray(v * 4, v * 4 + 4), i * 4);
   });
-  const image = await bakedTexture(
-    full,
-    flat,
-    out.positions,
-    out.indices,
-    out.uvs,
-    texture * BAKE_FINER,
-    quality,
-  );
-  return { mesh: out, skin: skin && { joints, weights }, image };
+  const baked = await bakedTextures(full, flat, out, texture * BAKE_FINER, quality);
+  return { mesh: out, skin: skin && { joints, weights }, ...baked };
 }
 
 /** Drops unused vertices, stands the model on the ground and turns it to face +x. */
@@ -843,7 +892,7 @@ function skinWeights(mesh, bones) {
   return weights;
 }
 
-async function write(mesh, skin, bones, image) {
+async function write(mesh, skin, bones, image, reliefImage) {
   const doc = new Document();
   const buffer = doc.createBuffer();
   doc.createExtension(EXTTextureWebP).setRequired(true);
@@ -856,13 +905,17 @@ async function write(mesh, skin, bones, image) {
     .setAttribute("NORMAL", accessor(mesh.normals, "VEC3"))
     .setAttribute("TEXCOORD_0", accessor(mesh.uvs, "VEC2"));
   const texture = doc.createTexture("skin").setMimeType("image/webp").setImage(image);
-  prim.setMaterial(
-    doc
-      .createMaterial("skin")
-      .setBaseColorTexture(texture)
-      .setRoughnessFactor(1)
-      .setMetallicFactor(0),
-  );
+  const material = doc
+    .createMaterial("skin")
+    .setBaseColorTexture(texture)
+    .setRoughnessFactor(1)
+    .setMetallicFactor(0);
+  if (reliefImage) {
+    material.setNormalTexture(
+      doc.createTexture("relief").setMimeType("image/webp").setImage(reliefImage),
+    );
+  }
+  prim.setMaterial(material);
 
   const body = doc.createNode("body").setMesh(doc.createMesh("body").addPrimitive(prim));
   const scene = doc.createScene("hero").addChild(body);
@@ -921,7 +974,7 @@ for (const copy of COPIES) {
       .resize(copy.texture, copy.texture, { fit: "inside" })
       .webp({ quality: copy.quality })
       .toBuffer());
-  const glb = await write(made.mesh, made.skin, bones, image);
+  const glb = await write(made.mesh, made.skin, bones, image, made.reliefImage);
   const out = `${hero.out}-${copy.suffix}.glb`;
   writeFileSync(out, glb);
   console.log(`  ${out}: ${(glb.length / 1024) | 0} KB, texture ${(image.length / 1024) | 0} KB`);
