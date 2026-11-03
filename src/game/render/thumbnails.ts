@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
 import type { HeroKind } from "../logic/heroes";
+import { kitVersion, stageFor } from "./buildingKit";
 import { menuHero, visibleBox } from "./heroAssets";
 import { buildingModel } from "./models";
 
@@ -50,7 +51,7 @@ function snapshot(object: THREE.Object3D, camera: THREE.PerspectiveCamera): stri
 }
 
 const portraits = new Map<HeroKind, Promise<string>>();
-const icons = new Map<BuildingType, string>();
+const icons = new Map<string, string>();
 
 /** A head-and-shoulders portrait of a hero (a PNG data URL). */
 export function heroPortrait(kind: HeroKind): Promise<string> {
@@ -79,11 +80,12 @@ export function heroPortrait(kind: HeroKind): Promise<string> {
   return pending;
 }
 
-/** A three-quarter picture of a building (a PNG data URL). */
-export function buildingIcon(type: BuildingType): string {
-  let url = icons.get(type);
+/** A three-quarter picture of a building at a level (a PNG data URL). */
+export function buildingIcon(type: BuildingType, level = 1): string {
+  const key = `${type}|${stageFor(type, level)}|${kitVersion()}`;
+  let url = icons.get(key);
   if (!url) {
-    const model = buildingModel(type).root;
+    const model = buildingModel(type, false, level).root;
     model.rotation.y = -Math.PI / 4;
     const box = visibleBox(model);
     const center = box.getCenter(new THREE.Vector3());
@@ -94,7 +96,7 @@ export function buildingIcon(type: BuildingType): string {
     camera.position.set(center.x, center.y + distance * 0.55, center.z + distance * 0.84);
     camera.lookAt(center);
     url = snapshot(model, camera);
-    icons.set(type, url);
+    icons.set(key, url);
   }
   return url;
 }

@@ -17,7 +17,7 @@ const fits = new Map<string, number>();
 
 /** How much to shrink a model so it stays inside its footprint. */
 export function tileFit(type: BuildingType, rotated: boolean, model: THREE.Object3D): number {
-  const key = `${type}|${rotated}`;
+  const key = `${type}|${rotated}|${model.userData.fit ?? ""}`;
   let fit = fits.get(key);
   if (fit === undefined) {
     const { w, h } = footprint(type, rotated);

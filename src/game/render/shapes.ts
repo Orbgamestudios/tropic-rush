@@ -156,7 +156,8 @@ export function flatten(root: THREE.Object3D, keep: THREE.Object3D | null = null
     if (o === keep) return;
     if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshLambertMaterial) {
       const m = o.material;
-      if (!m.transparent && m.side === THREE.FrontSide && m.emissive.getHex() === 0) {
+      // A textured model keeps its texture, as a mesh of its own.
+      if (!m.transparent && !m.map && m.side === THREE.FrontSide && m.emissive.getHex() === 0) {
         const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
         g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, o.matrixWorld));
         // Something already baked keeps its colors.

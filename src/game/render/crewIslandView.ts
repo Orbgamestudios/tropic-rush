@@ -27,12 +27,13 @@ import { statueBefore } from "../logic/statues";
 import { tideTurn } from "../logic/tides";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { JobPin } from "../ui/crewUi";
+import { kitVersion, stageFor } from "./buildingKit";
 import { buildClouds, type CloudView } from "./clouds";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
 import { HomeHeroes } from "./homeHeroes";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
-import { buildingModel, gunboatModel } from "./models";
+import { buildingModel, GunboatScenery } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
 import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, updateWind } from "./props";
@@ -48,17 +49,27 @@ import { buildTileGrid } from "./tileGrid";
  * A building on the crew island: its 3D model, repainted in crew colors and turned to face the
  * beach, standing straight on the grass.
  */
-function crewBuildingModel(type: BuildingType, rotated: boolean): THREE.Group {
-  const key = `${type}|${rotated}`;
+function crewBuildingModel(type: BuildingType, rotated: boolean, level: number): THREE.Group {
+  const key = crewModelKey(type, rotated, level);
   let template = crewModels.get(key);
   if (!template) {
-    template = makeCrewBuilding(type, rotated);
+    template = makeCrewBuilding(type, rotated, level);
     crewModels.set(key, template);
   }
   return template.clone(true);
 }
 
 const crewModels = new Map<string, THREE.Group>();
+/** How fast a radar dish turns, in radians a second. */
+const SPIN = 1.6;
+
+/** Tells one look of a building from another: a new stage, or the models arriving, is a new one. */
+function crewModelKey(type: BuildingType, rotated: boolean, level: number): string {
+  return `${type}|${rotated}|${stageFor(type, level)}|${kitVersion()}`;
+}
+
+/** What a mesh wore before it was picked up, to put back when it's set down. */
+const worn = new WeakMap<THREE.Mesh, THREE.Material | THREE.Material[]>();
 const SINK = 0.15;
 
 /** Drawn over a building while a crewmate is moving it. */
@@ -146,9 +157,9 @@ function scaffold(type: BuildingType, rotated: boolean): THREE.Group {
   return template.clone(true);
 }
 
-function makeCrewBuilding(type: BuildingType, rotated: boolean): THREE.Group {
+function makeCrewBuilding(type: BuildingType, rotated: boolean, level: number): THREE.Group {
   const g = new THREE.Group();
-  const model = buildingModel(type, true).root;
+  const model = buildingModel(type, true, level).root;
   // Models face +x; face the beach (+z, towards the camera), or turn a quarter more if rotated.
   model.rotation.y = tileRotation(rotated);
   model.scale.setScalar(tileFit(type, rotated, model));
@@ -313,11 +324,15 @@ export class CrewIslandView {
   private readonly lights = new LightPool();
   private readonly fireflies = new Fireflies(7, (x, z) => Math.max(0, homeHeight(x, z)));
   /** What sync() last drew, so a frame where nothing changed costs nothing. */
-  private drawn: { layout: CrewLayout | null; hidden: string | null; held: string } = {
+  private drawn: { layout: CrewLayout | null; hidden: string | null; held: string; kit: number } = {
     layout: null,
     hidden: null,
     held: "",
+    kit: -1,
   };
+  /** Radar dishes and the like, turning all the while. */
+  private spinners: THREE.Object3D[] = [];
+  private readonly boat = new GunboatScenery();
   private readonly previewGroup = new THREE.Group();
   private previewKey = "";
   private readonly tilesMaterial = new THREE.MeshBasicMaterial({
@@ -378,7 +393,7 @@ export class CrewIslandView {
       }
       shore.add(beachFinds(HOME_SEED, scenery, landing.spawn, homeHeight, HOME_SHAPE));
     };
-    const boat = gunboatModel();
+    const { boat } = this;
     boat.root.position.set(landing.boat.x, 0, landing.boat.y);
     boat.root.rotation.y = -angleOf(sub(landing.spawn, landing.boat));
     this.root.add(
@@ -426,8 +441,15 @@ export class CrewIslandView {
     if (holders.length > 0) this.placeTags(layout, holders);
     const held = holders.map((h) => h.buildingId).join();
     const { drawn } = this;
-    if (drawn.layout === layout && drawn.hidden === hiddenId && drawn.held === held) return;
-    this.drawn = { layout, hidden: hiddenId, held };
+    const kit = kitVersion();
+    if (
+      drawn.layout === layout &&
+      drawn.hidden === hiddenId &&
+      drawn.held === held &&
+      drawn.kit === kit
+    )
+      return;
+    this.drawn = { layout, hidden: hiddenId, held, kit };
     this.overgrowth.sync(layout);
     this.buildingLampList = layout.buildings.flatMap((b) => {
       const { x, y } = buildingCenter(b);
@@ -438,12 +460,12 @@ export class CrewIslandView {
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
-      const key = `${b.type}|${b.rotated}`;
+      const key = crewModelKey(b.type, b.rotated, b.level);
       let entry = this.blocks.get(b.id);
       if (!entry || entry.key !== key) {
         if (entry) this.root.remove(entry.group);
         entry = {
-          group: crewBuildingModel(b.type, b.rotated),
+          group: crewBuildingModel(b.type, b.rotated, b.level),
           key,
           held: false,
           scaffold: null,
@@ -465,7 +487,9 @@ export class CrewIslandView {
       if (isHeld !== entry.held) {
         entry.held = isHeld;
         entry.group.traverse((o) => {
-          if (o instanceof THREE.Mesh) o.material = isHeld ? heldMaterial : vertexColored();
+          if (!(o instanceof THREE.Mesh)) return;
+          if (isHeld) worn.set(o, o.material);
+          o.material = isHeld ? heldMaterial : (worn.get(o) ?? vertexColored());
         });
       }
     }
@@ -473,6 +497,12 @@ export class CrewIslandView {
       if (live.has(id)) continue;
       this.root.remove(entry.group);
       this.blocks.delete(id);
+    }
+    this.spinners = [];
+    for (const { group } of this.blocks.values()) {
+      group.traverse((o) => {
+        if (o.name.endsWith("_radar")) this.spinners.push(o);
+      });
     }
     if (holders.length === 0) this.placeTags(layout, holders);
   }
@@ -594,10 +624,10 @@ export class CrewIslandView {
       return;
     }
     const b = preview.building;
-    const key = `${b.type}|${b.rotated}`;
+    const key = crewModelKey(b.type, b.rotated, b.level);
     if (key !== this.previewKey) {
       this.previewGroup.clear();
-      const ghost = crewBuildingModel(b.type, b.rotated);
+      const ghost = crewBuildingModel(b.type, b.rotated, b.level);
       ghost.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.material = new THREE.MeshLambertMaterial({
@@ -753,6 +783,8 @@ export class CrewIslandView {
 
   update(dt: number, time: number): void {
     this.camera.update(dt);
+    this.boat.refresh();
+    for (const spinner of this.spinners) spinner.rotation.y += dt * SPIN;
     this.overgrowth.setDistance(this.camera.distance);
     this.overgrowth.update(dt);
     this.heroes.update(dt);

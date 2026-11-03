@@ -19,7 +19,7 @@ import { cloudTexture } from "./clouds";
 import { type Lamp, LightPool } from "./lightPool";
 import { MapClouds } from "./mapClouds";
 import { MapShallows } from "./mapShallows";
-import { buildingModel, gunboatModel } from "./models";
+import { buildingModel, GunboatScenery } from "./models";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
 import {
@@ -324,7 +324,7 @@ export class WorldMapView {
   private readonly regionRoot = new THREE.Group();
   private readonly clouds = new MapClouds();
   private readonly shallows = new MapShallows();
-  private readonly boat = gunboatModel();
+  private readonly boat = new GunboatScenery();
   private readonly lights = new LightPool();
   /** One per step of the rising loop, so each puff can fade as it goes. */
   private readonly smokeMaterials: THREE.SpriteMaterial[] = [];
@@ -527,6 +527,7 @@ export class WorldMapView {
   update(time: number, dt: number): void {
     (this.ocean.uniforms.uTime as THREE.IUniform<number>).value = time;
     this.lights.update(dt, time);
+    this.boat.refresh();
     this.boat.root.position.set(Math.sin(time * 0.1) * 1.5 + 9, 0.1, 6.5);
     this.boat.root.rotation.y = 0.5;
     for (const s of this.smoke) {

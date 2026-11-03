@@ -12,11 +12,11 @@ import { type ControlMode, Controls } from "./controls";
 import { CrewMode, newId } from "./crew/crewMode";
 import { guessedPlace, locate, skyText } from "./location";
 import { passwordProblem, usernameProblem } from "./logic/account";
-import { BUILDINGS } from "./logic/buildings";
+import { BUILDINGS, type BuildingType } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
 import { gunboatWeapons, hqLevel, type LayoutOp } from "./logic/crewIsland";
 import { addCrystals, type CrystalKind, payCrystals, swapCrystals } from "./logic/crystals";
-import { allowedCount, emptyPurse, type Purse, RESOURCES } from "./logic/economy";
+import { allowedCount, emptyPurse, PROGRESSION, type Purse, RESOURCES } from "./logic/economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
 import { HERO_KINDS, type HeroKind } from "./logic/heroes";
 import { raidReward } from "./logic/heroProgress";
@@ -59,6 +59,7 @@ import { CoopSession, HOST_TIMEOUT } from "./net/coopSession";
 import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
 import { fetchRivals, reportRaid } from "./net/world";
+import { loadBuildingKit, STAGES } from "./render/buildingKit";
 import { CameraRig } from "./render/cameraRig";
 import { DangerMap } from "./render/dangerMap";
 import { AT_EASE, type HeroMove } from "./render/heroAnimator";
@@ -68,7 +69,7 @@ import { RaidView } from "./render/raidView";
 import { loadRigs } from "./render/riggedHeroes";
 import { Showcase } from "./render/showcase";
 import { Stage } from "./render/stage";
-import { heroPortrait } from "./render/thumbnails";
+import { buildingIcon, heroPortrait } from "./render/thumbnails";
 import { WorldMapView } from "./render/worldMap";
 import {
   type AccountSession,
@@ -465,6 +466,7 @@ export class Game {
     if (params.has("testhooks")) this.installTestHooks();
     this.stage.holdQuality = params.has("fullquality");
     void loadRigs();
+    void loadBuildingKit();
     for (const type of ["pointerdown", "pointermove", "wheel"]) {
       window.addEventListener(type, () => (this.touched = performance.now()), {
         capture: true,
@@ -606,6 +608,14 @@ export class Game {
         const hero = this.player();
         const pos = vec((hero?.pos.x ?? 0) + x, (hero?.pos.y ?? 0) + y);
         view.handleEvents([{ type: "explosion", pos, radius }], state);
+      },
+      /** Pictures of every stage of a modeled building, first to last, once the models are in. */
+      stagePictures: async (type: BuildingType) => {
+        await loadBuildingKit();
+        const most = PROGRESSION[type].maxLevel;
+        return Array.from({ length: STAGES }, (_, i) =>
+          buildingIcon(type, Math.ceil(((i + 1) * most) / STAGES)),
+        );
       },
       teleport: (x: number, y: number) => {
         const hero = this.player();

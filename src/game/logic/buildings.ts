@@ -73,7 +73,7 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
     height: 5.6,
     hp: 1100,
     energy: 4,
-    attack: { kind: "bullet", range: 21, damage: 50, reload: 0.42, speed: 30 },
+    attack: { kind: "bullet", range: 21, damage: 38, reload: 0.3, speed: 30 },
   },
   mortar: {
     label: "Mortar",
@@ -83,12 +83,12 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
     energy: 5,
     attack: {
       kind: "mortar",
-      range: 34,
+      range: 26,
       minRange: 6,
       damage: 220,
-      reload: 3.6,
+      reload: 4.32,
       flightTime: 1.8,
-      splash: 5.5,
+      splash: 4.5,
     },
   },
   harpoon: {
@@ -105,7 +105,7 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
     height: 5,
     hp: 1000,
     energy: 4,
-    attack: { kind: "flame", range: 9.5, damage: 28, reload: 0.13, coneHalfAngle: 0.45 },
+    attack: { kind: "flame", range: 11.5, damage: 28, reload: 0.13, coneHalfAngle: 0.45 },
   },
   watchtower: {
     label: "Watchtower",

@@ -150,6 +150,42 @@ one in when it lands, and a raid that starts before the light copies arrive uses
 those working: `human()` in `heroModels.ts` only runs on a slow connection, and a browser test
 loads the game with every model blocked to make sure it still does.
 
+## Building models
+
+Buildings are modeled in Blender by script, with no window: install the portable build anywhere (it
+was put in `%LOCALAPPDATA%\Programs\blender` here) and run
+
+    blender -b -P scripts/blender/make_buildings.py -- gunTurret --sheet
+    node scripts/pack-buildings.mjs gunTurret
+
+The first writes `models-wip/buildings/` (never committed): one file holding all ten looks, nodes
+`s1` to `s10`, the two texture atlases, and with `--sheet` a picture of all ten side by side, which
+is the quickest way to judge a change. The second squeezes the model into `public/models/kit/`
+and the atlases into `public/textures/`. `tropicRush.stagePictures(type)` draws every look in the
+game's own lighting.
+
+`scripts/blender/kit.py` holds the parts every building is made of: boxes, cylinders, beams, plank
+walls, sandbags and rivets, each cut out of one square of a shared texture atlas named for its
+material. Paint squares come out in raiders' rust or crew blue in a second copy of the atlas, which is
+all that tells the sides apart. Light is baked into each corner by rays cast round it, so the game
+draws a look with one Lambert material.
+
+Three things learned the hard way. Bevelling a box in bmesh rebuilds its faces, so texture them after
+the bevel or their big faces read from an empty corner of the atlas. A bevelled box shades each corner
+as the side it belongs to, so the box shares its vertices: shading each face apart cost four times the
+vertices, and the file twice the size. And a part that moves (a head, the guns, a radar dish) is an
+empty at its pivot holding the mesh, because packing moves a mesh's own origin to suit the
+compression. Empty leaves, such as the `muzzle` points, survive packing only with
+`prune({ keepLeaves: true })`.
+
+The game looks a building up in `render/buildingKit.ts`, and falls back to the old model built from
+primitives in `models.ts` until the file arrives or for buildings not modeled yet. The gunboat and its
+shells are `MODELS` in the Blender script rather than `BUILDINGS`: one look each, in crew paint, in
+`gunboat.glb` (about 60 KB). Scenery built before the files arrive, the home island's boat and the
+map's, swaps the model in when they land (`GunboatScenery`). The gun turret's
+file is about 330 KB for all ten looks, 1,000 to 3,800 triangles each, and the sandbags are the dear
+part.
+
 ## Baked art
 
 `node scripts/make-clouds.mjs` bakes the world map's cloud tile into `public/textures`. Its red

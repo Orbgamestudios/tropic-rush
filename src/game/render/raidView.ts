@@ -24,6 +24,7 @@ import type { Spoils } from "../logic/spoils";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
+import { kitPiece, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
 import { DefenseReach } from "./defenseReach";
@@ -37,6 +38,7 @@ import {
   buildingModel,
   crewTurretModel,
   decoyDroneModel,
+  type GunboatModel,
   gunboatModel,
   type HeroModel,
   heroModel,
@@ -55,6 +57,12 @@ interface BuildingView {
   model: BuildingModel;
   rubble: THREE.Group | null;
   baseRotation: number;
+  /** How far its guns are kicked back, 1 just after a shot, easing back to 0. */
+  kick: number;
+  /** Where its guns sit at rest, along the way they point. */
+  gunsRest: number;
+  /** Which barrel fires next. */
+  barrel: number;
   /** How far it's come down, 0 to 1, once destroyed. */
   collapse: number | null;
   baseY: number;
@@ -120,6 +128,13 @@ const UP = new THREE.Vector3(0, 1, 0);
 const slope = new THREE.Vector3();
 
 const BULLET_HEIGHT = 1.1;
+/** How far a turret's guns kick back when they fire, in meters, and how fast they come back. */
+const KICK = 0.14;
+const KICK_RETURN = 9;
+/** How fast a radar dish turns, in radians a second. */
+const SPIN = 1.6;
+const BOAT_KICK = 0.45;
+const BOAT_KICK_RETURN = 3;
 /** Smoke wider than this is a whole screen of it, not a grenade's wisp. */
 const SMALL_SMOKE = 5;
 /** How high a sniper's beam starts, as a share of its tower. */
@@ -158,7 +173,17 @@ function sniperSights(): SniperSights {
 const BAR_TOP = 0.2;
 const BAR_MARGIN = 0.12;
 
-function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
+/** The gunboat's shells and canisters, modeled, by what each leaves behind. */
+const BOAT_SHOTS: Partial<Record<string, Piece>> = {
+  "": "shell",
+  shock: "canisterShock",
+  smoke: "canisterSmoke",
+};
+
+function projectileMesh(kind: ProjectileKind, team: Team, variant: string): THREE.Object3D {
+  const modeled = kind === "artillery" ? BOAT_SHOTS[variant] : undefined;
+  const piece = modeled && kitPiece(modeled);
+  if (piece) return piece;
   switch (kind) {
     case "bullet": {
       const geometry = new THREE.CapsuleGeometry(0.06, 0.45, 2, 6);
@@ -244,7 +269,10 @@ export class RaidView {
   private readonly zones = new Map<number, THREE.Object3D>();
   private readonly turrets = new Map<number, { root: THREE.Group; head: THREE.Object3D }>();
   private readonly mines = new Map<number, THREE.Mesh>();
-  private readonly boat: { root: THREE.Group; cannon: THREE.Object3D };
+  private readonly boat: GunboatModel;
+  /** How far the gunboat's barrel is kicked back, and where it rests. */
+  private boatKick = 0;
+  private readonly boatGunsRest: number;
   /** Fading circles for how far defenses shoot; not on the crew's own island. */
   private readonly reach: DefenseReach | null;
   private readonly boatHeading: number;
@@ -302,7 +330,7 @@ export class RaidView {
     );
 
     state.buildings.forEach((b, i) => {
-      const model = buildingModel(b.type, home !== undefined);
+      const model = buildingModel(b.type, home !== undefined, b.level);
       // Square on its tiles, the same as on the crew's island.
       const rotated = layout.buildings[i]?.rotated ?? false;
       const baseRotation = tileRotation(rotated);
@@ -316,6 +344,9 @@ export class RaidView {
         model,
         rubble: null,
         baseRotation,
+        kick: 0,
+        gunsRest: model.guns?.position.x ?? 0,
+        barrel: 0,
         collapse: null,
         baseY: model.root.position.y,
         sights,
@@ -353,6 +384,7 @@ export class RaidView {
     if (this.reach) this.root.add(this.reach.mesh);
 
     this.boat = gunboatModel();
+    this.boatGunsRest = this.boat.guns?.position.x ?? 0;
     const toLand = sub(layout.spawn, layout.boat);
     this.boatHeading = angleOf(toLand);
     this.cannonAim = this.boatHeading;
@@ -366,6 +398,11 @@ export class RaidView {
       switch (e.type) {
         case "shot": {
           if (e.kind === "vial" || e.kind === "acid") break;
+          const building = e.team === "enemy" ? this.buildings.get(e.ownerId) : undefined;
+          if (building?.model.muzzles?.length) {
+            this.fireFrom(building);
+            break;
+          }
           const big =
             e.kind === "rocket" ||
             e.kind === "shell" ||
@@ -448,9 +485,11 @@ export class RaidView {
         }
         case "boatFire": {
           this.cannonAim = angleOf(sub(e.target, state.boat.pos));
-          const muzzle = new THREE.Vector3();
-          this.boat.cannon.getWorldPosition(muzzle);
-          this.effects.muzzle(muzzle.add(new THREE.Vector3(0, 0.3, 0)), 0xffd27a, 1.1);
+          const { muzzle, cannon } = this.boat;
+          const flash = (muzzle ?? cannon).getWorldPosition(new THREE.Vector3());
+          if (!muzzle) flash.y += 0.3;
+          this.effects.muzzle(flash, 0xffd27a, 1.1);
+          this.boatKick = 1;
           break;
         }
         default:
@@ -555,7 +594,7 @@ export class RaidView {
     this.updateZones(state, time);
     this.updateTurrets(state);
     this.updateMines(state, time);
-    this.updateBoat(time);
+    this.updateBoat(time, dt);
     this.updateLabels(state, camera, width, height);
   }
 
@@ -611,6 +650,15 @@ export class RaidView {
     ]);
   }
 
+  /** A building's gun goes off: from the next barrel's muzzle, kicking the guns back. */
+  private fireFrom(view: BuildingView): void {
+    const muzzles = view.model.muzzles ?? [];
+    const muzzle = muzzles[view.barrel++ % muzzles.length];
+    if (!muzzle) return;
+    this.effects.muzzle(muzzle.getWorldPosition(new THREE.Vector3()), 0xffa060, 0.32);
+    view.kick = 1;
+  }
+
   private updateBuildings(state: RaidState, dt: number): void {
     for (const b of state.buildings) {
       const view = this.buildings.get(b.id);
@@ -629,6 +677,12 @@ export class RaidView {
       // Models point along +x; the root is already turned to face the beach.
       if (view.model.head) view.model.head.rotation.y = -b.aim - view.baseRotation;
       if (view.model.flame) view.model.flame.visible = b.firing;
+      const { guns, spinner } = view.model;
+      if (guns) {
+        view.kick = Math.max(0, view.kick - dt * KICK_RETURN);
+        guns.position.x = view.gunsRest - view.kick * KICK;
+      }
+      if (spinner) spinner.rotation.y += dt * SPIN;
     }
   }
 
@@ -737,11 +791,11 @@ export class RaidView {
     });
   }
 
-  private takeFromPool(kind: ProjectileKind, team: Team): THREE.Object3D {
-    const key = `${kind}:${team}`;
+  private takeFromPool(kind: ProjectileKind, team: Team, variant: string): THREE.Object3D {
+    const key = `${kind}:${team}:${variant}`;
     const free = this.pool.get(key);
     const reused = free?.pop();
-    const obj = reused ?? projectileMesh(kind, team);
+    const obj = reused ?? projectileMesh(kind, team, variant);
     obj.userData.poolKey = key;
     obj.visible = true;
     this.root.add(obj);
@@ -764,7 +818,7 @@ export class RaidView {
       live.add(p.id);
       let obj = this.projectiles.get(p.id);
       if (!obj) {
-        obj = this.takeFromPool(p.kind, p.team);
+        obj = this.takeFromPool(p.kind, p.team, p.leaves?.kind ?? "");
         this.projectiles.set(p.id, obj);
       }
       this.placeProjectile(p, obj);
@@ -804,6 +858,13 @@ export class RaidView {
       const h0 = this.ground(from.x, from.y) + 1.6;
       const h1 = this.ground(to.x, to.y) + 0.2;
       obj.position.set(p.pos.x, h0 + (h1 - h0) * t + 4 * peak * t * (1 - t), p.pos.y);
+      // Nose first along the arc: a shell points the way it's going.
+      const climb = h1 - h0 + 4 * peak * (1 - 2 * t);
+      obj.rotation.set(
+        0,
+        -Math.atan2(to.y - from.y, to.x - from.x),
+        Math.atan2(climb, distance(from, to)),
+      );
       return;
     }
     obj.position.set(p.pos.x, this.ground(p.pos.x, p.pos.y) + BULLET_HEIGHT, p.pos.y);
@@ -1019,8 +1080,12 @@ export class RaidView {
     }
   }
 
-  private updateBoat(time: number): void {
-    const { root, cannon } = this.boat;
+  private updateBoat(time: number, dt: number): void {
+    const { root, cannon, guns } = this.boat;
+    if (guns) {
+      this.boatKick = Math.max(0, this.boatKick - dt * BOAT_KICK_RETURN);
+      guns.position.x = this.boatGunsRest - this.boatKick * BOAT_KICK;
+    }
     root.position.y = 0.12 + Math.sin(time * 1.6) * 0.08;
     root.rotation.z = Math.sin(time * 1.1) * 0.025;
     const relative = -angleDiff(this.cannonAim, this.boatHeading);

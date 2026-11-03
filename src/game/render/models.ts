@@ -4,6 +4,7 @@
 
 import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
+import { kitBuilding, kitPiece, kitVersion } from "./buildingKit";
 import { COLORS, material } from "./palette";
 import {
   at,
@@ -24,6 +25,12 @@ export interface BuildingModel {
   head: THREE.Object3D | null;
   /** Shown while a flamethrower is firing. */
   flame: THREE.Object3D | null;
+  /** Kicks back when it fires. */
+  guns?: THREE.Object3D | null;
+  /** Where each barrel's shot leaves it, taking turns. */
+  muzzles?: THREE.Object3D[];
+  /** Turns all the while, like a radar dish. */
+  spinner?: THREE.Object3D | null;
 }
 
 const C = COLORS;
@@ -90,10 +97,13 @@ function stretch(root: THREE.Object3D, across: number, up: number): void {
 const templates = new Map<string, BuildingModel>();
 
 /**
- * A building, in enemy paint or the crew's. Each one is baked into a mesh or two the first time
- * it's asked for and shared from then on, so a whole base draws in a handful of calls.
+ * A building at this level, in enemy paint or the crew's: the Blender model if it's arrived, or
+ * else one built from primitives, baked into a mesh or two the first time it's asked for and
+ * shared from then on, so a whole base draws in a handful of calls.
  */
-export function buildingModel(type: BuildingType, crew = false): BuildingModel {
+export function buildingModel(type: BuildingType, crew = false, level = 1): BuildingModel {
+  const kit = kitBuilding(type, level, crew);
+  if (kit) return { ...kit, flame: null };
   const key = `${type}|${crew}`;
   let template = templates.get(key);
   if (!template) {
@@ -459,7 +469,24 @@ export { type HeroModel, heroModel } from "./heroModels";
 // ---------------------------------------------------------------------------------------------
 // Gunboat, crew turret, mine
 
-export function gunboatModel(): { root: THREE.Group; cannon: THREE.Object3D } {
+export interface GunboatModel {
+  root: THREE.Group;
+  /** Turns to face where the gunboat's firing. */
+  cannon: THREE.Object3D;
+  /** Kicks back when it fires, on the modeled boat. */
+  guns?: THREE.Object3D | null;
+  muzzle?: THREE.Object3D | null;
+}
+
+/** The crew's gunboat: the Blender model if it's arrived, or else one built from primitives. */
+export function gunboatModel(): GunboatModel {
+  const boat = kitPiece("boat");
+  if (boat) {
+    const root = new THREE.Group();
+    root.add(boat);
+    const part = (name: string) => boat.getObjectByName(`boat_${name}`) ?? null;
+    return { root, cannon: part("head") ?? root, guns: part("guns"), muzzle: part("muzzle0") };
+  }
   const shape = new THREE.Shape();
   shape.moveTo(-2.9, -1.25);
   shape.lineTo(1.7, -1.25);
@@ -500,6 +527,20 @@ export function gunboatModel(): { root: THREE.Group; cannon: THREE.Object3D } {
   flatten(root, cannon);
   flatten(cannon);
   return { root, cannon };
+}
+
+/** A gunboat for scenery that's built before the models arrive: it swaps the modeled one in then. */
+export class GunboatScenery {
+  readonly root = new THREE.Group();
+  private shown = -1;
+
+  /** Call every frame; it only does anything once, when the models land. */
+  refresh(): void {
+    if (this.shown === kitVersion()) return;
+    this.shown = kitVersion();
+    this.root.clear();
+    this.root.add(gunboatModel().root);
+  }
 }
 
 export function crewTurretModel(): { root: THREE.Group; head: THREE.Object3D } {

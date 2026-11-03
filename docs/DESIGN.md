@@ -85,6 +85,24 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Circles on the ground:** nothing flat is cut off by a hill now. Hero rings lean with the slope,
   and mines, blast rings and scorch marks draw straight after the ground, so the ground can't slice
   them and anyone standing on them stays in front.
+- **Building models (Decided, owner's plan):** every building gets ten looks modeled in Blender, from
+  a janky setup of scrap wood, rope and tin to polished steel with lights. Defenses sit in sandbags
+  for their first few looks; nothing else has sandbags. The design never changes from one look to the
+  next: the same footprint and shape, only better made. A building shows the look for its share of
+  its top level, so a ten-level building changes every level and a 50-level headquarters every five.
+  The gun turret is the first, for the owner to judge before the rest.
+- **Turrets move:** a turret's barrels kick back in turn as it fires, the flash comes from the muzzle,
+  and the last look's radar dish turns.
+- **Gunboat:** modeled in Blender with the same kit: a lofted hull, wheelhouse, mast, rails, tyre
+  fenders and a bow gun that turns to its target and kicks back when it fires. It fires a pointed
+  shell, or a striped canister for shock and a grey one for smoke, and each flies nose first along
+  its arc.
+- **Gun turret:** fires every 0.3 s for 38 damage, from every 0.42 s for 50: faster, each hit
+  smaller, and about 6% more damage a second.
+- **Flamethrower:** reaches 11.5 m, a tile further.
+- **Mortar:** reaches 26 m, four tiles shorter, its blast is 9 m across, a tile less, and it reloads
+  in 4.32 s, 20% slower.
+- **Heavy:** range 7 m, two tiles shorter.
 
 ## Added 2026-11-02, sixth batch (owner's requests)
 
@@ -849,7 +867,8 @@ Choices made while building the draft. All are **Proposed**:
   - **Proposed:** raiders are 1 + HQ/3 heroes at 0.3 + 0.055 × HQ strength; there's no penalty
     for losing yet; each phone runs its own raid, not the crew server.
 - **Defense reach (raised 2026-11-01, owner's request):** gun turret 21 m, harpoon 25 m, mortar 34 m
-  with a 5.5 m blast, flamethrower 9.5 m. Most heroes are now outranged.
+  with a 5.5 m blast, flamethrower 9.5 m. Most heroes are now outranged. Since 2026-11-02: mortar
+  26 m with a 4.5 m blast, flamethrower 11.5 m.
 - **Base layout (Decided 2026-11-01, owner's request):** the headquarters stands in the middle with
   defenses in rings all round it, so every way in is under fire. Mills and storages lie outside.
 - **Loot (Decided 2026-11-01, owner's request):** breaking a mill or a storage pays out that
@@ -857,6 +876,7 @@ Choices made while building the draft. All are **Proposed**:
   30% a level.
 - **Defense strength (raised 2026-10-30, owner's request, for more strategy):** gun turret 50
   damage every 0.42 s, mortar 220 every 3.6 s, harpoon 230 every 2.6 s, flamethrower 28 every 0.13
-  s. That's about 65% more damage per second than the first draft.
+  s. That's about 65% more damage per second than the first draft. Since 2026-11-02: gun turret 38
+  every 0.3 s, mortar 220 every 4.32 s.
 - **Balance check:** a unit test makes sure a bot rifleman can usually beat a level-1 island solo
   (in tuning it won 4 of 8). Nothing else is balanced yet.
