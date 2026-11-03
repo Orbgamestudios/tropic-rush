@@ -29,6 +29,8 @@ import {
   obstacleById,
   type PlacedBuilding,
   production,
+  researchBlocker,
+  researchCost,
   restoreBlocker,
   sanitizeLayout,
   settle,
@@ -59,11 +61,18 @@ import {
   type Purse,
   RESOURCES,
 } from "../logic/economy";
+import { ABILITIES } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
 import { randomSeed } from "../logic/island";
 import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
-import { needsBlueprint } from "../logic/spoils";
+import {
+  BLUEPRINT_TYPES,
+  type Blueprint,
+  blueprintName,
+  isWeapon,
+  needsBlueprint,
+} from "../logic/spoils";
 import { STATUE_CRYSTALS, STATUE_STONE, STATUES, statueBefore } from "../logic/statues";
 import { distance, vec } from "../logic/vec";
 import { dailyTribute, retakeIslands } from "../logic/worldMap";
@@ -122,6 +131,8 @@ export interface CrewModeHost {
   onMap(): void;
   /** A hero was tapped: open them up. */
   onHero(kind: HeroKind): void;
+  /** A hero's upgrade tree was asked for, at the laboratory. */
+  onTree(kind: HeroKind): void;
   /** Sends a change to the crew's server, while the island isn't open to do it. */
   sendOp(op: LayoutOp): void;
   onReplay(raid: NightRaid): void;
@@ -184,6 +195,12 @@ export class CrewMode {
       onStatuesPanel: () => this.showStatues(),
       onStatueGive: (kind) => this.giveCrystals(kind),
       onStatueRestore: (kind) => this.restoreStatue(kind),
+      onLabPanel: () => this.showLabPanel(),
+      onResearch: (type) => this.research(type),
+      onLabTree: (kind) => {
+        this.ui.hideLab();
+        host.onTree(kind);
+      },
     });
     surface.addEventListener("pointerdown", (e) => this.onDown(e));
     surface.addEventListener("pointermove", (e) => this.onMove(e));
@@ -549,6 +566,7 @@ export class CrewMode {
       writeLocalLayout(current);
     }
     if (this.ui.toolsOpen) this.showToolsPanel(current);
+    if (this.ui.labOpen) this.showLabPanel(current);
     if (this.ui.statuesOpen) this.showStatues(current);
     this.ui.setResources(current.resources, capacity(current), production(current));
     const hq = hqLevel(current);
@@ -556,12 +574,19 @@ export class CrewMode {
       const have = current.buildings.filter((b) => b.type === type).length;
       const allowed = allowedCount(type, hq);
       const unlockAt = firstHqAllowing(type);
-      const noPlans = needsBlueprint(type) && !current.blueprints.includes(type);
+      const noPlans = needsBlueprint(type) && !current.researched.includes(type);
+      const found = current.blueprints.includes(type);
       return {
         have,
         allowed,
         cost: costText(costFor(type, 1)),
-        locked: noPlans ? "Blueprint" : allowed === 0 ? `HQ ${unlockAt ?? "–"}` : null,
+        locked: noPlans
+          ? found
+            ? "Research"
+            : "Blueprint"
+          : allowed === 0
+            ? `HQ ${unlockAt ?? "–"}`
+            : null,
         blocked: buildBlocker(current, type) !== null,
       };
     });
@@ -817,6 +842,41 @@ export class CrewMode {
       }),
       `Workers: ${current.jobs.length} of ${workerCount(current)} busy. Builders: ${current.builds.length} of ${builderCount(current)} busy`,
     );
+  }
+
+  private showLabPanel(current = settle(this.layout, this.now())): void {
+    const rows = BLUEPRINT_TYPES.map((type) => {
+      const done = current.researched.includes(type);
+      const blocker = researchBlocker(current, type);
+      const found = current.blueprints.includes(type);
+      const what = isWeapon(type) ? ABILITIES[type].text : "Lets the crew build it.";
+      return {
+        type,
+        name: blueprintName(type),
+        note: done ? "Researched" : found ? (blocker ?? what) : "Find its blueprint on a raid",
+        cost: found ? costText(researchCost(type)) : "",
+        done,
+        blocker,
+      };
+    });
+    // Weapons first: they're what the laboratory is mostly for.
+    this.ui.showLab(
+      [...rows.filter((r) => isWeapon(r.type)), ...rows.filter((r) => !isWeapon(r.type))],
+      this.host.save().unlocked,
+    );
+  }
+
+  private research(type: Blueprint): void {
+    const result = tryOp(this.layout, { kind: "research", type }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      return;
+    }
+    this.commit({ kind: "research", type });
+    this.ui.flash(`${blueprintName(type)} researched!`);
+    this.ui.celebrate();
+    this.refreshEconomy();
+    this.showLabPanel();
   }
 
   private upgradeTool(tool: Tool): void {

@@ -22,8 +22,9 @@ import {
 import type { CrystalKind } from "../logic/crystals";
 import { formatDuration } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
-import { homeHeight, landingPoints } from "../logic/island";
+import { HOME_SHAPE, homeHeight, landingPoints } from "../logic/island";
 import { statueBefore } from "../logic/statues";
+import { tideTurn } from "../logic/tides";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { JobPin } from "../ui/crewUi";
 import { buildClouds, type CloudView } from "./clouds";
@@ -34,7 +35,7 @@ import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import { buildingModel, gunboatModel } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
-import { buildShore, homeCliffs, updateWind } from "./props";
+import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, updateWind } from "./props";
 import { CRYSTAL_COLORS, disposeGlint, glintSprite, type StatueModel, statueModel } from "./relics";
 import { homeScenery } from "./scenery";
 import { at, barrel, cyl, flatten, rbox, vertexColored } from "./shapes";
@@ -352,6 +353,9 @@ export class CrewIslandView {
     timer: GLINT_EVERY,
   };
 
+  private readonly freshFinds: () => void;
+  private tide = tideTurn(HOME_SEED, Date.now());
+
   constructor(
     private readonly stage: Stage,
     private readonly labelLayer: HTMLElement,
@@ -366,6 +370,14 @@ export class CrewIslandView {
     this.clouds = buildClouds(HOME_SEED);
     // Beyond the grass it's the raid islands' shore; the grass itself is the overgrowth.
     const shore = buildShore(HOME_SEED, scenery, landing.spawn, homeHeight, -0.5);
+    this.freshFinds = () => {
+      const old = shore.getObjectByName(BEACH_FINDS) as THREE.Mesh | undefined;
+      if (old) {
+        shore.remove(old);
+        old.geometry.dispose();
+      }
+      shore.add(beachFinds(HOME_SEED, scenery, landing.spawn, homeHeight, HOME_SHAPE));
+    };
     const boat = gunboatModel();
     boat.root.position.set(landing.boat.x, 0, landing.boat.y);
     boat.root.rotation.y = -angleOf(sub(landing.spawn, landing.boat));
@@ -754,6 +766,11 @@ export class CrewIslandView {
     updateWind(time, null);
     this.terrain.update(time);
     this.clouds.update(time);
+    const tide = tideTurn(HOME_SEED, Date.now());
+    if (tide !== this.tide) {
+      this.tide = tide;
+      this.freshFinds();
+    }
   }
 
   /** Building label for menus. */

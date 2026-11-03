@@ -18,7 +18,8 @@ export type BuildingType =
   | "timberShed"
   | "stoneYard"
   | "scrapBin"
-  | "refinery";
+  | "refinery"
+  | "laboratory";
 
 export type DefenseAttack =
   | { kind: "bullet"; range: number; damage: number; reload: number; speed: number }
@@ -127,6 +128,7 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
   stoneYard: { label: "Stone yard", radius: 2.9, height: 2.6, hp: 1300, energy: 3 },
   scrapBin: { label: "Scrap bin", radius: 2.9, height: 3, hp: 1100, energy: 3 },
   refinery: { label: "Refinery", radius: 3.7, height: 6.5, hp: 1300, energy: 4 },
+  laboratory: { label: "Laboratory", radius: 2.9, height: 5.4, hp: 1100, energy: 3 },
 };
 
 export type BuildingCounts = Partial<Record<BuildingType, number>>;

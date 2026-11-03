@@ -17,6 +17,7 @@ import type {
   RaidState,
   Team,
   TurretKind,
+  Zone,
   ZoneKind,
 } from "../logic/raid";
 import type { Spoils } from "../logic/spoils";
@@ -115,6 +116,8 @@ function heroRing(radius: number, leader: boolean): THREE.Mesh {
 }
 
 const BULLET_HEIGHT = 1.1;
+/** Smoke wider than this is a whole screen of it, not a grenade's wisp. */
+const SMALL_SMOKE = 5;
 /** How high a sniper's beam starts, as a share of its tower. */
 const SIGHTS_FROM = 0.92;
 
@@ -826,11 +829,17 @@ export class RaidView {
       live.add(z.id);
       let obj = this.zones.get(z.id);
       if (!obj) {
-        obj = z.kind === "heal" ? this.healCircle(z.radius) : this.groundPatch(z.kind, z.radius);
+        if (z.kind === "heal") obj = this.healCircle(z.radius);
+        else if (z.kind === "shock") obj = this.shockCircle(z.radius);
+        else obj = this.groundPatch(z.kind, z.radius);
         obj.position.set(z.pos.x, this.ground(z.pos.x, z.pos.y), z.pos.y);
         this.root.add(obj);
         this.zones.set(z.id, obj);
-        if (z.kind === "smoke") this.effects.smokeColumn(this.at(z.pos, 0.4), z.time, false);
+        if (z.kind === "smoke") {
+          if (z.radius > SMALL_SMOKE)
+            this.effects.smokeCloud(this.at(z.pos, 0.4), z.radius, z.time);
+          else this.effects.smokeColumn(this.at(z.pos, 0.4), z.time, false);
+        }
       }
       const fade = Math.min(1, z.time);
       obj.scale.setScalar(0.6 + 0.4 * fade);
@@ -841,6 +850,7 @@ export class RaidView {
         const flame = { x: z.pos.x + Math.cos(a) * r, y: z.pos.y + Math.sin(a) * r };
         this.effects.burn(this.at(flame, 0.3), 0.5);
       }
+      if (z.kind === "shock") this.crackle(state, z);
     }
     for (const [id, obj] of this.zones) {
       if (live.has(id)) continue;
@@ -850,8 +860,46 @@ export class RaidView {
     }
   }
 
+  /** Sparks across a shock circle, and off the defenses it's caught. */
+  private crackle(state: RaidState, z: Zone): void {
+    if (Math.random() < 0.5) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * z.radius;
+      const spark = { x: z.pos.x + Math.cos(a) * r, y: z.pos.y + Math.sin(a) * r };
+      this.effects.zap(this.at(spark, 0.3));
+    }
+    for (const b of state.buildings) {
+      const { attack, height } = BUILDINGS[b.type];
+      if (b.destroyed || !attack || Math.random() > 0.2) continue;
+      if (distance(b.pos, z.pos) - b.radius <= z.radius) {
+        this.effects.zap(this.at(b.pos, height * (0.5 + Math.random() * 0.5)));
+      }
+    }
+  }
+
+  private shockCircle(radius: number): THREE.Group {
+    const g = new THREE.Group();
+    const flat = (shape: THREE.BufferGeometry, opacity: number) => {
+      const mesh = new THREE.Mesh(
+        shape.rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({
+          color: 0x6fd8ff,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          depthTest: false,
+        }),
+      );
+      mesh.renderOrder = 2;
+      return mesh;
+    };
+    g.add(at(flat(new THREE.CircleGeometry(radius, 40), 0.16), 0, 0.1, 0));
+    g.add(at(flat(new THREE.RingGeometry(radius * 0.94, radius, 56), 0.85), 0, 0.12, 0));
+    return g;
+  }
+
   /** A soft stain on the ground under burning ground or a smoke cloud. */
-  private groundPatch(kind: Exclude<ZoneKind, "heal">, radius: number): THREE.Group {
+  private groundPatch(kind: Exclude<ZoneKind, "heal" | "shock">, radius: number): THREE.Group {
     const g = new THREE.Group();
     const disc = new THREE.CircleGeometry(radius, 32);
     disc.rotateX(-Math.PI / 2);

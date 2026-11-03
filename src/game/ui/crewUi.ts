@@ -12,9 +12,13 @@ import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import type { RivalRaid, Tool } from "../logic/crewIsland";
 import type { CrystalKind } from "../logic/crystals";
 import { costText, formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
+import type { HeroKind } from "../logic/heroes";
+import { HERO_NAMES } from "../logic/heroProgress";
 import type { NightRaid } from "../logic/nightRaid";
+import { type Blueprint, isWeapon } from "../logic/spoils";
 import type { Member } from "../net/protocol";
-import { buildingIcon } from "../render/thumbnails";
+import { buildingIcon, heroPortrait } from "../render/thumbnails";
+import { ABILITY_ICONS } from "./hud";
 import {
   button,
   closeOnBackdrop,
@@ -58,6 +62,22 @@ export interface CrewUiHandlers {
   /** Gives a statue all the crystals of its kind the player can spare. */
   onStatueGive(kind: CrystalKind): void;
   onStatueRestore(kind: CrystalKind): void;
+  onLabPanel(): void;
+  onResearch(type: Blueprint): void;
+  /** Opens a hero's upgrade tree, from the laboratory. */
+  onLabTree(kind: HeroKind): void;
+}
+
+/** A row of the laboratory. */
+export interface ResearchRow {
+  type: Blueprint;
+  name: string;
+  /** What it does, or what it's still waiting for. */
+  note: string;
+  cost: string;
+  done: boolean;
+  /** Why it can't be researched yet, or null. */
+  blocker: string | null;
 }
 
 /** A row of the statues panel. */
@@ -118,7 +138,7 @@ export interface JobPin {
   building: boolean;
 }
 
-type Category = "defenses" | "resources" | "storage";
+type Category = "defenses" | "resources" | "storage" | "research";
 
 /** How many of the headquarters' wants fit on the selection card. */
 const MOST_NEEDS = 3;
@@ -150,6 +170,11 @@ const CATEGORIES: Record<Category, { label: string; icon: IconName; types: Build
     icon: "timber",
     types: ["goldVault", "timberShed", "stoneYard", "scrapBin"],
   },
+  research: {
+    label: "Research",
+    icon: "flask",
+    types: ["laboratory"],
+  },
 };
 
 export const RESOURCE_ICON: Record<Resource, IconName> = {
@@ -176,6 +201,11 @@ export class CrewUi {
   private readonly clearCost = el("div", "crew-clearing-cost");
   private readonly clearGives = el("div", "crew-clearing-gives");
   private readonly clearTime = el("div", "crew-clearing-time");
+  private readonly labPanel = el("div", "crew-join crew-lab");
+  private readonly labRows = el("div", "crew-lab-rows");
+  private readonly labHeroes = el("div", "crew-lab-heroes");
+  private readonly labButton: HTMLButtonElement;
+  private lastLabKey = "";
   private readonly toolsPanel = el("div", "crew-join crew-tools");
   private readonly toolRows = el("div", "crew-tool-rows");
   private readonly toolWorkers = el("div", "crew-night-stats crew-tools-note");
@@ -380,6 +410,14 @@ export class CrewUi {
       className: "crew-upgrade",
       onClick: () => handlers.onUpgrade(),
     });
+    this.labButton = button({
+      label: "Research",
+      icon: "flask",
+      variant: "gold",
+      size: "md",
+      className: "crew-upgrade",
+      onClick: () => handlers.onLabPanel(),
+    });
     const rotate = button({
       icon: "rotate",
       aria: "Rotate",
@@ -412,7 +450,7 @@ export class CrewUi {
     words.append(this.selectionLabel, this.selectionDetail, this.selectionNeeds, this.upgradeCost);
     const tools = el("div", "crew-selection-tools");
     tools.append(rotate, this.removeButton, done);
-    info.body.append(pic, words, this.upgradeButton, tools);
+    info.body.append(pic, words, this.upgradeButton, this.labButton, tools);
     this.selection.append(info.root);
 
     // Clearing: what a tapped thicket, rock or boulder needs and gives.
@@ -492,6 +530,22 @@ export class CrewUi {
       }),
     );
     this.toolsPanel.append(toolCard.root);
+
+    // The laboratory: blueprints into the real thing, and every hero's upgrades.
+    const labCard = panel("Laboratory", "crew-night-card crew-lab-card");
+    labCard.body.append(this.labRows, this.labHeroes);
+    labCard.root.append(
+      button({
+        icon: "close",
+        aria: "Close laboratory",
+        round: true,
+        variant: "red",
+        size: "sm",
+        className: "crew-join-close",
+        onClick: () => this.hideLab(),
+      }),
+    );
+    this.labPanel.append(labCard.root);
 
     // The nightly raid: when the next one lands, how the last went, and its replay.
     const nightCard = panel("Night raid", "crew-night-card");
@@ -573,6 +627,7 @@ export class CrewUi {
       this.toast,
       this.join,
       this.toolsPanel,
+      this.labPanel,
       this.night,
       this.statuesPanel,
       this.fx,
@@ -580,6 +635,7 @@ export class CrewUi {
     this.setDrawer(false);
     closeOnBackdrop(this.join, () => this.hideJoin());
     closeOnBackdrop(this.toolsPanel, () => this.hideTools());
+    closeOnBackdrop(this.labPanel, () => this.hideLab());
     closeOnBackdrop(this.night, () => this.hideNight());
     closeOnBackdrop(this.statuesPanel, () => this.hideStatues());
     for (const node of [
@@ -592,6 +648,7 @@ export class CrewUi {
       this.clearing,
       this.join,
       this.toolsPanel,
+      this.labPanel,
       this.night,
       this.statuesPanel,
     ]) {
@@ -839,6 +896,80 @@ export class CrewUi {
   }
 
   /** True while the tools panel is open. */
+  get labOpen(): boolean {
+    return this.labPanel.style.display === "flex";
+  }
+
+  /** Opens the laboratory, or refreshes it while it's open. */
+  showLab(rows: readonly ResearchRow[], heroes: readonly HeroKind[]): void {
+    // Rebuilt only when something's changed: a button replaced under a finger loses its tap.
+    const key = JSON.stringify([rows, heroes]);
+    this.labPanel.style.display = "flex";
+    if (key === this.lastLabKey) return;
+    this.lastLabKey = key;
+    const column = (title: string, list: readonly ResearchRow[]) => {
+      const box = el("div", "crew-lab-column");
+      box.append(el("div", "crew-lab-title", title), ...list.map((r) => this.researchRow(r)));
+      return box;
+    };
+    this.labRows.replaceChildren(
+      column(
+        "Gunboat weapons",
+        rows.filter((r) => isWeapon(r.type)),
+      ),
+      column(
+        "Defenses",
+        rows.filter((r) => !isWeapon(r.type)),
+      ),
+    );
+    this.labHeroes.replaceChildren(
+      el("div", "crew-lab-title", "Hero upgrades"),
+      ...heroes.map((kind) => {
+        const tile = el("button", "crew-lab-hero");
+        tile.setAttribute("aria-label", `${HERO_NAMES[kind]} upgrades`);
+        const face = el("img");
+        face.alt = "";
+        void heroPortrait(kind).then((url) => {
+          face.src = url;
+        });
+        tile.append(face);
+        tile.addEventListener("click", () => this.handlers.onLabTree(kind));
+        return tile;
+      }),
+    );
+  }
+
+  private researchRow(r: ResearchRow): HTMLElement {
+    const row = el("div", `crew-tool-row crew-lab-row${r.done ? " done" : ""}`);
+    let picture: Element;
+    if (isWeapon(r.type)) picture = icon(ABILITY_ICONS[r.type], "crew-lab-icon");
+    else {
+      const image = el("img", "crew-lab-icon");
+      image.src = buildingIcon(r.type);
+      image.alt = "";
+      picture = image;
+    }
+    const words = el("div", "crew-tool-words");
+    words.append(el("div", "crew-tool-name", r.name), el("div", "crew-tool-level", r.note));
+    row.append(picture, words);
+    if (!r.done && r.cost) {
+      const go = button({
+        label: "Research",
+        variant: "green",
+        size: "sm",
+        aria: `Research ${r.name}`,
+        onClick: () => this.handlers.onResearch(r.type),
+      });
+      go.disabled = r.blocker !== null;
+      row.append(costChips(r.cost), go);
+    }
+    return row;
+  }
+
+  hideLab(): void {
+    this.labPanel.style.display = "none";
+  }
+
   get toolsOpen(): boolean {
     return this.toolsPanel.style.display === "flex";
   }
@@ -983,6 +1114,10 @@ export class CrewUi {
         );
       }
       this.upgradeButton.disabled = !info.canUpgrade;
+      const lab = info.type === "laboratory";
+      this.labButton.style.display = lab ? "" : "none";
+      this.upgradeButton.style.display = lab ? "none" : "";
+      this.labButton.disabled = info.level === 0;
     } else {
       this.selectedType = null;
     }

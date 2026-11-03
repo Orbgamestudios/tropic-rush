@@ -148,6 +148,12 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
     counts: [[8, 1]],
     cost: { gold: 2000, timber: 1500, stone: 1500 },
   },
+  laboratory: {
+    unlockHq: 1,
+    maxLevel: 1,
+    counts: [[1, 1]],
+    cost: { gold: 300, timber: 200, stone: 100 },
+  },
   // The raid's old shared storehouse: not built on crew islands.
   storehouse: { unlockHq: MAX_HQ_LEVEL + 1, maxLevel: 1, counts: [], cost: {} },
 };

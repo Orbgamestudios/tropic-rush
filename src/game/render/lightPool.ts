@@ -52,7 +52,12 @@ const BUILDING_LAMPS: Partial<Record<BuildingType, readonly LampSpot[]>> = {
   quarry: [{ across: 0, out: 1, up: 0.45, reach: 12, power: 2.8, color: LANTERN }],
   scrapYard: [{ across: 0, out: 1, up: 0.4, reach: 12, power: 2.8, color: WARM }],
   refinery: [{ across: 0, out: 1, up: 0.3, reach: 15, power: 3.8, color: FIRE, flicker: true }],
+  laboratory: [{ across: 0.2, out: 1, up: 0.4, reach: 13, power: 3.2, color: 0x9fefff }],
 };
+
+/** How much further and brighter a building's lamps shine than the figures above. */
+const LAMP_REACH = 1.4;
+const LAMP_POWER = 1.2;
 
 export interface Lamp {
   x: number;
@@ -85,8 +90,8 @@ export function buildingLamps(
     x: x + (spot.across - spot.out) * diagonal,
     y,
     z: z + (spot.across + spot.out) * diagonal,
-    reach: spot.reach,
-    power: spot.power,
+    reach: spot.reach * LAMP_REACH,
+    power: spot.power * LAMP_POWER,
     color: enemy ? tint.setHex(spot.color).lerp(new THREE.Color(ENEMY), 0.4).getHex() : spot.color,
     halo: Math.min(1.1, 0.45 + spot.reach * 0.05),
     height: spot.up * spec.height,
@@ -126,7 +131,8 @@ const POOL_FRAGMENT = /* glsl */ `
   varying vec3 vColor;
   void main() {
     float a = max(0.0, 1.0 - dot(vUv, vUv));
-    gl_FragColor = vec4(vColor * a * a, 1.0);
+    // What's on screen is finished color, not light: this is the same brightening in those terms.
+    gl_FragColor = vec4(pow(1.0 + vColor * a * a, vec3(0.4545)) - 1.0, 1.0);
   }
 `;
 

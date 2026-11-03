@@ -1,14 +1,18 @@
 // What a won raid turns up beyond its gold: crystals from the headquarters, a blueprint for a
-// defense the crew hasn't worked out yet, and now and then a treasure chest. Only raider bases have
-// blueprints to find: a rival crew doesn't leave theirs lying about. No engine imports.
+// defense or gunboat weapon the crew hasn't worked out yet, and now and then a treasure chest. Only
+// raider bases have blueprints to find: a rival crew doesn't leave theirs lying about. Blueprints
+// go to the crew, who turn them into the real thing at the laboratory. No engine imports.
 
-import type { BuildingType } from "./buildings";
+import { BUILDINGS, type BuildingType } from "./buildings";
 import type { CrystalCost, CrystalKind } from "./crystals";
+import { ABILITIES, ABILITY_ORDER, type Ability } from "./gunboat";
 import { createRng } from "./rng";
 import type { Difficulty } from "./worldMap";
 
+export type Blueprint = BuildingType | Ability;
+
 /** Defenses a crew has to discover. The gun turret needs no blueprint, so nobody's defenseless. */
-export const BLUEPRINT_TYPES: readonly BuildingType[] = [
+export const DEFENSE_BLUEPRINTS: readonly BuildingType[] = [
   "mortar",
   "landmine",
   "watchtower",
@@ -16,8 +20,26 @@ export const BLUEPRINT_TYPES: readonly BuildingType[] = [
   "flamethrower",
 ];
 
+/** Gunboat weapons to discover, one after another. A crew starts with the first of them all. */
+export const GUNBOAT_BLUEPRINTS: readonly Ability[] = ABILITY_ORDER.slice(1);
+
+export const BLUEPRINT_TYPES: readonly Blueprint[] = [...DEFENSE_BLUEPRINTS, ...GUNBOAT_BLUEPRINTS];
+
 export function needsBlueprint(type: BuildingType): boolean {
-  return BLUEPRINT_TYPES.includes(type);
+  return DEFENSE_BLUEPRINTS.includes(type);
+}
+
+export function isWeapon(type: Blueprint): type is Ability {
+  return (GUNBOAT_BLUEPRINTS as readonly Blueprint[]).includes(type);
+}
+
+export function blueprintName(type: Blueprint): string {
+  return isWeapon(type) ? ABILITIES[type].name : BUILDINGS[type].label;
+}
+
+/** The gunboat weapon that can turn up next: they're found in order. */
+export function nextWeapon(known: readonly Blueprint[]): Ability | null {
+  return GUNBOAT_BLUEPRINTS.find((w) => !known.includes(w)) ?? null;
 }
 
 /** Crystals on a win: always the low number, and the odds of each one past it. */
@@ -43,7 +65,7 @@ export interface SpoilsRoll {
   /** Raider bases only; empty for a rival crew's. */
   defenses: readonly BuildingType[];
   /** The crew's known blueprints. */
-  known: readonly BuildingType[];
+  known: readonly Blueprint[];
   /** Wins since the last blueprint. */
   drought: number;
   /** The player's first ever win, which always shows them how this works. */
@@ -55,7 +77,7 @@ export interface SpoilsRoll {
 
 export interface Spoils {
   crystals: CrystalCost;
-  blueprint: BuildingType | null;
+  blueprint: Blueprint | null;
   /** Gold from a treasure chest. */
   chest: number;
 }
@@ -67,9 +89,11 @@ export function rollSpoils(roll: SpoilsRoll): Spoils {
   for (const chance of table.extra) if (rng() < chance * roll.luck) count++;
   const crystals: CrystalCost = count > 0 ? { [roll.crystal]: count } : {};
 
-  const unknown = BLUEPRINT_TYPES.filter(
+  const weapon = roll.defenses.length > 0 ? nextWeapon(roll.known) : null;
+  const unknown: Blueprint[] = DEFENSE_BLUEPRINTS.filter(
     (t) => roll.defenses.includes(t) && !roll.known.includes(t),
   );
+  if (weapon) unknown.push(weapon);
   const chance = (BLUEPRINT_CHANCE + DROUGHT_CHANCE * roll.drought) * roll.luck;
   const sure = roll.firstWin || roll.drought >= DROUGHT_LIMIT;
   // Roll even with nothing to find, so what's found doesn't change the rest of the spoils.

@@ -145,7 +145,7 @@ describe("island shapes", () => {
       const rated = Math.min(hq, 20);
       const types = Object.keys(BUILDINGS) as BuildingType[];
       for (const type of types) {
-        if (type === "landmine") continue;
+        if (type === "landmine" || type === "laboratory") continue;
         const have = island.buildings.filter((b) => b.type === type).length;
         expect(have, `${kind} hq ${hq}: ${type}`).toBe(allowedCount(type, rated));
       }

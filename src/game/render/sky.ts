@@ -22,7 +22,7 @@ const LAMPS_ON = [8, -3] as const;
 const STARS_ON = [-5, -13] as const;
 /** The moon's light, at its strongest. */
 const MOON_LIGHT = 0xa8bfff;
-const MOON_POWER = 1.05;
+const MOON_POWER = 1.3;
 /** A half moon gives far less than half the light of a full one. */
 const MOON_FALLOFF = 1.4;
 /** It takes over from dusk as the sun goes down through these heights, in degrees. */
@@ -33,9 +33,9 @@ const MOON_RISING = [0, 14] as const;
 const MOON_SHADOWS = [0.15, 0.7] as const;
 const MOON_SHADOW_STRENGTH = 0.8;
 /** On the darkest nights, how much of the fill light, sea and sky are left. */
-const DARKEST = { fill: 0.58, unlit: 0.55, sky: 0.45 } as const;
+const DARKEST = { fill: 0.88, unlit: 0.76, sky: 0.55 } as const;
 /** The jungle's own shade at night, under a new moon and a full one (1 is no change). */
-const FOREST_SHADE = [0.13, 0.3] as const;
+const FOREST_SHADE = [0.27, 0.45] as const;
 /** How much selection squares and range circles fade at night. */
 const OVERLAY_DIMMING = 0.62;
 /** Lamps look stronger the less moon there is to compete with them. */
@@ -81,12 +81,12 @@ const NIGHT: Look = {
   at: -14,
   sun: MOON_LIGHT,
   sunPower: 0,
-  top: 0x5570c0,
-  bottom: 0x343f70,
-  fill: 0.85,
+  top: 0x6682cc,
+  bottom: 0x4a5788,
+  fill: 1.4,
   zenith: 0x060c22,
   horizon: 0x141f46,
-  unlit: 0x5c70aa,
+  unlit: 0x6f84be,
   glint: 0x7f93c8,
   glow: 0x000000,
 };

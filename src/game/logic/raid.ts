@@ -5,12 +5,15 @@
 import { BUILDINGS, type BuildingType, type DefenseAttack } from "./buildings";
 import { buildingPower, emptyPurse, lootFor, type Purse, RESOURCES } from "./economy";
 import {
+  ABILITY_ORDER,
   type Ability,
   ARTILLERY,
   abilityCost,
   BARRAGE,
   boatShellFlightTime,
   HEAL,
+  SHOCK,
+  SMOKE,
   START_ENERGY,
 } from "./gunboat";
 import { HEROES, type HeroKind, shotSpread } from "./heroes";
@@ -42,6 +45,8 @@ const MINE_DAMAGE = 450;
 /** A sniper's sights stop following this long before it fires, leaving time to step aside. */
 const SIGHTS_HELD = 0.25;
 
+/** The little pop of a gunboat canister opening over its target, in meters. */
+const CANISTER_BLAST = 0.8;
 /** Heroes slow to this share of their speed while aiming or shooting. */
 const SHOOTING_SPEED = 0.2;
 /** On the move, shots stray this much wider, coming on and easing off over this many seconds. */
@@ -273,8 +278,8 @@ export interface Projectile {
   charges: number;
   /** The building a guided rocket is curving towards. */
   homing: number | null;
-  /** This grenade leaves smoke where it lands. */
-  smoke: boolean;
+  /** What it leaves where it lands. */
+  leaves: ZoneDrop | null;
 }
 
 export interface Mine {
@@ -285,7 +290,14 @@ export interface Mine {
   exploded: boolean;
 }
 
-export type ZoneKind = "heal" | "fire" | "smoke";
+export type ZoneKind = "heal" | "fire" | "smoke" | "shock";
+
+/** A zone a shell leaves behind it. */
+export interface ZoneDrop {
+  kind: ZoneKind;
+  radius: number;
+  seconds: number;
+}
 
 export interface Zone {
   id: number;
@@ -361,6 +373,8 @@ export interface RaidState {
   /** Materials carried off so far, from mills and storages broken. Kept win or lose. */
   loot: Purse;
   abilityUses: Record<Ability, number>;
+  /** The gunboat weapons this crew has. */
+  gunboat: readonly Ability[];
   /** What happened during the last step, for effects and sounds. */
   events: RaidEvent[];
   nextId: number;
@@ -413,6 +427,7 @@ export function createRaid(
   kinds: readonly HeroKind[],
   powers: readonly number[] = [],
   mods: readonly HeroMods[] = [],
+  gunboat: readonly Ability[] = ABILITY_ORDER,
 ): RaidState {
   const rng = createRng(layout.seed ^ 0x5bd1e995);
   const buffs = layout.buffs ?? { health: 1, damage: 1 };
@@ -508,7 +523,8 @@ export function createRaid(
     boat: { pos: { ...layout.boat }, occupant: null },
     energy: START_ENERGY,
     loot: emptyPurse(),
-    abilityUses: { artillery: 0, barrage: 0, heal: 0 },
+    abilityUses: { artillery: 0, heal: 0, shock: 0, barrage: 0, smoke: 0 },
+    gunboat,
     events: [],
     nextId,
     rng,
@@ -923,7 +939,10 @@ function updateAttack(
         };
         const to = throwTarget(state, hero, dir, reach);
         const first = toss(to);
-        if (smoke) markSmoke(state, first);
+        if (smoke) {
+          const radius = atk.splash + m.splash + 1.5;
+          leaveZone(state, first, { kind: "smoke", radius, seconds: TRICKS.smokeSeconds });
+        }
         if (twin) toss(add(to, twinOffset(dir, 2.2)));
         hero.reload = shotTime(hero, atk.reload);
       }
@@ -954,9 +973,9 @@ function updateAttack(
   }
 }
 
-/** Finds the grenade a lob belongs to and marks it to leave smoke. */
-function markSmoke(state: RaidState, lob: Lob): void {
-  for (const p of state.projectiles) if (p.lob === lob) p.smoke = true;
+/** Finds the shell a lob belongs to and marks it to leave a zone where it lands. */
+function leaveZone(state: RaidState, lob: Lob, drop: ZoneDrop): void {
+  for (const p of state.projectiles) if (p.lob === lob) p.leaves = drop;
 }
 
 function placeTurret(
@@ -1080,12 +1099,27 @@ function toggleBoat(state: RaidState, hero: RaidHero): void {
 
 function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
   const cost = nextAbilityCost(state, ability);
-  if (state.energy < cost) return;
+  if (state.energy < cost || !state.gunboat.includes(ability)) return;
   state.energy -= cost;
   state.abilityUses[ability]++;
   state.events.push({ type: "boatFire", ability, target: { ...target } });
   const from = state.boat.pos;
   const flight = boatShellFlightTime(distance(from, target));
+  const canister = (drop: ZoneDrop) => {
+    const lob = spawnLob(
+      state,
+      "artillery",
+      "crew",
+      0,
+      from,
+      target,
+      flight,
+      16,
+      0,
+      CANISTER_BLAST,
+    );
+    leaveZone(state, lob, drop);
+  };
   switch (ability) {
     case "artillery":
       spawnLob(
@@ -1125,6 +1159,12 @@ function fireAbility(state: RaidState, ability: Ability, target: Vec2): void {
     case "heal":
       addZone(state, "heal", target, HEAL.radius, HEAL.duration, 0, { heal: HEAL.healPerSecond });
       return;
+    case "shock":
+      canister({ kind: "shock", radius: SHOCK.radius, seconds: SHOCK.seconds });
+      return;
+    case "smoke":
+      canister({ kind: "smoke", radius: SMOKE.radius, seconds: SMOKE.seconds });
+      return;
   }
 }
 
@@ -1161,6 +1201,13 @@ interface Target {
 /** Defenses can't aim into smoke, and anyone in it can't be seen. */
 function inSmoke(state: RaidState, pos: Vec2): boolean {
   return state.zones.some((z) => z.kind === "smoke" && distance(pos, z.pos) <= z.radius);
+}
+
+/** A defense caught in a shock circle can't do a thing until it's over. */
+function shocked(state: RaidState, b: RaidBuilding): boolean {
+  return state.zones.some(
+    (z) => z.kind === "shock" && distance(b.pos, z.pos) - b.radius <= z.radius,
+  );
 }
 
 function findTarget(state: RaidState, from: Vec2, range: number, minRange: number): Target | null {
@@ -1224,6 +1271,11 @@ function updateBuildings(state: RaidState, dt: number): void {
     b.firing = false;
     const atk = BUILDINGS[b.type].attack;
     if (b.destroyed || !atk || state.conquest !== null) continue;
+    if (shocked(state, b)) {
+      b.sights = null;
+      b.aiming = 0;
+      continue;
+    }
     b.reload = Math.max(0, b.reload - dt);
     const minRange = atk.kind === "mortar" ? atk.minRange : 0;
     const target = findTarget(state, b.pos, atk.range, minRange);
@@ -1577,7 +1629,7 @@ function makeProjectile(
     lob: null,
     charges: 0,
     homing: null,
-    smoke: false,
+    leaves: null,
   };
 }
 
@@ -1763,9 +1815,7 @@ function detonate(state: RaidState, p: Projectile, pos: Vec2): void {
     const burn = p.damage * TRICKS.napalmShare;
     addZone(state, "fire", pos, p.splash, TRICKS.napalmSeconds, owner.id, { burn });
   }
-  if (p.smoke) {
-    addZone(state, "smoke", pos, p.splash + 1.5, TRICKS.smokeSeconds, p.ownerId);
-  }
+  if (p.leaves) addZone(state, p.leaves.kind, pos, p.leaves.radius, p.leaves.seconds, p.ownerId);
   if (p.charges === 0) return;
   if (p.kind === "rocket") scatterBomblets(state, p, pos);
   if (p.kind === "grenade" && p.lob) skipGrenade(state, p, p.lob, pos);

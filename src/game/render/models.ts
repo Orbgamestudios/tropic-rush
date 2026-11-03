@@ -66,6 +66,7 @@ const STRETCH: Partial<Record<BuildingType, readonly [number, number]>> = {
   timberShed: [1.2, 1],
   stoneYard: [1.2, 1],
   scrapBin: [1.2, 1],
+  laboratory: [1.2, 1],
 };
 
 function stretch(root: THREE.Object3D, across: number, up: number): void {
@@ -379,6 +380,26 @@ function makeBuilding(type: BuildingType): BuildingModel {
       });
       root.add(at(barrel(0.12, 2.4, C.metal, 8), 0.9, 2.6, -0.5, 0.4, 0.3, 0.9));
       root.add(at(barrel(0.42, 1.2, C.enemyDark, 12), 2.4, 0.6, 1, 0, 0, 0));
+      break;
+    }
+    case "laboratory": {
+      root.add(at(rbox(4.2, 2.3, 3.6, C.enemyDark), 0, 1.15, 0));
+      root.add(at(rbox(4.5, 0.32, 3.9, C.enemyRust), 0, 2.4, 0));
+      // The glass dome over the bench, ribbed in brass.
+      root.add(at(cyl(1.5, 1.6, 0.4, C.metal, 20), -0.2, 2.76, 0));
+      root.add(at(ball(1.42, 0x8fe2f2, 18), -0.2, 2.9, 0));
+      root.add(at(cyl(0.09, 0.09, 1.1, C.gold, 8), -0.2, 4.7, 0));
+      root.add(at(ball(0.22, 0x8affb8, 10), -0.2, 5.3, 0));
+      // Tanks of something green up one side, piped into the wall.
+      for (const z of [-1, 0, 1]) {
+        root.add(at(cyl(0.42, 0.42, 1.5, 0x5fe08a, 12), 2.45, 0.78, z * 1.05));
+        root.add(at(cyl(0.46, 0.46, 0.14, C.metal, 12), 2.45, 1.56, z * 1.05));
+        root.add(at(barrel(0.08, 0.5, C.metal, 8), 2.2, 1.7, z * 1.05));
+      }
+      // The door, its lit window, and a chimney for what goes wrong.
+      root.add(at(rbox(1.1, 1.7, 0.16, C.enemyRust), -0.9, 0.85, 1.84));
+      root.add(at(rbox(1.2, 0.8, 0.14, 0xbff4ff), 0.9, 1.35, 1.84));
+      root.add(at(cyl(0.26, 0.32, 1.5, C.darkMetal, 10), 1.4, 3.2, -1.1));
       break;
     }
     case "refinery": {

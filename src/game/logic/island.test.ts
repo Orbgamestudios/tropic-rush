@@ -16,6 +16,11 @@ import { HOME_SHAPE } from "./island";
 import { createRaid } from "./raid";
 import { distance, vec } from "./vec";
 
+/** Raiders don't research anything. */
+const RAIDER_BUILDINGS = (Object.keys(BUILDINGS) as BuildingType[]).filter(
+  (type) => type !== "laboratory",
+);
+
 const SEEDS = [1, 2, 3, 42, 1234, 98765];
 const HQ_LEVELS = [1, 6, 12];
 
@@ -111,7 +116,7 @@ describe("enemy base layout", () => {
     for (const seed of SEEDS) {
       for (const hq of [4, 9, 15, 20]) {
         const base = enemyBase(seed, hq, { maxed: true });
-        for (const type of Object.keys(BUILDINGS) as BuildingType[]) {
+        for (const type of RAIDER_BUILDINGS) {
           const found = base.filter((b) => b.type === type);
           expect(found).toHaveLength(allowedCount(type, hq));
           if (type === "headquarters") continue;
@@ -131,6 +136,10 @@ describe("enemy base layout", () => {
 });
 
 describe("generateIsland", () => {
+  it("leaves the laboratory to the crews", () => {
+    expect(enemyBase(1, 20).some((b) => b.type === "laboratory")).toBe(false);
+  });
+
   it("is deterministic for a seed", () => {
     expect(generateIsland(7, 2)).toEqual(generateIsland(7, 2));
   });
@@ -138,8 +147,7 @@ describe("generateIsland", () => {
   it("gives every island at an HQ level exactly the same buildings", () => {
     for (const hq of HQ_LEVELS) {
       const expected = Object.fromEntries(
-        (Object.keys(BUILDINGS) as BuildingType[])
-          .filter((type) => type !== "landmine")
+        RAIDER_BUILDINGS.filter((type) => type !== "landmine")
           .map((type) => [type, allowedCount(type, hq)] as const)
           .filter(([, count]) => count > 0),
       );
@@ -159,8 +167,9 @@ describe("generateIsland", () => {
         const buildings = enemyBase(seed, hq);
         const layout: Pick<CrewLayout, "buildings" | "cleared"> = { buildings, cleared };
         expect(hqLevel(layout)).toBe(hq);
-        const types = Object.keys(BUILDINGS) as BuildingType[];
-        expect(buildings).toHaveLength(types.reduce((n, t) => n + allowedCount(t, hq), 0));
+        expect(buildings).toHaveLength(
+          RAIDER_BUILDINGS.reduce((n, t) => n + allowedCount(t, hq), 0),
+        );
         for (const b of buildings) {
           expect(fits(layout, b)).toBe(true);
           if (b.type !== "headquarters") expect(b.level).toBeLessThanOrEqual(levelCap(b.type, hq));

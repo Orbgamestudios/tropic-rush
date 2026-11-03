@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BLUEPRINT_TYPES, needsBlueprint, rollSpoils, type SpoilsRoll } from "./spoils";
+import {
+  BLUEPRINT_TYPES,
+  type Blueprint,
+  blueprintName,
+  needsBlueprint,
+  rollSpoils,
+  type SpoilsRoll,
+} from "./spoils";
 
 const roll = (changes: Partial<SpoilsRoll> = {}): SpoilsRoll => ({
   seed: 1,
@@ -23,6 +30,26 @@ const crystalsOver = (changes: Partial<SpoilsRoll>, seeds = 2000) => {
 };
 
 describe("spoils", () => {
+  it("finds gunboat weapons one at a time, in order", () => {
+    const found = (known: Blueprint[]) => {
+      const seen = new Set<Blueprint | null>();
+      for (let seed = 0; seed < 40; seed++) {
+        seen.add(rollSpoils(roll({ seed, known, defenses: ["gunTurret"], drought: 3 })).blueprint);
+      }
+      return [...seen];
+    };
+    expect(found([])).toEqual(["heal"]);
+    expect(found(["heal"])).toEqual(["shock"]);
+    expect(found(["heal", "shock"])).toEqual(["barrage"]);
+    expect(found(["heal", "shock", "barrage"])).toEqual(["smoke"]);
+    expect(found(["heal", "shock", "barrage", "smoke"])).toEqual([null]);
+  });
+
+  it("names a blueprint, whichever kind it is", () => {
+    expect(blueprintName("shock")).toBe("Shock Grenade");
+    expect(blueprintName("mortar")).toBe("Mortar");
+  });
+
   it("leaves the gun turret free of blueprints, and locks the rest", () => {
     expect(needsBlueprint("gunTurret")).toBe(false);
     expect(needsBlueprint("mortar")).toBe(true);
@@ -48,10 +75,12 @@ describe("spoils", () => {
 
   it("only finds blueprints for defenses on that base, that the crew doesn't know", () => {
     for (let seed = 1; seed < 300; seed++) {
-      const { blueprint } = rollSpoils(roll({ seed, known: ["mortar"], drought: 3 }));
+      const known = ["mortar", "heal", "shock", "barrage", "smoke"] as const;
+      const { blueprint } = rollSpoils(roll({ seed, known: [...known], drought: 3 }));
       expect(blueprint).toBe("harpoon");
     }
-    const none = rollSpoils(roll({ known: ["mortar", "harpoon"], drought: 3 }));
+    const weapons = ["heal", "shock", "barrage", "smoke"] as const;
+    const none = rollSpoils(roll({ known: ["mortar", "harpoon", ...weapons], drought: 3 }));
     expect(none.blueprint).toBeNull();
     // A rival crew's base has no plans to find.
     expect(rollSpoils(roll({ defenses: [], drought: 3 })).blueprint).toBeNull();

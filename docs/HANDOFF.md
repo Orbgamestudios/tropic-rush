@@ -141,7 +141,9 @@ loads the game with every model blocked to make sure it still does.
 
 ## The picture and battery
 
-Everything draws straight to the screen with the browser's own antialiasing. There's no bloom and no
+Everything draws straight to the screen with the browser's own antialiasing. So the screen holds
+finished color, not light. Anything that blends onto it has to think in those terms: a lamp's pool
+in `lightPool.ts` takes its strength to the power of 1/2.2 for that reason, or it goes neon. There's no bloom and no
 pass over the finished picture, because each of those is a whole screen of extra work on every
 frame. So a custom shader finishes its own color with `#include <tonemapping_fragment>` and
 `#include <colorspace_fragment>`, or it comes out too dark. The vignette is a page element, and the

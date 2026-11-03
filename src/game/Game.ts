@@ -12,9 +12,9 @@ import { type ControlMode, Controls } from "./controls";
 import { CrewMode, newId } from "./crew/crewMode";
 import { guessedPlace, locate, skyText } from "./location";
 import { passwordProblem, usernameProblem } from "./logic/account";
-import { BUILDINGS, type BuildingType } from "./logic/buildings";
+import { BUILDINGS } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
-import { hqLevel, type LayoutOp } from "./logic/crewIsland";
+import { gunboatWeapons, hqLevel, type LayoutOp } from "./logic/crewIsland";
 import { addCrystals, type CrystalKind, payCrystals, swapCrystals } from "./logic/crystals";
 import { allowedCount, emptyPurse, type Purse, RESOURCES } from "./logic/economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
@@ -35,7 +35,14 @@ import {
   type RaidState,
   stepRaid,
 } from "./logic/raid";
-import { BLUEPRINT_TYPES, rollSpoils, type Spoils } from "./logic/spoils";
+import {
+  type Blueprint,
+  blueprintName,
+  DEFENSE_BLUEPRINTS,
+  nextWeapon,
+  rollSpoils,
+  type Spoils,
+} from "./logic/spoils";
 import { statueBuffs } from "./logic/statues";
 import type { Place } from "./logic/sun";
 import { angleOf, distance, lerp, vec } from "./logic/vec";
@@ -178,6 +185,8 @@ export class Game {
   private mapHero: HeroKind = "rifleman";
   private treeHero: HeroKind = "rifleman";
   private raidTarget: MapIsland | null = null;
+  /** The upgrade tree was opened at the laboratory, so that's where it goes back to. */
+  private treeFromLab = false;
   /** The island picked to attack, while the hero screen asks who's going. */
   private attacking: MapIsland | null = null;
   /** Regions the last win opened: their cloud lifts next time the map is shown. */
@@ -292,7 +301,10 @@ export class Game {
       save: () => this.save,
       gold: () => this.crew.gold(),
       buy: (kind, upgrade) => this.buyUpgrade(kind, upgrade),
-      onBack: () => this.go(() => this.showHeroes(this.treeHero, this.attacking)),
+      onBack: () =>
+        this.go(() =>
+          this.treeFromLab ? this.goHome() : this.showHeroes(this.treeHero, this.attacking),
+        ),
     });
     this.crystalSwap = new CrystalSwap(screens, {
       save: () => this.save,
@@ -418,6 +430,12 @@ export class Game {
             this.showMap(unlocked.includes(hero) ? hero : "rifleman");
           }),
         onHero: (kind) => this.go(() => this.showHeroes(kind)),
+        onTree: (kind) =>
+          this.go(() => {
+            if (this.crew.active) this.crew.exit();
+            this.showTree(kind);
+            this.treeFromLab = true;
+          }),
         sendOp: (op) => this.link?.sendOp(op),
         onReplay: (raid) => this.go(() => this.startReplay(raid)),
       },
@@ -1323,12 +1341,17 @@ export class Game {
   /** The blueprints a raider base could turn up, that the crew hasn't got yet. */
   private blueprintsOn(island: MapIsland): string[] {
     if (island.rival) return [];
-    return this.unknownOn(island.hq).map((t) => BUILDINGS[t].label);
+    const known = this.knownBlueprints();
+    const unknown: Blueprint[] = DEFENSE_BLUEPRINTS.filter(
+      (t) => allowedCount(t, island.hq) > 0 && !known.includes(t),
+    );
+    const weapon = nextWeapon(known);
+    if (weapon) unknown.push(weapon);
+    return unknown.map(blueprintName);
   }
 
-  private unknownOn(hq: number): BuildingType[] {
-    const known = [...this.crew.snapshot().layout.blueprints, ...this.save.blueprints];
-    return BLUEPRINT_TYPES.filter((t) => allowedCount(t, hq) > 0 && !known.includes(t));
+  private knownBlueprints(): Blueprint[] {
+    return [...this.crew.snapshot().layout.blueprints, ...this.save.blueprints];
   }
 
   /** Back to the crew island, from hero select or the end of a raid. */
@@ -1354,6 +1377,7 @@ export class Game {
     this.hideScreens();
     this.phase = "tree";
     this.treeHero = kind;
+    this.treeFromLab = false;
     this.tree.show(kind);
   }
 
@@ -1392,9 +1416,11 @@ export class Game {
   /** Sets a target island up, the same whether the crew is scouting it or landing. */
   private loadRaid(hero: HeroKind, target: MapIsland, team?: Team) {
     const layout = this.islandFor(target);
+    const weapons = gunboatWeapons(this.crew.snapshot().layout);
     const state = team
-      ? createCoopRaid(layout, team.seats)
-      : createRaid(layout, [hero], [], [heroMods(hero, this.save.upgrades[hero])]);
+      ? createCoopRaid(layout, team.seats, weapons)
+      : createRaid(layout, [hero], [], [heroMods(hero, this.save.upgrades[hero])], weapons);
+    this.controls.selectAbility("artillery");
     this.seat = team?.seat ?? 0;
     this.state = state;
     this.rig.shape = state.shape;
@@ -1795,7 +1821,6 @@ export class Game {
   }
 
   private rollWin(target: MapIsland, state: RaidState, luck: number): Spoils {
-    const layout = this.crew.snapshot().layout;
     // Only a raider base has plans lying about, and only for what's standing on it.
     const raiders = target.rival === null;
     const types = new Set(state.buildings.map((b) => b.type));
@@ -1805,7 +1830,7 @@ export class Game {
       difficulty: target.difficulty,
       crystal: target.crystal,
       defenses: raiders ? [...types] : [],
-      known: [...layout.blueprints, ...this.save.blueprints],
+      known: this.knownBlueprints(),
       drought: this.save.blueprintDrought,
       firstWin: this.save.wins === 0,
       luck,

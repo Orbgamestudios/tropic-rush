@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BUILDINGS } from "./buildings";
+import { TILE } from "./crewIsland";
 import { generateIsland } from "./enemyBase";
-import { abilityCost, START_ENERGY } from "./gunboat";
+import { type Ability, abilityCost, SHOCK, SMOKE, START_ENERGY } from "./gunboat";
 import { HEROES, type HeroKind } from "./heroes";
 import { type HeroMods, heroMods, heroTree, NO_MODS } from "./heroTrees";
 import { type IslandLayout, isOnLand, type PlacedBuilding } from "./island";
@@ -421,6 +422,71 @@ describe("sprinting", () => {
     expect(hero(state).sprinting).toBe(true);
     run(state, SPRINT.recharge + 1);
     expect(hero(state).sprintLeft).toBe(SPRINT.seconds);
+  });
+});
+
+describe("the gunboat's weapons", () => {
+  const fire = (state: RaidState, ability: Ability, target = vec(0, -10)) => {
+    stepRaid(state, [input({ toggleBoat: true })], DT);
+    stepRaid(state, [input({ boatAbility: { ability, target } })], DT);
+  };
+  const noWeapons = (state: RaidState) => {
+    state.buildings.forEach((b) => {
+      b.reload = 0;
+    });
+  };
+  const landed = (state: RaidState) => {
+    for (let t = 0; t < 4 && state.zones.length === 0; t += DT) stepRaid(state, [], DT);
+  };
+
+  it("only fires what the crew has researched", () => {
+    const state = createRaid(layout([]), ["rifleman"], [], [], ["artillery"]);
+    fire(state, "smoke");
+    expect(state.energy).toBe(START_ENERGY);
+    expect(state.abilityUses.smoke).toBe(0);
+  });
+
+  it("is 6 tiles across, either way", () => {
+    expect(SHOCK.radius * 2).toBe(6 * TILE);
+    expect(SMOKE.radius * 2).toBe(6 * TILE);
+  });
+
+  it("stuns the defenses in a shock circle for 4 seconds, and no longer", () => {
+    const state = raid([{ type: "gunTurret", pos: vec(0, -8) }]);
+    fire(state, "shock", vec(0, -8));
+    landed(state);
+    expect(state.zones[0]?.kind).toBe("shock");
+    hero(state).hp = hero(state).maxHp;
+    const before = state.projectiles.filter((p) => p.team === "enemy").length;
+    noWeapons(state);
+    run(state, SHOCK.seconds - 0.1);
+    expect(state.projectiles.filter((p) => p.team === "enemy").length).toBeLessThanOrEqual(before);
+    expect(state.zones).toHaveLength(1);
+    run(state, 0.3);
+    expect(state.zones).toHaveLength(0);
+    run(state, 2);
+    expect(hero(state).hp).toBeLessThan(hero(state).maxHp);
+  });
+
+  it("leaves defenses outside the circle alone", () => {
+    const state = raid([{ type: "gunTurret", pos: vec(0, -8) }]);
+    fire(state, "shock", vec(30, 30));
+    run(state, 3);
+    expect(hero(state).hp).toBeLessThan(hero(state).maxHp);
+  });
+
+  it("hides heroes in a smokescreen for 10 seconds", () => {
+    const state = raid([{ type: "gunTurret", pos: vec(0, -8) }]);
+    fire(state, "smoke", hero(state).pos);
+    landed(state);
+    expect(state.zones[0]?.kind).toBe("smoke");
+    expect(state.zones[0]?.time).toBeGreaterThan(SMOKE.seconds - 0.2);
+    run(state, 1);
+    const { hp } = hero(state);
+    run(state, SMOKE.seconds - 2);
+    expect(hero(state).hp).toBe(hp);
+    run(state, 4);
+    expect(hero(state).hp).toBeLessThan(hp);
   });
 });
 
@@ -1211,6 +1277,6 @@ function enemyShot(state: RaidState): RaidState["projectiles"][number] {
     lob: null,
     charges: 0,
     homing: null,
-    smoke: false,
+    leaves: null,
   };
 }

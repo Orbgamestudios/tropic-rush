@@ -28,11 +28,12 @@ import {
   spend,
   storageCapacity,
 } from "./economy";
+import { ABILITY_ORDER, type Ability } from "./gunboat";
 import { HERO_KINDS, type HeroKind } from "./heroes";
 import { heroTree, lockedBy, noUpgrades, readOwned } from "./heroTrees";
 import { isOnGrass, landingPoints, trailPoints } from "./island";
 import { createRng } from "./rng";
-import { BLUEPRINT_TYPES, needsBlueprint } from "./spoils";
+import { BLUEPRINT_TYPES, type Blueprint, isWeapon, needsBlueprint } from "./spoils";
 import {
   newStatues,
   readStatues,
@@ -148,6 +149,7 @@ export const FOOTPRINTS: Record<BuildingType, { w: number; h: number }> = {
   stoneYard: { w: 3, h: 3 },
   scrapBin: { w: 3, h: 3 },
   refinery: { w: 4, h: 4 },
+  laboratory: { w: 3, h: 3 },
 };
 
 export interface PlacedBuilding {
@@ -179,8 +181,10 @@ export interface CrewLayout {
   resources: Purse;
   /** When `resources` was last brought up to date (server time, milliseconds). */
   stamp: number;
-  /** Defenses the crew has discovered how to build, from blueprints won on raids. */
-  blueprints: BuildingType[];
+  /** Blueprints won on raids. */
+  blueprints: Blueprint[];
+  /** Blueprints the laboratory has turned into something the crew can use. */
+  researched: Blueprint[];
   /** Every hero's upgrades, which the whole crew shares: one person buys, everyone has it. */
   upgrades: Record<HeroKind, string[]>;
   /** The island's ancient statues. */
@@ -224,8 +228,10 @@ export type LayoutOp =
   | { kind: "toolUp"; tool: Tool }
   /** Materials brought home from a raid. */
   | { kind: "loot"; purse: Partial<Purse> }
-  /** A blueprint won on a raid: the whole crew learns it. */
-  | { kind: "blueprint"; type: BuildingType }
+  /** A blueprint won on a raid, ready for the laboratory. */
+  | { kind: "blueprint"; type: Blueprint }
+  /** The laboratory works a blueprint up into the real thing. */
+  | { kind: "research"; type: Blueprint }
   /** A hero upgrade for the whole crew. `pay` takes its gold from the island; without it, it's one
    * a crewmate brought along from before they joined. */
   | { kind: "heroUpgrade"; hero: HeroKind; id: string; pay?: boolean }
@@ -544,6 +550,38 @@ export function restoreBlocker(
   return null;
 }
 
+let tileOwners: Map<string, Obstacle> | null = null;
+
+/** The obstacle growing on a tile, cleared or not. */
+function tileOwner(x: number, y: number): Obstacle | undefined {
+  if (!tileOwners) {
+    tileOwners = new Map();
+    for (const o of obstacles()) {
+      for (let ty = o.y; ty < o.y + o.h; ty++) {
+        for (let tx = o.x; tx < o.x + o.w; tx++) tileOwners.set(`${tx},${ty}`, o);
+      }
+    }
+  }
+  return tileOwners.get(`${x},${y}`);
+}
+
+/**
+ * True if a patch touches open ground: the first clearing, the trail, or something already cleared.
+ * Clearing spreads out from there, so nothing further in can be got at first. The shore doesn't
+ * count, or a crew could work its way round the outside.
+ */
+export function touchesOpenGround(layout: Pick<CrewLayout, "cleared">, o: Obstacle): boolean {
+  const cleared = new Set(layout.cleared);
+  const open = (x: number, y: number) => {
+    if (!isGrassTile(x, y)) return false;
+    const owner = tileOwner(x, y);
+    return !owner || cleared.has(owner.id);
+  };
+  for (let i = 0; i < o.w; i++) if (open(o.x + i, o.y - 1) || open(o.x + i, o.y + o.h)) return true;
+  for (let i = 0; i < o.h; i++) if (open(o.x - 1, o.y + i) || open(o.x + o.w, o.y + i)) return true;
+  return false;
+}
+
 /** The uncleared obstacle covering a tile, if any. */
 export function obstacleAtTile(
   layout: Pick<CrewLayout, "cleared">,
@@ -625,6 +663,7 @@ export function clearBlocker(layout: CrewLayout, o: Obstacle): string | null {
   const spec = OBSTACLE_KINDS[o.kind];
   const tool = TOOLS[spec.tool];
   if (layout.jobs.some((j) => j.id === o.id)) return "Already being cleared";
+  if (!touchesOpenGround(layout, o)) return "Clear next to it first";
   if (layout.tools[spec.tool] < o.tier) return `Needs a level ${o.tier} ${tool.label}`;
   // The statues come to light in their order: a later one stays buried till the one before is found.
   const site = statueSites(layout.relicSeed).find((s) => s.patch.id === o.id);
@@ -766,8 +805,10 @@ export function buildBlocker(layout: CrewLayout, type: BuildingType): string | n
   const hq = hqLevel(layout);
   const allowed = allowedCount(type, hq);
   const have = layout.buildings.filter((b) => b.type === type).length;
-  if (needsBlueprint(type) && !layout.blueprints.includes(type)) {
-    return "Find its blueprint on a raid";
+  if (needsBlueprint(type) && !layout.researched.includes(type)) {
+    return layout.blueprints.includes(type)
+      ? "Research it at the laboratory"
+      : "Find its blueprint on a raid";
   }
   if (allowed === 0) return `Needs headquarters level ${firstHqAllowing(type)}`;
   if (have >= allowed) {
@@ -777,6 +818,42 @@ export function buildBlocker(layout: CrewLayout, type: BuildingType): string | n
   if (layout.builds.length >= builderCount(layout)) return "All your builders are busy";
   if (!canAfford(layout.resources, costFor(type, 1))) return "Not enough resources";
   return null;
+}
+
+/** Gold to work a blueprint up into the real thing, rising through the gunboat's weapons. */
+const RESEARCH_GOLD: Partial<Record<Blueprint, number>> = {
+  mortar: 200,
+  landmine: 150,
+  watchtower: 300,
+  harpoon: 400,
+  flamethrower: 500,
+  heal: 200,
+  shock: 350,
+  barrage: 500,
+  smoke: 700,
+};
+
+export function researchCost(type: Blueprint): Partial<Purse> {
+  return { gold: RESEARCH_GOLD[type] ?? 0 };
+}
+
+/** Why a blueprint can't be researched right now, or null if it can. */
+export function researchBlocker(
+  layout: Pick<CrewLayout, "buildings" | "blueprints" | "researched" | "resources">,
+  type: Blueprint,
+): string | null {
+  if (layout.researched.includes(type)) return "Already researched";
+  if (!layout.blueprints.includes(type)) return "Find its blueprint on a raid";
+  if (!layout.buildings.some((b) => b.type === "laboratory" && b.level > 0)) {
+    return "Build a laboratory";
+  }
+  if (!canAfford(layout.resources, researchCost(type))) return "Not enough gold";
+  return null;
+}
+
+/** The gunboat weapons a crew can use: the first, and whatever it's researched since. */
+export function gunboatWeapons(layout: Pick<CrewLayout, "researched">): Ability[] {
+  return ABILITY_ORDER.filter((a) => a === "artillery" || layout.researched.includes(a));
 }
 
 /** The lowest headquarters level that allows `count` of a building, or null if none does. */
@@ -971,6 +1048,18 @@ export function tryOp(
       if (layout.blueprints.includes(op.type)) return { layout };
       return { layout: { ...layout, blueprints: [...layout.blueprints, op.type] } };
     }
+    case "research": {
+      if (!BLUEPRINT_TYPES.includes(op.type)) return { error: "Unknown blueprint" };
+      const blocker = researchBlocker(layout, op.type);
+      if (blocker) return { error: blocker };
+      return {
+        layout: {
+          ...layout,
+          resources: spend(layout.resources, researchCost(op.type)),
+          researched: [...layout.researched, op.type],
+        },
+      };
+    }
     case "heroUpgrade": {
       const upgrade = heroTree(op.hero).find((u) => u.id === op.id);
       if (!upgrade) return { error: "Unknown upgrade" };
@@ -1130,6 +1219,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     resources: { ...START_RESOURCES },
     stamp: now,
     blueprints: [],
+    researched: [],
     upgrades: noUpgrades(),
     statues: newStatues(),
     relicSeed: Math.floor(now / 1000) % 2 ** 31,
@@ -1195,6 +1285,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     resources?: unknown;
     stamp?: unknown;
     blueprints?: unknown;
+    researched?: unknown;
     upgrades?: Partial<Record<HeroKind, unknown>>;
     statues?: unknown;
     relicSeed?: unknown;
@@ -1299,6 +1390,11 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const blueprints = BLUEPRINT_TYPES.filter(
     (t) => rawPrints.includes(t) || standing.some((b) => b.type === t),
   );
+  // Whatever a crew knew before there was a laboratory, it still knows.
+  const rawResearch = Array.isArray(data?.researched) ? data.researched : rawPrints;
+  const researched = BLUEPRINT_TYPES.filter(
+    (t) => rawResearch.includes(t) || (!isWeapon(t) && standing.some((b) => b.type === t)),
+  );
   const relicSeed = Number.isInteger(data?.relicSeed)
     ? (data?.relicSeed as number)
     : OLD_RELIC_SEED;
@@ -1312,6 +1408,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     resources,
     stamp,
     blueprints,
+    researched,
     upgrades: readUpgrades(data?.upgrades),
     statues: readStatues(data?.statues),
     relicSeed,

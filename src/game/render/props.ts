@@ -1,14 +1,15 @@
 // Everything that grows or lies on the raid island: the rules' palms and boulders,
 // plus a dense jungle around the base's clearing (broadleaf trees, palms, elephant-ear plants),
-// ferns, flowers and grass across the open ground, and driftwood, starfish and shells on the
-// beach. Each kind is one merged geometry drawn with instancing, so thousands of plants cost a
-// couple of dozen draw calls on the phone. Plants sway in the wind in the vertex shader.
+// ferns, flowers and grass across the open ground, and whatever the tide has left on the beach.
+// Each kind is one merged geometry drawn with instancing, so thousands of plants cost a couple of
+// dozen draw calls on the phone. Plants sway in the wind in the vertex shader.
 
 import * as THREE from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { HOME_CLIFFS } from "../logic/crewIsland";
 import { HOME_SHAPE, homeHeight, type IslandLayout, type IslandShape } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
+import { lotTide, TIDE_LOTS } from "../logic/tides";
 import type { Vec2 } from "../logic/vec";
 import { meadowTint } from "./meadow";
 import { COLORS } from "./palette";
@@ -457,6 +458,49 @@ function shellGeometry(): THREE.BufferGeometry {
   return painted(g, 0xf6e4d4);
 }
 
+function coconutGeometry(): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(0.17, 8, 6);
+  g.scale(1, 0.9, 1.1);
+  g.translate(0, 0.13, 0);
+  return painted(g, 0x6a4a2e);
+}
+
+function seaweedGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) {
+    const frond = new THREE.BoxGeometry(0.75, 0.03, 0.08);
+    frond.rotateY(i * 1.1);
+    frond.translate((i - 1.5) * 0.09, 0.03, (i % 2) * 0.1);
+    parts.push(painted(frond, i % 2 ? 0x2f7a4a : 0x3f8f58));
+  }
+  return merge(parts);
+}
+
+function bottleGeometry(): THREE.BufferGeometry {
+  const glass = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8);
+  const neck = new THREE.CylinderGeometry(0.03, 0.05, 0.12, 8);
+  neck.translate(0, 0.2, 0);
+  const cork = new THREE.CylinderGeometry(0.033, 0.033, 0.05, 6);
+  cork.translate(0, 0.27, 0);
+  const all = merge([painted(glass, 0x5fb89a), painted(neck, 0x5fb89a), painted(cork, 0xb78a56)]);
+  all.rotateZ(Math.PI / 2 - 0.08);
+  all.translate(0, 0.08, 0);
+  return all;
+}
+
+function washedUpCrateGeometry(): THREE.BufferGeometry {
+  const parts = [painted(new THREE.BoxGeometry(0.8, 0.62, 0.8), 0x9a7a52)];
+  for (const y of [0.2, -0.2]) {
+    const slat = new THREE.BoxGeometry(0.84, 0.1, 0.84);
+    slat.translate(0, y, 0);
+    parts.push(painted(slat, 0x7a5c3a));
+  }
+  const all = merge(parts);
+  all.rotateZ(0.14);
+  all.translate(0, 0.24, 0);
+  return all;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Placement
 
@@ -498,6 +542,7 @@ export function instanced(
   return meshes;
 }
 
+export const BEACH_FINDS = "beach finds";
 const ISLAND_EXTENT = 112;
 /** Plants are split into square chunks this wide, so the ones off screen aren't drawn. */
 const CHUNK = 40;
@@ -658,8 +703,8 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
 }
 
 /**
- * The shore every island shares: palms along the top of the sand, driftwood up the beach, starfish
- * and shells near the water. `inland` is how far past the top of the sand the palms may grow.
+ * The shore every island shares: palms along the top of the sand, and whatever the tide's left on
+ * it. `inland` is how far past the top of the sand the palms may grow.
  */
 export function buildShore(
   seed: number,
@@ -684,34 +729,81 @@ export function buildShore(
     extent,
   );
 
-  const driftwood: PropInstance[] = [];
-  const stars: PropInstance[][] = [[], []];
-  const shells: PropInstance[] = [];
-  sample(
-    rng,
-    3,
-    (x, y) => {
-      const sd = shape.shoreDistance(x, y);
-      if (sd < 0.6 || sd > shape.beachWidth(x, y) - 1 || map.room(x, y) < 2) return;
-      if (Math.hypot(x - landing.x, y - landing.y) < 7) return;
-      const roll = rng();
-      if (sd > 4 && roll < 0.018)
-        driftwood.push({ ...item(rng, x, y, 0.8 + rng() * 0.5), sink: -0.05 });
-      else if (sd < 4.5 && roll < 0.07)
-        stars[rng() < 0.6 ? 0 : 1]?.push({ ...item(rng, x, y, 0.9 + rng() * 0.6), sink: 0.01 });
-      else if (roll < 0.12) shells.push({ ...item(rng, x, y, 0.8 + rng() * 0.8), sink: 0.01 });
-    },
-    extent,
-  );
-
   const root = new THREE.Group();
-  const still = vertexColored();
   root.add(
     chunked(palmGeometry(), palms, true, swaying(false), ground),
-    instanced(driftwoodGeometry(), driftwood, true, still, ground),
-    instanced(starfishGeometry(0xff7a45), stars[0] ?? [], false, still, ground),
-    instanced(starfishGeometry(0xe85a9a), stars[1] ?? [], false, still, ground),
-    instanced(shellGeometry(), shells, false, still, ground),
+    beachFinds(seed, map, landing, ground, shape),
   );
   return root;
+}
+
+let findShapes: ReturnType<typeof makeFindShapes> | null = null;
+
+function makeFindShapes() {
+  return {
+    driftwood: driftwoodGeometry(),
+    stars: [starfishGeometry(0xff7a45), starfishGeometry(0xe85a9a)] as const,
+    shell: shellGeometry(),
+    coconut: coconutGeometry(),
+    seaweed: seaweedGeometry(),
+    bottle: bottleGeometry(),
+    crate: washedUpCrateGeometry(),
+  };
+}
+
+/**
+ * What's washed up on a beach just now, all one mesh so the lot is a single draw call. It changes
+ * with the tide: rebuild it when `tideTurn` moves on.
+ */
+export function beachFinds(
+  seed: number,
+  map: SceneryMap,
+  landing: Vec2,
+  ground: (x: number, y: number) => number,
+  shape: IslandShape,
+  now = Date.now(),
+): THREE.Mesh {
+  findShapes ??= makeFindShapes();
+  const shapes = findShapes;
+  const pieces: THREE.BufferGeometry[] = [];
+  const matrix = new THREE.Matrix4();
+  const turn = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const spot = new THREE.Vector3();
+  const put = (geometry: THREE.BufferGeometry, it: PropInstance, sink: number) => {
+    turn.setFromAxisAngle(up, it.rotation);
+    spot.set(it.x, Math.max(-0.4, ground(it.x, it.y)) + sink, it.y);
+    pieces.push(geometry.clone().applyMatrix4(matrix.compose(spot, turn, it.scale)));
+  };
+  for (let lot = 0; lot < TIDE_LOTS; lot++) {
+    const rng = createRng(Math.imul(seed + lot * 101, 31) + lotTide(seed, lot, now) * 7919);
+    sample(
+      rng,
+      5,
+      (x, y) => {
+        const sd = shape.shoreDistance(x, y);
+        if (sd < 0.6 || sd > shape.beachWidth(x, y) - 1 || map.room(x, y) < 2) return;
+        if (Math.hypot(x - landing.x, y - landing.y) < 7) return;
+        const roll = rng();
+        const it = (size: number) => item(rng, x, y, size * (0.8 + rng() * 0.5));
+        if (sd > 4 && roll < 0.03) put(shapes.driftwood, it(1), -0.05);
+        else if (sd > 4 && roll < 0.04) put(shapes.crate, it(1), 0);
+        else if (roll < 0.07) put(shapes.coconut, it(1), 0);
+        else if (sd < 3 && roll < 0.11) put(shapes.seaweed, it(1.1), 0.01);
+        else if (sd < 4 && roll < 0.125) put(shapes.bottle, it(1), 0);
+        else if (sd < 4.5 && roll < 0.2) put(shapes.stars[rng() < 0.6 ? 0 : 1], it(1.1), 0.01);
+        else if (roll < 0.27) put(shapes.shell, it(1), 0.01);
+      },
+      shape.reach,
+    );
+  }
+  const mesh = new THREE.Mesh(
+    pieces.length > 0 ? merge(pieces) : new THREE.BufferGeometry(),
+    vertexColored(),
+  );
+  for (const piece of pieces) piece.dispose();
+  mesh.name = BEACH_FINDS;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
 }

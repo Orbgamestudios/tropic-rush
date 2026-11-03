@@ -1,6 +1,7 @@
 // The hero's upgrade tree, in the style of the owner's mockup: thirteen brass-rimmed tiles joined
 // by lines of small checkpoints, which light up gold as they're bought, the chosen one on a cream
 // spec card at the right, and the wallet in the corner. Bought with personal gold and crystals.
+// The board is much wider than the screen, and scrolls sideways, so it has room to spread out.
 
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import type { HeroKind } from "../logic/heroes";
@@ -75,6 +76,7 @@ export class UpgradeTree {
   readonly root = el("div", "screen screen-tree");
   private readonly fx = el("div", "fx-layer");
   private readonly heroName = el("span", "tree-hero");
+  private readonly scroller = el("div", "tree-scroll");
   private readonly board = el("div", "tree-board");
   private readonly lines = document.createElementNS(SVG_NS, "svg");
   private readonly nodes = new Map<string, HTMLButtonElement>();
@@ -106,6 +108,15 @@ export class UpgradeTree {
     this.lines.setAttribute("preserveAspectRatio", "none");
     this.lines.classList.add("tree-lines");
     this.board.append(this.lines);
+    this.scroller.append(this.board);
+    // A mouse wheel only goes up and down, and there's nowhere up or down to go.
+    this.scroller.addEventListener(
+      "wheel",
+      (e) => {
+        this.scroller.scrollLeft += e.deltaY;
+      },
+      { passive: true },
+    );
 
     const spec = el("div", "tree-spec");
     this.buy = button({
@@ -137,7 +148,7 @@ export class UpgradeTree {
     });
     purse.append(trade, this.gold.root, this.wallet.root);
 
-    this.root.append(top, this.board, spec, purse, this.fx);
+    this.root.append(top, this.scroller, spec, purse, this.fx);
     this.reveal = new LevelUpReveal(this.root);
     this.root.style.display = "none";
     parent.append(this.root);
@@ -152,6 +163,14 @@ export class UpgradeTree {
     // Start on whatever's next, the way a player would look for it.
     const next = heroTree(kind).find((u) => !owned.includes(u.id) && !lockedBy(kind, u, owned));
     this.select(next ?? heroTree(kind)[0] ?? null);
+    this.bringIntoView("auto");
+  }
+
+  /** Scrolls the board to the chosen upgrade. */
+  private bringIntoView(behavior: ScrollBehavior): void {
+    if (!this.selected) return;
+    const left = spot(this.selected).x * this.board.clientWidth - this.scroller.clientWidth / 2;
+    this.scroller.scrollTo({ left, behavior });
   }
 
   hide(): void {
@@ -292,6 +311,7 @@ export class UpgradeTree {
       if (node) sparkleAt(this.fx, node, { count: 8, spread: 40 });
       // Straight on to the next one, so a line can be bought with one button.
       this.select(heroTree(kind).find((next) => next.needs.includes(u.id)) ?? u);
+      this.bringIntoView("smooth");
       return;
     }
     sfx.levelUp();

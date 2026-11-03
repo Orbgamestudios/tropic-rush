@@ -1,12 +1,11 @@
 import { type Avatar, DEFAULT_AVATAR, readAvatar } from "./logic/avatars";
-import type { BuildingType } from "./logic/buildings";
 import { type Crystals, noCrystals, readCrystals } from "./logic/crystals";
 import { type Purse, RESOURCES } from "./logic/economy";
 import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
 import { oldLevelRefund } from "./logic/heroProgress";
 import { noUpgrades, readOwned } from "./logic/heroTrees";
 import type { NightRaid } from "./logic/nightRaid";
-import { BLUEPRINT_TYPES } from "./logic/spoils";
+import { BLUEPRINT_TYPES, type Blueprint } from "./logic/spoils";
 import type { Place } from "./logic/sun";
 import { NEW_WORLD, sanitizeWorld, type WorldProgress } from "./logic/worldMap";
 
@@ -34,7 +33,7 @@ export interface SaveData {
   /** The upgrades each hero owns (see heroTrees.ts). */
   upgrades: Record<HeroKind, string[]>;
   /** Blueprints won that haven't reached the crew's island yet. */
-  blueprints: BuildingType[];
+  blueprints: Blueprint[];
   /** Wins since the last blueprint turned up. */
   blueprintDrought: number;
   /** Heroes this player can pick. */

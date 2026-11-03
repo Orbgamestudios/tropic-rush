@@ -1,12 +1,12 @@
 // The end-of-raid screen: a VICTORY or DEFEAT banner on sun rays, three stars that stamp in one
 // by one, the raid's numbers, and the loot counting up into the wallet.
 
-import { BUILDINGS } from "../logic/buildings";
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse, RESOURCES } from "../logic/economy";
 import type { RaidReward } from "../logic/heroProgress";
-import type { Spoils } from "../logic/spoils";
+import { blueprintName, isWeapon, type Spoils } from "../logic/spoils";
 import { buildingIcon } from "../render/thumbnails";
+import { ABILITY_ICONS } from "./hud";
 import { button, costChips, crystalChip, el, formatNumber, plate } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
@@ -176,13 +176,19 @@ export class ResultsScreen {
     }
     if (spoils?.blueprint) {
       const print = el("div", "results-blueprint");
-      const picture = el("img", "results-blueprint-img");
-      picture.src = buildingIcon(spoils.blueprint);
-      picture.alt = "";
+      const { blueprint } = spoils;
+      let picture: Element;
+      if (isWeapon(blueprint)) picture = icon(ABILITY_ICONS[blueprint], "results-blueprint-img");
+      else {
+        const image = el("img", "results-blueprint-img");
+        image.src = buildingIcon(blueprint);
+        image.alt = "";
+        picture = image;
+      }
       print.append(
         picture,
         el("span", "results-blueprint-tag", "New blueprint"),
-        el("span", "results-blueprint-name", BUILDINGS[spoils.blueprint].label),
+        el("span", "results-blueprint-name", blueprintName(blueprint)),
       );
       items.push(print);
     }

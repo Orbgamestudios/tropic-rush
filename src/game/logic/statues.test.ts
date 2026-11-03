@@ -6,10 +6,13 @@ import {
   type CrewLayout,
   clearBlocker,
   fits,
+  gunboatWeapons,
   HOME_CLIFFS,
   isBuildableTile,
   obstacles,
   production,
+  researchBlocker,
+  researchCost,
   restoreBlocker,
   sanitizeLayout,
   settle,
@@ -28,10 +31,15 @@ function island(changes: Partial<CrewLayout> = {}): CrewLayout {
 
 /** An island with every tool at its best and plenty of everything. */
 function equipped(): CrewLayout {
+  const start = starterLayout(NOW);
+  const hidden = statueSites(start.relicSeed).map((s) => s.patch.id);
   return island({
     tools: { axe: 5, pickaxe: 5, chainsaw: 5, dynamite: 5 },
     resources: { gold: 20_000, timber: 20_000, stone: 20_000, scrap: 20_000 },
-    buildings: starterLayout(NOW).buildings.map((b) => ({ ...b, level: 20 })),
+    buildings: start.buildings.map((b) => ({ ...b, level: 20 })),
+    cleared: obstacles()
+      .map((o) => o.id)
+      .filter((id) => !hidden.includes(id)),
   });
 }
 
@@ -198,17 +206,67 @@ describe("blueprints", () => {
     expect(buildBlocker(layout, "goldMine")).toBeNull();
   });
 
-  it("teaches the whole crew, once", () => {
+  it("reaches the whole crew once, and waits for the laboratory", () => {
     const start = island({
       resources: { gold: 9000, timber: 9000, stone: 9000, scrap: 9000 },
     });
     const learned = applyOp(start, { kind: "blueprint", type: "mortar" }, NOW);
     if (!learned) throw new Error("refused");
     expect(learned.blueprints).toEqual(["mortar"]);
-    expect(buildBlocker(learned, "mortar")).toBeNull();
+    expect(buildBlocker(learned, "mortar")).toMatch(/laboratory/);
     const again = applyOp(learned, { kind: "blueprint", type: "mortar" }, NOW);
     expect(again?.blueprints).toEqual(["mortar"]);
     expect(applyOp(start, { kind: "blueprint", type: "goldMine" }, NOW)).toBeNull();
+  });
+
+  const lab = { id: "lab", type: "laboratory" as const, x: 0, y: 0, rotated: false, level: 1 };
+
+  it("turns a blueprint and some gold into the real thing at the laboratory", () => {
+    const start = island({
+      resources: { gold: 9000, timber: 9000, stone: 9000, scrap: 9000 },
+      blueprints: ["mortar"],
+    });
+    expect(researchBlocker(start, "mortar")).toMatch(/Build a laboratory/);
+    const equippedLab = { ...start, buildings: [...start.buildings, lab] };
+    expect(researchBlocker(equippedLab, "harpoon")).toMatch(/blueprint/);
+    expect(researchBlocker(equippedLab, "mortar")).toBeNull();
+    const done = applyOp(equippedLab, { kind: "research", type: "mortar" }, NOW);
+    if (!done) throw new Error("refused");
+    expect(done.researched).toEqual(["mortar"]);
+    expect(done.resources.gold).toBe(9000 - (researchCost("mortar").gold ?? 0));
+    expect(buildBlocker(done, "mortar")).toBeNull();
+    expect(applyOp(done, { kind: "research", type: "mortar" }, NOW)).toBeNull();
+  });
+
+  it("won't research without the gold, or in a laboratory that's still going up", () => {
+    const poor = island({
+      resources: { gold: 10, timber: 0, stone: 0, scrap: 0 },
+      blueprints: ["heal"],
+      buildings: [...starterLayout(NOW).buildings, lab],
+    });
+    expect(researchBlocker(poor, "heal")).toMatch(/gold/);
+    const rising = { ...poor, buildings: [...poor.buildings.slice(0, 1), { ...lab, level: 0 }] };
+    expect(researchBlocker(rising, "heal")).toMatch(/Build a laboratory/);
+  });
+
+  it("starts the gunboat with artillery, and adds what's been researched, in order", () => {
+    expect(gunboatWeapons(island())).toEqual(["artillery"]);
+    expect(gunboatWeapons(island({ researched: ["smoke", "heal"] }))).toEqual([
+      "artillery",
+      "heal",
+      "smoke",
+    ]);
+  });
+
+  it("keeps what an older crew knew, but not gunboat weapons it never researched", () => {
+    const old = {
+      ...starterLayout(NOW),
+      researched: undefined,
+      blueprints: ["mortar"],
+    };
+    const read = sanitizeLayout(old, NOW);
+    expect(read.researched).toEqual(["mortar"]);
+    expect(gunboatWeapons(read)).toEqual(["artillery"]);
   });
 
   it("counts what an older island already has as known", () => {

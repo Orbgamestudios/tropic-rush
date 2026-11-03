@@ -76,6 +76,27 @@ These were explicitly left out to keep the first version to a basic structure:
   levels up. It reaches its deepest spot by headquarters 16.
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
+## Added 2026-11-02, fourth batch (owner's requests)
+
+- **Clearing:** a patch can only be cleared if it touches open ground: the first clearing, the trail,
+  or something already cleared. The shore doesn't count. Everything on the island can still be
+  reached this way, and a test holds that to it.
+- **Gunboat weapons:** five, found in this order: Artillery from the start, then Medkit, Shock
+  Grenade, Barrage and Smokescreen, each from a blueprint on a raider base. Only the next one in line
+  can turn up. The Shock Grenade stuns every defense in a circle for 4 seconds, and the Smokescreen
+  hides heroes in one for 10. Both circles are 6 tiles across. Friendly heroes aren't stunned: that
+  was Claude's call, since a crewmate could otherwise lock up the team. Those are base levels; nothing
+  raises them yet.
+- **Laboratory:** a 3 x 3 building, one per crew, from headquarters 1. Blueprints won on raids now
+  need a little gold there before they do anything, whether defense or gunboat weapon, and it opens
+  every hero's upgrade tree. Older crews keep every defense they already knew, but gunboat weapons
+  go back to Artillery, and have to be found again. Raiders don't build laboratories.
+- **Upgrade tree:** the board is 1,500 wide and scrolls sideways, opening on the next thing to buy.
+- **Night:** brighter all round, and building lamps reach 40% further and shine 20% brighter.
+- **The beach:** what's lying on it comes and goes with the tide: three lots on a beach, each
+  swapped every 12 hours, four hours apart, so nothing stays much longer and the whole beach never
+  changes at once. Coconuts, seaweed, bottles and crates join the driftwood, starfish and shells.
+
 ## Added 2026-11-02, third batch (owner's requests)
 
 - **Sprint:** hold to sprint: 30% faster for as long as it's held, up to 2.5 seconds, and whatever's

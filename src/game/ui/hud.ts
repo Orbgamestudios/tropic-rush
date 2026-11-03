@@ -30,10 +30,12 @@ export interface HudHandlers {
   onPause(): void;
 }
 
-const ABILITY_ICONS: Record<Ability, IconName> = {
+export const ABILITY_ICONS: Record<Ability, IconName> = {
   artillery: "artillery",
+  heal: "medkit",
+  shock: "shock",
   barrage: "barrage",
-  heal: "heal",
+  smoke: "smoke",
 };
 
 function formatTime(seconds: number): string {
@@ -315,6 +317,7 @@ export class Hud {
     this.tray.classList.toggle("active", hero.inBoat);
     for (const [ability, { button, cost }] of this.abilityButtons) {
       const price = nextAbilityCost(state, ability);
+      button.style.display = state.gunboat.includes(ability) ? "" : "none";
       cost.textContent = String(price);
       button.classList.toggle("selected", hero.inBoat && ability === selected);
       button.classList.toggle("unaffordable", price > state.energy);

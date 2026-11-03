@@ -513,6 +513,85 @@
 }
 
 /* Clear of the panel's close button. */
+.crew-night-card.crew-lab-card {
+  width: min(740px, 94vw);
+}
+
+.crew-lab-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+.crew-lab-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.crew-lab-title {
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9bb2d4;
+}
+
+.crew-lab-row {
+  gap: 6px;
+  padding: 3px 6px;
+}
+
+.crew-lab-row.done {
+  opacity: 0.7;
+}
+
+.crew-lab-row .crew-tool-name {
+  font-size: 13px;
+}
+
+.crew-lab-row .crew-tool-level {
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.crew-lab-icon {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+
+.crew-lab-heroes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.crew-lab-heroes .crew-lab-title {
+  margin-right: 6px;
+}
+
+.crew-lab-hero {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid var(--brass);
+  border-radius: 8px;
+  background: #16233b;
+}
+
+.crew-lab-hero img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .crew-tools-note {
   padding-right: 34px;
 }

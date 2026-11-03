@@ -164,6 +164,8 @@ const FLASH: Ramp = [1.8, 1.5, 0.9, 1.3, 0.65, 0.18, 0.4, 0.1, 0.02];
 const BLAST: Ramp = [1, 0.85, 0.55, 0.6, 0.4, 0.18, 0.2, 0.1, 0.03];
 const BLACK: Ramp = [0.02, 0.018, 0.016, 0.02, 0.018, 0.016, 0.02, 0.018, 0.016];
 const HEALING: Ramp = [0.25, 1.5, 0.5, 0.15, 1.1, 0.35, 0.05, 0.5, 0.15];
+const ZAP: Ramp = [2.2, 3, 4, 0.5, 1.6, 3.4, 0.1, 0.3, 0.9];
+const SCREEN: Ramp = [0.95, 0.96, 0.98, 0.88, 0.9, 0.93, 0.74, 0.77, 0.82];
 
 interface Particle {
   x: number;
@@ -524,6 +526,8 @@ interface Emitter {
   time: number;
   timer: number;
   fire: boolean;
+  /** A smokescreen: pale, and thick enough to hide in. */
+  thick: boolean;
 }
 
 const pick = <T>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)] as T;
@@ -860,6 +864,30 @@ export class Effects {
     });
   }
 
+  /** A crackle of blue sparks, off something that's been shocked. */
+  zap(pos: THREE.Vector3): void {
+    const { x, y, z } = pos;
+    this.glow.add({ x, y, z, life: 0.1, from: 0.4, to: 0.8, cell: STAR, ramp: ZAP });
+    for (let i = 0; i < 5; i++) {
+      this.glow.add({
+        x,
+        y,
+        z,
+        vx: between(-7, 7),
+        vy: between(-2, 7),
+        vz: between(-7, 7),
+        gravity: 6,
+        life: between(0.1, 0.24),
+        from: 0.16,
+        to: 0.06,
+        aspect: 0.4,
+        stretch: 0.07,
+        cell: STREAK,
+        ramp: ZAP,
+      });
+    }
+  }
+
   /** Green crosses rising off someone being healed. */
   heal(pos: THREE.Vector3): void {
     for (let i = 0; i < 2; i++) {
@@ -1011,7 +1039,17 @@ export class Effects {
 
   /** Smoke rising from a destroyed building for a few seconds, burning at first. */
   smokeColumn(pos: THREE.Vector3, seconds: number, fire = true): void {
-    this.emitters.push({ pos: pos.clone(), time: seconds, timer: 0, fire });
+    this.emitters.push({ pos: pos.clone(), time: seconds, timer: 0, fire, thick: false });
+  }
+
+  /** A smokescreen, filling a circle for as long as it lasts. */
+  smokeCloud(pos: THREE.Vector3, radius: number, seconds: number): void {
+    for (let i = 0; i < 10; i++) {
+      const out = i === 0 ? 0 : radius * (i % 2 ? 0.7 : 0.4);
+      const a = (i / 9) * Math.PI * 2;
+      const at = new THREE.Vector3(pos.x + Math.cos(a) * out, pos.y, pos.z + Math.sin(a) * out);
+      this.emitters.push({ pos: at, time: seconds, timer: i * 0.03, fire: false, thick: true });
+    }
   }
 
   update(dt: number): void {
@@ -1021,7 +1059,8 @@ export class Effects {
       if (e.timer > 0) continue;
       e.timer = 0.16;
       spot.set(e.pos.x + between(-0.8, 0.8), e.pos.y + 0.5, e.pos.z + between(-0.8, 0.8));
-      this.rise(spot, e.time > 2 ? SOOT : BILLOW, 0.9, 2.6, 0.62);
+      if (e.thick) this.rise(spot, SCREEN, 2.4, 5.4, 0.8);
+      else this.rise(spot, e.time > 2 ? SOOT : BILLOW, 0.9, 2.6, 0.62);
       if (e.fire && e.time > 1.5) this.burn(e.pos, 1);
     }
     this.emitters = this.emitters.filter((e) => e.time > 0);

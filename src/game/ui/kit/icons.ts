@@ -207,6 +207,16 @@ const ICONS = {
     <defs>${lg(id("a"), "#f4f6fa", "#a7b2c2")}</defs>
     <path d="M14 50a10 10 0 0 1 0-20 12 12 0 0 1 22-8 11 11 0 0 1 18 10 9 9 0 0 1-2 18z" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3.5" stroke-linejoin="round"/>
     <path d="M20 34a6 6 0 0 1 6-5" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>`,
+  shock: (id) => `
+    <defs>${lg(id("a"), "#d8f6ff", "#3fb4f0")}</defs>
+    <circle cx="32" cy="32" r="24" fill="none" stroke="${OUTLINE}" stroke-width="7"/>
+    <circle cx="32" cy="32" r="24" fill="none" stroke="#7fdcff" stroke-width="3.5"/>
+    <path d="M36 10 20 36h11l-4 18 17-27H32z" fill="url(#${id("a")})" stroke="${OUTLINE}" stroke-width="3.5" stroke-linejoin="round"/>`,
+  flask: (id) => `
+    <defs>${lg(id("a"), "#a8ffcb", "#2fbf72")}</defs>
+    <path d="M25 8h14v4h-2v14l13 22a6 6 0 0 1-5 9H19a6 6 0 0 1-5-9l13-22V12h-2z" fill="#e8f7ff" stroke="${OUTLINE}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M22 38h20l7 12a3 3 0 0 1-2.5 4h-29a3 3 0 0 1-2.5-4z" fill="url(#${id("a")})"/>
+    <circle cx="28" cy="46" r="2.5" fill="#fff"/><circle cx="37" cy="42" r="2" fill="#fff"/>`,
   turret: (id) => `
     <defs>${lg(id("a"), "#9fd4ff", "#2a78e0")}</defs>
     <path d="M14 56h36l-4-14H18z" fill="#6c7788" stroke="${OUTLINE}" stroke-width="3" stroke-linejoin="round"/>

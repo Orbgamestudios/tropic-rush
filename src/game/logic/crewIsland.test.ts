@@ -32,6 +32,7 @@ import {
   TILE,
   tileAt,
   toolBlocker,
+  touchesOpenGround,
   tryOp,
   upgradeBlocker,
 } from "./crewIsland";
@@ -73,8 +74,12 @@ function island(hq = 20, cleared: string[] = allCleared()): CrewLayout {
     buildings: start.buildings.map((b) => ({ ...b, level: hq })),
     resources: { gold: 1e9, timber: 1e9, stone: 1e9, scrap: 1e9 },
     blueprints: [...BLUEPRINT_TYPES],
+    researched: [...BLUEPRINT_TYPES],
   };
 }
+
+/** Everything cleared but these: for looking at one patch with nothing else in the way. */
+const allBut = (...ids: string[]) => allCleared().filter((id) => !ids.includes(id));
 
 /** A tile with an 8 x 6 block of grass near the start, clear of the headquarters. */
 const O = (() => {
@@ -200,17 +205,20 @@ describe("crew island ground", () => {
   });
 
   it("only builds on cleared ground; clearing takes the right tool and pays out", () => {
-    const thicket = obstacles().find((o) => o.kind === "thicket" && o.tier === 1);
+    const overgrown = island(1, []);
+    const thicket = obstacles().find(
+      (o) => o.kind === "thicket" && o.tier === 1 && touchesOpenGround(overgrown, o),
+    );
     const boulder = obstacles().find((o) => o.kind === "boulder");
     if (!thicket || !boulder) throw new Error("missing obstacles");
-    const overgrown = island(1, []);
     const onThicket = turret("t", thicket.x, thicket.y);
     expect(obstacleAtTile(overgrown, thicket)?.id).toBe(thicket.id);
     expect(applyOp(overgrown, { kind: "place", building: onThicket }, NOW)).toBeNull();
     // The axe comes with HQ 1; dynamite needs HQ 5.
     expect(clearBlocker(overgrown, thicket)).toBeNull();
-    expect(clearBlocker(overgrown, boulder)).toMatch(/Dynamite/);
-    expect(applyOp(overgrown, { kind: "clear", id: boulder.id }, NOW)).toBeNull();
+    const opened = island(1, allBut(boulder.id));
+    expect(clearBlocker(opened, boulder)).toMatch(/Dynamite/);
+    expect(applyOp(opened, { kind: "clear", id: boulder.id }, NOW)).toBeNull();
     const poor = { ...overgrown, resources: { gold: 50, timber: 0, stone: 0, scrap: 0 } };
     const started = applyOp(poor, { kind: "clear", id: thicket.id }, NOW);
     expect(started?.jobs).toHaveLength(1);
@@ -228,16 +236,49 @@ describe("crew island ground", () => {
     expect(obstacleAtTile(done, thicket)).toBeUndefined();
   });
 
+  it("only clears next to what's open, so nothing can be skipped", () => {
+    const start = island(20, []);
+    const far = obstacles().find((o) => o.tier === 3);
+    if (!far) throw new Error("missing obstacle");
+    expect(clearBlocker(start, far)).toMatch(/next to it/);
+    expect(applyOp(start, { kind: "clear", id: far.id }, NOW)).toBeNull();
+    const first = obstacles().find((o) => touchesOpenGround(start, o) && o.tier === 1);
+    if (!first) throw new Error("nothing to start on");
+    const beyond = obstacles().find(
+      (o) => !touchesOpenGround(start, o) && touchesOpenGround(island(20, [first.id]), o),
+    );
+    if (!beyond) throw new Error("nothing beyond it");
+    expect(clearBlocker(start, beyond)).toMatch(/next to it/);
+    expect(touchesOpenGround(island(20, [first.id]), beyond)).toBe(true);
+  });
+
+  it("can reach every patch on the island, working out from the start", () => {
+    const cleared: string[] = [];
+    const left = new Set(obstacles());
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const o of left) {
+        if (!touchesOpenGround({ cleared }, o)) continue;
+        cleared.push(o.id);
+        left.delete(o);
+        moved = true;
+      }
+    }
+    expect([...left]).toEqual([]);
+  });
+
   it("only lets as many jobs run as there are workers, and raises tiers with tool levels", () => {
-    const [a, b] = obstacles().filter((o) => o.kind === "thicket" && o.tier === 1);
-    if (!a || !b) throw new Error("missing obstacles");
     const start = island(1, []);
+    const [a, b] = obstacles().filter(
+      (o) => o.kind === "thicket" && o.tier === 1 && touchesOpenGround(start, o),
+    );
+    if (!a || !b) throw new Error("missing obstacles");
     const one = applyOp(start, { kind: "clear", id: a.id }, NOW);
     if (!one) throw new Error("not started");
     expect(applyOp(one, { kind: "clear", id: b.id }, NOW)).toBeNull();
     const far = obstacles().find((o) => o.tier === 3 && OBSTACLE_KINDS[o.kind].tool === "axe");
     if (!far) throw new Error("missing obstacle");
-    expect(clearBlocker(island(20, []), far)).toMatch(/level 3 Axe/);
+    expect(clearBlocker(island(20, allBut(far.id)), far)).toMatch(/level 3 Axe/);
     expect(toolBlocker(island(1, []), "axe")).toMatch(/HQ 4/);
     const better = applyOp(island(20, []), { kind: "toolUp", tool: "axe" }, NOW);
     if (!better) throw new Error("not started");
