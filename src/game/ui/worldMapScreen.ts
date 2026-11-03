@@ -192,8 +192,13 @@ export class WorldMapScreen {
         pin.setAttribute("aria-label", island.name);
         pin.classList.toggle("retaken", island.retaken);
         pin.classList.toggle("rival", island.rival !== null);
+        pin.classList.toggle("puzzle", island.puzzle !== null);
         pin.append(
-          el("span", "map-pin-title", island.retaken ? "Retaken!" : "Raid"),
+          el(
+            "span",
+            "map-pin-title",
+            island.retaken ? "Retaken!" : island.puzzle ? "Puzzle" : "Raid",
+          ),
           el("span", "map-pin-rating", `HQ ${island.hq} · ${island.difficulty}`),
         );
         pin.addEventListener("click", () => {

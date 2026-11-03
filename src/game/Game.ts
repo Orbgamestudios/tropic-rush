@@ -24,6 +24,7 @@ import { heroMods, noUpgrades, readOwned, type TreeUpgrade } from "./logic/heroT
 import { BASE_CENTER, HOME_SHAPE } from "./logic/island";
 import { archetypeFor } from "./logic/islandShapes";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
+import { puzzleFor } from "./logic/puzzles";
 import {
   canBoard,
   createRaid,
@@ -547,7 +548,14 @@ export class Game {
         const [any] = worldIslands(this.save.world, hq).filter((i) => !i.rival === !standIn);
         if (!any) return;
         const rival = any.rival && { ...any.rival, hq };
-        const rated = { ...any, seed, hq, rival, archetype: archetypeFor(seed, hq) };
+        const rated = {
+          ...any,
+          seed,
+          hq,
+          rival,
+          archetype: archetypeFor(seed, hq),
+          puzzle: rival ? null : puzzleFor(seed, hq),
+        };
         if (this.crew.active) this.crew.exit();
         this.startScout(rated);
       },

@@ -12,6 +12,7 @@ import { type CrystalKind, islandCrystal } from "./crystals";
 import { allowedCount, MAX_HQ_LEVEL } from "./economy";
 import { type RaidReward, raidReward } from "./heroProgress";
 import { ARCHETYPES, type Archetype, archetypeFor } from "./islandShapes";
+import { PUZZLES, type Puzzle, puzzleDefenses, puzzleFor } from "./puzzles";
 import { createRng } from "./rng";
 
 export type Difficulty = "Easy" | "Fair" | "Hard" | "Deadly";
@@ -52,6 +53,8 @@ export interface MapIsland {
   retaken: boolean;
   /** What kind of island it is. Player islands are all on the crew island's own coast. */
   archetype: Archetype | "player";
+  /** The puzzle its defenses are laid out as, if they are. */
+  puzzle: Puzzle | null;
   /** The crystal its headquarters holds. */
   crystal: CrystalKind;
   /** A player island: the crew living there, whoever they are right now. */
@@ -348,30 +351,36 @@ function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland
   const rated = Math.min(hq, MAX_HQ_LEVEL);
   // A rebuilt base is a new layout, not the old one with its levels raised.
   const seed = raised ? island.seed + raised : island.seed;
+  const puzzle = rival ? null : puzzleFor(seed, hq);
   return {
     ...island,
     hq,
     seed,
     tier,
     difficulty: difficultyOf(hq, yourHq),
-    defenses: DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
+    defenses: puzzle
+      ? puzzleDefenses(puzzle, rated)
+      : DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
     reward: raidReward(true, 100, tier),
     taken: world.taken.includes(island.id),
     retaken: raised !== undefined,
     archetype: rival ? "player" : archetypeFor(seed, hq),
+    puzzle,
     crystal: islandCrystal(seed),
     rival,
     tribute: rival ? tributeFor(hq) : 0,
   };
 }
 
-/** The short name of an island's kind, for its card. */
+/** The short name of an island's kind, for its card: its puzzle, if it's one. */
 export function archetypeLabel(island: MapIsland): string {
+  if (island.puzzle) return `Puzzle · ${PUZZLES[island.puzzle].label}`;
   return island.archetype === "player" ? "Player island" : ARCHETYPES[island.archetype].label;
 }
 
 /** How to go about taking an island, for its card. */
 export function archetypeTip(island: MapIsland): string {
+  if (island.puzzle) return PUZZLES[island.puzzle].tip;
   return island.archetype === "player" ? "" : ARCHETYPES[island.archetype].tip;
 }
 

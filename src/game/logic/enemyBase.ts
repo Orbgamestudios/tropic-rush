@@ -26,8 +26,9 @@ import {
   type PlacedBuilding,
 } from "./island";
 import { islandShape } from "./islandShapes";
+import { type Puzzle, puzzleFor, puzzlePlan } from "./puzzles";
 import { between, createRng } from "./rng";
-import { add, distance, fromAngle, lerp, type Vec2, vec } from "./vec";
+import { add, distance, fromAngle, lerp, normalize, scale, sub, type Vec2, vec } from "./vec";
 
 /** Defenses first so they get the ground round the headquarters, then everything else. */
 const BUILD_ORDER: readonly BuildingType[] = [
@@ -74,7 +75,14 @@ const OUTER_RING = [30, 40] as const;
 export interface BaseOptions {
   /** Every building at the top of what its headquarters allows, for bases retaken in the night. */
   maxed?: boolean;
+  /** Defenses laid out as a puzzle, in place of the rings. */
+  puzzle?: Puzzle | null;
 }
+
+/** The storages, in the order a puzzle's storage spots take them. */
+const STORAGES: readonly BuildingType[] = ["goldVault", "timberShed", "stoneYard", "scrapBin"];
+/** Puzzle layouts stand tighter than the rings: a tile between buildings still lets heroes by. */
+const PUZZLE_GAP = 1;
 
 /** The headquarters level a base on the crew's island has grown all the way inland by. */
 const FULLY_INLAND_HQ = 16;
@@ -153,29 +161,67 @@ export function enemyBase(
       );
     });
   };
+  const level = (type: BuildingType) => {
+    const cap = type === "headquarters" ? rated : levelCap(type, rated);
+    // Upgraded close to the cap, the way a crew would, unless it's a full rebuild.
+    const below = !options.maxed && rng() < 0.4 ? 1 : 0;
+    return (type === "headquarters" ? rated : Math.max(1, cap - below)) + extra;
+  };
+  const make = (type: BuildingType, pos: Vec2, level: number): TileBuilding => ({
+    id: `e${buildings.length}`,
+    type,
+    ...cornerFor(type, false, pos),
+    rotated: false,
+    level,
+  });
+  /** Puts a building where a puzzle wants it, or as near as the island allows. */
+  const placeNear = (type: BuildingType, pos: Vec2, built: number) => {
+    for (let reach = 0; reach <= 8; reach += 2) {
+      for (let k = 0; k < (reach === 0 ? 1 : 8); k++) {
+        const candidate = make(type, add(pos, fromAngle((k * Math.PI) / 4, reach)), built);
+        if (clearance(candidate, PUZZLE_GAP)) return candidate;
+      }
+    }
+    return nearestFree(
+      pos,
+      tiles,
+      (p) => make(type, p, built),
+      (c) => clearance(c, 1),
+    );
+  };
+  // A puzzle lays its own defenses, and the first of the storages where it wants them.
+  const puzzle = options.puzzle && !home ? puzzlePlan(options.puzzle, rated) : null;
+  const laid = new Map<BuildingType, number>();
+  const layPuzzle = () => {
+    if (!puzzle) return;
+    const forward = normalize(sub(shape.spawn, center));
+    const across = vec(-forward.y, forward.x);
+    const storages = STORAGES.flatMap((t) => Array<BuildingType>(allowedCount(t, rated)).fill(t));
+    for (const spot of puzzle) {
+      const type = spot.type === "storage" ? storages.shift() : spot.type;
+      if (!type) continue;
+      const pos = add(center, add(scale(forward, spot.forward), scale(across, spot.across)));
+      const placed = placeNear(type, pos, level(type));
+      if (!placed) continue;
+      buildings.push(placed);
+      laid.set(type, (laid.get(type) ?? 0) + 1);
+    }
+  };
   // Defenses go round the circle in turn, each a share of the way on from the last.
   const defenses = defensesOf(rated);
   const step = Math.PI * 2 * 0.382;
   const tight = Math.min(1, home ? 0.5 + rated * 0.03 : 0.68 + rated * 0.022);
   let turn = rng() * Math.PI * 2;
   for (const type of BUILD_ORDER) {
-    const cap = type === "headquarters" ? rated : levelCap(type, rated);
+    // A puzzle's defenses are all its own.
+    if (puzzle && BUILDINGS[type].attack) continue;
     const [nearRing, farRing] = RINGS[type] ?? OUTER_RING;
     const near = nearRing * tight;
     const far = farRing * tight;
-    for (let i = 0; i < allowedCount(type, rated); i++) {
-      // Upgraded close to the cap, the way a crew would, unless it's a full rebuild.
-      const below = !options.maxed && rng() < 0.4 ? 1 : 0;
-      const level = (type === "headquarters" ? rated : Math.max(1, cap - below)) + extra;
+    for (let i = laid.get(type) ?? 0; i < allowedCount(type, rated); i++) {
+      const built = level(type);
       const spread = (Math.PI * 2) / Math.max(4, defenses);
       turn += step;
-      const make = (pos: Vec2): TileBuilding => ({
-        id: `e${buildings.length}`,
-        type,
-        ...cornerFor(type, false, pos),
-        rotated: false,
-        level,
-      });
       let placed: TileBuilding | null = null;
       for (let attempt = 0; attempt < 800 && !placed; attempt++) {
         const loose = attempt >= 500;
@@ -191,12 +237,18 @@ export function enemyBase(
                   center,
                   fromAngle(rng() * Math.PI * 2, between(rng, near, far + (loose ? 14 : 0))),
                 );
-        const candidate = make(pos);
+        const candidate = make(type, pos, built);
         if (clearance(candidate, loose ? 1 : GAP_TILES)) placed = candidate;
       }
       // Every base at a level has the same buildings: anywhere free will do, nearest first.
-      placed ??= nearestFree(center, tiles, make, (c) => clearance(c, 1));
+      placed ??= nearestFree(
+        center,
+        tiles,
+        (p) => make(type, p, built),
+        (c) => clearance(c, 1),
+      );
       if (placed) buildings.push(placed);
+      if (placed && type === "headquarters") layPuzzle();
     }
   }
   return buildings;
@@ -255,7 +307,7 @@ export function forestCover(hq: number): number {
 /** A full raid island: an enemy base of this HQ level with cover, mines and a landing round it. */
 export function generateIsland(seed: number, hq: number, options?: BaseOptions): IslandLayout {
   const shape = islandShape(seed, hq);
-  const base = enemyBase(seed, hq, options, shape);
+  const base = enemyBase(seed, hq, { puzzle: puzzleFor(seed, hq), ...options }, shape);
   const standing = base.filter((b) => b.type !== "landmine").map(toRaidBuilding);
   const island = dressIsland(seed, 1 + Math.floor(hq / 5), standing, shape, forestCover(hq));
   // The first islands are a short walk from the beach: a hidden mine there is just a trap.

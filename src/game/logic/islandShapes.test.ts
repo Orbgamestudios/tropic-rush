@@ -6,6 +6,7 @@ import { forestCover, generateIsland } from "./enemyBase";
 import { HEROES } from "./heroes";
 import type { IslandLayout } from "./island";
 import { ARCHETYPES, type Archetype, archetypeFor, islandShape } from "./islandShapes";
+import { puzzleDefenses, puzzleFor } from "./puzzles";
 import { distance, vec } from "./vec";
 
 const KINDS = Object.keys(ARCHETYPES) as Archetype[];
@@ -16,11 +17,13 @@ function seedFor(kind: Archetype, hq: number): number | null {
   return null;
 }
 
-function everyIsland(run: (island: IslandLayout, kind: Archetype, hq: number) => void): void {
+function everyIsland(
+  run: (island: IslandLayout, kind: Archetype, hq: number, seed: number) => void,
+): void {
   for (const kind of KINDS) {
     for (const hq of [1, 2, 4, 6, 9, 13, 20, 26]) {
       const seed = seedFor(kind, hq);
-      if (seed !== null) run(generateIsland(seed, hq), kind, hq);
+      if (seed !== null) run(generateIsland(seed, hq), kind, hq, seed);
     }
   }
 }
@@ -139,15 +142,22 @@ describe("island shapes", () => {
   });
 
   it("fits every required building on every island, on its own tiles", () => {
-    everyIsland((island, kind, hq) => {
+    everyIsland((island, kind, hq, seed) => {
       const shape = island.shape;
       if (!shape) throw new Error("no shape");
       const rated = Math.min(hq, 20);
       const types = Object.keys(BUILDINGS) as BuildingType[];
+      // A puzzle island has its own defenses; everything else is as usual.
+      const puzzle = puzzleFor(seed, hq);
       for (const type of types) {
         if (type === "landmine" || type === "laboratory") continue;
+        if (puzzle && BUILDINGS[type].attack) continue;
         const have = island.buildings.filter((b) => b.type === type).length;
         expect(have, `${kind} hq ${hq}: ${type}`).toBe(allowedCount(type, rated));
+      }
+      if (puzzle) {
+        const defenses = island.buildings.filter((b) => BUILDINGS[b.type].attack).length;
+        expect(defenses, `${kind} hq ${hq}: ${puzzle}`).toBe(puzzleDefenses(puzzle, rated));
       }
       for (const b of island.buildings) {
         const { w, h } = footprint(b.type, false);

@@ -937,6 +937,11 @@
   }
 }
 
+/* A puzzle island: a teal edge, so it can be looked out for. */
+.map-pin.puzzle {
+  border-color: #5fe0d0;
+}
+
 .map-pin-title {
   font-family: var(--display);
   font-size: 15px;
@@ -1126,6 +1131,14 @@
 .scout-rating {
   font-size: 13px;
   font-weight: 900;
+}
+
+.scout-puzzle {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  color: #5fe0d0;
 }
 
 .scout-tally {

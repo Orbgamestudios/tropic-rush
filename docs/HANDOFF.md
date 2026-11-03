@@ -150,6 +150,23 @@ one in when it lands, and a raid that starts before the light copies arrive uses
 those working: `human()` in `heroModels.ts` only runs on a slow connection, and a browser test
 loads the game with every model blocked to make sure it still does.
 
+## Puzzle islands
+
+`logic/puzzles.ts` holds the layouts, each a list of spots in meters from the headquarters, forward
+towards the beach and across. `enemyBase.ts` lays them right after the headquarters, a tile apart
+rather than the rings' two, and moves anything the island has no ground for to the nearest spot that
+fits. `puzzles.test.ts` checks how often they come up, their firepower, and that each mostly stands
+where it was drawn. To see one, `tropicRush.visit(seed, hq)` scouts any island, and `puzzleFor` says
+which seeds are puzzles.
+
+Each puzzle lists the kinds of island it suits. That list came from measuring how much of each layout
+held its shape on each kind: the gauntlet needs a long island, the wall a wide one. If a puzzle's
+`from` level comes before any island kind it suits, it never turns up, so check both together.
+
+A plain bot with no upgrades can't tell much above headquarters 4, ordinary island or puzzle. It did
+show one outlier: it fights from 12 m, just outside a flamethrower's reach, so it cleared a bare flame
+gauntlet. That's why the gauntlet has mortars and guns behind it now.
+
 ## Building models
 
 Buildings are modeled in Blender by script, with no window: install the portable build anywhere (it
