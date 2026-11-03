@@ -8,3 +8,4 @@ playwright-report/
 coverage/
 *.local
 .DS_Store
+__pycache__/
