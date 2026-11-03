@@ -138,6 +138,12 @@ These were explicitly left out to keep the first version to a basic structure:
   and corrugated metal for flat plate, and their sandbags, which were most of what a model cost to
   draw: the first five looks stand on the bare ground and the sixth on a concrete pad. All three
   are 15% bigger, on pads the same size as before, so they still fit their tiles.
+- **More minis and side paths (2026-11-03, second pass):** three minis between every two
+  upgrades, each a little of something and named in turn (Toughness, Stamina, Weak Spot, Wrecker,
+  Light Feet...), and two side paths off the trunk's second upgrade: Sapper ends in an upgrade for
+  knocking things down, Scrapper in one for lasting, each the hero's own. The board lost its branch
+  names, and sits over crystal glows, crystal clusters, a faint grid and sparks that slide along at
+  different speeds as it scrolls. Minis bought on the first trunk trees were given back.
 - **Hero trees reshaped (2026-11-03):** one line, Basics, up to headquarters 5; then two branches,
   Assault and Survival, to headquarters 11; then each splits into two of the hero's four last
   branches, with the same specials and capstones as before. 22 upgrades and 21 checkpoints a hero,
@@ -223,8 +229,8 @@ These were explicitly left out to keep the first version to a basic structure:
   need a little gold there before they do anything, whether defense or gunboat weapon, and it opens
   every hero's upgrade tree. Older crews keep every defense they already knew, but gunboat weapons
   go back to the two everyone starts with, and the rest have to be found again. Raiders don't build laboratories.
-- **Upgrade tree:** the board scrolls sideways, opening on the next thing to buy. It's 1,600
-  wide since the trees were reshaped on 2026-11-03.
+- **Upgrade tree:** the board scrolls sideways, opening on the next thing to buy. It's 2,200
+  wide since the trees got three minis a line on 2026-11-03.
 - **Night:** brighter all round, and building lamps reach 40% further and shine 20% brighter.
 - **The beach:** what's lying on it comes and goes with the tide: three lots on a beach, each
   swapped every 12 hours, four hours apart, so nothing stays much longer and the whole beach never

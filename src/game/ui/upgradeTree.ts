@@ -1,20 +1,13 @@
 // The hero's upgrade tree, in the style of the owner's mockup: brass-rimmed tiles joined by lines
-// of small checkpoints, which light up gold as they're bought, the chosen one on a cream spec card
-// at the right, and the wallet in the corner. A trunk splits in two, and each of those in two again.
+// of mini upgrades, which light up gold as they're bought, the chosen one on a cream spec card
+// at the right, and the wallet in the corner. A trunk with two short side paths splits in two, and
+// each of those in two again.
 // The board is wider than the screen, and scrolls sideways.
 
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES } from "../logic/heroProgress";
-import {
-  canBuy,
-  heroTree,
-  lineAt,
-  lockedBy,
-  TIERS,
-  type TreeUpgrade,
-  treePaths,
-} from "../logic/heroTrees";
+import { canBuy, heroTree, lineAt, lockedBy, TIERS, type TreeUpgrade } from "../logic/heroTrees";
 import { heroPortrait } from "../render/thumbnails";
 import type { SaveData } from "../save";
 import {
@@ -112,6 +105,14 @@ export class UpgradeTree {
     this.lines.classList.add("tree-lines");
     this.board.append(this.lines);
     this.scroller.append(this.board);
+    // The sky behind the board slides along slower than it, a layer at a time, as it scrolls.
+    this.scroller.addEventListener(
+      "scroll",
+      () => {
+        this.root.style.setProperty("--tree-scroll", String(this.scroller.scrollLeft));
+      },
+      { passive: true },
+    );
     // A mouse wheel only goes up and down, and there's nowhere up or down to go.
     this.scroller.addEventListener(
       "wheel",
@@ -151,7 +152,14 @@ export class UpgradeTree {
     });
     purse.append(trade, this.gold.root, this.wallet.root);
 
-    this.root.append(top, this.scroller, spec, purse, this.fx);
+    const sky = el("div", "tree-sky");
+    sky.append(
+      el("div", "tree-sky-layer tree-sky-glow"),
+      el("div", "tree-sky-layer tree-sky-crystals"),
+      el("div", "tree-sky-layer tree-sky-grid"),
+      el("div", "tree-sky-layer tree-sky-sparks"),
+    );
+    this.root.append(sky, top, this.scroller, spec, purse, this.fx);
     this.reveal = new LevelUpReveal(this.root);
     this.root.style.display = "none";
     parent.append(this.root);
@@ -185,7 +193,6 @@ export class UpgradeTree {
     this.nodes.clear();
     this.wires.length = 0;
     this.lines.replaceChildren();
-    for (const label of this.board.querySelectorAll(".tree-path")) label.remove();
     const tree = heroTree(kind);
     const byId = new Map(tree.map((u) => [u.id, u]));
     for (const u of tree) {
@@ -217,14 +224,6 @@ export class UpgradeTree {
       });
       this.board.append(node);
       this.nodes.set(u.id, node);
-    }
-    // Each stretch's name above where it starts, the last four in their crystals' colors.
-    for (const path of treePaths(kind)) {
-      const label = el("div", `tree-path tree-path-${path.tone}`, path.name);
-      const { x, y } = spot(path);
-      label.style.left = `${x * 100}%`;
-      label.style.top = `${(y - 0.11) * 100}%`;
-      this.board.append(label);
     }
   }
 
@@ -272,7 +271,7 @@ export class UpgradeTree {
     this.specIcon.replaceChildren(icon(u.icon as IconName));
     this.specName.textContent = u.name;
     this.specPath.textContent = u.line
-      ? `${u.path}: checkpoint`
+      ? `${u.path}: mini upgrade`
       : u.tier === TIERS
         ? `${u.path}: capstone`
         : (u.path ?? "First upgrade");

@@ -1,14 +1,20 @@
-// The hero upgrade trees (docs/HERO_TREES.md): a trunk of four upgrades up to headquarters 5, then
-// two branches, Assault and Survival, which split again after headquarters 11 into the hero's four
-// last branches, each with its own specials and capstone. An upgrade costs gold and the crystal of
-// what it does: nature for staying alive, fire for hitting harder, ice for being quicker, and on the
-// last branches whichever crystal the branch is. A small checkpoint sits on each line between
-// upgrades, bought with gold. Each tier opens at a headquarters level, so a hero is only as strong
-// as the islands its crew can reach. No engine imports.
+// The hero upgrade trees (docs/HERO_TREES.md): a trunk of four upgrades up to headquarters 5, with two
+// short side paths off its second, then two branches, Assault and Survival, which split again after
+// headquarters 11 into the hero's four last branches, each with its own specials and capstone. An
+// upgrade costs gold and the crystal of what it does: nature for staying alive, fire for hitting
+// harder, ice for being quicker, and on the last branches whichever crystal the branch is. Three
+// minis sit on each line between upgrades, bought with gold, each a little of something. Each tier
+// opens at a headquarters level, so a hero is only as strong as the islands its crew can reach. No
+// engine imports.
 
 import { CRYSTAL_KINDS, type CrystalCost, type CrystalKind, type Crystals } from "./crystals";
 import { HERO_KINDS, type HeroKind } from "./heroes";
-import { branchTreeCost, OLD_CRYSTAL_ORDER, OLD_UPGRADE_COSTS } from "./oldTrees";
+import {
+  branchTreeCost,
+  OLD_CRYSTAL_ORDER,
+  OLD_UPGRADE_COSTS,
+  TRUNK_CHECKPOINT_GOLD,
+} from "./oldTrees";
 
 /** What a hero's upgrades add up to. Multipliers start at 1, additions and tricks at 0. */
 export interface HeroMods {
@@ -154,7 +160,7 @@ export type UpgradeIcon =
   | "barrage"
   | "artillery";
 
-/** Where a checkpoint sits: on the line between two upgrades, `at` of the way along it. */
+/** Where a mini sits: on the line between two upgrades, `at` of the way along it. */
 export interface CheckpointSpot {
   from: string;
   to: string;
@@ -166,7 +172,7 @@ export interface TreeUpgrade {
   id: string;
   name: string;
   text: string;
-  /** 1 to 10, or 0 for a checkpoint. */
+  /** 1 to 10, or 0 for a mini. */
   tier: number;
   gold: number;
   crystals: CrystalCost;
@@ -208,33 +214,50 @@ export function tierHq(tier: number): number {
   return TIER_HQ[tier] ?? 1;
 }
 
-/** Gold for a checkpoint, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_GOLD = [0, 0, 300, 500, 800, 1100, 1500, 2000, 2600, 3400, 4400] as const;
-/** How strong a checkpoint is in percent, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_PERCENT = [0, 0, 3, 3, 4, 4, 4, 5, 5, 5, 6] as const;
+/** Gold for a mini, by the tier of the upgrade its line leads to. */
+const MINI_GOLD = [0, 0, 150, 250, 400, 550, 750, 1000, 1300, 1700, 2200] as const;
+/** How strong a mini is in percent, by the tier of the upgrade its line leads to. */
+const MINI_PERCENT = [0, 0, 1.5, 1.5, 2, 2, 2, 2.5, 2.5, 2.5, 3] as const;
 /** Percent for percent, these do far less than the rest, so they get twice as much. */
 const SLIGHT_STAT = 2;
 /** The Heavy's upgrades that make his gun stronger do this much of what everyone else's do. */
 const HEAVY_GUN = 0.85;
 
-/** Where a line's checkpoint sits along it: halfway, or further on where it bends out to a branch. */
-const ALONG_LINE: Record<"straight" | "out", number> = { straight: 0.5, out: 0.6 };
+/**
+ * Where a line's minis sit along it: evenly on a straight line, and past the bend on one that bends
+ * out to a branch, so two lines leaving one upgrade don't crowd their minis together.
+ */
+const ALONG_LINE: Record<"straight" | "out", readonly number[]> = {
+  straight: [0.25, 0.5, 0.75],
+  out: [0.4, 0.6, 0.8],
+};
+/** How far along a line it takes to bend round to its new row. */
+const BEND = 0.3;
 
-/** The curve from one spot on the board to another, in columns and rows. */
+/** The line from one spot on the board to another, in columns and rows: a bend, then straight on. */
 export function lineAt(
   from: { column: number; row: number },
   to: { column: number; row: number },
   t: number,
 ): { column: number; row: number } {
-  const ease = t * t * (3 - 2 * t);
-  const across = 1.5 * t * (1 - t) + t * t * t;
+  const bend = Math.min(1, t / BEND);
   return {
-    column: from.column + (to.column - from.column) * across,
-    row: from.row + (to.row - from.row) * ease,
+    column: from.column + (to.column - from.column) * t,
+    row: from.row + (to.row - from.row) * bend * bend * (3 - 2 * bend),
   };
 }
 
-type CheckpointStat = "health" | "damage" | "heal" | "reload" | "unload" | "spin" | "speed";
+type MiniStat =
+  | "health"
+  | "armor"
+  | "blast"
+  | "damage"
+  | "defense"
+  | "building"
+  | "reload"
+  | "speed"
+  | "heal"
+  | "weapon";
 
 /** What the time between shots is called for each hero. */
 const RELOAD_WORDS: Record<HeroKind, { name: string; verb: string }> = {
@@ -247,6 +270,72 @@ const RELOAD_WORDS: Record<HeroKind, { name: string; verb: string }> = {
   engineer: { name: "Hot Trigger", verb: "Fires" },
 };
 
+/** Names for each kind of mini, taken in turn up the tree, so the minis along a line differ. */
+const MINI_NAMES: Record<Exclude<MiniStat, "reload" | "weapon">, readonly string[]> = {
+  health: ["Toughness", "Stamina", "Thick Skin", "Second Breath", "Iron Lungs"],
+  armor: ["Padding", "Hard Knocks", "Shrug It Off", "Battle Scars"],
+  blast: ["Ear Plugs", "Hit the Dirt", "Blast Drill"],
+  damage: ["Punch", "Hard Hitter", "Follow Through", "Heavy Hand", "Killer Instinct"],
+  defense: ["Weak Spot", "Tower Breaker", "Crack Shot"],
+  building: ["Wrecker", "Knock Down", "Demolition Drill"],
+  speed: ["Fitness", "Light Feet", "Sprint Drill", "Long Strides"],
+  heal: ["Strong Dose", "Kind Hands", "Fresh Bandages"],
+};
+
+/** The mini that makes each hero's own weapon quicker, and the stat it's on. */
+const WEAPON_MINI: Record<
+  HeroKind,
+  {
+    names: readonly string[];
+    text: string;
+    icon: UpgradeIcon;
+    stat: "unload" | "spinUp" | "flight" | "shotSpeed";
+  }
+> = {
+  rifleman: {
+    names: ["Quick Unload", "Trigger Discipline"],
+    text: "Bullets leave a burst {}% quicker.",
+    icon: "barrage",
+    stat: "unload",
+  },
+  medic: {
+    names: ["Easy Lob", "Long Arm"],
+    text: "Bottles land {}% sooner.",
+    icon: "clock",
+    stat: "flight",
+  },
+  heavy: {
+    names: ["Spin Up", "Oiled Bearings"],
+    text: "Spins up {}% faster.",
+    icon: "gear",
+    stat: "spinUp",
+  },
+  tank: {
+    names: ["Hot Powder", "Hot Load"],
+    text: "Shells fly {}% faster.",
+    icon: "rocket",
+    stat: "shotSpeed",
+  },
+  bazooka: {
+    names: ["Hot Fuel", "Hot Load"],
+    text: "Rockets fly {}% faster.",
+    icon: "rocket",
+    stat: "shotSpeed",
+  },
+  grenadier: {
+    names: ["Easy Lob", "Long Arm"],
+    text: "Grenades land {}% sooner.",
+    icon: "clock",
+    stat: "flight",
+  },
+  engineer: {
+    names: ["Tight Springs", "Hot Load"],
+    text: "Shots fly {}% faster.",
+    icon: "gear",
+    stat: "shotSpeed",
+  },
+};
+
 /** A percent kept to a tenth, so what a card says is what it does. */
 const tenth = (n: number) => Math.round(n * 10) / 10;
 
@@ -255,37 +344,53 @@ function gunShare(kind: HeroKind, percent: number): number {
   return kind === "heavy" ? tenth(percent * HEAVY_GUN) : percent;
 }
 
-function checkpoint(kind: HeroKind, stat: CheckpointStat, base: number): Draft {
-  const gun = stat === "damage" || stat === "reload" || stat === "spin";
+/** A mini: `nth` is how many of its kind come before it on the hero's tree, for its name. */
+function mini(kind: HeroKind, stat: MiniStat, base: number, nth: number): Draft {
+  const gun = stat === "damage" || stat === "reload" || (stat === "weapon" && kind === "heavy");
   const percent = gun ? gunShare(kind, base) : base;
+  const slight = tenth(percent * SLIGHT_STAT);
   const more = 1 + percent / 100;
   const less = 1 - percent / 100;
-  const faster = 1 - (percent * SLIGHT_STAT) / 100;
+  const pick = (names: readonly string[]) => names[nth % names.length] ?? "";
   switch (stat) {
     case "health":
-      return up("Toughness", `+${percent}% health.`, {}, "heart", { hp: more });
+      return up(pick(MINI_NAMES.health), `+${percent}% health.`, {}, "heart", { hp: more });
+    case "armor":
+      return up(pick(MINI_NAMES.armor), `Takes ${percent}% less damage.`, {}, "shield", {
+        damageTaken: less,
+      });
+    case "blast":
+      return up(pick(MINI_NAMES.blast), `Takes ${percent}% less from blasts.`, {}, "shield", {
+        blastTaken: less,
+      });
     case "damage":
-      return up("Punch", `+${percent}% damage.`, {}, "sword", { damage: more });
-    case "heal":
-      return up("Strong Dose", `+${percent}% healing.`, {}, "heal", { heal: more });
+      return up(pick(MINI_NAMES.damage), `+${percent}% damage.`, {}, "sword", { damage: more });
+    case "defense":
+      return up(pick(MINI_NAMES.defense), `+${percent}% damage to defenses.`, {}, "crosshair", {
+        defenseDamage: more,
+      });
+    case "building":
+      return up(pick(MINI_NAMES.building), `+${percent}% damage to buildings.`, {}, "hammer", {
+        buildingDamage: more,
+      });
     case "reload": {
       const { name, verb } = RELOAD_WORDS[kind];
-      return up(name, `${verb} ${percent}% faster.`, {}, "clock", { reload: less });
-    }
-    case "unload":
-      return up(
-        "Quick Unload",
-        `Bullets leave a burst ${tenth(percent * SLIGHT_STAT)}% quicker.`,
-        {},
-        "barrage",
-        { unload: faster },
-      );
-    case "spin":
-      return up("Spin Up", `Spins up ${tenth(percent * SLIGHT_STAT)}% faster.`, {}, "gear", {
-        spinUp: faster,
+      const names = [name, "Muscle Memory", "Rhythm", "Practice"];
+      return up(pick(names), `${verb} ${percent}% faster.`, {}, "clock", {
+        reload: less,
       });
+    }
     case "speed":
-      return up("Fitness", `+${percent}% move speed.`, {}, "speed", { speed: more });
+      return up(pick(MINI_NAMES.speed), `+${percent}% move speed.`, {}, "speed", { speed: more });
+    case "heal":
+      return up(pick(MINI_NAMES.heal), `+${percent}% healing.`, {}, "heal", { heal: more });
+    case "weapon": {
+      const w = WEAPON_MINI[kind];
+      const change = w.stat === "shotSpeed" ? 1 + slight / 100 : 1 - slight / 100;
+      return up(pick(w.names), w.text.replace("{}", String(slight)), {}, w.icon, {
+        [w.stat]: change,
+      });
+    }
   }
 }
 
@@ -329,6 +434,9 @@ interface TreeDraft {
   wide?: Draft;
   /** Midway up Survival, for a healer: stronger healing. */
   mend?: Draft;
+  /** The ends of the two side paths off the trunk: one for knocking things down, one for lasting. */
+  sapper: Draft;
+  scrapper: Draft;
 }
 
 const TREES: Record<HeroKind, TreeDraft> = {
@@ -336,6 +444,12 @@ const TREES: Record<HeroKind, TreeDraft> = {
     first: up("Basic Training", "+10% health.", { nature: 1 }, "heart", { hp: 1.1 }),
     quick: special("Smooth Action", "Bullets leave a burst 20% quicker.", "barrage", {
       unload: 0.8,
+    }),
+    sapper: special("Hollow Points", "+15% damage to buildings.", "hammer", {
+      buildingDamage: 1.15,
+    }),
+    scrapper: special("Scavenger", "Destroying a building heals 5%.", "medkit", {
+      healOnKill: 0.05,
     }),
     branches: {
       nature: {
@@ -382,6 +496,8 @@ const TREES: Record<HeroKind, TreeDraft> = {
     first: up("Steady Hand", "+15% healing.", { nature: 1 }, "heal", { heal: 1.15 }),
     quick: special("Flat Throw", "Bottles land 15% sooner.", "clock", { flight: 0.85 }),
     mend: special("Strong Brew", "+12% healing.", "heal", { heal: 1.12 }),
+    sapper: special("Big Bottles", "Bottles burst 0.5 m wider.", "range", { splash: 0.5 }),
+    scrapper: special("Thick Gloves", "Takes 20% less from blasts.", "shield", { blastTaken: 0.8 }),
     branches: {
       nature: {
         name: "Field Hospital",
@@ -439,6 +555,8 @@ const TREES: Record<HeroKind, TreeDraft> = {
   heavy: {
     first: up("Warm Up", "Minigun spins up 17% faster.", { fire: 1 }, "gear", { spinUp: 0.83 }),
     quick: special("Greased Barrels", "Spins up 17% faster.", "gear", { spinUp: 0.83 }),
+    sapper: special("Steady Stance", "25% less spread.", "crosshair", { spread: 0.75 }),
+    scrapper: special("Flak Vest", "Takes 20% less from blasts.", "shield", { blastTaken: 0.8 }),
     branches: {
       nature: {
         name: "Juggernaut",
@@ -486,6 +604,10 @@ const TREES: Record<HeroKind, TreeDraft> = {
     first: up("Extra Plating", "+15% health.", { nature: 1 }, "heart", { hp: 1.15 }),
     quick: special("Hot Charge", "Shells fly 20% faster.", "rocket", { shotSpeed: 1.2 }),
     wide: special("Bigger Bang", "+0.5 m splash.", "range", { splash: 0.5 }),
+    sapper: special("Dozer Blade", "+15% damage to buildings.", "hammer", { buildingDamage: 1.15 }),
+    scrapper: special("Scrap Welder", "Destroying a building heals 5%.", "hammer", {
+      healOnKill: 0.05,
+    }),
     branches: {
       nature: {
         name: "Fortress",
@@ -533,6 +655,12 @@ const TREES: Record<HeroKind, TreeDraft> = {
     first: up("Quick Loader", "Reloads 10% faster.", { fire: 1 }, "clock", { reload: 0.9 }),
     quick: special("Hot Motor", "Rockets fly 20% faster.", "rocket", { shotSpeed: 1.2 }),
     wide: special("Bigger Bang", "+0.5 m splash.", "range", { splash: 0.5 }),
+    sapper: special("Shaped Charge", "+15% damage to defenses.", "crosshair", {
+      defenseDamage: 1.15,
+    }),
+    scrapper: special("Blast Goggles", "Takes 20% less from blasts.", "shield", {
+      blastTaken: 0.8,
+    }),
     branches: {
       nature: {
         name: "Daredevil",
@@ -582,6 +710,10 @@ const TREES: Record<HeroKind, TreeDraft> = {
     first: up("Bigger Charge", "+10% damage.", { fire: 1 }, "sword", { damage: 1.1 }),
     quick: special("Light Grenades", "Grenades land 15% sooner.", "clock", { flight: 0.85 }),
     wide: special("Bigger Bang", "+0.5 m splash.", "grenade", { splash: 0.5 }),
+    sapper: special("Sticky Bombs", "+15% damage to buildings.", "grenade", {
+      buildingDamage: 1.15,
+    }),
+    scrapper: special("Tin Helmet", "Takes 20% less from blasts.", "shield", { blastTaken: 0.8 }),
     branches: {
       nature: {
         name: "Old Campaigner",
@@ -629,6 +761,12 @@ const TREES: Record<HeroKind, TreeDraft> = {
   engineer: {
     first: up("Spare Parts", "Fires 10% faster.", { fire: 1 }, "gear", { reload: 0.9 }),
     quick: special("Oiled Gears", "Shots fly 20% faster.", "gear", { shotSpeed: 1.2 }),
+    sapper: special("Scrap Rounds", "+15% damage to defenses.", "crosshair", {
+      defenseDamage: 1.15,
+    }),
+    scrapper: special("Toolbelt", "Destroying a building heals 5%.", "medkit", {
+      healOnKill: 0.05,
+    }),
     branches: {
       nature: {
         name: "Medic Bay",
@@ -690,6 +828,12 @@ const TRUNK_STEPS: readonly Step[] = [
   ["Sharp", "damage", 15],
 ];
 
+/** The two short side paths off the trunk's second upgrade, each ending in one of the hero's own. */
+const SIDES = [
+  { name: "Sapper", row: 0.4, end: "sapper" },
+  { name: "Scrapper", row: 2.6, end: "scrapper" },
+] as const;
+
 /** The two ways the trunk splits, and which two of a hero's last branches each leads on to. */
 const SPLITS = [
   { name: "Assault", row: 0.5, leaves: ["fire", "ice"] },
@@ -748,35 +892,39 @@ function step(kind: HeroKind, [name, stat, base]: Step): Draft {
 
 /** Off the last branches, an upgrade is paid for in the crystal of what it does. */
 function crystalFor(mods: Partial<HeroMods>): CrystalKind {
-  if (mods.hp || mods.damageTaken || mods.heal) return "nature";
-  if (mods.damage || mods.defenseDamage || mods.splash) return "fire";
+  if (mods.hp || mods.damageTaken || mods.blastTaken || mods.heal || mods.healOnKill) {
+    return "nature";
+  }
+  if (mods.damage || mods.defenseDamage || mods.buildingDamage || mods.splash || mods.spread) {
+    return "fire";
+  }
   return "ice";
 }
 
-/** What a stretch's checkpoints give, round and round along it. */
-function checkpointStats(
-  kind: HeroKind,
-  path: Split | "trunk" | CrystalKind,
-): readonly CheckpointStat[] {
+type Stretch = "trunk" | (typeof SIDES)[number]["name"] | Split | CrystalKind;
+
+/** What a stretch's minis give, round and round along it. */
+function miniStats(kind: HeroKind, path: Stretch): readonly MiniStat[] {
+  const medic = kind === "medic";
   switch (path) {
     case "trunk":
-      return ["health", "damage", "reload"];
+      return ["health", "damage", "weapon", "speed"];
+    case "Sapper":
+      return ["building", "defense", "damage"];
+    case "Scrapper":
+      return medic ? ["heal", "armor", "speed"] : ["health", "armor", "speed"];
     case "Assault":
-      return ["damage", "reload"];
+      return ["damage", "reload", "defense", "weapon"];
     case "Survival":
-      return kind === "medic" ? ["heal", "speed", "health"] : ["health", "speed"];
+      return medic ? ["heal", "health", "speed", "armor"] : ["health", "speed", "armor", "blast"];
     case "nature":
-      return kind === "medic" ? ["health", "heal"] : ["health"];
+      return medic ? ["health", "heal", "armor"] : ["health", "armor", "blast"];
     case "fire":
-      return ["damage"];
+      return ["damage", "defense", "building"];
     case "ice":
-      return kind === "rifleman"
-        ? ["reload", "unload", "speed"]
-        : kind === "heavy"
-          ? ["spin", "reload", "speed"]
-          : ["reload", "speed"];
+      return ["reload", "speed", "weapon"];
     case "dark":
-      return ["damage", "reload", "health"];
+      return ["damage", "reload", "health", "blast"];
   }
 }
 
@@ -807,7 +955,7 @@ const slug = (name: string) => name.toLowerCase().replace(/[^a-z]+/g, "-");
 function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
   const tree = TREES[kind];
   const out: TreeUpgrade[] = [];
-  // Ids changed again with the trunk, so nothing from the four-branch trees is taken for something new.
+  // Ids changed with the trunk, so nothing from the four-branch trees is taken for something new.
   const idOf = (name: string) => `${kind}/${slug(name)}`;
   const start: TreeUpgrade = {
     ...tree.first,
@@ -822,35 +970,46 @@ function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
     line: null,
   };
   out.push(start);
-  /** Carries on from an upgrade along one stretch, a checkpoint then an upgrade each tier. */
+  /** Minis so far on each stretch, and of each kind on the whole tree. */
+  const made = new Map<string, number>();
+  const seen = new Map<MiniStat, number>();
+  /** Carries on from an upgrade along one stretch: three minis, then an upgrade, each tier. */
   const extend = (
     from: TreeUpgrade,
     path: string,
-    stats: readonly CheckpointStat[],
+    stretch: Stretch,
     row: number,
     tiers: readonly [number, number],
     draftAt: (tier: number) => Draft,
     pays: (draft: Draft) => CrystalKind,
   ): TreeUpgrade => {
+    const stats = miniStats(kind, stretch);
     let previous = from;
     for (let tier = tiers[0]; tier <= tiers[1]; tier++) {
       const draft = draftAt(tier);
       const id = idOf(draft.name);
       const column = tier - 1;
-      const at = ALONG_LINE[previous.row === row ? "straight" : "out"];
-      const made = tier - tiers[0];
-      const stepId = `${kind}/${slug(path)}-${made}`;
-      out.push({
-        ...checkpoint(kind, stats[made % stats.length] ?? "health", CHECKPOINT_PERCENT[tier] ?? 0),
-        id: stepId,
-        tier: 0,
-        gold: CHECKPOINT_GOLD[tier] ?? 0,
-        hq: tierHq(tier),
-        needs: [previous.id],
-        path,
-        ...lineAt(previous, { column, row }, at),
-        line: { from: previous.id, to: id, at },
-      });
+      let needs = previous.id;
+      for (const at of ALONG_LINE[previous.row === row ? "straight" : "out"]) {
+        const n = made.get(path) ?? 0;
+        made.set(path, n + 1);
+        const stat = stats[n % stats.length] ?? "health";
+        const nth = seen.get(stat) ?? 0;
+        seen.set(stat, nth + 1);
+        const miniId = `${kind}/${slug(path)}-mini-${n}`;
+        out.push({
+          ...mini(kind, stat, MINI_PERCENT[tier] ?? 0, nth),
+          id: miniId,
+          tier: 0,
+          gold: MINI_GOLD[tier] ?? 0,
+          hq: tierHq(tier),
+          needs: [needs],
+          path,
+          ...lineAt(previous, { column, row }, at),
+          line: { from: previous.id, to: id, at },
+        });
+        needs = miniId;
+      }
       const upgrade: TreeUpgrade = {
         ...draft,
         crystals: { [pays(draft)]: TIER_CRYSTALS[tier] ?? 1 },
@@ -858,7 +1017,7 @@ function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
         tier,
         gold: upgradeGold(tier),
         hq: tierHq(tier),
-        needs: [stepId],
+        needs: [needs],
         path,
         column,
         row,
@@ -870,20 +1029,17 @@ function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
     return previous;
   };
   const byWhatItDoes = (draft: Draft) => crystalFor(draft.mods);
-  const trunk = extend(
-    start,
-    TRUNK,
-    checkpointStats(kind, "trunk"),
-    TRUNK_ROW,
-    [2, TRUNK_END],
-    (tier) => coreDraft(kind, null, tier),
-    byWhatItDoes,
-  );
+  const trunkAt = (tier: number) => coreDraft(kind, null, tier);
+  const second = extend(start, TRUNK, "trunk", TRUNK_ROW, [2, 2], trunkAt, byWhatItDoes);
+  for (const side of SIDES) {
+    extend(second, side.name, side.name, side.row, [3, 3], () => tree[side.end], byWhatItDoes);
+  }
+  const trunk = extend(second, TRUNK, "trunk", TRUNK_ROW, [3, TRUNK_END], trunkAt, byWhatItDoes);
   for (const split of SPLITS) {
     const fork = extend(
       trunk,
       split.name,
-      checkpointStats(kind, split.name),
+      split.name,
       split.row,
       [TRUNK_END + 1, SPLIT_END],
       (tier) => coreDraft(kind, split.name, tier),
@@ -893,7 +1049,7 @@ function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
       extend(
         fork,
         tree.branches[leaf].name,
-        checkpointStats(kind, leaf),
+        leaf,
         LEAF_ROW[leaf],
         [SPLIT_END + 1, TIERS],
         (tier) => leafDraft(kind, leaf, tier),
@@ -913,28 +1069,22 @@ export function heroTree(kind: HeroKind): readonly TreeUpgrade[] {
   return BUILT.get(kind) ?? [];
 }
 
-/** A named stretch of the tree, and where its name goes on the board. */
+/** A named stretch of the tree. */
 export interface TreePath {
   name: string;
-  /** The crystal's color for one of the four last branches, and plain for the rest. */
-  tone: CrystalKind | "core";
-  column: number;
-  row: number;
+  /** The crystal one of the four last branches is paid for in; null for the rest. */
+  crystal: CrystalKind | null;
 }
 
-/** The trunk, the two branches it splits into, and the four last branches after those. */
+/** The trunk and its side paths, the two branches it splits into, then the four last branches. */
 export function treePaths(kind: HeroKind): readonly TreePath[] {
   const { branches } = TREES[kind];
   return [
-    { name: TRUNK, tone: "core", column: 1, row: TRUNK_ROW },
+    { name: TRUNK, crystal: null },
+    ...SIDES.map((side): TreePath => ({ name: side.name, crystal: null })),
     ...SPLITS.flatMap((split): TreePath[] => [
-      { name: split.name, tone: "core", column: TRUNK_END, row: split.row },
-      ...split.leaves.map((leaf) => ({
-        name: branches[leaf].name,
-        tone: leaf,
-        column: SPLIT_END,
-        row: LEAF_ROW[leaf],
-      })),
+      { name: split.name, crystal: null },
+      ...split.leaves.map((leaf) => ({ name: branches[leaf].name, crystal: leaf })),
     ]),
   ];
 }
@@ -990,6 +1140,27 @@ export function heroMods(kind: HeroKind, owned: readonly string[]): HeroMods {
   return out;
 }
 
+/**
+ * What a checkpoint on the first trunk trees cost (2026-11-03): one on each line, with ids
+ * `${kind}/${stretch}-${n}`. Their upgrades are still here, at the same prices.
+ */
+function firstTrunkCost(kind: HeroKind, name: string): readonly number[] | undefined {
+  const match = /^([a-z-]+)-([0-2])$/.exec(name);
+  if (!match) return undefined;
+  const [, stretch = "", n = "0"] = match;
+  const leaves = Object.values(TREES[kind].branches).map((b) => slug(b.name));
+  const first =
+    stretch === "basics"
+      ? 2
+      : stretch === "assault" || stretch === "survival"
+        ? TRUNK_END + 1
+        : leaves.includes(stretch)
+          ? SPLIT_END + 1
+          : 0;
+  const gold = first ? TRUNK_CHECKPOINT_GOLD[first + Number(n)] : undefined;
+  return gold ? [gold] : undefined;
+}
+
 /** What a set of upgrades cost: gold and crystals. Ones from older trees cost what they did. */
 function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystals: CrystalCost } {
   const tree = new Map(heroTree(kind).map((u) => [u.id, u]));
@@ -1011,7 +1182,9 @@ function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystal
       ? old[name]
       : id.startsWith(`${kind}:`)
         ? branchTreeCost(kind, name)
-        : undefined;
+        : id.startsWith(`${kind}/`)
+          ? firstTrunkCost(kind, name)
+          : undefined;
     if (!before) continue;
     const [coins = 0, ...gems] = before;
     gold += coins;
@@ -1066,6 +1239,7 @@ export function noUpgrades(): Record<HeroKind, string[]> {
   >;
 }
 
-/** Upgrades and checkpoints together: 22 upgrades, and a checkpoint on the line into each but the first. */
-export const UPGRADES_PER_HERO =
-  2 * (TRUNK_END + SPLITS.length * (SPLIT_END - TRUNK_END + 2 * (TIERS - SPLIT_END))) - 1;
+/** Majors and minis together: 24 majors, and three minis on the line into each but the first. */
+const MAJORS =
+  TRUNK_END + SIDES.length + SPLITS.length * (SPLIT_END - TRUNK_END + 2 * (TIERS - SPLIT_END));
+export const UPGRADES_PER_HERO = MAJORS + (MAJORS - 1) * ALONG_LINE.straight.length;

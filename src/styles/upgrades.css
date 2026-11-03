@@ -48,9 +48,67 @@
     "purse spec";
   gap: 4px 14px;
   padding: 8px 14px 10px;
+  isolation: isolate;
   background:
     radial-gradient(ellipse at 42% 50%, rgb(58 86 130 / 0.5), rgb(0 0 0 / 0) 66%),
     linear-gradient(180deg, var(--navy-800), var(--navy-900));
+}
+
+/* Behind the board: crystal-coloured glows far off, then clusters of crystals, a chart's grid, and
+   sparks closest, each sliding along a little faster than the last as the board scrolls
+   (--tree-scroll, in px). */
+.tree-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tree-sky-layer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(100% + 1400px);
+  will-change: transform;
+}
+
+.tree-sky-glow {
+  background:
+    radial-gradient(circle at 8% 28%, rgb(110 220 100 / 0.24), transparent 20%),
+    radial-gradient(circle at 26% 78%, rgb(255 140 70 / 0.22), transparent 22%),
+    radial-gradient(circle at 47% 22%, rgb(100 200 255 / 0.24), transparent 21%),
+    radial-gradient(circle at 66% 70%, rgb(190 130 255 / 0.23), transparent 22%),
+    radial-gradient(circle at 86% 30%, rgb(255 210 110 / 0.18), transparent 20%);
+  transform: translate3d(calc(var(--tree-scroll, 0) * -0.12px), 0, 0);
+}
+
+.tree-sky-crystals {
+  background: url("/textures/tree-crystals.svg") 0 50% / 960px 440px repeat-x;
+  transform: translate3d(calc(var(--tree-scroll, 0) * -0.2px), 0, 0);
+}
+
+.tree-sky-grid {
+  background:
+    linear-gradient(90deg, rgb(150 190 255 / 0.07) 1px, transparent 1px) 0 0 / 240px 240px,
+    linear-gradient(0deg, rgb(150 190 255 / 0.07) 1px, transparent 1px) 0 0 / 240px 240px,
+    linear-gradient(90deg, rgb(150 190 255 / 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(0deg, rgb(150 190 255 / 0.035) 1px, transparent 1px) 0 0 / 48px 48px;
+  transform: translate3d(calc(var(--tree-scroll, 0) * -0.3px), 0, 0);
+}
+
+.tree-sky-sparks {
+  background:
+    radial-gradient(circle at 12% 18%, rgb(255 246 210 / 0.7) 1.5px, transparent 2.5px) 0 0 / 330px
+    250px,
+    radial-gradient(circle at 63% 72%, rgb(170 225 255 / 0.6) 1px, transparent 2px) 0 0 / 330px
+    250px,
+    radial-gradient(circle at 40% 44%, rgb(255 214 106 / 0.55) 1.5px, transparent 2.5px) 0 0 / 470px
+    310px,
+    radial-gradient(circle at 85% 12%, rgb(200 160 255 / 0.55) 1px, transparent 2px) 0 0 / 470px
+    310px,
+    radial-gradient(circle at 30% 90%, rgb(150 240 140 / 0.5) 1px, transparent 2px) 0 0 / 610px
+    380px;
+  transform: translate3d(calc(var(--tree-scroll, 0) * -0.55px), 0, 0);
 }
 
 #game .screen-tree {
@@ -113,7 +171,7 @@
 
 .tree-board {
   position: relative;
-  width: 1600px;
+  width: 2200px;
   height: 100%;
 }
 
@@ -138,39 +196,6 @@
 .tree-lines path.on {
   stroke: var(--brass);
   filter: drop-shadow(0 0 4px rgb(255 214 106 / 0.8));
-}
-
-.tree-path {
-  position: absolute;
-  transform: translateX(-50%);
-  font-family: var(--display);
-  font-size: 13px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: #9bb2d4;
-  text-shadow: var(--outline-thin);
-  pointer-events: none;
-}
-
-.tree-path-core {
-  color: var(--gold-text);
-}
-
-.tree-path-nature {
-  color: #8fe07a;
-}
-
-.tree-path-fire {
-  color: #ff9a5c;
-}
-
-.tree-path-ice {
-  color: #8fdcff;
-}
-
-.tree-path-dark {
-  color: #c79bff;
 }
 
 .tree-node {

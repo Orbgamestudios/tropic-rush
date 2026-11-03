@@ -180,7 +180,9 @@ that finds one, which is once: the island's gold goes into `owed`, paid into the
 room, and the player's crystals back into their save. `oldTrees.ts` keeps what the old upgrades
 cost for that: the two-path trees (ids `kind-name`) as a table, and the four-branch trees (ids
 `kind:name`) as the names on each branch, priced by tier. Today's ids are `kind/name`, and a
-checkpoint is named for its stretch, such as `rifleman/assault-1`.
+mini is named for its stretch, such as `rifleman/assault-mini-4`. The first trunk trees'
+checkpoints (`kind/stretch-n`, one a line) are priced by `firstTrunkCost` in `heroTrees.ts`,
+which knows each hero's branch names.
 
 ## Building models
 

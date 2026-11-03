@@ -4,29 +4,36 @@
 gold plus four crystals, no upgrade that adds range, and every tier held back until the
 headquarters reaches a level, so a hero is only as strong as the islands the crew can reach. Since
 the reshape, the tree is one line until headquarters 5, splits in two, and splits again after
-headquarters 12, so it's simpler for new players; it's more compact; and it isn't sorted by
-crystal. Every name and number here is a draft to confirm. The two-week Tides abilities aren't
-built yet.
+headquarters 12, so it's simpler for new players, and it isn't sorted by crystal. Since
+2026-11-03's second pass, three minis sit between every two upgrades, the trunk's second upgrade
+has two short side paths of its own, and the board has no labels, over a background that slides
+along as it scrolls. Every name and number here is a draft to confirm. The two-week Tides abilities
+aren't built yet.
 
 The owner's reference art is `docs/concept/ui-upgrade-tree.webp` for the screen and
 `docs/concept/crystals.png` for the crystals. They like the crystal design specifically.
 
 ## How a tree works
 
-Every hero has the same shape, 22 upgrades in all. An upgrade needs the one before it on its line.
+Every hero has the same shape, 24 upgrades in all, with three minis on each line between two of
+them: 93 things to buy. Each needs the one before it on its line.
 
 ```
-                                                 ┌── last branch: 8 ─ 9 ─ capstone
-                          ┌── Assault:  5 ─ 6 ─ 7┤
-                          │                      └── last branch: 8 ─ 9 ─ capstone
-   first ─ 2 ─ 3 ─ 4 ─────┤
-     (the trunk, Basics)  │                      ┌── last branch: 8 ─ 9 ─ capstone
-                          └── Survival: 5 ─ 6 ─ 7┤
-                                                 └── last branch: 8 ─ 9 ─ capstone
+             ┌── Sapper ─ side upgrade                 ┌── last branch: 8 ─ 9 ─ capstone
+             │                    ┌── Assault:  5 ─ 6 ─ 7┤
+             │                    │                      └── last branch: 8 ─ 9 ─ capstone
+   first ─ 2 ┼── 3 ─ 4 ───────────┤
+             │  (the trunk,       │                      ┌── last branch: 8 ─ 9 ─ capstone
+             │   Basics)          └── Survival: 5 ─ 6 ─ 7┤
+             └── Scrapper ─ side upgrade                 └── last branch: 8 ─ 9 ─ capstone
 ```
 
 - **The trunk** (Basics), up to headquarters 5: the hero's first upgrade, more health, more
   damage, then whatever makes the hero's own weapon quicker.
+- **Two side paths** leave the trunk's second upgrade, at headquarters 3, and lead nowhere else:
+  three minis then one of the hero's own. Sapper is for knocking things down (more damage to
+  buildings or defenses, a wider burst, or a steadier gun), Scrapper for lasting (less from blasts,
+  or healing whenever a building goes down).
 - **Assault** and **Survival**, headquarters 7 to 11: Assault hits harder and fires faster, with a
   wider blast for heroes whose shots burst; Survival is health, less damage taken (stronger healing
   for the Medic) and move speed.
@@ -39,40 +46,44 @@ it does: nature for health and healing, fire for damage and blasts, ice for spee
 Each last branch is paid for in its own crystal. The first upgrade keeps the crystal it always had.
 The Heavy's upgrades that make his gun stronger do 15% less, as since 2026-11-03.
 
-| Tier | Gold   | Crystals | Its checkpoint | Opens at headquarters |
-| ---- | ------ | -------- | -------------- | --------------------- |
-| 1    | 150    | 1        | -              | 1                     |
-| 2    | 500    | 1        | 300            | 2                     |
-| 3    | 900    | 2        | 500            | 3                     |
-| 4    | 1,400  | 2        | 800            | 5                     |
-| 5    | 2,200  | 3        | 1,100          | 7                     |
-| 6    | 3,200  | 3        | 1,500          | 9                     |
-| 7    | 4,400  | 4        | 2,000          | 11                    |
-| 8    | 6,000  | 4        | 2,600          | 13                    |
-| 9    | 8,000  | 5        | 3,400          | 16                    |
-| 10   | 11,000 | 6        | 4,400          | 19                    |
+| Tier | Gold   | Crystals | Each mini into it | Opens at headquarters |
+| ---- | ------ | -------- | ----------------- | --------------------- |
+| 1    | 150    | 1        | -                 | 1                     |
+| 2    | 500    | 1        | 150               | 2                     |
+| 3    | 900    | 2        | 250               | 3                     |
+| 4    | 1,400  | 2        | 400               | 5                     |
+| 5    | 2,200  | 3        | 550               | 7                     |
+| 6    | 3,200  | 3        | 750               | 9                     |
+| 7    | 4,400  | 4        | 1,000             | 11                    |
+| 8    | 6,000  | 4        | 1,300             | 13                    |
+| 9    | 8,000  | 5        | 1,700             | 16                    |
+| 10   | 11,000 | 6        | 2,200             | 19                    |
 
-A tree costs 122,550 gold for its upgrades and 52,400 for its checkpoints.
+A tree costs 124,350 gold for its upgrades and 80,100 for its minis.
 
-**Checkpoints:** one small step sits on each of the 21 lines between upgrades, bought with gold
-alone and opening with the upgrade it leads to. It gives 3% (on the trunk) to 6% (into a
-capstone): health, damage and fire rate on the trunk, damage and fire rate on Assault, health and
-speed on Survival, and on the last branches what that branch is about. How fast a burst unloads and
-how fast a minigun spins up count double, because they do less.
+**Minis:** three sit on each of the 23 lines between upgrades, bought with gold alone, in order,
+and opening with the upgrade they lead to. Each gives 1.5% (on the trunk) to 3% (into a capstone)
+of something, taken in turn along its stretch so neighbours differ: health, damage, move speed and
+the hero's own weapon on the trunk; damage to buildings and defenses on Sapper; health, armor and
+speed on Scrapper; damage, fire rate, damage to defenses and the weapon on Assault; health, speed,
+armor and blasts on Survival; and on the last branches what that branch is about. Each kind has a
+few names (Toughness, Stamina, Thick Skin...) used in turn. How fast a burst unloads, a minigun
+spins up, a throw lands or a shell flies count double, because they do less.
 
-**Fully upgraded,** a hero has about 2 to 2.5 times their health and 2 to 2.4 times their damage,
-and fires 1.5 to 2.6 times as fast, depending on the hero: about what the four-branch trees gave,
-with a little less on the way up. Only at headquarters 19.
+**Fully upgraded,** a hero has about 2 to 2.4 times their health and about twice their damage,
+takes 13 to 34% less damage, does 15 to 90% more to defenses, and fires 1.4 to 2.6 times as fast,
+depending on the hero. Only at headquarters 19.
 
-**Old saves:** everything bought on an older tree, the two-path trees or the four-branch trees,
-was given back when this one came in: the crystals to the player, and the gold to the island, paid
-into its stock as there's room for it. An upgrade a headquarters doesn't yet allow is given back the
-same way.
+**Old saves:** everything bought on an older tree, the two-path trees, the four-branch trees or
+the first trunk trees with one checkpoint a line, was given back when this one came in: the
+crystals to the player, and the gold to the island, paid into its stock as there's room for it. An
+upgrade a headquarters doesn't yet allow is given back the same way.
 
 ## Rifleman: Sgt. Steele
 
 First: **Basic Training**, +10% health. Last on the trunk: **Smooth Action**, bullets leave a burst
-20% quicker.
+20% quicker. Side paths: **Hollow Points**, +15% damage to buildings. **Scavenger**, destroying a
+building heals 5%.
 
 | Last branch      | Opens with (tier 8)                                                      | Capstone (tier 10)                                                                    |
 | ---------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -84,7 +95,8 @@ First: **Basic Training**, +10% health. Last on the trunk: **Smooth Action**, bu
 ## Medic: Doc Penny
 
 First: **Steady Hand**, +15% healing. Last on the trunk: **Flat Throw**, bottles land 15% sooner.
-Midway up Survival: **Strong Brew**, +12% healing.
+Midway up Survival: **Strong Brew**, +12% healing. Side paths: **Big Bottles**, bottles burst 0.5 m
+wider. **Thick Gloves**, takes 20% less from blasts.
 
 | Last branch            | Opens with (tier 8)                                                          | Capstone (tier 10)                                                              |
 | ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -96,7 +108,8 @@ Midway up Survival: **Strong Brew**, +12% healing.
 ## Tank: Tilly & Tank
 
 First: **Extra Plating**, +15% health. Last on the trunk: **Hot Charge**, shells fly 20% faster.
-Midway up Assault: **Bigger Bang**, +0.5 m splash.
+Midway up Assault: **Bigger Bang**, +0.5 m splash. Side paths: **Dozer Blade**, +15% damage to
+buildings. **Scrap Welder**, destroying a building heals 5%.
 
 | Last branch        | Opens with (tier 8)                                        | Capstone (tier 10)                                                                          |
 | ------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -108,7 +121,8 @@ Midway up Assault: **Bigger Bang**, +0.5 m splash.
 ## Heavy: Big Mo
 
 First: **Warm Up**, minigun spins up 17% faster. Last on the trunk: **Greased Barrels**, spins up
-17% faster.
+17% faster. Side paths: **Steady Stance**, 25% less spread. **Flak Vest**, takes 20% less from
+blasts.
 
 | Last branch        | Opens with (tier 8)                                                                                | Capstone (tier 10)                                                 |
 | ------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -120,7 +134,8 @@ First: **Warm Up**, minigun spins up 17% faster. Last on the trunk: **Greased Ba
 ## Bazooka: Ace
 
 First: **Quick Loader**, reloads 10% faster. Last on the trunk: **Hot Motor**, rockets fly 20%
-faster. Midway up Assault: **Bigger Bang**, +0.5 m splash.
+faster. Midway up Assault: **Bigger Bang**, +0.5 m splash. Side paths: **Shaped Charge**, +15%
+damage to defenses. **Blast Goggles**, takes 20% less from blasts.
 
 | Last branch       | Opens with (tier 8)                                  | Capstone (tier 10)                                                     |
 | ----------------- | ---------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -132,7 +147,8 @@ faster. Midway up Assault: **Bigger Bang**, +0.5 m splash.
 ## Grenadier: Mr. Pemberton
 
 First: **Bigger Charge**, +10% damage. Last on the trunk: **Light Grenades**, grenades land 15%
-sooner. Midway up Assault: **Bigger Bang**, +0.5 m splash.
+sooner. Midway up Assault: **Bigger Bang**, +0.5 m splash. Side paths: **Sticky Bombs**, +15% damage
+to buildings. **Tin Helmet**, takes 20% less from blasts.
 
 | Last branch            | Opens with (tier 8)                                                            | Capstone (tier 10)                                                                         |
 | ---------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
@@ -144,6 +160,7 @@ sooner. Midway up Assault: **Bigger Bang**, +0.5 m splash.
 ## Engineer: Gus
 
 First: **Spare Parts**, fires 10% faster. Last on the trunk: **Oiled Gears**, shots fly 20% faster.
+Side paths: **Scrap Rounds**, +15% damage to defenses. **Toolbelt**, destroying a building heals 5%.
 
 | Last branch       | Opens with (tier 8)                                       | Capstone (tier 10)                                                                 |
 | ----------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |

@@ -787,3 +787,11 @@ export function branchTreeCost(kind: HeroKind, name: string): readonly number[] 
   }
   return undefined;
 }
+
+/**
+ * What each checkpoint on the first trunk trees cost (2026-11-03), by the tier of the upgrade its
+ * line led to: there was one on each line, bought with gold alone.
+ */
+export const TRUNK_CHECKPOINT_GOLD = [
+  0, 0, 300, 500, 800, 1100, 1500, 2000, 2600, 3400, 4400,
+] as const;
