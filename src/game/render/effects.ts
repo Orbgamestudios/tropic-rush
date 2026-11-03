@@ -165,6 +165,8 @@ const BLAST: Ramp = [1, 0.85, 0.55, 0.6, 0.4, 0.18, 0.2, 0.1, 0.03];
 const BLACK: Ramp = [0.02, 0.018, 0.016, 0.02, 0.018, 0.016, 0.02, 0.018, 0.016];
 const HEALING: Ramp = [0.25, 1.5, 0.5, 0.15, 1.1, 0.35, 0.05, 0.5, 0.15];
 const ZAP: Ramp = [2.2, 3, 4, 0.5, 1.6, 3.4, 0.1, 0.3, 0.9];
+const ACID: Ramp = [1.5, 2.4, 0.3, 0.7, 1.6, 0.15, 0.2, 0.5, 0.05];
+const FUMES: Ramp = [0.5, 0.72, 0.2, 0.52, 0.66, 0.26, 0.6, 0.66, 0.42];
 const SCREEN: Ramp = [0.95, 0.96, 0.98, 0.88, 0.9, 0.93, 0.74, 0.77, 0.82];
 
 interface Particle {
@@ -904,6 +906,36 @@ export class Effects {
         ramp: HEALING,
         rise: 0.2,
       });
+    }
+  }
+
+  /** An acid bottle bursting: yellow-green spatter, and fumes coming off what it hit. */
+  acidBurst(pos: THREE.Vector3, radius: number): void {
+    const { x, y, z } = pos;
+    this.glow.add({ x, y, z, life: 0.14, from: 0.6, to: radius * 0.8, cell: STAR, ramp: ACID });
+    for (let i = 0; i < 14; i++) {
+      this.glow.add({
+        x,
+        y,
+        z,
+        vx: between(-7, 7),
+        vy: between(2, 8),
+        vz: between(-7, 7),
+        gravity: 18,
+        life: between(0.25, 0.5),
+        from: 0.2,
+        to: 0.08,
+        aspect: 0.5,
+        stretch: 0.06,
+        cell: STREAK,
+        ramp: ACID,
+      });
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = between(0, Math.PI * 2);
+      const r = radius * Math.sqrt(between(0, 1));
+      spot.set(x + Math.cos(a) * r, y + 0.2, z + Math.sin(a) * r);
+      this.rise(spot, FUMES, 0.7, 2, 0.55);
     }
   }
 

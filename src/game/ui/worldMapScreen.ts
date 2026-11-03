@@ -42,8 +42,6 @@ export interface WorldMapHandlers {
   screen(x: number, y: number): { x: number; y: number };
   /** How often the view has moved, to skip moving plates that haven't. */
   moves(): number;
-  /** Why this hero can't go alone, if they can't. */
-  soloBlocker(): string | null;
   /** How many crewmates could team up right now. */
   crewOnline(): number;
   /** Blueprints still to find on this base, by name. */
@@ -185,39 +183,31 @@ export class WorldMapScreen {
     this.root.style.display = "block";
     this.select(null);
     this.wallet.set(crystals);
-    const pins = islands.map((island) => {
-      const rating = island.difficulty.toLowerCase();
-      const pin = el("button", `map-pin map-${island.taken ? "yours" : rating}`);
-      pin.setAttribute("aria-label", island.name);
-      pin.classList.toggle("done", island.taken);
-      pin.classList.toggle("retaken", island.retaken);
-      pin.classList.toggle("rival", island.rival !== null);
-      const title = island.taken ? "Yours" : island.retaken ? "Retaken!" : "Raid";
-      pin.append(
-        el("span", "map-pin-title", title),
-        el(
-          "span",
-          "map-pin-rating",
-          island.taken
-            ? island.tribute
-              ? `+${island.tribute} gold a day`
-              : island.name
-            : `HQ ${island.hq} · ${island.difficulty}`,
-        ),
-      );
-      pin.disabled = island.taken;
-      pin.addEventListener("click", () => {
-        if (this.dragged) return;
-        sfx.tick();
-        this.select(island);
+    // What's already held needs no tag.
+    const pins = islands
+      .filter((island) => !island.taken)
+      .map((island) => {
+        const rating = island.difficulty.toLowerCase();
+        const pin = el("button", `map-pin map-${rating}`);
+        pin.setAttribute("aria-label", island.name);
+        pin.classList.toggle("retaken", island.retaken);
+        pin.classList.toggle("rival", island.rival !== null);
+        pin.append(
+          el("span", "map-pin-title", island.retaken ? "Retaken!" : "Raid"),
+          el("span", "map-pin-rating", `HQ ${island.hq} · ${island.difficulty}`),
+        );
+        pin.addEventListener("click", () => {
+          if (this.dragged) return;
+          sfx.tick();
+          this.select(island);
+        });
+        return {
+          island,
+          node: pin,
+          x: island.x,
+          y: island.y - islandRadius(island.size) * 0.7,
+        };
       });
-      return {
-        island,
-        node: pin,
-        x: island.x,
-        y: island.y - islandRadius(island.size) * 0.7,
-      };
-    });
     this.pins = pins;
     this.pinLayer.replaceChildren(this.homePin, ...pins.map((p) => p.node));
     const left = islandsToNextCloud(world);
@@ -266,19 +256,14 @@ export class WorldMapScreen {
     guns.append(icon("shield", "map-fact-icon"), el("span", "", `${island.defenses} defenses`));
     this.cardFacts.replaceChildren(guns, loot);
     this.cardTip.textContent = archetypeTip(island);
-    const blocker = this.handlers.soloBlocker();
     const crew = this.handlers.crewOnline();
     const prints = this.handlers.blueprintsOn(island);
     this.cardNote.textContent = island.retaken
       ? "Raiders rebuilt it: every building, all at full level."
-      : island.tribute
-        ? `Hold it for ${island.tribute} gold a day.`
-        : prints.length > 0
-          ? `Blueprints to find here: ${prints.join(", ")}.`
-          : "";
-    if (blocker) this.cardNote.textContent = blocker;
+      : prints.length > 0
+        ? `Blueprints to find here: ${prints.join(", ")}.`
+        : "";
     this.cardNote.style.display = this.cardNote.textContent ? "block" : "none";
-    this.attack.disabled = blocker !== null;
     this.teamUp.style.display = crew > 0 ? "" : "none";
   }
 

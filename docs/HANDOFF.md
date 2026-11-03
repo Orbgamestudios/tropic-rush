@@ -150,6 +150,13 @@ one in when it lands, and a raid that starts before the light copies arrive uses
 those working: `human()` in `heroModels.ts` only runs on a slow connection, and a browser test
 loads the game with every model blocked to make sure it still does.
 
+## Baked art
+
+`node scripts/make-clouds.mjs` bakes the world map's cloud tile into `public/textures`. Its red
+channel is thickness and its green is light, so `mapClouds.ts` only has to look it up. The shader
+samples it at about the size of an island: at map scale a tile much bigger than that just reads as
+a flat white sheet.
+
 ## The picture and battery
 
 Everything draws straight to the screen with the browser's own antialiasing. So the screen holds

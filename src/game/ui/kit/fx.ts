@@ -4,6 +4,9 @@
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+/** Everything but the music, so the two can have sliders of their own. */
+let effects: GainNode | null = null;
+let effectsVolume = 1;
 let muted = false;
 /** The synthesized sounds stay as loud as they were before recorded ones raised the master. */
 const SYNTH_LEVEL = 0.6;
@@ -20,6 +23,9 @@ export function audioContext(): AudioContext | null {
       master = ctx.createGain();
       master.gain.value = 0.6;
       master.connect(ctx.destination);
+      effects = ctx.createGain();
+      effects.gain.value = effectsVolume;
+      effects.connect(master);
     } catch {
       return null;
     }
@@ -29,9 +35,14 @@ export function audioContext(): AudioContext | null {
   return ctx;
 }
 
-/** Where everything is mixed to. */
+/** Where the music is mixed to. */
 export function audioDestination(): AudioNode | null {
   return master;
+}
+
+/** Where sound effects are mixed to. */
+export function effectsDestination(): AudioNode | null {
+  return effects;
 }
 
 export function isMuted(): boolean {
@@ -48,7 +59,7 @@ function tone(
   options: { type?: OscillatorType; to?: number; gain?: number; delay?: number } = {},
 ): void {
   const a = audio();
-  if (!a || !master) return;
+  if (!a || !effects) return;
   const t0 = a.currentTime + (options.delay ?? 0);
   const osc = a.createOscillator();
   const gain = a.createGain();
@@ -58,7 +69,7 @@ function tone(
   gain.gain.setValueAtTime(0.0001, t0);
   gain.gain.exponentialRampToValueAtTime((options.gain ?? 0.5) * SYNTH_LEVEL, t0 + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-  osc.connect(gain).connect(master);
+  osc.connect(gain).connect(effects);
   osc.start(t0);
   osc.stop(t0 + duration + 0.05);
 }
@@ -68,7 +79,7 @@ function noise(
   options: { gain?: number; freq?: number; delay?: number } = {},
 ): void {
   const a = audio();
-  if (!a || !master) return;
+  if (!a || !effects) return;
   const t0 = a.currentTime + (options.delay ?? 0);
   const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * duration), a.sampleRate);
   const data = buffer.getChannelData(0);
@@ -80,7 +91,7 @@ function noise(
   filter.frequency.value = options.freq ?? 1200;
   const gain = a.createGain();
   gain.gain.value = (options.gain ?? 0.3) * SYNTH_LEVEL;
-  src.connect(filter).connect(gain).connect(master);
+  src.connect(filter).connect(gain).connect(effects);
   src.start(t0);
 }
 
@@ -114,6 +125,10 @@ export const sfx = {
   },
   setMuted(on: boolean): void {
     muted = on;
+  },
+  setVolume(volume: number): void {
+    effectsVolume = volume;
+    if (effects) effects.gain.value = volume;
   },
 };
 

@@ -425,6 +425,44 @@ describe("sprinting", () => {
   });
 });
 
+describe("the medic's acid", () => {
+  const atk = HEROES.medic.attack;
+  if (atk.kind !== "heal") throw new Error("not a medic");
+  const reachable = atk.acid.range - 1;
+
+  it("burns a building she locks onto, from no further than 12 meters", () => {
+    expect(atk.acid.range).toBe(12);
+    expect(atk.acid.range).toBeLessThan(HEROES.rifleman.attack.range);
+    const state = raid([{ type: "goldMine", pos: vec(0, -reachable) }], ["medic"]);
+    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
+    expect(hero(state).targetId).toBe(building(state).id);
+    run(state, 3);
+    expect(building(state).hp).toBeLessThan(building(state).maxHp);
+  });
+
+  it("can't reach what's beyond it, however far her healing goes", () => {
+    const state = raid([{ type: "goldMine", pos: vec(0, -(atk.range + 2)) }], ["medic"]);
+    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
+    expect(hero(state).targetId).toBeNull();
+  });
+
+  it("still looks after a crewmate first", () => {
+    const state = raid([{ type: "goldMine", pos: vec(0, -8) }], ["medic", "rifleman"]);
+    const mate = hero(state, 1);
+    mate.pos = vec(hero(state).pos.x, hero(state).pos.y - 4);
+    mate.hp = 10;
+    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
+    expect(hero(state).patientId).toBe(mate.id);
+    expect(hero(state).targetId).toBeNull();
+  });
+
+  it("goes for the nearest building on a tap, with nobody hurt", () => {
+    const state = raid([{ type: "goldMine", pos: vec(0, -reachable) }], ["medic"]);
+    stepRaid(state, [input({ autoAim: true })], DT);
+    expect(hero(state).targetId).toBe(building(state).id);
+  });
+});
+
 describe("the gunboat's weapons", () => {
   const fire = (state: RaidState, ability: Ability, target = vec(0, -10)) => {
     stepRaid(state, [input({ toggleBoat: true })], DT);
@@ -583,16 +621,10 @@ describe("the medic", () => {
     expect(patient.hp).toBeGreaterThan(100);
   });
 
-  it("never hurts a building", () => {
+  it("doesn't hurt a building with a healing bottle", () => {
     const state = raid([{ type: "storehouse", pos: vec(0, -8) }], ["medic"]);
     run(state, 5, [input({ aim: vec(0, -0.5) })]);
     expect(building(state).hp).toBe(building(state).maxHp);
-  });
-
-  it("has no buildings to lock onto", () => {
-    const state = raid([{ type: "gunTurret", pos: vec(0, -6) }], ["medic"]);
-    stepRaid(state, [input({ lockAt: vec(0, -1) })], DT);
-    expect(hero(state).targetId).toBeNull();
   });
 
   it("can heal herself by throwing at her own feet", () => {
@@ -713,6 +745,40 @@ describe("watchtowers", () => {
     const full = hero(state).hp;
     run(state, 1, [input({ move: vec(1, 0) })]);
     expect(hero(state).hp).toBe(full);
+  });
+
+  it("aim ahead of a runner, and hit one who keeps going the same way", () => {
+    const state = raid(towerAt(0, -25));
+    building(state).reload = 0;
+    const run1 = input({ move: vec(1, 0) });
+    run(state, 0.8, [run1]);
+    const { sights } = building(state);
+    expect(sights?.x).toBeGreaterThan(hero(state).pos.x + 0.5);
+    const full = hero(state).hp;
+    run(state, 1.5, [run1]);
+    expect(hero(state).hp).toBeLessThan(full);
+  });
+
+  it("miss a runner who turns back once the sights stop", () => {
+    const state = raid(towerAt(0, -25));
+    building(state).reload = 0;
+    const atk = BUILDINGS.watchtower.attack;
+    if (atk?.kind !== "sniper") throw new Error("not a sniper");
+    run(state, atk.aimTime - 0.2, [input({ move: vec(1, 0) })]);
+    const full = hero(state).hp;
+    run(state, 1, [input({ move: vec(-1, 0) })]);
+    expect(hero(state).hp).toBe(full);
+  });
+
+  it("slide their sights rather than snapping them to a new heading", () => {
+    const state = raid(towerAt(0, -25));
+    building(state).reload = 0;
+    run(state, 0.5, [input({ move: vec(1, 0) })]);
+    const was = building(state).sights;
+    stepRaid(state, [input({ move: vec(-1, 0) })], DT);
+    const now = building(state).sights;
+    if (!was || !now) throw new Error("no sights");
+    expect(distance(was, now)).toBeLessThan(0.3);
   });
 
   it("lose their aim when nobody's left in range", () => {

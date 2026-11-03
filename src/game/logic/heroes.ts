@@ -60,13 +60,14 @@ export type HeroAttack =
       flightTime: number;
     }
   | {
-      /** A thrown bottle that bursts into healing where it lands. It does nothing to buildings. */
+      /** A thrown bottle that bursts into healing where it lands, or acid at a building. */
       kind: "heal";
       range: number;
       heal: number;
       reload: number;
       splash: number;
       flightTime: number;
+      acid: { range: number; damage: number; splash: number };
     };
 
 /**
@@ -124,11 +125,19 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
   },
   medic: {
     name: "Medic",
-    role: "Heals the crew, can't hurt buildings",
+    role: "Heals the crew, burns buildings with acid",
     hp: 1060,
     speed: 5.6,
     radius: 0.55,
-    attack: { kind: "heal", range: 16, heal: 205, reload: 1.1, splash: 3.2, flightTime: 0.8 },
+    attack: {
+      kind: "heal",
+      range: 16,
+      heal: 205,
+      reload: 1.1,
+      splash: 3.2,
+      flightTime: 0.8,
+      acid: { range: 12, damage: 110, splash: 2.4 },
+    },
     heavy: false,
   },
   tank: {
@@ -151,16 +160,16 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
   heavy: {
     name: "Heavy",
     role: "Front-line protector",
-    hp: 2380,
-    speed: 4.6,
+    hp: 3150,
+    speed: 4.9,
     radius: 0.75,
     attack: {
       kind: "minigun",
-      range: 10,
-      damage: 15,
+      range: 11,
+      damage: 19,
       fastInterval: 0.07,
       slowInterval: 0.22,
-      spinUp: 1.8,
+      spinUp: 1.4,
       spread: 0.1,
       speed: 32,
     },

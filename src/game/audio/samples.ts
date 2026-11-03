@@ -1,7 +1,7 @@
 // Recorded sound effects: gunshots, blasts and impacts, loaded once and played from memory. The
 // quieter synthesized UI sounds live in ui/kit/fx.ts. Credits are in public/audio/CREDITS.md.
 
-import { audioContext, audioDestination, isMuted } from "../ui/kit/fx";
+import { audioContext, effectsDestination, isMuted } from "../ui/kit/fx";
 
 export type Sample =
   | "rifle"
@@ -61,7 +61,7 @@ export function loadSamples(): void {
 /** Plays a sound; `rate` changes its pitch as well as its speed. */
 export function playSample(name: Sample, volume = 1, rate = 1): void {
   const context = audioContext();
-  const destination = audioDestination();
+  const destination = effectsDestination();
   const buffer = buffers.get(name);
   if (!context || !destination || !buffer || isMuted() || volume < 0.02) return;
   const now = context.currentTime;

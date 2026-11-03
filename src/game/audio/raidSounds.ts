@@ -15,6 +15,7 @@ const NEAR = 14;
 function shotSound(e: Extract<RaidEvent, { type: "shot" }>, state: RaidState): Sample | null {
   switch (e.kind) {
     case "vial":
+    case "acid":
       return null;
     case "grenade":
     case "harpoon":
@@ -62,6 +63,9 @@ export function playRaidEvents(
         break;
       case "healBurst":
         playSample("heal", volume(e.pos) * 0.7);
+        break;
+      case "acidBurst":
+        playSample("hit", volume(e.pos) * 0.7, 0.7);
         break;
       case "destroyed":
         playSample("collapse", volume(e.pos), 0.85);

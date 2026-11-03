@@ -76,6 +76,9 @@ export interface Settings {
   muted: boolean;
   /** Music, separately from the sound effects. */
   musicMuted: boolean;
+  /** How loud each plays, from 0 to 1. */
+  musicVolume: number;
+  soundVolume: number;
   /** Little taps of the phone's vibration motor on hits and buttons. */
   haptics: boolean;
   /** Where the sticks sit, and how big they are. */
@@ -101,6 +104,8 @@ export const DEFAULT_SETTINGS: Settings = {
   camera: "top",
   muted: false,
   musicMuted: false,
+  musicVolume: 1,
+  soundVolume: 1,
   haptics: true,
   controls: DEFAULT_CONTROLS,
   rev: SETTINGS_REV,
@@ -135,6 +140,8 @@ function readSettings(value: unknown): Settings {
     camera: v.camera === "behind" ? "behind" : "top",
     muted: v.muted === true,
     musicMuted: v.musicMuted === true,
+    musicVolume: ranged(v.musicVolume, 0, 1, DEFAULT_SETTINGS.musicVolume),
+    soundVolume: ranged(v.soundVolume, 0, 1, DEFAULT_SETTINGS.soundVolume),
     haptics: v.haptics !== false,
     controls: readControls(v.controls),
     rev: SETTINGS_REV,

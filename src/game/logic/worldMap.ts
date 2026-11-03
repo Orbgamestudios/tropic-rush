@@ -372,10 +372,7 @@ export function archetypeLabel(island: MapIsland): string {
 
 /** How to go about taking an island, for its card. */
 export function archetypeTip(island: MapIsland): string {
-  if (island.archetype !== "player") return ARCHETYPES[island.archetype].tip;
-  return island.rival?.code
-    ? "Another crew's real base. Hold it and it pays you gold every day."
-    : "A rival crew's base. Hold it and it pays you gold every day.";
+  return island.archetype === "player" ? "" : ARCHETYPES[island.archetype].tip;
 }
 
 /** The player islands in a region list with nobody real on them yet. */
@@ -583,9 +580,13 @@ function regionsToSplotches(world: WorldProgress): WorldProgress {
   return regions > 0 ? liftCloud({ ...world, opened }, regions) : world;
 }
 
+/** The share of a crew's islands taken back each day, at least and at most. */
+const RETAKEN_SHARE = [0.1, 0.15] as const;
+
 /**
- * The night's move: raiders retake none, one or two of the crew's islands. Each comes back with
- * a stronger headquarters, built up to everything that level allows.
+ * The night's move: raiders and rival crews take back about a tenth of the crew's islands, a part
+ * of an island being a chance of a whole one. Each comes back with a stronger headquarters, built
+ * up to everything that level allows.
  */
 export function retakeIslands(
   world: WorldProgress,
@@ -593,8 +594,9 @@ export function retakeIslands(
   yourHq: number,
 ): { world: WorldProgress; lost: string[] } {
   const rng = createRng(Math.imul(night, 6151) + 97);
-  const roll = rng();
-  const count = roll < 0.3 ? 0 : roll < 0.75 ? 1 : 2;
+  const [least, most] = RETAKEN_SHARE;
+  const share = (least + rng() * (most - least)) * world.taken.length;
+  const count = Math.floor(share) + (rng() < share % 1 ? 1 : 0);
   const taken = [...world.taken];
   const retaken = { ...world.retaken };
   const rivals = { ...world.rivals };

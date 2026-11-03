@@ -197,14 +197,16 @@ describe("raiders retaking islands", () => {
     return world;
   };
 
-  it("takes back between none and two islands a night, and some nights each", () => {
-    const counts = new Set<number>();
-    for (let night = 100; night < 160; night++) {
-      const { lost } = retakeIslands(held(), night, 3);
-      expect(lost.length).toBeLessThanOrEqual(2);
-      counts.add(lost.length);
+  it("takes back 10 to 15% of what's held each day, over time", () => {
+    const world = held();
+    let lost = 0;
+    const nights = 2000;
+    for (let night = 100; night < 100 + nights; night++) {
+      lost += retakeIslands(world, night, 3).lost.length;
     }
-    expect(counts).toEqual(new Set([0, 1, 2]));
+    const share = lost / nights / world.taken.length;
+    expect(share).toBeGreaterThan(0.1);
+    expect(share).toBeLessThan(0.15);
   });
 
   it("gives nothing back on a night it has nothing to take", () => {

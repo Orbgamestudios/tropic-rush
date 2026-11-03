@@ -38,11 +38,10 @@ describe("spoils", () => {
       }
       return [...seen];
     };
-    expect(found([])).toEqual(["heal"]);
-    expect(found(["heal"])).toEqual(["shock"]);
-    expect(found(["heal", "shock"])).toEqual(["barrage"]);
-    expect(found(["heal", "shock", "barrage"])).toEqual(["smoke"]);
-    expect(found(["heal", "shock", "barrage", "smoke"])).toEqual([null]);
+    expect(found([])).toEqual(["shock"]);
+    expect(found(["shock"])).toEqual(["barrage"]);
+    expect(found(["shock", "barrage"])).toEqual(["smoke"]);
+    expect(found(["shock", "barrage", "smoke"])).toEqual([null]);
   });
 
   it("names a blueprint, whichever kind it is", () => {
@@ -75,11 +74,11 @@ describe("spoils", () => {
 
   it("only finds blueprints for defenses on that base, that the crew doesn't know", () => {
     for (let seed = 1; seed < 300; seed++) {
-      const known = ["mortar", "heal", "shock", "barrage", "smoke"] as const;
+      const known = ["mortar", "shock", "barrage", "smoke"] as const;
       const { blueprint } = rollSpoils(roll({ seed, known: [...known], drought: 3 }));
       expect(blueprint).toBe("harpoon");
     }
-    const weapons = ["heal", "shock", "barrage", "smoke"] as const;
+    const weapons = ["shock", "barrage", "smoke"] as const;
     const none = rollSpoils(roll({ known: ["mortar", "harpoon", ...weapons], drought: 3 }));
     expect(none.blueprint).toBeNull();
     // A rival crew's base has no plans to find.

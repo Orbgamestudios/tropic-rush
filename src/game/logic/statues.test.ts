@@ -243,17 +243,17 @@ describe("blueprints", () => {
   it("won't research without the gold, or in a laboratory that's still going up", () => {
     const poor = island({
       resources: { gold: 10, timber: 0, stone: 0, scrap: 0 },
-      blueprints: ["heal"],
+      blueprints: ["shock"],
       buildings: [...starterLayout(NOW).buildings, lab],
     });
-    expect(researchBlocker(poor, "heal")).toMatch(/gold/);
+    expect(researchBlocker(poor, "shock")).toMatch(/gold/);
     const rising = { ...poor, buildings: [...poor.buildings.slice(0, 1), { ...lab, level: 0 }] };
-    expect(researchBlocker(rising, "heal")).toMatch(/Build a laboratory/);
+    expect(researchBlocker(rising, "shock")).toMatch(/Build a laboratory/);
   });
 
-  it("starts the gunboat with artillery, and adds what's been researched, in order", () => {
-    expect(gunboatWeapons(island())).toEqual({ artillery: 1 });
-    expect(gunboatWeapons(island({ researched: ["smoke", "heal"] }))).toEqual({
+  it("starts the gunboat with artillery and a medkit, and adds what's been researched", () => {
+    expect(gunboatWeapons(island())).toEqual({ artillery: 1, heal: 1 });
+    expect(gunboatWeapons(island({ researched: ["smoke"] }))).toEqual({
       artillery: 1,
       heal: 1,
       smoke: 1,
@@ -293,7 +293,7 @@ describe("blueprints", () => {
     };
     const read = sanitizeLayout(old, NOW);
     expect(read.researched).toEqual(["mortar"]);
-    expect(gunboatWeapons(read)).toEqual({ artillery: 1 });
+    expect(gunboatWeapons(read)).toEqual({ artillery: 1, heal: 1 });
   });
 
   it("counts what an older island already has as known", () => {

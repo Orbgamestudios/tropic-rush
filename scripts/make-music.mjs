@@ -1,11 +1,10 @@
 // Writes the music the game makes for itself: riffs on the crew island's song for the world map,
 // scouting and raids, and a bugle and drum fanfare for winning. The song is exactly 32 bars at 90
 // beats a minute and starts on a beat, so anything can be locked to it. The map is the song out in
-// front over a light march, with a double-time breakdown in the middle: its chords come round
-// twice as fast, at the same pitch, over drums at double the feel. Scouting is the song far off
-// and muffled under a field drum corps. A raid is the song sped up to 120, which also lifts it a
-// fourth, over the attack drum loop slowed to match, with most of its hi-hat taken out, ducking out
-// of the way of each kick. Everything drawn on is CC0, and what's synthesized here is free of
+// front with barely a drum under it, and a half-time breakdown in the middle: the theme at half
+// speed, soft and dark. Scouting is the song muffled behind an unhurried field drum corps. A raid
+// is the song sped up to 120, which also lifts it a fourth, over the attack drum loop slowed to
+// match, with most of its hi-hat taken out, ducking out of the way of each kick. Everything drawn on is CC0, and what's synthesized here is free of
 // anyone else's rights. Run it again after changing anything here; the tracks come out exactly the
 // same every time.
 //
@@ -29,13 +28,21 @@ const SONG_BARS = 32;
 const SONG_TEMPO = 90;
 const RAID_TEMPO = 120;
 /** How loud the song sits against the drums while scouting. */
-const SONG_BEHIND_DRUMS = 0.75;
+const SONG_BEHIND_DRUMS = 1.25;
+/** How loud a scout's drums play. */
+const SCOUT_DRUMS = 0.62;
+/** How loud a raid's drum loop sits. */
+const RAID_DRUMS = 0.56;
+/** How hard the victory fanfare's drums hit, against its brass. */
+const FANFARE_DRUMS = 0.6;
 /** What's left of the drum loop's top end on each sixteenth of a bar: a hi-hat just before the turn. */
 const TOP_END = [0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0.2, 0];
 /** Where the drums' top end starts, in Hz. */
 const TOP_END_FROM = 3000;
-/** The double-time breakdown on the map: which bars, counting from 0. */
-const BREAKDOWN = { from: 16, bars: 8 };
+/** The half-time breakdown on the map: which bars, counting from 0, and the song's bars it slows. */
+const BREAKDOWN = { from: 16, bars: 8, theme: 16 };
+/** Seconds the breakdown takes to fade in and out of the song. */
+const BREAKDOWN_FADE = 0.7;
 
 /** The same noise every run. */
 function rng(seed) {
@@ -207,6 +214,8 @@ class Mix {
     this.right = new Float32Array(this.length);
     this.room = new Float32Array(this.length);
     this.jitter = rng(this.length);
+    /** How loud the drums play, against everything else. */
+    this.drums = 1;
   }
 
   put(sound, at, gain = 1, pan = 0, send = 0.15) {
@@ -228,7 +237,7 @@ class Mix {
   hit(sound, at, gain, pan = 0, send = 0.15) {
     const late = (this.jitter() - 0.5) * 0.005;
     const firm = 0.92 + this.jitter() * 0.16;
-    this.put(sound, at + late, gain * firm, pan, send);
+    this.put(sound, at + late, gain * firm * this.drums, pan, send);
   }
 
   snare(at, gain, accent = false, pan = 0.08) {
@@ -375,7 +384,7 @@ async function raidTrack() {
     // The song leaves the bottom end to the drums.
     const sped = highpass(resampled(channel, RAID_TEMPO / SONG_TEMPO, length), 170);
     const beat = fewerHats(slowed[c] ?? slowed[0]);
-    return sped.map((v, i) => v * 1.5 * duck[i] + beat[i] * 0.85);
+    return sped.map((v, i) => v * 1.5 * duck[i] + beat[i] * RAID_DRUMS);
   });
   // Drums this dense read loud: this brings it level with the other tracks.
   const [l, r] = master([left, right], 0.52);
@@ -421,33 +430,35 @@ async function scoutTrack() {
   const beat = 60 / SONG_TEMPO;
   const step = beat / 4;
   const barTime = beat * 4;
+  // Slow and steady, with room between the hits: a patrol, not a charge.
   const cadence = {
     a: {
-      snare: "f..xx.x.f..xx.x.",
+      snare: "f.......x.......",
       bass: "B.......b.......",
       timpani: "T.......T.......",
     },
     b: {
-      snare: "f..xx.x.f.xxrrrA",
-      bass: "B.......b.....b.",
-      tenor: "....m.....l.....",
+      snare: "f.......x...x...",
+      bass: "B.......b.......",
+      tenor: "............m...",
       timpani: "T.......T.......",
     },
     c: {
-      snare: "f.x.x.f.x.x.f.x.",
-      bass: "B.....b.B.....b.",
-      tenor: "..h...m...h...m.",
+      snare: "f.......f.......",
+      bass: "B.......B.......",
+      tenor: "....m.......l...",
       timpani: "T.......T.......",
     },
     d: {
-      snare: "rrrrRRRRRRRRRRRA",
-      bass: "B...b...B...b.B.",
-      tenor: "............hml.",
-      timpani: "T.T.T.T.T.T.T.TT",
+      snare: "f.......x...x.x.",
+      bass: "B.......b.......",
+      tenor: "............h.m.",
+      timpani: "T.......T.......",
     },
   };
   const verse = "aabacabd";
   const mix = new Mix(barTime * SONG_BARS, true);
+  mix.drums = SCOUT_DRUMS;
   for (let bar = 0; bar < SONG_BARS; bar++) {
     drumBar(mix, bar * barTime, step, cadence[verse[bar % verse.length]]);
   }
@@ -465,24 +476,13 @@ async function scoutTrack() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The world map: the song up front, with a double-time breakdown in the middle
+// The world map: the song up front, with a half-time breakdown in the middle
 
-/**
- * The song's chords at twice the speed and the same pitch: the first half of each bar, one after
- * another, so two bars of it go by in the time of one.
- */
-function doubleTime(channel, bar, { from, bars }) {
-  const half = bar / 2;
-  const join = Math.round(0.008 * SR);
-  const out = new Float32Array(bars * bar + join);
-  for (let i = 0; i < bars * 2; i++) {
-    const source = i * bar;
-    for (let k = 0; k < half + join; k++) {
-      const fade = Math.min(1, k / join, (half + join - k) / join);
-      out[i * half + k] += channel[source + k] * Math.sin((fade * Math.PI) / 2);
-    }
-  }
-  return { start: from * bar, wave: out.subarray(0, bars * bar) };
+/** The theme at half speed, an octave down, softened: two bars of it for each of the song's. */
+function halfTime(channel, bar, { bars, theme }) {
+  const start = theme * bar;
+  const slowed = resampled(channel.subarray(start, start + bars * bar), 0.5, bars * bar);
+  return lowpass(lowpass(highpass(slowed, 90), 1500), 1500);
 }
 
 async function mapTrack() {
@@ -492,64 +492,39 @@ async function mapTrack() {
   const barTime = beat * 4;
   const bar = Math.round(barTime * SR);
   const groove = {
-    // A light march, with room for the song.
-    a: { bass: "B.......b.......", tenor: "....m.......m...", timpani: "T.......T......." },
-    b: {
-      snare: "....x.......x.x.",
-      bass: "B.....b.B.......",
-      tenor: "....m.......m.l.",
-      timpani: "T.......T.......",
-    },
-    // Double time: the backbeat comes round twice as often, in the same bars.
-    thin: { snare: "..x...x...x...x.", bass: "B...b...B...b...", tenor: "h.m.h.m.h.m.h.m." },
-    full: {
-      snare: "..A.x.A.x.A.x.A.",
-      bass: "B...b...B...b.b.",
-      tenor: "h.m.h.m.h.m.h.ml",
-      timpani: "T.......T.......",
-    },
-    roll: {
-      snare: "rrrrrrrrRRRRRRRA",
-      bass: "B.b.B.b.B.B.B.B.",
-      tenor: "h.h.m.m.l.l.hml.",
-      timpani: "T.T.T.T.T.T.T.TT",
-    },
+    // A heartbeat under the song, and little else.
+    a: { bass: "B...............", timpani: "........T......." },
+    b: { bass: "B...............", tenor: "............m...", timpani: "........T......." },
+    // Half time: one soft beat to the bar, and every other bar nothing at all.
+    half: { timpani: "T..............." },
+    rest: {},
   };
   const { from, bars } = BREAKDOWN;
-  const line = "aabaaaba";
+  const line = "aaabaaab";
   const mix = new Mix(barTime * SONG_BARS, true);
+  mix.drums = 0.5;
   for (let b = 0; b < SONG_BARS; b++) {
     const into = b - from;
-    let part = groove[line[b % line.length]];
-    if (into >= 0 && into < bars) {
-      part = into === bars - 1 ? groove.roll : into < bars / 2 ? groove.thin : groove.full;
-    }
-    drumBar(
-      mix,
-      b * barTime,
-      step,
-      part,
-      part === groove.full ? 0.6 : part === groove.roll ? 0.7 : 1,
-    );
+    const breakdown = into >= 0 && into < bars;
+    const part = breakdown ? groove[into % 2 ? "rest" : "half"] : groove[line[b % line.length]];
+    drumBar(mix, b * barTime, step, part);
   }
-  mix.hit(CRASH, from * barTime, 0.4, 0, 0.3);
-  mix.hit(CRASH, (from + bars) * barTime, 0.55, 0, 0.3);
+  const start = from * bar;
+  const fade = Math.round(BREAKDOWN_FADE * SR);
   song.forEach((channel, c) => {
     const out = c === 0 ? mix.left : mix.right;
-    const { start, wave } = doubleTime(channel, bar, BREAKDOWN);
-    // The breakdown starts stripped back to the middle of the song, and opens up as it goes.
-    const thin = highpass(wave, 420);
+    const slow = halfTime(channel, bar, BREAKDOWN);
     for (let i = 0; i < out.length; i++) {
       const at = i - start;
-      if (at < 0 || at >= wave.length) {
-        out[i] += channel[i] * 0.95;
-        continue;
-      }
-      const open = Math.min(1, Math.max(0, (at / wave.length - 0.25) / 0.7));
-      out[i] += (thin[at] * (1 - open) + wave[at] * open) * 0.95;
+      const inside = Math.min(at + fade, slow.length + fade - at) / (fade * 2);
+      const blend = Math.min(1, Math.max(0, inside));
+      const wet = Math.sin((blend * Math.PI) / 2);
+      const dry = Math.cos((blend * Math.PI) / 2);
+      const slowNow = at >= 0 && at < slow.length ? slow[at] : 0;
+      out[i] += channel[i] * dry * 0.95 + slowNow * wet * 1.5;
     }
   });
-  const [left, right] = finish(mix, { decay: 0.8, wet: 0.35 });
+  const [left, right] = finish(mix, { decay: 1, wet: 0.45 });
   writeLoop(left, right, "map", 112);
 }
 
@@ -559,6 +534,7 @@ async function mapTrack() {
 function winTrack() {
   const beat = 0.48;
   const mix = new Mix(beat * 15 + 2.4, false);
+  mix.drums = FANFARE_DRUMS;
   const note = (midi, at, length, gain, pan, bright, seed) => {
     mix.put(brassNote(midi, length * beat, bright, seed), at * beat, gain, pan, 0.28);
   };

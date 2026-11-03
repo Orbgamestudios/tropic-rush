@@ -293,7 +293,6 @@ export class Game {
       onBack: () => this.go(() => (this.attacking ? this.showMap(this.mapHero) : this.goHome())),
       onStart: (hero) => this.go(() => this.setOff(hero)),
       onUpgrades: (hero) => this.go(() => this.showTree(hero)),
-      blocker: (hero) => this.soloBlocker(hero),
       onTrade: () => this.crystalSwap.show(true),
     });
     this.tree = new UpgradeTree(screens, {
@@ -356,7 +355,6 @@ export class Game {
       onZoom: (factor) => this.mapView.zoom(factor),
       screen: (x, y) => this.mapView.screen(x, y),
       moves: () => this.mapView.moves,
-      soloBlocker: () => this.soloBlocker(this.mapHero),
       crewOnline: () => this.crewOnline(),
     });
     this.lobbyView = new RaidLobby(screens, {
@@ -636,6 +634,8 @@ export class Game {
     this.hud.placeSprint(s.controls.aim);
     sfx.setMuted(s.muted);
     music.setMuted(s.musicMuted);
+    sfx.setVolume(s.soundVolume);
+    music.setVolume(s.musicVolume);
     setHaptics(s.haptics);
   }
 
@@ -1287,13 +1287,6 @@ export class Game {
     this.pause.show(false);
   }
 
-  /** A medic can't hurt a building, so she can't take an island without a crewmate. */
-  private soloBlocker(hero: HeroKind): string | null {
-    return hero === "medic"
-      ? "Doc Penny can't hurt buildings: team up, or pick another hero."
-      : null;
-  }
-
   /** The world map, to pick an island to raid with this hero. */
   private showMap(hero: HeroKind): void {
     this.endRaidWorld();
@@ -1311,7 +1304,7 @@ export class Game {
       this.mapView.lookAt(opened.x, opened.y);
       this.mapScreen.announce("The cloud has lifted: new islands ahead!");
     } else if (lostIslands.length > 0) {
-      this.mapScreen.announce(`Raiders retook ${lostIslands.join(" and ")}!`);
+      this.mapScreen.announce(`${lostIslands.join(" and ")} taken back overnight!`);
       this.updateSave({ lostIslands: [] });
     }
     this.reveal = null;
@@ -1455,7 +1448,7 @@ export class Game {
       ),
     );
     this.phase = "scout";
-    this.scout.show(target, scoutReport(layout.buildings), this.soloBlocker(this.mapHero) === null);
+    this.scout.show(target, scoutReport(layout.buildings));
     this.drawLobby();
   }
 

@@ -41,8 +41,6 @@ export interface HeroSelectHost {
   onBack(): void;
   /** Raid with this hero: on to the world map, or the island already picked. */
   onStart(hero: HeroKind): void;
-  /** Why this hero can't go alone, if they can't. */
-  blocker(hero: HeroKind): string | null;
   /** Opens this hero's upgrade tree. */
   onUpgrades(hero: HeroKind): void;
   onTrade(): void;
@@ -244,9 +242,8 @@ export class HeroSelect {
     this.upgrades.disabled = !unlocked;
     setLabel(this.upgrades, unlocked ? "Upgrades" : "Locked");
     this.upgradeCount.textContent = unlocked ? treeProgress(owned) : `HQ ${HERO_UNLOCK_HQ[kind]}`;
-    const blocked = this.attacking && this.host.blocker(kind) !== null;
-    this.start.disabled = !unlocked || blocked;
-    setLabel(this.start, blocked ? "Needs a crew" : this.attacking ? "Attack" : "Raid");
+    this.start.disabled = !unlocked;
+    setLabel(this.start, this.attacking ? "Attack" : "Raid");
     this.gold.set(this.host.gold());
     this.crystals.set(save.crystals);
   }

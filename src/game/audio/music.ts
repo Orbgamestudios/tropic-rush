@@ -27,6 +27,7 @@ interface Player {
 
 class Music {
   private muted = false;
+  private volume = 1;
   private wanted: Track | null = null;
   private current: Player | null = null;
   private loading: { track: Track; buffer: Promise<AudioBuffer> } | null = null;
@@ -63,6 +64,16 @@ class Music {
   setMuted(on: boolean): void {
     this.muted = on;
     this.sync();
+  }
+
+  /** How loud the music plays, from 0 to 1. Takes hold at once, for a slider to be heard moving. */
+  setVolume(volume: number): void {
+    this.volume = volume;
+    const context = audioContext();
+    if (!context || !this.current) return;
+    const { gain } = this.current.gain;
+    gain.cancelScheduledValues(context.currentTime);
+    gain.setTargetAtTime(LEVEL * volume, context.currentTime, 0.05);
   }
 
   private sync(): void {
@@ -106,7 +117,7 @@ class Music {
     const gain = context.createGain();
     const t = context.currentTime;
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(LEVEL, t + FADE_SECONDS);
+    gain.gain.linearRampToValueAtTime(LEVEL * this.volume, t + FADE_SECONDS);
     source.connect(gain).connect(destination);
     source.start(t, loop ? LOOP_PADDING : 0);
     this.current = { track, source, gain };

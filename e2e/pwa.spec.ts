@@ -90,7 +90,7 @@ test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
   await expect(page.locator(".hud-tray-box")).toBeVisible({ timeout: 40_000 });
 });
 
-test("won't send a medic to attack on her own", async ({ page }) => {
+test("sends a medic to attack on her own", async ({ page }) => {
   await page.goto("/?testhooks");
   await page.evaluate(() => {
     const { tropicRush } = window as unknown as {
@@ -102,8 +102,7 @@ test("won't send a medic to attack on her own", async ({ page }) => {
   await page.getByRole("button", { name: "Medic", exact: true }).click();
   await page.getByRole("button", { name: "Raid", exact: true }).click();
   await page.locator("button.map-pin:visible").first().click();
-  await expect(page.getByRole("button", { name: "Attack" })).toBeDisabled();
-  await expect(page.locator(".map-card-note")).toHaveText(/can't hurt buildings/);
+  await expect(page.getByRole("button", { name: "Attack" })).toBeEnabled();
 });
 
 test("scouts an island, then attacks it", async ({ page }) => {

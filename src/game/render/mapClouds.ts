@@ -1,13 +1,15 @@
 // The cloud over the world map: one sheet, drawn in a single call however far the crew has come.
+// Its look comes from a tile baked ahead of time by scripts/make-clouds.mjs, puffs and all, already
+// lit by the sun, so the phone only looks it up: twice, at two sizes, drifting past each other.
 // Where the sky is clear is painted once into a small mask. Every patch is painted oversized and
 // joined to its neighbor, then the mask is blurred and the shader draws the edge further in than
 // it was painted: gaps too narrow to survive that close up, so the clear sky is one open stretch of
-// sea with a smooth shore of cloud, not patches with strands of cloud left between islands. A new
-// splotch dissolves open from the old mask to the new one.
+// sea, not patches with strands of cloud left between islands. Towards that edge only the thickest
+// puffs are left, so the deck breaks up the way real cloud does, and throws a shadow on the sea. A
+// new splotch dissolves open from the old mask to the new one.
 
 import * as THREE from "three";
 import type { SkyHole } from "../logic/worldMap";
-import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { SKY } from "./sky";
 
 const MASK_WIDTH = 512;
@@ -21,6 +23,8 @@ const JOIN_WIDTH = 15;
 /** The sheet follows the camera, and is always bigger than the view. */
 const SHEET = { width: 1100, depth: 800, height: 6 } as const;
 const LIFT_SECONDS = 2.6;
+/** How far the cloud's shadow falls from it on the sea, in map units. */
+const SHADOW_FALLS = { x: 16, y: 21 } as const;
 
 const VERTEX = /* glsl */ `
   varying vec2 vMap;
@@ -34,35 +38,49 @@ const VERTEX = /* glsl */ `
 const FRAGMENT = /* glsl */ `
   uniform sampler2D uMask;
   uniform sampler2D uBefore;
-  uniform sampler2D uNoise;
+  uniform sampler2D uTile;
   uniform vec4 uBox;
   uniform float uLift;
   uniform float uTime;
   uniform vec3 uUnlit;
   varying vec2 vMap;
-  float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
   void main() {
     vec2 p = vMap;
-    float large = noise(p * 0.05 + vec2(uTime * 0.012, 0.0));
-    float middle = noise(p * 0.13 - vec2(0.0, uTime * 0.016));
-    float small = noise(p * 0.34 + vec2(uTime * 0.02, -uTime * 0.01));
-    float billow = large * 0.5 + middle * 0.33 + small * 0.17;
-    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(large, middle) - 0.5) * 0.012;
+    vec2 wide = texture2D(uTile, p / 130.0 + vec2(uTime * 0.0035, uTime * 0.0012)).rg;
+    vec2 near = texture2D(uTile, p / 47.0 - vec2(uTime * 0.0026, -uTime * 0.0048)).rg;
+    float thick = smoothstep(0.3, 0.74, wide.r * 0.62 + near.r * 0.38);
+    float lit = wide.g * 0.55 + near.g * 0.45;
+    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(wide.r, near.r) - 0.5) * 0.02;
     float before = texture2D(uBefore, uv).r;
     float now = texture2D(uMask, uv).r;
     // A new splotch tears open from its thin spots first.
-    float clear = mix(before, now, smoothstep(billow - 0.25, billow + 0.25, uLift * 1.5 - 0.25));
-    // The painted patches ran past their true edge, so the shore is drawn well inside them.
-    float alpha = 1.0 - smoothstep(0.62, 0.86, clear + (billow - 0.5) * 0.14);
-    if (alpha < 0.004) discard;
-    // Bright where it billows up, blue-grey in the folds.
-    float light = smoothstep(0.3, 0.68, billow) * 0.7 + smoothstep(0.42, 0.62, small) * 0.3;
-    vec3 color = mix(vec3(0.66, 0.74, 0.86), vec3(1.0, 0.99, 0.97), light);
-    gl_FragColor = vec4(color * uUnlit, alpha * 0.97);
+    float clear = mix(before, now, smoothstep(thick - 0.25, thick + 0.25, uLift * 1.5 - 0.25));
+    // The painted patches ran past their true edge, so the shore is drawn well inside them. Deep in
+    // the bank it's solid, and towards the edge only the thickest puffs stay.
+    float cover = 1.0 - smoothstep(0.32, 0.92, clear);
+    float edge = 1.06 - cover * 1.9;
+    float alpha = smoothstep(edge, edge + 0.28, thick);
+    float under = texture2D(uMask, uv + vec2(${SHADOW_FALLS.x}.0, ${SHADOW_FALLS.y}.0) / uBox.zw).r;
+    float shadow = (1.0 - smoothstep(0.45, 0.9, under)) * 0.22 * (1.0 - alpha);
+    if (alpha + shadow < 0.004) discard;
+    // Bright on the sun's side of each puff, blue-grey in the hollows.
+    vec3 cloud = mix(vec3(0.54, 0.62, 0.78), vec3(1.0, 0.995, 0.98), smoothstep(0.6, 0.92, lit));
+    vec3 color = mix(vec3(0.02, 0.1, 0.2), cloud * uUnlit, alpha);
+    gl_FragColor = vec4(color, alpha + shadow);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
 `;
+
+let tile: THREE.Texture | null = null;
+
+function cloudTile(): THREE.Texture {
+  if (tile) return tile;
+  tile = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/map-clouds.webp`);
+  tile.wrapS = THREE.RepeatWrapping;
+  tile.wrapT = THREE.RepeatWrapping;
+  return tile;
+}
 
 function maskCanvas(): { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture } {
   const canvas = document.createElement("canvas");
@@ -124,7 +142,7 @@ export class MapClouds {
         uniforms: {
           uMask: { value: this.now.texture },
           uBefore: { value: this.before.texture },
-          uNoise: { value: noiseTexture() },
+          uTile: { value: cloudTile() },
           uBox: { value: this.box },
           uLift: this.lift,
           uTime: this.time,

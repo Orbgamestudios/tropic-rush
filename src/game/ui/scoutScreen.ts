@@ -53,7 +53,6 @@ export class ScoutScreen {
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private island: MapIsland | null = null;
   private team: ScoutTeam | null = null;
-  private canAttack = true;
   private moved = 0;
   private spread = 0;
 
@@ -105,10 +104,8 @@ export class ScoutScreen {
     parent.append(this.root);
   }
 
-  /** `canAttack` is false for a hero who can't take an island alone: a look is still free. */
-  show(island: MapIsland, report: readonly ScoutRow[], canAttack = true): void {
+  show(island: MapIsland, report: readonly ScoutRow[]): void {
     this.island = island;
-    this.canAttack = canAttack;
     this.setTeam(this.team);
     this.pointers.clear();
     this.name.textContent = island.name;
@@ -137,7 +134,7 @@ export class ScoutScreen {
     this.team = team;
     this.teamBar.style.display = team ? "flex" : "none";
     setLabel(this.attack, team ? (team.mine ? "Not ready" : "Ready") : "Attack");
-    this.attack.disabled = team ? team.waiting !== null : !this.canAttack;
+    this.attack.disabled = team !== null && team.waiting !== null;
     if (!team) return;
     this.teamText.textContent =
       team.waiting ?? `Team ${team.have}/${team.of} · Ready ${team.ready}/${team.have}`;

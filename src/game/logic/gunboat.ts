@@ -4,8 +4,11 @@
 
 export type Ability = "artillery" | "heal" | "shock" | "barrage" | "smoke";
 
-/** In the order a crew gets them: the first from the start, the rest by blueprint. */
+/** In the order a crew gets them: the first of them from the start, the rest by blueprint. */
 export const ABILITY_ORDER: readonly Ability[] = ["artillery", "heal", "shock", "barrage", "smoke"];
+
+/** What every crew's gunboat comes with. */
+export const STARTING_WEAPONS: readonly Ability[] = ["artillery", "heal"];
 
 export interface AbilitySpec {
   /** Short enough for its button. */

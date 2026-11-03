@@ -5,7 +5,7 @@
 
 import { BUILDINGS, type BuildingType } from "./buildings";
 import type { CrystalCost, CrystalKind } from "./crystals";
-import { ABILITIES, ABILITY_ORDER, type Ability } from "./gunboat";
+import { ABILITIES, ABILITY_ORDER, type Ability, STARTING_WEAPONS } from "./gunboat";
 import { createRng } from "./rng";
 import type { Difficulty } from "./worldMap";
 
@@ -20,8 +20,10 @@ export const DEFENSE_BLUEPRINTS: readonly BuildingType[] = [
   "flamethrower",
 ];
 
-/** Gunboat weapons to discover, one after another. A crew starts with the first of them all. */
-export const GUNBOAT_BLUEPRINTS: readonly Ability[] = ABILITY_ORDER.slice(1);
+/** Gunboat weapons to discover, one after another. */
+export const GUNBOAT_BLUEPRINTS: readonly Ability[] = ABILITY_ORDER.filter(
+  (a) => !STARTING_WEAPONS.includes(a),
+);
 
 export const BLUEPRINT_TYPES: readonly Blueprint[] = [...DEFENSE_BLUEPRINTS, ...GUNBOAT_BLUEPRINTS];
 

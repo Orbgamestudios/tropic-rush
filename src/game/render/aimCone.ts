@@ -234,7 +234,9 @@ export class AimView {
       }
     }
 
-    if (HEROES[hero.kind].attack.kind === "heal") {
+    // A medic's marks are for crewmates, until there's nobody to mark and it's a building's turn.
+    const nursing = preview ? patientCandidate(state, hero, preview) : hero.targetId === null;
+    if (HEROES[hero.kind].attack.kind === "heal" && nursing) {
       this.markPatients(state, hero, preview, ground, time, dt);
       return;
     }

@@ -33,6 +33,7 @@ import {
   type Ability,
   type Arsenal,
   MAX_WEAPON_LEVEL,
+  STARTING_WEAPONS,
   WEAPON_LEVEL_HQ,
   weaponUpGold,
 } from "./gunboat";
@@ -838,10 +839,9 @@ const RESEARCH_GOLD: Partial<Record<Blueprint, number>> = {
   watchtower: 300,
   harpoon: 400,
   flamethrower: 500,
-  heal: 200,
-  shock: 350,
-  barrage: 500,
-  smoke: 700,
+  shock: 200,
+  barrage: 350,
+  smoke: 500,
 };
 
 export function researchCost(type: Blueprint): Partial<Purse> {
@@ -862,12 +862,13 @@ export function researchBlocker(
   return null;
 }
 
-/** The gunboat weapons a crew can use, the first and whatever it's researched since, by level. */
+/** The gunboat weapons a crew can use, what it starts with and what it's researched, by level. */
 export function gunboatWeapons(layout: Pick<CrewLayout, "researched" | "weaponLevels">): Arsenal {
   const arsenal: Arsenal = {};
   for (const a of ABILITY_ORDER) {
-    if (a === "artillery" || layout.researched.includes(a))
+    if (STARTING_WEAPONS.includes(a) || layout.researched.includes(a)) {
       arsenal[a] = layout.weaponLevels[a] ?? 1;
+    }
   }
   return arsenal;
 }

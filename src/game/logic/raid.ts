@@ -48,6 +48,14 @@ const MINE_SPLASH = 2.6;
 const MINE_DAMAGE = 450;
 /** A sniper's sights stop following this long before it fires, leaving time to step aside. */
 const SIGHTS_HELD = 0.25;
+/** How fast a sniper's sights close on where it wants them, and how fast it reads a target's
+ * movement. Smooth rather than instant, so a sudden change of direction takes it a moment. */
+const SIGHTS_RATE = 7;
+const TRACKING_RATE = 6;
+/** The furthest ahead a sniper will lead a target, in meters. */
+const MOST_LEAD = 9;
+/** Nothing moves this fast: it's changed targets, which isn't movement to read. */
+const FASTEST_TARGET = 18;
 
 /** The little pop of a gunboat canister opening over its target, in meters. */
 const CANISTER_BLAST = 0.8;
@@ -240,6 +248,9 @@ export interface RaidBuilding {
   /** Where a sniper's sights are while it takes aim, and how long it's been at it. */
   sights: Vec2 | null;
   aiming: number;
+  /** Where a sniper last saw its target, and how it reckons that's moving. */
+  tracked: Vec2 | null;
+  trackedVel: Vec2;
 }
 
 export type ProjectileKind =
@@ -252,6 +263,7 @@ export type ProjectileKind =
   | "mortar"
   | "artillery"
   | "vial"
+  | "acid"
   | "lava";
 
 export interface Lob {
@@ -346,6 +358,7 @@ export type RaidEvent =
   | { type: "hit"; pos: Vec2 }
   | { type: "heal"; pos: Vec2 }
   | { type: "healBurst"; pos: Vec2; radius: number }
+  | { type: "acidBurst"; pos: Vec2; radius: number }
   | { type: "loot"; pos: Vec2; loot: Partial<Purse> }
   | { type: "destroyed"; id: number; pos: Vec2; buildingType: BuildingType }
   | { type: "heroDown"; id: number; pos: Vec2 }
@@ -504,6 +517,8 @@ export function createRaid(
       firing: false,
       sights: null,
       aiming: 0,
+      tracked: null,
+      trackedVel: vec(0, 0),
     };
   });
   const obstacles = layout.obstacles.map(
@@ -646,7 +661,7 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
 /**
  * Locking on: let go of a drag to lock onto the building in that direction, or tap to lock onto
  * the nearest tower (tapping the same one again stops). With nothing in the arc, letting go just
- * stops firing. A medic locks onto crewmates.
+ * stops firing. A medic locks onto crewmates first, and buildings if there's nobody there.
  */
 function lockOn(state: RaidState, hero: RaidHero, input: HeroInput): void {
   if (HEROES[hero.kind].attack.kind === "heal") lockPatient(state, hero, input);
@@ -953,7 +968,23 @@ function updateAttack(
       return;
     }
     case "heal": {
-      if (dir && hero.reload <= 0) {
+      if (dir && hero.reload <= 0 && hero.targetId !== null) {
+        const range = reachOfBuildings(hero);
+        const reach = clamp(aimDistance, 0, range);
+        spawnLob(
+          state,
+          "acid",
+          "crew",
+          hero.id,
+          hero.pos,
+          throwTarget(state, hero, dir, reach),
+          atk.flightTime * (0.55 + (0.45 * reach) / range),
+          2.5 + reach * 0.2,
+          atk.acid.damage * hero.power,
+          atk.acid.splash,
+        );
+        hero.reload = shotTime(hero, atk.reload);
+      } else if (dir && hero.reload <= 0) {
         const range = atk.range + m.range;
         const reach = clamp(aimDistance, 0, range);
         hero.shotCount++;
@@ -1248,9 +1279,17 @@ function findTarget(state: RaidState, from: Vec2, range: number, minRange: numbe
 }
 
 /**
- * A sniper takes its time, and anyone can see it doing so: its sights follow a target, hold still
- * for a moment, and then it fires. Whoever's moved by then is safe.
+ * A sniper takes its time, and anyone can see it doing so: its sights slide along ahead of a
+ * target, to where they'll be when a shot gets there, hold still for a moment, and then it fires.
+ * Keep running the same way and it hits. Change direction once the sights stop, and it doesn't.
  */
+function dropAim(b: RaidBuilding): void {
+  b.sights = null;
+  b.aiming = 0;
+  b.tracked = null;
+  b.trackedVel = vec(0, 0);
+}
+
 function takeAim(
   state: RaidState,
   b: RaidBuilding,
@@ -1260,14 +1299,29 @@ function takeAim(
 ): void {
   if (b.reload > 0) return;
   b.aiming += dt;
-  if (!b.sights || b.aiming < atk.aimTime - SIGHTS_HELD) b.sights = { ...target };
+  if (b.tracked) {
+    const seen = scale(sub(target, b.tracked), 1 / dt);
+    const reading = 1 - Math.exp(-dt * TRACKING_RATE);
+    if (length(seen) <= FASTEST_TARGET) {
+      b.trackedVel = add(b.trackedVel, scale(sub(seen, b.trackedVel), reading));
+    }
+  }
+  b.tracked = { ...target };
+  // The hold, the shot's flight, and what the sights themselves lag by, following something moving.
+  const ahead = SIGHTS_HELD + distance(b.pos, target) / atk.speed + 1 / SIGHTS_RATE;
+  const lead = scale(b.trackedVel, ahead);
+  const far = length(lead);
+  const wanted = add(target, far > MOST_LEAD ? scale(lead, MOST_LEAD / far) : lead);
+  if (!b.sights) b.sights = wanted;
+  else if (b.aiming < atk.aimTime - SIGHTS_HELD) {
+    b.sights = add(b.sights, scale(sub(wanted, b.sights), 1 - Math.exp(-dt * SIGHTS_RATE)));
+  }
   const toSights = sub(b.sights, b.pos);
   b.aim = angleOf(toSights);
   if (b.aiming < atk.aimTime) return;
   const dir = normalize(toSights);
   const muzzle = add(b.pos, scale(dir, b.radius * 0.7));
-  b.sights = null;
-  b.aiming = 0;
+  dropAim(b);
   b.reload = atk.reload;
   b.firing = true;
   const damage = atk.damage * b.power;
@@ -1280,16 +1334,14 @@ function updateBuildings(state: RaidState, dt: number): void {
     const atk = BUILDINGS[b.type].attack;
     if (b.destroyed || !atk || state.conquest !== null) continue;
     if (shocked(state, b)) {
-      b.sights = null;
-      b.aiming = 0;
+      dropAim(b);
       continue;
     }
     b.reload = Math.max(0, b.reload - dt);
     const minRange = atk.kind === "mortar" ? atk.minRange : 0;
     const target = findTarget(state, b.pos, atk.range, minRange);
     if (!target) {
-      b.sights = null;
-      b.aiming = 0;
+      dropAim(b);
       continue;
     }
     if (atk.kind === "sniper") {
@@ -1401,12 +1453,22 @@ export function heroRange(hero: RaidHero): number {
   return HEROES[hero.kind].attack.range + hero.mods.range;
 }
 
-/** The medic's lock: on the crewmate she aims at, or with a tap on whoever is worst hurt. */
+/** How far a hero reaches a building from, perks included: a medic's acid doesn't go as far. */
+function reachOfBuildings(hero: RaidHero): number {
+  const atk = HEROES[hero.kind].attack;
+  return atk.kind === "heal" ? atk.acid.range + hero.mods.range : heroRange(hero);
+}
+
+/**
+ * The medic's lock: on the crewmate she aims at, or with a tap on whoever is worst hurt. With
+ * nobody to look after, it's a building, which gets acid.
+ */
 function lockPatient(state: RaidState, hero: RaidHero, input: HeroInput): void {
   if (input.lockAt && length(input.lockAt) > 0.05) {
     const patient = patientCandidate(state, hero, input.lockAt);
     hero.patientId = patient?.id ?? null;
-    if (!patient) {
+    hero.targetId = patient ? null : (lockCandidate(state, hero, input.lockAt)?.id ?? null);
+    if (!patient && hero.targetId === null) {
       // Nobody there: a bottle on that spot, which is also how she heals herself.
       hero.autoDir = normalize(input.lockAt);
       hero.autoDistance = clamp(length(input.lockAt), 0, 1) * heroRange(hero);
@@ -1414,7 +1476,9 @@ function lockPatient(state: RaidState, hero: RaidHero, input: HeroInput): void {
     }
   } else if (input.autoAim) {
     const patient = patientCandidate(state, hero, null);
+    const building = patient ? null : lockCandidate(state, hero, null);
     hero.patientId = patient && patient.id !== hero.patientId ? patient.id : null;
+    hero.targetId = building && building.id !== hero.targetId ? building.id : null;
     hero.autoFireTime = 0;
   }
 }
@@ -1463,7 +1527,7 @@ export function patientCandidate(
 function lockedBuilding(state: RaidState, hero: RaidHero): RaidBuilding | null {
   const b = state.buildings.find((x) => x.id === hero.targetId);
   if (!b || b.destroyed) return null;
-  const reach = heroRange(hero) + 0.5;
+  const reach = reachOfBuildings(hero) + 0.5;
   return distance(b.pos, hero.pos) - b.radius <= reach ? b : null;
 }
 
@@ -1476,8 +1540,7 @@ export function lockCandidate(
   hero: RaidHero,
   dir: Vec2 | null,
 ): RaidBuilding | null {
-  if (HEROES[hero.kind].attack.kind === "heal") return null;
-  const range = heroRange(hero);
+  const range = reachOfBuildings(hero);
   if (!dir) {
     let best: RaidBuilding | null = null;
     let bestScore = Infinity;
@@ -1818,6 +1881,11 @@ function detonate(state: RaidState, p: Projectile, pos: Vec2): void {
     }
     return;
   }
+  if (p.kind === "acid") {
+    state.events.push({ type: "acidBurst", pos: { ...pos }, radius: p.splash });
+    blast(state, pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
+    return;
+  }
   explode(state, pos, p.splash, p.damage, p.team, p.ownerId, p.buildingBonus, p.heavyBonus);
   if (p.kind === "rocket" && owner?.mods.napalm) {
     const burn = p.damage * TRICKS.napalmShare;
@@ -1912,6 +1980,20 @@ function explode(
   heavyBonus: number,
 ): void {
   state.events.push({ type: "explosion", pos: { ...pos }, radius });
+  blast(state, pos, radius, damage, team, ownerId, buildingBonus, heavyBonus);
+}
+
+/** What a blast does, whatever it looks like. */
+function blast(
+  state: RaidState,
+  pos: Vec2,
+  radius: number,
+  damage: number,
+  team: Team,
+  ownerId: number,
+  buildingBonus: number,
+  heavyBonus: number,
+): void {
   if (team === "crew") {
     for (const b of state.buildings) {
       if (!b.destroyed && distance(pos, b.pos) - b.radius <= radius) {

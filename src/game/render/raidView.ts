@@ -194,6 +194,12 @@ function projectileMesh(kind: ProjectileKind, team: Team): THREE.Object3D {
         new THREE.IcosahedronGeometry(0.9, 1),
         new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff6a1c).multiplyScalar(2) }),
       );
+    case "acid": {
+      const g = new THREE.Group();
+      g.add(cyl(0.16, 0.16, 0.34, 0xd2f03a, 10, { emissive: 0x6a7a10 }));
+      g.add(at(cyl(0.07, 0.09, 0.14, 0x3a3e44, 8), 0, 0.22, 0));
+      return g;
+    }
     case "vial": {
       const g = new THREE.Group();
       g.add(cyl(0.16, 0.16, 0.34, 0x7dff9a, 10, { emissive: 0x2a8a45 }));
@@ -354,7 +360,7 @@ export class RaidView {
     for (const e of events) {
       switch (e.type) {
         case "shot": {
-          if (e.kind === "vial") break;
+          if (e.kind === "vial" || e.kind === "acid") break;
           const big =
             e.kind === "rocket" ||
             e.kind === "shell" ||
@@ -412,6 +418,9 @@ export class RaidView {
           break;
         case "heroDown":
           this.effects.skull(this.at(e.pos, 0));
+          break;
+        case "acidBurst":
+          this.effects.acidBurst(this.at(e.pos, 0.4), e.radius);
           break;
         case "destroyed": {
           const radius = BUILDINGS[e.buildingType].radius;

@@ -237,6 +237,8 @@ describe("save", () => {
         camera: "behind",
         muted: true,
         musicMuted: true,
+        musicVolume: 0.4,
+        soundVolume: 0.7,
         haptics: false,
         controls: {
           move: { x: 0.2, y: 0.8, size: 1.3 },

@@ -388,7 +388,7 @@ export class CrewMode {
     writeLocalLayout(this.layout);
   }
 
-  /** Each night since the last look, raiders may have retaken some of the crew's islands. */
+  /** Each night since the last look, raiders and rival crews take back some of the crew's islands. */
   private loseIslands(from: number, to: number): void {
     let { world } = this.host.save();
     const lost: string[] = [];
@@ -400,7 +400,7 @@ export class CrewMode {
     }
     if (lost.length === 0) return;
     this.host.updateSave({ world, lostIslands: lost });
-    this.ui.flash(`Raiders retook ${lost.join(" and ")}!`);
+    this.ui.flash(`${lost.join(" and ")} taken back!`);
   }
 
   /**

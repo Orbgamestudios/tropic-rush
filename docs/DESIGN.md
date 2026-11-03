@@ -76,6 +76,28 @@ These were explicitly left out to keep the first version to a basic structure:
   levels up. It reaches its deepest spot by headquarters 16.
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
+## Added 2026-11-02, sixth batch (owner's requests)
+
+- **Watchtowers lead their target:** the sights slide ahead of a moving hero to where they'll be when
+  the shot lands. They're smooth rather than instant, and still hold for a quarter of a second
+  before firing, so running in a straight line gets you hit and changing direction dodges it.
+- **The map:** held islands have no tag at all now, and island cards no longer say what holding one
+  pays or that a base belongs to a rival crew. The clouds are a baked tile of lit cumulus, breaking up into puffs at their edges and throwing a shadow on
+  the sea, in place of plain noise.
+- **Losing islands:** 10 to 15% of what's held goes back each day, over time, to raiders or to other
+  crews. With only a few islands that's a chance of losing one, not a fraction of one.
+- **Heavy:** 3,150 health, up from 2,380, with a quicker spin-up, more damage and a little more
+  range and speed, since he started a long way behind the Rifleman.
+- **Medic:** she can take an island alone now. Locked onto a building she throws an acid bottle, from
+  12 meters at most, for about 100 damage a second. Crewmates come first: with one in her sights she
+  heals them.
+- **Buildings:** everything that doesn't shoot back has half the health it did, and the
+  headquarters a third less, 3,350 at level 1.
+- **Volume:** the settings have a slider each for music and sound, on top of the on and off buttons.
+- **Music:** the map's breakdown is half time now, the theme at half speed with almost no drums, and
+  its verses are barely more than a pulse. Scouting's drums are quieter and slower with no press
+  rolls, and the raid's and the victory fanfare's are quieter too.
+
 ## Added 2026-11-02, fifth batch (owner's requests)
 
 - **Hero models:** the owner found them too undetailed, with features broken by too few triangles.
@@ -93,15 +115,15 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Clearing:** a patch can only be cleared if it touches open ground: the first clearing, the trail,
   or something already cleared. The shore doesn't count. Everything on the island can still be
   reached this way, and a test holds that to it.
-- **Gunboat weapons:** five, found in this order: Artillery from the start, then Medkit, Shock
-  Grenade, Barrage and Smokescreen, each from a blueprint on a raider base. Only the next one in line
+- **Gunboat weapons:** five. Artillery and the Medkit come with every gunboat, then the Shock
+  Grenade, Barrage and Smokescreen turn up in that order, each from a blueprint on a raider base. Only the next one in line
   can turn up. The Shock Grenade stuns every defense in a circle for 4 seconds, and the Smokescreen
   hides heroes in one for 10. Both circles are 6 tiles across. Friendly heroes aren't stunned: that
   was Claude's call, since a crewmate could otherwise lock up the team.
 - **Laboratory:** a 3 x 3 building, one per crew, from headquarters 1. Blueprints won on raids now
   need a little gold there before they do anything, whether defense or gunboat weapon, and it opens
   every hero's upgrade tree. Older crews keep every defense they already knew, but gunboat weapons
-  go back to Artillery, and have to be found again. Raiders don't build laboratories.
+  go back to the two everyone starts with, and the rest have to be found again. Raiders don't build laboratories.
 - **Upgrade tree:** the board is 1,500 wide and scrolls sideways, opening on the next thing to buy.
 - **Night:** brighter all round, and building lamps reach 40% further and shine 20% brighter.
 - **The beach:** what's lying on it comes and goes with the tide: three lots on a beach, each
@@ -127,7 +149,7 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Running:** weight rolls from foot to foot, the pelvis tilts, the chest leans off the mark and
   rocks back at the stop, heroes bank into turns, and what they carry swings with the stride.
 - **Music:** the world map is now a riff on the theme too, with an eight-bar double-time breakdown in
-  the middle: its chords come round twice as fast, at the same pitch. The raid track's hi-hat is
+  the middle, since replaced by a half-time one. The raid track's hi-hat is
   mostly gone.
 
 ## Added 2026-11-02, second batch (owner's requests)

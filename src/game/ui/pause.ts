@@ -39,6 +39,10 @@ interface Slider {
   value: HTMLElement;
 }
 
+type SliderName = "musicVolume" | "soundVolume" | "tilt" | "zoom" | "uiScale";
+
+const percent = (v: number) => `${Math.round(v * 100)}%`;
+
 export class PauseMenu {
   readonly root = el("div", "screen screen-pause");
   private readonly main: HTMLElement;
@@ -60,7 +64,7 @@ export class PauseMenu {
   private readonly skyTimes = el("span", "pause-sky-times");
   private readonly skyButton: HTMLButtonElement;
   private inRaid = true;
-  private readonly sliders: Record<"tilt" | "zoom" | "uiScale", Slider>;
+  private readonly sliders: Record<SliderName, Slider>;
 
   constructor(
     parent: HTMLElement,
@@ -102,10 +106,19 @@ export class PauseMenu {
     this.options = el("div", "pause-page pause-options");
     this.sliders = {
       // Exact values, so the player can read them off and pass them on as new defaults.
-      tilt: this.slider("Camera tilt", "map", TILT_RANGE[0], TILT_RANGE[1], (v) => v.toFixed(2)),
-      zoom: this.slider("Camera zoom", "crosshair", 0, 1, (v) => v.toFixed(2)),
-      uiScale: this.slider("UI size", "star", UI_SCALE_RANGE[0], UI_SCALE_RANGE[1], (v) =>
+      musicVolume: this.slider("musicVolume", "Music volume", "star", 0, 1, percent),
+      soundVolume: this.slider("soundVolume", "Sound volume", "energy", 0, 1, percent),
+      tilt: this.slider("tilt", "Camera tilt", "map", TILT_RANGE[0], TILT_RANGE[1], (v) =>
         v.toFixed(2),
+      ),
+      zoom: this.slider("zoom", "Camera zoom", "crosshair", 0, 1, (v) => v.toFixed(2)),
+      uiScale: this.slider(
+        "uiScale",
+        "UI size",
+        "star",
+        UI_SCALE_RANGE[0],
+        UI_SCALE_RANGE[1],
+        (v) => v.toFixed(2),
       ),
     };
     this.sound = button({ label: "Sound on", icon: "gear", variant: "steel", size: "sm" });
@@ -149,11 +162,14 @@ export class PauseMenu {
         variant: "steel",
         size: "sm",
         onClick: () => {
-          const { muted, musicMuted, haptics, controls, camera } = handlers.settings();
+          const { muted, musicMuted, musicVolume, soundVolume, haptics, controls, camera } =
+            handlers.settings();
           handlers.onSettings({
             ...DEFAULT_SETTINGS,
             muted,
             musicMuted,
+            musicVolume,
+            soundVolume,
             haptics,
             controls,
             camera,
@@ -190,6 +206,8 @@ export class PauseMenu {
     sky.append(this.skyTimes, this.skyButton);
     const sliders = el("div", "pause-sliders");
     sliders.append(
+      this.sliders.musicVolume.input.closest(".pause-slider") ?? el("div"),
+      this.sliders.soundVolume.input.closest(".pause-slider") ?? el("div"),
       this.sliders.tilt.input.closest(".pause-slider") ?? el("div"),
       this.sliders.zoom.input.closest(".pause-slider") ?? el("div"),
       this.sliders.uiScale.input.closest(".pause-slider") ?? el("div"),
@@ -298,7 +316,7 @@ export class PauseMenu {
 
   private refresh(): void {
     const s = this.handlers.settings();
-    for (const key of ["tilt", "zoom", "uiScale"] as const) {
+    for (const key of Object.keys(this.sliders) as SliderName[]) {
       const slider = this.sliders[key];
       slider.input.value = String(s[key]);
       slider.input.dispatchEvent(new Event("refresh"));
@@ -314,6 +332,7 @@ export class PauseMenu {
   }
 
   private slider(
+    key: SliderName,
     label: string,
     iconName: IconName,
     min: number,
@@ -342,7 +361,6 @@ export class PauseMenu {
     input.addEventListener("refresh", paint);
     input.addEventListener("input", () => {
       paint();
-      const key = label === "Camera tilt" ? "tilt" : label === "Camera zoom" ? "zoom" : "uiScale";
       this.handlers.onSettings({ ...this.handlers.settings(), [key]: Number(input.value) });
     });
     input.addEventListener("change", () => sfx.tick());
