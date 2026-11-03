@@ -166,9 +166,9 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
     attack: {
       kind: "minigun",
       range: 7,
-      damage: 19,
-      fastInterval: 0.07,
-      slowInterval: 0.22,
+      damage: 16,
+      fastInterval: 0.082,
+      slowInterval: 0.26,
       spinUp: 1.4,
       spread: 0.1,
       speed: 32,

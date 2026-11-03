@@ -31,7 +31,7 @@ describe("raiding together", () => {
     expect(host.heroes.map((h) => h.kind)).toEqual(["rifleman", "heavy"]);
     expect(host.heroes[0]?.mods.hp).toBe(1);
     expect(host.heroes[1]?.mods.hp).toBeCloseTo(1.2);
-    expect(host.heroes[1]?.mods.spinUp).toBeCloseTo(0.8);
+    expect(host.heroes[1]?.mods.spinUp).toBeCloseTo(0.83);
   });
 
   it("starts both phones on the same island, with the same ids", () => {

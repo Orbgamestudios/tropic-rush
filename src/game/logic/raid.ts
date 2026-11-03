@@ -135,11 +135,11 @@ const TRICKS = {
   miracleEvery: 5,
   /** Big Mo. */
   overdriveAfter: 5,
-  overdriveFire: 1.25,
+  overdriveFire: 1.21,
   gutHeal: 0.02,
   rageAt: 500,
   rageSeconds: 6,
-  rageFire: 1.5,
+  rageFire: 1.43,
   /** Tilly & Tank. */
   repairsHeal: 0.02,
   siegeAfter: 2,
@@ -604,7 +604,10 @@ export function nextAbilityCost(state: RaidState, ability: Ability): number {
 
 function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: number): void {
   if (!hero.alive) return;
-  hero.reload = Math.max(0, hero.reload - dt);
+  // A minigun keeps the part of a step it was owed, or every round would wait for a whole step and
+  // anything that speeds it up a little would never show.
+  hero.reload -= dt;
+  if (HEROES[hero.kind].attack.kind !== "minigun") hero.reload = Math.max(0, hero.reload);
   hero.autoFireTime = Math.max(0, hero.autoFireTime - dt);
   tickTricks(state, hero, dt);
 
@@ -896,7 +899,9 @@ function updateAttack(
           explosive ? SIGNATURE.explosiveSplash + m.splash : 0,
           1,
         );
-        hero.reload = shotTime(hero, lerp(atk.slowInterval, atk.fastInterval, hero.spin));
+        hero.reload =
+          Math.max(-dt, hero.reload) +
+          shotTime(hero, lerp(atk.slowInterval, atk.fastInterval, hero.spin));
       }
       return;
     }

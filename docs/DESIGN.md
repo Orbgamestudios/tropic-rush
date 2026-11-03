@@ -103,6 +103,9 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Mortar:** reaches 26 m, four tiles shorter, its blast is 9 m across, a tile less, and it reloads
   in 4.32 s, 20% slower.
 - **Heavy:** range 7 m, two tiles shorter.
+- **Heavy, again:** 15% less damage and 15% slower fire: 16 a round, from 19. His upgrades that make
+  his gun stronger do 15% less too: Warm Up 17%, Hot Barrels 13%, Heavy Rounds +17%, Overdrive 21%,
+  Berserk 43%, and his damage, fire rate and spin-up checkpoints 2.6% or 3.4% instead of 3% or 4%.
 
 ## Added 2026-11-02, sixth batch (owner's requests)
 

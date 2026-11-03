@@ -197,6 +197,8 @@ const CHECKPOINT_GOLD = [0, 0, 500, 800, 1200, 1800] as const;
 const CHECKPOINT_PERCENT = [0, 0, 3, 3, 4, 4] as const;
 /** Percent for percent, these do far less than the rest, so they get twice as much. */
 const SLIGHT_STAT = 2;
+/** The Heavy's checkpoints that make his gun stronger do this much of what everyone else's do. */
+const HEAVY_GUN = 0.85;
 
 /** Lines bending out of an upgrade keep their checkpoints clear of each other where they meet. */
 const ALONG_LINE: Record<"straight" | "out" | "in", readonly number[]> = {
@@ -232,7 +234,10 @@ const RELOAD_WORDS: Record<HeroKind, { name: string; verb: string }> = {
   engineer: { name: "Hot Trigger", verb: "Fires" },
 };
 
-function checkpoint(kind: HeroKind, stat: CheckpointStat, percent: number): Draft {
+function checkpoint(kind: HeroKind, stat: CheckpointStat, base: number): Draft {
+  const gun = stat === "damage" || stat === "reload" || stat === "spin";
+  // Kept to a tenth of a percent, so what the card says is what it does.
+  const percent = kind === "heavy" && gun ? Math.round(base * HEAVY_GUN * 10) / 10 : base;
   const more = 1 + percent / 100;
   const less = 1 - percent / 100;
   const faster = 1 - (percent * SLIGHT_STAT) / 100;
@@ -250,15 +255,21 @@ function checkpoint(kind: HeroKind, stat: CheckpointStat, percent: number): Draf
     case "unload":
       return up(
         "Quick Unload",
-        `Bullets leave a burst ${percent * SLIGHT_STAT}% quicker.`,
+        `Bullets leave a burst ${Math.round(percent * SLIGHT_STAT * 10) / 10}% quicker.`,
         {},
         "barrage",
         { unload: faster },
       );
     case "spin":
-      return up("Spin Up", `Spins up ${percent * SLIGHT_STAT}% faster.`, {}, "gear", {
-        spinUp: faster,
-      });
+      return up(
+        "Spin Up",
+        `Spins up ${Math.round(percent * SLIGHT_STAT * 10) / 10}% faster.`,
+        {},
+        "gear",
+        {
+          spinUp: faster,
+        },
+      );
     case "speed":
       return up("Fitness", `+${percent}% move speed.`, {}, "speed", { speed: more });
   }
@@ -424,21 +435,21 @@ const TREES: Record<HeroKind, TreeDraft> = {
     ],
   },
   heavy: {
-    first: up("Warm Up", "Minigun spins up 20% faster.", { fire: 1 }, "gear", { spinUp: 0.8 }),
+    first: up("Warm Up", "Minigun spins up 17% faster.", { fire: 1 }, "gear", { spinUp: 0.83 }),
     paths: [
       {
         name: "Gunner",
         checkpoints: ["damage", "reload", "spin", "damage", "health"],
-        second: up("Hot Barrels", "Fires 15% faster.", { fire: 2 }, "flame", { reload: 0.85 }),
+        second: up("Hot Barrels", "Fires 13% faster.", { fire: 2 }, "flame", { reload: 0.87 }),
         upper: [
           up("Longer Belt", "+3 m range.", { fire: 3 }, "range", { range: 3 }),
           up("Tight Barrels", "40% less spread.", { fire: 5 }, "crosshair", { spread: 0.6 }),
         ],
         lower: [
-          up("Heavy Rounds", "+20% damage.", { fire: 3 }, "sword", { damage: 1.2 }),
+          up("Heavy Rounds", "+17% damage.", { fire: 3 }, "sword", { damage: 1.17 }),
           up(
             "Overdrive",
-            "After 5 seconds of non-stop fire, fires 25% faster.",
+            "After 5 seconds of non-stop fire, fires 21% faster.",
             { fire: 3, dark: 2 },
             "energy",
             { overdrive: true },
@@ -478,7 +489,7 @@ const TREES: Record<HeroKind, TreeDraft> = {
         ],
         capstone: up(
           "Berserk",
-          "Enrages after taking 500 damage: for 6 seconds, fires 50% faster and can't be slowed.",
+          "Enrages after taking 500 damage: for 6 seconds, fires 43% faster and can't be slowed.",
           { nature: 4, dark: 4 },
           "skull",
           { berserk: true },
