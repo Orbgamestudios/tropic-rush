@@ -19,8 +19,14 @@ test("boots without errors and fills the screen", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+/** The test hooks go on once the game has started, which can be a moment after the page loads. */
+async function hooksReady(page: Page): Promise<void> {
+  await page.waitForFunction(() => "tropicRush" in window, null, { polling: 250 });
+}
+
 async function openMap(page: Page): Promise<void> {
   await page.goto("/?testhooks");
+  await hooksReady(page);
   await page.evaluate(() =>
     (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
   );
@@ -47,6 +53,7 @@ test("picks a hero and starts a raid", async ({ page }) => {
 
   // On a phone you tap a strolling hero; the hook opens the same screen without chasing one.
   await page.goto("/?testhooks");
+  await hooksReady(page);
   await page.evaluate(() =>
     (window as unknown as { tropicRush: { openHeroes(): void } }).tropicRush.openHeroes(),
   );
@@ -92,6 +99,7 @@ test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
 
 test("sends a medic to attack on her own", async ({ page }) => {
   await page.goto("/?testhooks");
+  await hooksReady(page);
   await page.evaluate(() => {
     const { tropicRush } = window as unknown as {
       tropicRush: { openHeroes(): void; syncNow(changes: { unlocked: string[] }): void };
@@ -165,6 +173,7 @@ test("builds on the crew island offline", async ({ page }) => {
 
   // The game opens on the crew island; with no crew yet it's this phone's own island.
   await page.goto("/?testhooks");
+  await hooksReady(page);
   await page.getByRole("button", { name: "Build", exact: true }).click();
   await page.getByRole("button", { name: /Gun turret/ }).click();
 
@@ -199,6 +208,7 @@ test("opens the profile from the crew bar, and the map from its button", async (
   page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/?testhooks");
+  await hooksReady(page);
   await page.getByRole("button", { name: "Profile and crew" }).click();
   await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
   await page.getByRole("button", { name: "Close profile" }).click();
@@ -212,6 +222,7 @@ test("opens the profile from the crew bar, and the map from its button", async (
 test("resets the game from the settings, only after confirming", async ({ page }) => {
   test.setTimeout(300_000);
   await page.goto("/?testhooks");
+  await hooksReady(page);
   type Hooks = { tropicRush: { save(): { gold: number }; syncNow(c: object): Promise<void> } };
   await page.evaluate(() => (window as unknown as Hooks).tropicRush.syncNow({ gold: 9999 }));
   await page.getByRole("button", { name: "Menu" }).click();
@@ -258,39 +269,31 @@ test("keeps tools and statues under Build, and heroes beside the map", async ({ 
   await expect(page.getByRole("button", { name: "Raid", exact: true })).toBeVisible();
 });
 
-test("buys checkpoints along a line, then the upgrade at the end of it", async ({ page }) => {
+test("buys the first upgrade, and holds the next back for a better headquarters", async ({
+  page,
+}) => {
   await page.goto("/?testhooks");
+  await hooksReady(page);
   await page.evaluate(() => {
     const { tropicRush } = window as unknown as {
       tropicRush: {
         openHeroes(): void;
         syncNow(changes: { crystals: Record<string, number> }): void;
+        crewOp(op: { kind: "loot"; purse: { gold: number } }): boolean;
       };
     };
     tropicRush.syncNow({ crystals: { nature: 9, fire: 9, ice: 9, dark: 9 } });
+    tropicRush.crewOp({ kind: "loot", purse: { gold: 700 } });
     tropicRush.openHeroes();
   });
-  // A new island can hold less than a line costs, so it's filled up before each purchase.
-  const topUp = () =>
-    page.evaluate(() => {
-      const { tropicRush } = window as unknown as {
-        tropicRush: { crewOp(op: { kind: "loot"; purse: { gold: number } }): boolean };
-      };
-      tropicRush.crewOp({ kind: "loot", purse: { gold: 700 } });
-    });
   await page.getByRole("button", { name: "Upgrades" }).click();
   const buy = page.locator(".tree-buy");
   await expect(page.locator(".tree-spec-name")).toHaveText("Basic Training");
   await buy.click();
-  for (let step = 0; step < 3; step++) {
-    await topUp();
-    await page.locator(".tree-step").nth(step).click();
-    await expect(page.locator(".tree-spec-path")).toHaveText(/checkpoint/i);
-    await expect(buy).toBeEnabled();
-    await buy.click();
-  }
-  await expect(page.locator(".tree-spec-name")).toHaveText("Hot Rounds");
-  await topUp();
-  await page.getByRole("button", { name: "Hot Rounds" }).click();
-  await expect(buy).toBeEnabled();
+  // Four branches start from it; their first checkpoints lead to tier 2, at headquarters 2.
+  await expect(page.locator(".tree-path")).toHaveCount(4);
+  await page.locator(".tree-step").first().click();
+  await expect(page.locator(".tree-spec-path")).toHaveText(/checkpoint/i);
+  await expect(page.locator(".tree-spec-note")).toHaveText("Needs headquarters 2");
+  await expect(buy).toBeDisabled();
 });

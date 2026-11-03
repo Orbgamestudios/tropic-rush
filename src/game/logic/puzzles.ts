@@ -1,102 +1,27 @@
-// Puzzle islands: about one island in five has its defenses laid out by hand rather than in rings,
-// each layout asking for its own trick: a checkerboard of mortars to weave through, a horseshoe of
-// sniper towers to flank, a gauntlet of flamethrowers to outrange. Which islands, and which puzzle,
-// come from the island's seed, so every phone sees the same. A puzzle has as much firepower as an
-// ordinary base of its headquarters level, give or take what its trick takes away. No engine
-// imports.
+// Puzzle islands: about one island in five has its defenses laid out by design rather than in
+// rings, each layout asking for its own way in: a checkerboard of mortars to weave through, a
+// horseshoe of sniper towers to flank, a gauntlet of flamethrowers to outrange. They look like any
+// other island on the map; the layout is the surprise. There are about thirty, made from a handful
+// of shapes, each filled with different buildings. Which islands, and which layout, come from the
+// island's seed, so every phone sees the same. A layout has about the firepower of an ordinary
+// base of its headquarters level. No engine imports.
 
 import { BUILDINGS, type BuildingType } from "./buildings";
 import { allowedCount, buildingPower, levelCap } from "./economy";
 import { type Archetype, archetypeFor } from "./islandShapes";
 import { createRng } from "./rng";
 
-export type Puzzle =
-  | "checkerboard"
-  | "horseshoe"
-  | "gauntlet"
-  | "harpoonRing"
-  | "picket"
-  | "crossfire"
-  | "honeyPot";
-
-interface PuzzleInfo {
-  label: string;
-  /** How to go about it, for the island's card and the scout. */
-  tip: string;
-  /** The lowest headquarters level it turns up at. */
-  from: number;
-  /** The kinds of island it fits on: a long gauntlet needs a long island, a wall a wide one. */
-  suits: readonly Archetype[];
-}
-
-export const PUZZLES: Record<Puzzle, PuzzleInfo> = {
-  checkerboard: {
-    label: "Mortar checkerboard",
-    tip: "Mortars on every other square. Shells take two seconds to land: keep moving, and clear it corner by corner.",
-    from: 3,
-    suits: ["cove", "hook", "key", "twin", "volcano", "atoll", "chain"],
-  },
-  picket: {
-    label: "Picket wall",
-    tip: "A wall of guns across the way in, with one gap and fire waiting behind it. Break through a storage instead.",
-    from: 6,
-    suits: ["atoll", "ridge"],
-  },
-  horseshoe: {
-    label: "Sniper horseshoe",
-    tip: "Every tower sees into the U. Go round the outside of one arm, where the far towers can't reach.",
-    from: 4,
-    suits: ["cove", "twin", "volcano", "atoll", "chain"],
-  },
-  harpoonRing: {
-    label: "Harpoon ring",
-    tip: "Harpoons all round the headquarters, and they hit Heavy and Tank far harder. Send someone light.",
-    from: 4,
-    suits: ["cove", "hook", "key", "twin", "volcano", "atoll", "chain"],
-  },
-  honeyPot: {
-    label: "Honey pot",
-    tip: "The storages sit in the open, ringed by mortars. Grab the loot fast, or leave it and go for the headquarters.",
-    from: 4,
-    suits: ["cove", "key", "volcano"],
-  },
-  gauntlet: {
-    label: "Flame gauntlet",
-    tip: "Two rows of flamethrowers line the way in, but they only reach 11 m. Stay outside and pick them off, and keep moving: mortars cover the lanes.",
-    from: 5,
-    suits: ["key", "volcano", "ridge"],
-  },
-  crossfire: {
-    label: "Crossfire",
-    tip: "Two batteries cross their fire over the headquarters. Take one from the outside, where the other can't reach.",
-    from: 5,
-    suits: ["cove", "volcano", "atoll"],
-  },
-};
-
-const ORDER = Object.keys(PUZZLES) as Puzzle[];
-
 /** No puzzles on the first islands: they're for learning the ropes. */
 const FIRST_PUZZLE_HQ = 3;
 /** The share of islands that are puzzles. */
 const PUZZLE_SHARE = 0.2;
 
-/** Which puzzle an island is, if it's one at all. */
-export function puzzleFor(seed: number, hq: number): Puzzle | null {
-  if (hq < FIRST_PUZZLE_HQ) return null;
-  const rng = createRng(seed ^ 0x9a221e);
-  if (rng() >= PUZZLE_SHARE) return null;
-  const kind = archetypeFor(seed, hq);
-  const fits = ORDER.filter((p) => hq >= PUZZLES[p].from && PUZZLES[p].suits.includes(kind));
-  return fits[Math.floor(rng() * fits.length)] ?? null;
-}
-
 /**
- * Roughly how much each defense is worth to a base, against a gun turret's 1. Mortars can be
+ * Roughly how much each defense is worth to a base. Gun turrets fire fastest, mortars can be
  * dodged, flamethrowers outranged, and a sniper's shot hurts but comes slowly.
  */
 const WORTH: Partial<Record<BuildingType, number>> = {
-  gunTurret: 1,
+  gunTurret: 1.3,
   mortar: 0.9,
   harpoon: 0.9,
   flamethrower: 0.8,
@@ -110,7 +35,7 @@ const DEFENSES = Object.keys(WORTH) as BuildingType[];
  * than guns and mortars, so they stand at lower levels and each is worth less.
  */
 function worth(type: BuildingType, hq: number): number {
-  return (WORTH[type] ?? 0) * buildingPower(Math.max(1, levelCap(type, hq)));
+  return (WORTH[type] ?? 0) * buildingPower(Math.max(1, levelCap(type, hq)), type);
 }
 
 /** What an ordinary base's defenses are worth at a headquarters level. */
@@ -124,7 +49,7 @@ export function worthOf(types: readonly BuildingType[], hq: number): number {
 }
 
 /**
- * Something a puzzle puts down: a building, or one of the base's own storages, at so many meters
+ * Something a layout puts down: a building, or one of the base's own storages, at so many meters
  * from the middle of the headquarters, forward towards the beach and across to the right of that.
  */
 export interface Spot {
@@ -133,10 +58,11 @@ export interface Spot {
   across: number;
 }
 
-/** How many of a defense buy this share of an ordinary base's worth, kept between two bounds. */
-function enough(hq: number, type: BuildingType, share: number, least: number, most: number) {
-  const n = Math.round((baseWorth(hq) * share) / worth(type, hq));
-  return Math.max(least, Math.min(most, n));
+/** A spot in a shape, before it's given a building: `role` says which part of the shape it's in. */
+interface Place {
+  forward: number;
+  across: number;
+  role: number;
 }
 
 const around = (radius: number, angle: number) => ({
@@ -144,7 +70,22 @@ const around = (radius: number, angle: number) => ({
   across: radius * Math.sin(angle),
 });
 
-/** Squares of the board, nearest the middle first, each ring of them filled evenly. */
+/** Shares `n` out between rings that hold so many each, inmost first. */
+function rings(n: number, sizes: readonly number[]): number[] {
+  const out: number[] = [];
+  let left = n;
+  for (const size of sizes) {
+    if (left <= 0) break;
+    out.push(Math.min(size, left));
+    left -= size;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Shapes: where `n` buildings go, each with the part of the shape it's in.
+
+/** Squares of a board, nearest the middle first, each ring of them filled evenly. */
 const BOARD: readonly [number, number][] = [
   [1, 1],
   [-1, -1],
@@ -167,71 +108,244 @@ const BOARD: readonly [number, number][] = [
   [1, 3],
   [-1, -3],
 ];
-const SQUARE = 10;
 
-function checkerboard(hq: number): Spot[] {
-  const n = enough(hq, "mortar", 1.3, 5, BOARD.length);
-  return BOARD.slice(0, n).map(([f, a]) => ({
-    type: "mortar",
-    forward: f * SQUARE,
-    across: a * SQUARE,
-  }));
-}
+const SHAPES = {
+  /** Every other square of a board round the headquarters. */
+  board: (n: number): Place[] =>
+    BOARD.slice(0, n).map(([f, a], i) => ({
+      forward: f * 10,
+      across: a * 10,
+      role: i < 4 ? 0 : i < 12 ? 1 : 2,
+    })),
+  /** A U round the headquarters, open towards the beach, and a wider one outside it. */
+  horseshoe: (n: number): Place[] => {
+    const open = (Math.PI * 2) / 3;
+    return rings(n, [7, 5]).flatMap((count, ring) =>
+      Array.from({ length: count }, (_, i) => {
+        const t = count === 1 ? 0.5 : i / (count - 1);
+        const radius = ring === 0 ? 16 + count : 33;
+        return { ...around(radius, open / 2 + (Math.PI * 2 - open) * t), role: ring };
+      }),
+    );
+  },
+  /** Two rows lining the way in, and two more outside them. */
+  rows: (n: number): Place[] =>
+    rings(Math.ceil(n / 2), [5, 5])
+      .flatMap((count, row) =>
+        Array.from({ length: count }, (_, i) =>
+          [-1, 1].map((side) => ({
+            forward: 11 + i * 9 + row * 4.5,
+            across: side * (row === 0 ? 7 : 17),
+            role: row,
+          })),
+        ).flat(),
+      )
+      .slice(0, n),
+  /** All the way round the headquarters, and a second ring outside. */
+  ring: (n: number): Place[] =>
+    rings(n, [9, 11]).flatMap((count, ring) =>
+      Array.from({ length: count }, (_, i) => ({
+        ...around(
+          ring === 0 ? 11 + count * 0.5 : 22,
+          (Math.PI * 2 * (i + 0.5 * (ring + 1))) / count,
+        ),
+        role: ring,
+      })),
+    ),
+  /** Winding out from the headquarters, a little further with every one. */
+  spiral: (n: number): Place[] =>
+    Array.from({ length: n }, (_, k) => ({
+      ...around(10 + 2.4 * k, 0.6 + k * 0.78),
+      role: k < 4 ? 0 : k < 9 ? 1 : 2,
+    })),
+  /** Four arms out from the headquarters: to the beach, away from it, and to either side. */
+  cross: (n: number): Place[] =>
+    Array.from({ length: n }, (_, k) => {
+      const reach = 12 + Math.floor(k / 4) * 9;
+      return { ...around(reach, (Math.PI / 2) * (k % 4)), role: Math.floor(k / 4) };
+    }),
+  /** Five spokes out from the headquarters, one pointing at the beach. */
+  spokes: (n: number): Place[] =>
+    Array.from({ length: n }, (_, k) => ({
+      ...around(13 + Math.floor(k / 5) * 9, ((Math.PI * 2) / 5) * (k % 5)),
+      role: k % 5,
+    })),
+  /** A V pointing at the beach, its arms running back past the headquarters. */
+  chevron: (n: number): Place[] =>
+    Array.from({ length: n }, (_, k) => {
+      if (k === 0) return { forward: 27, across: 0, role: 0 };
+      const step = Math.ceil(k / 2);
+      return { forward: 27 - step * 7, across: (k % 2 === 0 ? 1 : -1) * step * 8, role: 1 };
+    }),
+  /** A diamond round the headquarters: its points, then its sides, then a ring inside. */
+  diamond: (n: number): Place[] => {
+    const points = [0, 1, 2, 3].map((i) => ({ ...around(18, (Math.PI / 2) * i), role: 0 }));
+    const sides = [0, 1, 2, 3].map((i) => ({
+      ...around(18 * Math.SQRT1_2, (Math.PI / 2) * (i + 0.5)),
+      role: 1,
+    }));
+    const inside = [0, 1, 2, 3, 4, 5].map((i) => ({ ...around(28, (Math.PI / 3) * i), role: 2 }));
+    return [...points, ...sides, ...inside].slice(0, n);
+  },
+  /** Three little forts out round the headquarters: two forward, one behind. */
+  satellites: (n: number): Place[] => {
+    const forts = [Math.PI / 3, -Math.PI / 3, Math.PI].map((a) => around(25, a));
+    return Array.from({ length: n }, (_, k) => {
+      const fort = k % 3;
+      const seat = Math.floor(k / 3);
+      const middle = forts[fort] ?? { forward: 0, across: 0 };
+      const off = seat === 0 ? { forward: 0, across: 0 } : around(7.5, (Math.PI * 2 * seat) / 4);
+      return {
+        forward: middle.forward + off.forward,
+        across: middle.across + off.across,
+        role: fort,
+      };
+    });
+  },
+  /** Rings within rings round the headquarters, each its own kind of defense. */
+  onion: (n: number): Place[] =>
+    rings(n, [6, 10, 14]).flatMap((count, ring) =>
+      Array.from({ length: count }, (_, i) => ({
+        ...around(11 + ring * 9, (Math.PI * 2 * (i + 0.5 * ring)) / count),
+        role: ring,
+      })),
+    ),
+  /** Two triangles meeting at the headquarters, one towards the beach and one behind. */
+  bowtie: (n: number): Place[] => {
+    const rows = [[0], [-4.5, 4.5], [-9, 0, 9]];
+    const half = (side: number) =>
+      rows.flatMap((row, r) =>
+        row.map((across) => ({ forward: side * (12 + r * 9), across, role: side > 0 ? 0 : 1 })),
+      );
+    const front = half(1);
+    const back = half(-1);
+    return front.flatMap((f, i) => [f, back[i] ?? f]).slice(0, n);
+  },
+  /** The four walls of a square round the headquarters: corners, then midpoints, then between. */
+  box: (n: number): Place[] => {
+    const corners = [
+      [1, 1],
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+    ].map(([f = 0, a = 0]) => ({ forward: f * 17, across: a * 17, role: 0 }));
+    const mids = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ].map(([f = 0, a = 0]) => ({ forward: f * 17, across: a * 17, role: 1 }));
+    const between = [
+      [1, 0.5],
+      [1, -0.5],
+      [-1, 0.5],
+      [-1, -0.5],
+      [0.5, 1],
+      [-0.5, 1],
+      [0.5, -1],
+      [-0.5, -1],
+    ].map(([f = 0, a = 0]) => ({ forward: f * 17, across: a * 17, role: 2 }));
+    return [...corners, ...mids, ...between].slice(0, n);
+  },
+} as const;
 
-/** Shares `n` out between rings that hold `first`, then `next`, and so on outward. */
-function rings(n: number, sizes: readonly number[]): number[] {
-  const out: number[] = [];
-  let left = n;
-  for (const size of sizes) {
-    if (left <= 0) break;
-    out.push(Math.min(size, left));
-    left -= size;
+type ShapeName = keyof typeof SHAPES;
+
+/** The most each shape holds. */
+const ROOM: Record<ShapeName, number> = {
+  board: BOARD.length,
+  horseshoe: 12,
+  rows: 20,
+  ring: 20,
+  spiral: 14,
+  cross: 12,
+  spokes: 15,
+  chevron: 9,
+  diamond: 14,
+  satellites: 12,
+  onion: 30,
+  bowtie: 12,
+  box: 16,
+};
+
+/**
+ * Fills a shape with as many defenses as it takes to match an ordinary base's firepower times
+ * `share`, each picked by `mix` from where it is in the shape.
+ */
+function fill(
+  hq: number,
+  shape: ShapeName,
+  mix: (role: number, index: number) => BuildingType,
+  share = 1.1,
+): Spot[] {
+  const target = baseWorth(hq) * share;
+  let best: Spot[] = [];
+  let miss = Number.POSITIVE_INFINITY;
+  for (let n = 1; n <= ROOM[shape]; n++) {
+    const spots: Spot[] = SHAPES[shape](n).map((p, i) => ({
+      type: mix(p.role, i),
+      forward: p.forward,
+      across: p.across,
+    }));
+    const types = spots.map((s) => s.type).filter((t): t is BuildingType => t !== "storage");
+    const got = worthOf(types, hq);
+    // Whichever count comes nearest, over or under: one building more can be a lot on a small base.
+    if (Math.abs(got - target) < miss) {
+      best = spots;
+      miss = Math.abs(got - target);
+    }
+    if (got >= target) break;
   }
-  return out;
+  return best;
 }
 
-/** Towers round a U whose open end faces the beach, and a storage in its mouth as bait. */
-function horseshoe(hq: number): Spot[] {
+/** How many of a defense buy this share of an ordinary base's worth, kept between two bounds. */
+function enough(hq: number, type: BuildingType, share: number, least: number, most: number) {
+  const n = Math.round((baseWorth(hq) * share) / worth(type, hq));
+  return Math.max(least, Math.min(most, n));
+}
+
+/** Picks one of these by where a building is in its shape. */
+const by =
+  (...types: BuildingType[]) =>
+  (role: number) =>
+    types[Math.min(role, types.length - 1)] ?? "gunTurret";
+/** Takes it in turns: the first, the second, and round again. */
+const turns =
+  (...types: BuildingType[]) =>
+  (_role: number, index: number) =>
+    types[index % types.length] ?? "gunTurret";
+
+// ---------------------------------------------------------------------------------------------
+// Layouts with more to them than a shape filled in.
+
+/** Sniper towers round a U, and fire round the headquarters on a strong base. */
+function sniperShoe(hq: number): Spot[] {
   const want = enough(hq, "watchtower", 1, 3, 40);
   const n = Math.min(12, want);
   // Past a dozen towers a strong base keeps fire close round the headquarters instead.
   const flames = Math.min(
-    6,
+    8,
     Math.round(((want - n) * worth("watchtower", hq)) / worth("flamethrower", hq)),
   );
-  const open = (Math.PI * 2) / 3;
-  const spots: Spot[] = [];
-  rings(n, [7, 5]).forEach((count, ring) => {
-    const radius = ring === 0 ? 16 + count : 33;
-    for (let i = 0; i < count; i++) {
-      const t = count === 1 ? 0.5 : i / (count - 1);
-      spots.push({ type: "watchtower", ...around(radius, open / 2 + (Math.PI * 2 - open) * t) });
-    }
-  });
-  for (let i = 0; i < flames; i++) {
-    spots.push({ type: "flamethrower", ...around(9, (Math.PI * 2 * (i + 0.5)) / flames) });
-  }
-  return [...spots, { type: "storage", forward: 11, across: 0 }];
+  const towers = SHAPES.horseshoe(n).map((p) => ({ ...p, type: "watchtower" as const }));
+  const fire = Array.from({ length: flames }, (_, i) => ({
+    type: "flamethrower" as const,
+    ...around(9, (Math.PI * 2 * (i + 0.5)) / flames),
+  }));
+  return [...towers, ...fire, { type: "storage", forward: 11, across: 0 }];
 }
 
 /**
- * Two rows of flamethrowers lining the way in, and two more outside those on a strong base. Mortars
- * behind the headquarters lob into the lanes outside the rows, and guns beside it cover their top
- * end, so picking the flames off from out there still takes moving and care.
+ * Flamethrowers lining the way in. Mortars behind the headquarters lob into the lanes outside the
+ * rows, and guns beside it cover their top end, so picking the flames off from out there still
+ * takes moving and care.
  */
 function gauntlet(hq: number): Spot[] {
-  const pairs = Math.ceil(enough(hq, "flamethrower", 0.6, 4, 20) / 2);
+  const flames = Math.ceil(enough(hq, "flamethrower", 0.6, 4, 20) / 2) * 2;
   const mortars = enough(hq, "mortar", 0.35, 1, 6);
-  const guns = enough(hq, "gunTurret", 0.35, 1, 6);
-  const rows = rings(pairs, [5, 5]).flatMap((count, row) =>
-    Array.from({ length: count }, (_, i) =>
-      [-1, 1].map((side) => ({
-        type: "flamethrower" as const,
-        forward: 11 + i * 9 + row * 4.5,
-        across: side * (row === 0 ? 7 : 17),
-      })),
-    ).flat(),
-  );
+  const guns = enough(hq, "gunTurret", 0.3, 1, 6);
+  const rows = SHAPES.rows(flames).map((p) => ({ ...p, type: "flamethrower" as const }));
   const behind = Array.from({ length: mortars }, (_, i) => ({
     type: "mortar" as const,
     forward: -9 - Math.floor(i / 2) * 9,
@@ -243,17 +357,6 @@ function gauntlet(hq: number): Spot[] {
     across: (i % 2 === 0 ? -1 : 1) * 26,
   }));
   return [...rows, ...behind, ...flanks];
-}
-
-/** Harpoons all round the headquarters, in a second ring further out on a strong base. */
-function harpoonRing(hq: number): Spot[] {
-  const n = enough(hq, "harpoon", 1.05, 4, 18);
-  return rings(n, [9, 9]).flatMap((count, ring) =>
-    Array.from({ length: count }, (_, i) => ({
-      type: "harpoon" as const,
-      ...around(ring === 0 ? 11 + count * 0.5 : 21, (Math.PI * 2 * (i + 0.5 * (ring + 1))) / count),
-    })),
-  );
 }
 
 /**
@@ -331,19 +434,245 @@ function honeyPot(hq: number): Spot[] {
   return spots;
 }
 
-const PLANS: Record<Puzzle, (hq: number) => Spot[]> = {
-  checkerboard,
-  horseshoe,
-  gauntlet,
-  harpoonRing,
-  picket,
-  crossfire,
-  honeyPot,
+// ---------------------------------------------------------------------------------------------
+// The layouts.
+
+interface Layout {
+  /** The lowest headquarters level it turns up at. */
+  from: number;
+  /** The highest, for a shape that runs out of room on a strong base. */
+  to?: number;
+  /** Its shape, for which kinds of island it fits on. */
+  shape: ShapeName;
+  plan: (hq: number) => Spot[];
+}
+
+const LAYOUTS = {
+  /** Mortars on every other square. */
+  mortarBoard: { from: 3, shape: "board", plan: (hq) => fill(hq, "board", () => "mortar", 1.25) },
+  /** Guns and flamethrowers taking turns across the board: no square is safe close up or far. */
+  hotBoard: {
+    from: 5,
+    shape: "board",
+    plan: (hq) => fill(hq, "board", turns("gunTurret", "flamethrower")),
+  },
+  /** Harpoons on the inner squares, mortars on the outer ones. */
+  harpoonBoard: {
+    from: 4,
+    shape: "board",
+    plan: (hq) => fill(hq, "board", by("harpoon", "mortar")),
+  },
+  /** Sniper towers round a U open to the beach. */
+  sniperShoe: { from: 4, to: 16, shape: "horseshoe", plan: sniperShoe },
+  /** Guns round the U, and mortars round the outer one. */
+  gunShoe: {
+    from: 3,
+    to: 14,
+    shape: "horseshoe",
+    plan: (hq) => fill(hq, "horseshoe", by("gunTurret", "mortar")),
+  },
+  /** Harpoons round the U: bad news for anything heavy walking into it. */
+  harpoonShoe: {
+    from: 4,
+    to: 11,
+    shape: "horseshoe",
+    plan: (hq) => fill(hq, "horseshoe", by("harpoon", "watchtower")),
+  },
+  /** Flamethrowers lining the way in, with mortars and guns behind. */
+  gauntlet: { from: 6, shape: "rows", plan: gauntlet },
+  /** Guns lining the way in, and mortars outside them. */
+  firingLine: { from: 3, shape: "rows", plan: (hq) => fill(hq, "rows", by("gunTurret", "mortar")) },
+  /** Harpoons and towers taking turns along the way in. */
+  harpoonAlley: {
+    from: 4,
+    to: 17,
+    shape: "rows",
+    plan: (hq) => fill(hq, "rows", turns("harpoon", "watchtower")),
+  },
+  /** Harpoons all round the headquarters. */
+  harpoonRing: { from: 4, shape: "ring", plan: (hq) => fill(hq, "ring", () => "harpoon", 1.05) },
+  /** Flamethrowers hugging the headquarters, guns round them. */
+  flameRing: {
+    from: 5,
+    shape: "ring",
+    plan: (hq) => fill(hq, "ring", by("flamethrower", "gunTurret")),
+  },
+  /** Guns and mortars taking turns all round. */
+  mixedRing: {
+    from: 3,
+    shape: "ring",
+    plan: (hq) => fill(hq, "ring", turns("gunTurret", "mortar")),
+  },
+  /** A wall of guns and storages across the way in. */
+  picket: { from: 6, shape: "picket", plan: picket },
+  /** Two batteries crossing their fire over an open headquarters. */
+  crossfire: { from: 5, shape: "batteries", plan: crossfire },
+  /** The storages out in the open, ringed by mortars. */
+  honeyPot: { from: 4, shape: "yard", plan: honeyPot },
+  /** A spiral that gets harder towards the middle: mortars out, guns, then fire at the heart. */
+  spiral: {
+    from: 5,
+    to: 15,
+    shape: "spiral",
+    plan: (hq) => fill(hq, "spiral", by("flamethrower", "gunTurret", "mortar")),
+  },
+  /** A spiral of guns and harpoons. */
+  gunSpiral: {
+    from: 4,
+    shape: "spiral",
+    plan: (hq) => fill(hq, "spiral", turns("gunTurret", "harpoon")),
+  },
+  /** Guns down four arms, mortars at the tips. */
+  mortarCross: {
+    from: 3,
+    to: 14,
+    shape: "cross",
+    plan: (hq) => fill(hq, "cross", by("gunTurret", "mortar")),
+  },
+  /** Fire close in on the arms, harpoons at the tips. */
+  flameCross: {
+    from: 5,
+    to: 9,
+    shape: "cross",
+    plan: (hq) => fill(hq, "cross", by("flamethrower", "harpoon")),
+  },
+  /** Five spokes, each its own kind of defense. */
+  spokes: {
+    from: 5,
+    to: 15,
+    shape: "spokes",
+    plan: (hq) =>
+      fill(hq, "spokes", by("gunTurret", "mortar", "harpoon", "flamethrower", "watchtower")),
+  },
+  /** A V of guns pointing at the beach, mortars at its point. */
+  gunChevron: {
+    from: 3,
+    to: 11,
+    shape: "chevron",
+    plan: (hq) => fill(hq, "chevron", by("mortar", "gunTurret")),
+  },
+  /** A V of sniper towers, with a flamethrower at its point. */
+  sniperChevron: {
+    from: 5,
+    to: 8,
+    shape: "chevron",
+    plan: (hq) => fill(hq, "chevron", by("flamethrower", "watchtower")),
+  },
+  /** Towers on a diamond's points, harpoons along its sides. */
+  harpoonDiamond: {
+    from: 5,
+    to: 13,
+    shape: "diamond",
+    plan: (hq) => fill(hq, "diamond", by("watchtower", "harpoon", "mortar")),
+  },
+  /** Mortars on the diamond, guns round the outside. */
+  mortarDiamond: {
+    from: 5,
+    to: 17,
+    shape: "diamond",
+    plan: (hq) => fill(hq, "diamond", by("mortar", "mortar", "gunTurret")),
+  },
+  /** Three little forts: guns, mortars and harpoons, one kind each. */
+  forts: {
+    from: 5,
+    to: 14,
+    shape: "satellites",
+    plan: (hq) => fill(hq, "satellites", by("gunTurret", "mortar", "harpoon")),
+  },
+  /** Three forts of towers and flamethrowers. */
+  towerForts: {
+    from: 5,
+    to: 9,
+    shape: "satellites",
+    plan: (hq) => fill(hq, "satellites", turns("watchtower", "flamethrower")),
+  },
+  /** Fire at the heart, guns round it, mortars outside. */
+  onion: {
+    from: 5,
+    shape: "onion",
+    plan: (hq) => fill(hq, "onion", by("flamethrower", "gunTurret", "mortar")),
+  },
+  /** Guns at the heart, sniper towers round the outside. */
+  sniperOnion: {
+    from: 4,
+    shape: "onion",
+    plan: (hq) => fill(hq, "onion", by("gunTurret", "watchtower", "watchtower")),
+  },
+  /** Mortars in front, guns behind. */
+  bowtie: {
+    from: 3,
+    to: 14,
+    shape: "bowtie",
+    plan: (hq) => fill(hq, "bowtie", by("mortar", "gunTurret")),
+  },
+  /** Sniper towers on the corners of a square, guns along its walls. */
+  boxFort: {
+    from: 4,
+    shape: "box",
+    plan: (hq) => fill(hq, "box", by("watchtower", "gunTurret", "gunTurret")),
+  },
+  /** Mortars on the corners, flamethrowers along the walls. */
+  flameBox: {
+    from: 5,
+    to: 14,
+    shape: "box",
+    plan: (hq) => fill(hq, "box", by("mortar", "flamethrower", "flamethrower")),
+  },
+} satisfies Record<string, Layout | (Omit<Layout, "shape"> & { shape: string })>;
+
+export type Puzzle = keyof typeof LAYOUTS;
+
+export const PUZZLES = LAYOUTS as Record<Puzzle, Omit<Layout, "shape"> & { shape: string }>;
+
+const ORDER = Object.keys(LAYOUTS) as Puzzle[];
+
+/**
+ * The kinds of island each shape fits on, from measuring how much of each held its shape on each:
+ * a long gauntlet needs a long island, a wall a wide one, and almost nothing fits the cliff fort.
+ */
+const SUITS: Record<string, readonly Archetype[]> = {
+  board: ["cove", "twin", "volcano", "atoll", "chain"],
+  horseshoe: ["cove", "twin", "volcano", "atoll", "chain"],
+  rows: ["cove", "key", "volcano", "ridge"],
+  ring: ["cove", "hook", "key", "twin", "volcano", "atoll", "chain"],
+  picket: ["atoll", "ridge"],
+  batteries: ["cove", "volcano", "atoll"],
+  yard: ["cove", "volcano"],
+  spiral: ["cove", "volcano", "atoll", "chain"],
+  cross: ["cove", "twin", "volcano", "atoll", "chain"],
+  spokes: ["cove", "twin", "volcano", "atoll", "chain"],
+  chevron: ["cove", "volcano", "atoll", "ridge", "chain"],
+  diamond: ["cove", "hook", "key", "twin", "volcano", "atoll", "chain"],
+  satellites: ["volcano", "atoll", "chain"],
+  onion: ["cove", "hook", "key", "twin", "volcano", "atoll", "chain"],
+  bowtie: ["cove", "key", "volcano"],
+  box: ["cove", "twin", "volcano", "atoll", "chain"],
 };
+
+/** Which kinds of island a layout fits on. */
+export function suitsOf(puzzle: Puzzle): readonly Archetype[] {
+  return SUITS[PUZZLES[puzzle].shape] ?? [];
+}
+
+/** Whether a layout turns up at a headquarters level at all. */
+export function inRange(puzzle: Puzzle, hq: number): boolean {
+  const { from, to = Number.POSITIVE_INFINITY } = PUZZLES[puzzle];
+  return hq >= from && hq <= to;
+}
+
+/** Which puzzle an island is, if it's one at all. */
+export function puzzleFor(seed: number, hq: number): Puzzle | null {
+  if (hq < FIRST_PUZZLE_HQ) return null;
+  const rng = createRng(seed ^ 0x9a221e);
+  if (rng() >= PUZZLE_SHARE) return null;
+  const kind = archetypeFor(seed, hq);
+  const fits = ORDER.filter((p) => inRange(p, hq) && suitsOf(p).includes(kind));
+  return fits[Math.floor(rng() * fits.length)] ?? null;
+}
 
 /** Where a puzzle puts things at a headquarters level. */
 export function puzzlePlan(puzzle: Puzzle, hq: number): Spot[] {
-  return PLANS[puzzle](hq);
+  return PUZZLES[puzzle].plan(hq);
 }
 
 /** The defenses a puzzle island has, for its card. */

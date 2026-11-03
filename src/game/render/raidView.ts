@@ -2,7 +2,7 @@
 // rules' events into effects. It never changes the state.
 
 import * as THREE from "three";
-import { BUILDINGS } from "../logic/buildings";
+import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse } from "../logic/economy";
@@ -59,8 +59,14 @@ interface BuildingView {
   baseRotation: number;
   /** How far its guns are kicked back, 1 just after a shot, easing back to 0. */
   kick: number;
+  /** Seconds since it last fired, for a launcher putting its next harpoon on. */
+  sinceShot: number;
+  /** Where a launcher's harpoon sits when it's ready. */
+  boltRest: THREE.Vector3;
   /** Where its guns sit at rest, along the way they point. */
-  gunsRest: number;
+  gunsRest: THREE.Vector3;
+  /** The way its guns point, in what they're mounted on: they kick straight back along it. */
+  gunsAxis: THREE.Vector3;
   /** Which barrel fires next. */
   barrel: number;
   /** How far it's come down, 0 to 1, once destroyed. */
@@ -129,8 +135,16 @@ const slope = new THREE.Vector3();
 
 const BULLET_HEIGHT = 1.1;
 /** How far a turret's guns kick back when they fire, in meters, and how fast they come back. */
-const KICK = 0.14;
-const KICK_RETURN = 9;
+const KICK: Partial<Record<BuildingType, { reach: number; back: number }>> = {
+  gunTurret: { reach: 0.14, back: 9 },
+  // A mortar's tube slams down a long way and comes back up slowly.
+  mortar: { reach: 0.35, back: 3 },
+  // A launcher's bowstring snaps forward, and is drawn back over most of its reload.
+  harpoon: { reach: -0.45, back: 0.5 },
+};
+/** A launcher's next harpoon shows this long after a shot, then slides on from this far back. */
+const BOLT_GONE = 1;
+const BOLT_SLIDE = { seconds: 0.9, from: 0.9 } as const;
 /** How fast a radar dish turns, in radians a second. */
 const SPIN = 1.6;
 const BOAT_KICK = 0.45;
@@ -345,7 +359,12 @@ export class RaidView {
         rubble: null,
         baseRotation,
         kick: 0,
-        gunsRest: model.guns?.position.x ?? 0,
+        gunsRest: model.guns?.position.clone() ?? new THREE.Vector3(),
+        sinceShot: Number.POSITIVE_INFINITY,
+        boltRest: model.bolt?.position.clone() ?? new THREE.Vector3(),
+        gunsAxis: new THREE.Vector3(1, 0, 0).applyQuaternion(
+          model.guns?.quaternion ?? new THREE.Quaternion(),
+        ),
         barrel: 0,
         collapse: null,
         baseY: model.root.position.y,
@@ -400,7 +419,7 @@ export class RaidView {
           if (e.kind === "vial" || e.kind === "acid") break;
           const building = e.team === "enemy" ? this.buildings.get(e.ownerId) : undefined;
           if (building?.model.muzzles?.length) {
-            this.fireFrom(building);
+            this.fireFrom(building, e.kind === "mortar");
             break;
           }
           const big =
@@ -651,12 +670,18 @@ export class RaidView {
   }
 
   /** A building's gun goes off: from the next barrel's muzzle, kicking the guns back. */
-  private fireFrom(view: BuildingView): void {
+  private fireFrom(view: BuildingView, lobbed: boolean): void {
     const muzzles = view.model.muzzles ?? [];
     const muzzle = muzzles[view.barrel++ % muzzles.length];
     if (!muzzle) return;
-    this.effects.muzzle(muzzle.getWorldPosition(new THREE.Vector3()), 0xffa060, 0.32);
+    const at = muzzle.getWorldPosition(new THREE.Vector3());
+    // A launcher's flash is small: the harpoon itself is what's worth seeing go.
+    const size = lobbed ? 0.7 : view.model.bolt ? 0.18 : 0.32;
+    this.effects.muzzle(at, 0xffa060, size);
+    // A mortar's shot leaves a puff of smoke hanging over the tube.
+    if (lobbed) for (let i = 0; i < 3; i++) this.effects.trail(at, false);
     view.kick = 1;
+    view.sinceShot = 0;
   }
 
   private updateBuildings(state: RaidState, dt: number): void {
@@ -677,10 +702,18 @@ export class RaidView {
       // Models point along +x; the root is already turned to face the beach.
       if (view.model.head) view.model.head.rotation.y = -b.aim - view.baseRotation;
       if (view.model.flame) view.model.flame.visible = b.firing;
-      const { guns, spinner } = view.model;
+      const { guns, spinner, bolt } = view.model;
+      if (bolt) {
+        view.sinceShot += dt;
+        const sliding = (view.sinceShot - BOLT_GONE) / BOLT_SLIDE.seconds;
+        bolt.visible = sliding >= 0;
+        const left = 1 - Math.min(1, Math.max(0, sliding));
+        bolt.position.copy(view.boltRest).addScaledVector(view.gunsAxis, -left * BOLT_SLIDE.from);
+      }
       if (guns) {
-        view.kick = Math.max(0, view.kick - dt * KICK_RETURN);
-        guns.position.x = view.gunsRest - view.kick * KICK;
+        const kick = KICK[b.type] ?? { reach: 0.14, back: 9 };
+        view.kick = Math.max(0, view.kick - dt * kick.back);
+        guns.position.copy(view.gunsRest).addScaledVector(view.gunsAxis, -view.kick * kick.reach);
       }
       if (spinner) spinner.rotation.y += dt * SPIN;
     }

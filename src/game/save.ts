@@ -1,9 +1,9 @@
 import { type Avatar, DEFAULT_AVATAR, readAvatar } from "./logic/avatars";
-import { type Crystals, noCrystals, readCrystals } from "./logic/crystals";
+import { addCrystals, type Crystals, noCrystals, readCrystals } from "./logic/crystals";
 import { type Purse, RESOURCES } from "./logic/economy";
 import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./logic/heroes";
 import { oldLevelRefund } from "./logic/heroProgress";
-import { noUpgrades, readOwned } from "./logic/heroTrees";
+import { noUpgrades, trimUpgrades } from "./logic/heroTrees";
 import type { NightRaid } from "./logic/nightRaid";
 import { BLUEPRINT_TYPES, type Blueprint } from "./logic/spoils";
 import type { Place } from "./logic/sun";
@@ -226,7 +226,13 @@ export function loadSave(storage: Storage = localStorage): SaveData {
     const refund = parsed.upgrades === undefined ? oldLevelRefund(old.heroLevels ?? {}) : 0;
     const rawUpgrades = (parsed.upgrades ?? {}) as Partial<Record<HeroKind, unknown>>;
     const upgrades = noUpgrades();
-    for (const k of HERO_KINDS) upgrades[k] = readOwned(k, rawUpgrades[k]);
+    // Upgrades from the old trees give back the crystals they took; the island gives the gold.
+    let crystals = readCrystals(parsed.crystals);
+    for (const k of HERO_KINDS) {
+      const { owned, refund: back } = trimUpgrades(k, rawUpgrades[k]);
+      upgrades[k] = owned;
+      crystals = addCrystals(crystals, back.crystals);
+    }
     const rawPrints = Array.isArray(parsed.blueprints) ? parsed.blueprints : [];
     const rawUnlocked = Array.isArray(parsed.unlocked) ? parsed.unlocked : [];
     const unlocked = HERO_KINDS.filter(
@@ -242,7 +248,7 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       crewCode: text(parsed.crewCode, 6),
       memberId: text(parsed.memberId, 64),
       gold: (parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold)) + refund,
-      crystals: readCrystals(parsed.crystals),
+      crystals,
       upgrades,
       blueprints: BLUEPRINT_TYPES.filter((t) => rawPrints.includes(t)),
       blueprintDrought: count(parsed.blueprintDrought, 99),

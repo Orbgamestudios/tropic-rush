@@ -248,7 +248,7 @@ export class HeroSelect {
     this.crystals.set(save.crystals);
   }
 
-  /** The hero's two capstones, the big prizes of their tree: tap one to read about it. */
+  /** The hero's capstones, one at the end of each branch: tap one to read about it. */
   private refreshCapstones(kind: HeroKind, owned: readonly string[]): void {
     const tops = capstones(kind);
     const show = (name: string, text: string, has: boolean) => {

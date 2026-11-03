@@ -1,11 +1,13 @@
-// The hero upgrade trees (docs/HERO_TREES.md): every hero has one first upgrade, then two paths of
-// six more, 13 in all, bought with gold and crystals. Three small checkpoints sit on each line
-// between two upgrades, 42 in all, bought with gold and in order. An upgrade needs its line done,
-// and a capstone either of the two lines into it. Everything can be bought in the end. No engine
-// imports.
+// The hero upgrade trees (docs/HERO_TREES.md): every hero has one first upgrade, then four branches
+// of nine more, one for each crystal: nature keeps a hero alive, fire hits harder, ice is quicker,
+// and dark holds the tricks. Each branch is paid for in its own crystal, with gold, and two small
+// checkpoints sit on each line between upgrades, bought with gold and in order. Each tier opens
+// at a headquarters level, so a hero is only as strong as the islands its crew can reach. No
+// engine imports.
 
-import { CRYSTAL_KINDS, type CrystalCost, type Crystals } from "./crystals";
+import { CRYSTAL_KINDS, type CrystalCost, type CrystalKind, type Crystals } from "./crystals";
 import { HERO_KINDS, type HeroKind } from "./heroes";
+import { OLD_CRYSTAL_ORDER, OLD_UPGRADE_COSTS } from "./oldTrees";
 
 /** What a hero's upgrades add up to. Multipliers start at 1, additions and tricks at 0. */
 export interface HeroMods {
@@ -18,8 +20,6 @@ export interface HeroMods {
   speed: number;
   /** Extra shots in a burst. */
   shots: number;
-  /** Extra range in meters. */
-  range: number;
   /** Extra blast radius in meters. */
   splash: number;
   heal: number;
@@ -74,7 +74,6 @@ export const NO_MODS: HeroMods = {
   unload: 1,
   speed: 1,
   shots: 0,
-  range: 0,
   splash: 0,
   heal: 1,
   buildingDamage: 1,
@@ -166,45 +165,62 @@ export interface TreeUpgrade {
   id: string;
   name: string;
   text: string;
-  /** 1 to 5, or 0 for a checkpoint. */
+  /** 1 to 10, or 0 for a checkpoint. */
   tier: number;
   gold: number;
   crystals: CrystalCost;
+  /** The headquarters level it can be bought from. */
+  hq: number;
   /** Owning any one of these opens it up; empty for the first upgrade. */
   needs: readonly string[];
   mods: Partial<HeroMods>;
   icon: UpgradeIcon;
-  /** The path it's on, for the screen. Null for the first upgrade. */
+  /** The branch it's on, for the screen. Null for the first upgrade. */
   path: string | null;
-  /** Where it goes on the screen: 0 to 4 across, 0 to 7 down. */
+  /** Which crystal the branch is: null for the first upgrade. */
+  branch: CrystalKind | null;
+  /** Where it goes on the screen: 0 to 9 across, 0 to 3 down. */
   column: number;
   row: number;
   /** Null for an upgrade proper. */
   line: CheckpointSpot | null;
 }
 
-/** Gold for an upgrade of each tier. */
-const TIER_GOLD = [0, 150, 400, 900, 2000, 4000] as const;
+/** How far along a branch goes: the first upgrade, then nine more on each branch. */
+export const TIERS = 10;
+
+/** Gold, crystals and the headquarters level each tier needs. */
+const TIER_GOLD = [0, 150, 400, 700, 1100, 1600, 2300, 3200, 4400, 6000, 8000] as const;
+const TIER_CRYSTALS = [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5] as const;
+/**
+ * A hero is only as strong as the islands its crew can reach: each tier opens at a headquarters
+ * level, and the last only near the top.
+ */
+const TIER_HQ = [0, 1, 2, 3, 5, 7, 9, 11, 13, 16, 19] as const;
 
 export function upgradeGold(tier: number): number {
   return TIER_GOLD[tier] ?? 0;
 }
 
-const CHECKPOINTS_PER_LINE = 3;
+/** The headquarters level a tier opens at. */
+export function tierHq(tier: number): number {
+  return TIER_HQ[tier] ?? 1;
+}
+
+const CHECKPOINTS_PER_LINE = 2;
 /** Gold for a checkpoint, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_GOLD = [0, 0, 500, 800, 1200, 1800] as const;
+const CHECKPOINT_GOLD = [0, 0, 300, 450, 650, 900, 1200, 1600, 2100, 2700, 3400] as const;
 /** How strong a checkpoint is in percent, by the tier of the upgrade its line leads to. */
-const CHECKPOINT_PERCENT = [0, 0, 3, 3, 4, 4] as const;
+const CHECKPOINT_PERCENT = [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2] as const;
 /** Percent for percent, these do far less than the rest, so they get twice as much. */
 const SLIGHT_STAT = 2;
-/** The Heavy's checkpoints that make his gun stronger do this much of what everyone else's do. */
+/** The Heavy's upgrades that make his gun stronger do this much of what everyone else's do. */
 const HEAVY_GUN = 0.85;
 
-/** Lines bending out of an upgrade keep their checkpoints clear of each other where they meet. */
-const ALONG_LINE: Record<"straight" | "out" | "in", readonly number[]> = {
-  straight: [0.26, 0.5, 0.74],
-  out: [0.36, 0.56, 0.76],
-  in: [0.24, 0.44, 0.64],
+/** Where the checkpoints sit along a line, on a branch or bending out to one from the first. */
+const ALONG_LINE: Record<"straight" | "out", readonly number[]> = {
+  straight: [0.35, 0.65],
+  out: [0.5, 0.75],
 };
 
 /** The curve from one spot on the board to another, in columns and rows. */
@@ -223,7 +239,7 @@ export function lineAt(
 
 type CheckpointStat = "health" | "damage" | "heal" | "reload" | "unload" | "spin" | "speed";
 
-/** What the time between shots is called for each hero, on a checkpoint that shortens it. */
+/** What the time between shots is called for each hero. */
 const RELOAD_WORDS: Record<HeroKind, { name: string; verb: string }> = {
   rifleman: { name: "Quick Reload", verb: "Reloads" },
   medic: { name: "Quick Throw", verb: "Throws" },
@@ -234,10 +250,17 @@ const RELOAD_WORDS: Record<HeroKind, { name: string; verb: string }> = {
   engineer: { name: "Hot Trigger", verb: "Fires" },
 };
 
+/** A percent kept to a tenth, so what a card says is what it does. */
+const tenth = (n: number) => Math.round(n * 10) / 10;
+
+/** The Heavy's gun gets less from everything that makes guns stronger. */
+function gunShare(kind: HeroKind, percent: number): number {
+  return kind === "heavy" ? tenth(percent * HEAVY_GUN) : percent;
+}
+
 function checkpoint(kind: HeroKind, stat: CheckpointStat, base: number): Draft {
   const gun = stat === "damage" || stat === "reload" || stat === "spin";
-  // Kept to a tenth of a percent, so what the card says is what it does.
-  const percent = kind === "heavy" && gun ? Math.round(base * HEAVY_GUN * 10) / 10 : base;
+  const percent = gun ? gunShare(kind, base) : base;
   const more = 1 + percent / 100;
   const less = 1 - percent / 100;
   const faster = 1 - (percent * SLIGHT_STAT) / 100;
@@ -255,21 +278,15 @@ function checkpoint(kind: HeroKind, stat: CheckpointStat, base: number): Draft {
     case "unload":
       return up(
         "Quick Unload",
-        `Bullets leave a burst ${Math.round(percent * SLIGHT_STAT * 10) / 10}% quicker.`,
+        `Bullets leave a burst ${tenth(percent * SLIGHT_STAT)}% quicker.`,
         {},
         "barrage",
         { unload: faster },
       );
     case "spin":
-      return up(
-        "Spin Up",
-        `Spins up ${Math.round(percent * SLIGHT_STAT * 10) / 10}% faster.`,
-        {},
-        "gear",
-        {
-          spinUp: faster,
-        },
-      );
+      return up("Spin Up", `Spins up ${tenth(percent * SLIGHT_STAT)}% faster.`, {}, "gear", {
+        spinUp: faster,
+      });
     case "speed":
       return up("Fitness", `+${percent}% move speed.`, {}, "speed", { speed: more });
   }
@@ -291,505 +308,530 @@ const up = (
   mods: Partial<HeroMods>,
 ): Draft => ({ name, text, crystals, icon, mods });
 
-interface PathDraft {
+/** A special upgrade: its crystals are set by where it lands on its branch. */
+const special = (name: string, text: string, icon: UpgradeIcon, mods: Partial<HeroMods>): Draft =>
+  up(name, text, {}, icon, mods);
+
+/** What a hero's branch is called, and the two special upgrades on it: at tier 6 and at the end. */
+interface BranchDraft {
   name: string;
-  /** What its checkpoints give, round and round from the first upgrade to the capstone. */
-  checkpoints: readonly CheckpointStat[];
-  second: Draft;
-  /** A tier 3 upgrade and the tier 4 upgrade it leads to, twice over. */
-  upper: readonly [Draft, Draft];
-  lower: readonly [Draft, Draft];
-  capstone: Draft;
+  six: Draft;
+  ten: Draft;
 }
 
 interface TreeDraft {
   first: Draft;
-  paths: readonly [PathDraft, PathDraft];
+  branches: Record<CrystalKind, BranchDraft>;
+  /** Tier 5 on the ice branch: whatever makes this hero's weapon quicker. */
+  quick: Draft;
+  /** Tier 5 on the fire branch, for heroes whose shots burst: a wider blast. */
+  wide?: Draft;
+  /** Tier 5 on the nature branch, for a healer: stronger healing. */
+  mend?: Draft;
 }
+
+/** The branches, in order down the screen. */
+export const BRANCHES: readonly CrystalKind[] = ["nature", "fire", "ice", "dark"];
 
 const TREES: Record<HeroKind, TreeDraft> = {
   rifleman: {
     first: up("Basic Training", "+10% health.", { nature: 1 }, "heart", { hp: 1.1 }),
-    paths: [
-      {
-        name: "Marksman",
-        checkpoints: ["damage", "unload", "reload", "damage", "health"],
-        second: up("Hot Rounds", "+15% damage.", { fire: 2 }, "flame", { damage: 1.15 }),
-        upper: [
-          up("Long Barrel", "+3 m range.", { fire: 3 }, "range", { range: 3 }),
-          up("Deadeye", "+25% damage to defenses.", { fire: 5 }, "crosshair", {
-            defenseDamage: 1.25,
-          }),
-        ],
-        lower: [
-          up("Steady Hands", "One more bullet in every burst.", { fire: 1, dark: 2 }, "barrage", {
-            shots: 1,
-          }),
-          up("Fast Unload", "Bursts fire 40% quicker.", { fire: 3, dark: 2 }, "clock", {
-            reload: 0.6,
-          }),
-        ],
-        capstone: up(
-          "Ricochet",
-          "Bullets bounce off a building into the next one.",
-          { fire: 4, dark: 4 },
-          "star",
-          { signature: 1 },
-        ),
-      },
-      {
+    quick: special("Smooth Action", "Bullets leave a burst 20% quicker.", "barrage", {
+      unload: 0.8,
+    }),
+    branches: {
+      nature: {
         name: "Survivor",
-        checkpoints: ["health", "speed", "health", "reload", "damage"],
-        second: up("Field Rations", "+20% health.", { nature: 2 }, "heart", { hp: 1.2 }),
-        upper: [
-          up("Light Boots", "+12% move speed.", { ice: 3 }, "speed", { speed: 1.12 }),
-          up("Run and Gun", "Moves at 40% speed while firing, not 20%.", { ice: 5 }, "speed", {
-            fireSpeed: 0.4,
-          }),
-        ],
-        lower: [
-          up(
-            "Field Dressing",
-            "Heals 3% a second after 4 seconds without being hit.",
-            { nature: 3 },
-            "medkit",
-            { fieldDressing: true },
-          ),
-          up("Thick Vest", "Takes 15% less damage.", { nature: 5 }, "shield", {
-            damageTaken: 0.85,
-          }),
-        ],
-        capstone: up(
+        six: special("Thick Vest", "Takes 15% less damage.", "shield", { damageTaken: 0.85 }),
+        ten: special(
           "Last Stand",
           "Enrages below 30% health: fires 40% faster and takes 25% less damage.",
-          { nature: 4, dark: 4 },
           "skull",
           { lastStand: true },
         ),
       },
-    ],
+      fire: {
+        name: "Marksman",
+        six: special("Deadeye", "+25% damage to defenses.", "crosshair", { defenseDamage: 1.25 }),
+        ten: special("Steady Hands", "One more bullet in every burst.", "barrage", { shots: 1 }),
+      },
+      ice: {
+        name: "Skirmisher",
+        six: special("Run and Gun", "Moves at 40% speed while firing, not 20%.", "speed", {
+          fireSpeed: 0.4,
+        }),
+        ten: special("Fast Unload", "Bursts fire 40% quicker.", "clock", { reload: 0.6 }),
+      },
+      dark: {
+        name: "Veteran",
+        six: special(
+          "Field Dressing",
+          "Heals 3% a second after 4 seconds without being hit.",
+          "medkit",
+          { fieldDressing: true },
+        ),
+        ten: special("Ricochet", "Bullets bounce off a building into the next one.", "star", {
+          signature: 1,
+        }),
+      },
+    },
   },
   medic: {
     first: up("Steady Hand", "+15% healing.", { nature: 1 }, "heal", { heal: 1.15 }),
-    paths: [
-      {
+    quick: special("Flat Throw", "Bottles land 15% sooner.", "clock", { flight: 0.85 }),
+    mend: special("Strong Brew", "+12% healing.", "heal", { heal: 1.12 }),
+    branches: {
+      nature: {
         name: "Field Hospital",
-        checkpoints: ["heal", "reload", "heal", "health", "speed"],
-        second: up("Stronger Mix", "+25% healing.", { nature: 2 }, "heal", { heal: 1.25 }),
-        upper: [
-          up("Wide Splash", "Bottles burst 1.5 m wider.", { nature: 3 }, "range", { splash: 1.5 }),
-          up("Good Arm", "+3 m throwing range.", { fire: 5 }, "range", { range: 3 }),
-        ],
-        lower: [
-          up(
-            "Lingering Dose",
-            "Healing carries on for 3 seconds after the bottle lands.",
-            { nature: 2, ice: 1 },
-            "clock",
-            { lingering: true },
-          ),
-          up(
-            "Overheal",
-            "Healing past full health becomes a shield worth up to 20% health.",
-            { nature: 3, dark: 2 },
-            "shield",
-            { overheal: true },
-          ),
-        ],
-        capstone: up(
-          "Guardian Angel",
-          "Twice a raid, a fallen hero gets back up with 40% health.",
-          { nature: 4, dark: 4 },
-          "star",
-          { signature: 2 },
+        six: special(
+          "Lingering Dose",
+          "Healing carries on for 3 seconds after the bottle lands.",
+          "clock",
+          { lingering: true },
+        ),
+        ten: special(
+          "Overheal",
+          "Healing past full health becomes a shield worth up to 20% health.",
+          "shield",
+          { overheal: true },
         ),
       },
-      {
-        name: "Combat Medic",
-        checkpoints: ["reload", "health", "speed", "heal", "health"],
-        second: up("Quick Hands", "Throws 20% faster.", { fire: 2 }, "clock", { reload: 0.8 }),
-        upper: [
-          up("Fleet Foot", "+12% move speed.", { ice: 3 }, "speed", { speed: 1.12 }),
-          up("Ice Pack", "Healed crewmates move 20% faster for 3 seconds.", { ice: 5 }, "speed", {
-            icePack: true,
-          }),
-        ],
-        lower: [
-          up("Iron Stomach", "+30% health.", { nature: 3 }, "heart", { hp: 1.3 }),
-          up(
-            "Adrenaline",
-            "Healed crewmates fire 20% faster for 3 seconds.",
-            { fire: 3, dark: 2 },
-            "energy",
-            { adrenaline: true },
-          ),
-        ],
-        capstone: up(
+      fire: {
+        name: "Alchemist",
+        six: special("Wide Splash", "Bottles burst 1.5 m wider.", "range", { splash: 1.5 }),
+        ten: special(
           "Miracle Bottle",
           "Every 5th bottle heals double, and bursts twice as wide.",
-          { fire: 4, dark: 4 },
           "skull",
           { miracle: true },
         ),
       },
-    ],
+      ice: {
+        name: "Combat Medic",
+        six: special("Ice Pack", "Healed crewmates move 20% faster for 3 seconds.", "speed", {
+          icePack: true,
+        }),
+        ten: special("Adrenaline", "Healed crewmates fire 20% faster for 3 seconds.", "energy", {
+          adrenaline: true,
+        }),
+      },
+      dark: {
+        name: "Guardian",
+        six: special("Corrosive Acid", "+25% damage to defenses.", "flame", {
+          defenseDamage: 1.25,
+        }),
+        ten: special(
+          "Guardian Angel",
+          "Twice a raid, a fallen hero gets back up with 40% health.",
+          "star",
+          { signature: 2 },
+        ),
+      },
+    },
   },
   heavy: {
     first: up("Warm Up", "Minigun spins up 17% faster.", { fire: 1 }, "gear", { spinUp: 0.83 }),
-    paths: [
-      {
-        name: "Gunner",
-        checkpoints: ["damage", "reload", "spin", "damage", "health"],
-        second: up("Hot Barrels", "Fires 13% faster.", { fire: 2 }, "flame", { reload: 0.87 }),
-        upper: [
-          up("Longer Belt", "+3 m range.", { fire: 3 }, "range", { range: 3 }),
-          up("Tight Barrels", "40% less spread.", { fire: 5 }, "crosshair", { spread: 0.6 }),
-        ],
-        lower: [
-          up("Heavy Rounds", "+17% damage.", { fire: 3 }, "sword", { damage: 1.17 }),
-          up(
-            "Overdrive",
-            "After 5 seconds of non-stop fire, fires 21% faster.",
-            { fire: 3, dark: 2 },
-            "energy",
-            { overdrive: true },
-          ),
-        ],
-        capstone: up(
-          "Explosive Belt",
-          "At full spin, every 6th round explodes.",
-          { fire: 4, dark: 4 },
-          "star",
-          { signature: 1 },
-        ),
-      },
-      {
+    quick: special("Greased Barrels", "Spins up 17% faster.", "gear", { spinUp: 0.83 }),
+    branches: {
+      nature: {
         name: "Juggernaut",
-        checkpoints: ["health", "speed", "health", "damage", "reload"],
-        second: up("Thick Skin", "+20% health.", { nature: 2 }, "heart", { hp: 1.2 }),
-        upper: [
-          up("Big Boots", "+12% move speed.", { ice: 3 }, "speed", { speed: 1.12 }),
-          up("Rolling Thunder", "Moves at 45% speed while firing.", { ice: 5 }, "speed", {
-            fireSpeed: 0.45,
-          }),
-        ],
-        lower: [
-          up(
-            "Harpoon Hide",
-            "Harpoons lose their bonus damage against him.",
-            { nature: 3 },
-            "shield",
-            {
-              harpoonProof: true,
-            },
-          ),
-          up("Iron Gut", "Heals 2% a second while firing.", { nature: 5 }, "medkit", {
-            ironGut: true,
-          }),
-        ],
-        capstone: up(
+        six: special("Harpoon Hide", "Harpoons lose their bonus damage against him.", "shield", {
+          harpoonProof: true,
+        }),
+        ten: special("Iron Gut", "Heals 2% a second while firing.", "medkit", { ironGut: true }),
+      },
+      fire: {
+        name: "Gunner",
+        six: special("Tight Barrels", "40% less spread.", "crosshair", { spread: 0.6 }),
+        ten: special("Overdrive", "After 5 seconds of non-stop fire, fires 21% faster.", "energy", {
+          overdrive: true,
+        }),
+      },
+      ice: {
+        name: "Rolling Fire",
+        six: special("Rolling Thunder", "Moves at 45% speed while firing.", "speed", {
+          fireSpeed: 0.45,
+        }),
+        ten: special("Hair Trigger", "Spins up 34% faster.", "gear", { spinUp: 0.66 }),
+      },
+      dark: {
+        name: "Berserker",
+        six: special(
           "Berserk",
           "Enrages after taking 500 damage: for 6 seconds, fires 43% faster and can't be slowed.",
-          { nature: 4, dark: 4 },
           "skull",
           { berserk: true },
         ),
+        ten: special("Explosive Belt", "At full spin, every 6th round explodes.", "star", {
+          signature: 1,
+        }),
       },
-    ],
+    },
   },
   tank: {
     first: up("Extra Plating", "+15% health.", { nature: 1 }, "heart", { hp: 1.15 }),
-    paths: [
-      {
-        name: "Wrecker",
-        checkpoints: ["damage", "reload", "damage", "health", "speed"],
-        second: up("Bigger Shells", "+15% damage.", { fire: 2 }, "sword", { damage: 1.15 }),
-        upper: [
-          up("Wider Blast", "+1 m splash.", { fire: 3 }, "range", { splash: 1 }),
-          up("Bunker Buster", "+30% damage to buildings.", { fire: 5 }, "hammer", {
-            buildingDamage: 1.3,
-          }),
-        ],
-        lower: [
-          up("Autoloader", "Fires 25% faster.", { fire: 3 }, "clock", { reload: 0.75 }),
-          up("Twin Barrels", "Every 4th shot fires two shells.", { fire: 3, dark: 2 }, "barrage", {
-            twinEvery: 4,
-          }),
-        ],
-        capstone: up(
-          "Aftershock",
-          "Whatever it destroys goes up in a shockwave that can set off the next.",
-          { fire: 4, dark: 4 },
-          "star",
-          { signature: 1 },
-        ),
-      },
-      {
+    quick: special("Hot Charge", "Shells fly 20% faster.", "rocket", { shotSpeed: 1.2 }),
+    wide: special("Bigger Bang", "+0.5 m splash.", "range", { splash: 0.5 }),
+    branches: {
+      nature: {
         name: "Fortress",
-        checkpoints: ["health", "speed", "health", "reload", "damage"],
-        second: up("Reinforced Hull", "+20% health.", { nature: 2 }, "heart", { hp: 1.2 }),
-        upper: [
-          up("Bigger Engine", "+15% move speed.", { ice: 3 }, "speed", { speed: 1.15 }),
-          up("Bulldozer", "Moves at 45% speed while firing.", { ice: 5 }, "speed", {
-            fireSpeed: 0.45,
-          }),
-        ],
-        lower: [
-          up("Field Repairs", "Heals 2% a second while standing still.", { nature: 3 }, "hammer", {
-            fieldRepairs: true,
-          }),
-          up("Reactive Armor", "Takes 20% less from blasts.", { nature: 5 }, "shield", {
-            blastTaken: 0.8,
-          }),
-        ],
-        capstone: up(
+        six: special("Field Repairs", "Heals 2% a second while standing still.", "hammer", {
+          fieldRepairs: true,
+        }),
+        ten: special(
           "Siege Mode",
           "After 2 seconds standing still: fires 30% faster and takes 40% less damage.",
-          { nature: 4, dark: 4 },
           "skull",
           { siegeMode: true },
         ),
       },
-    ],
-  },
-  bazooka: {
-    first: up("Quick Loader", "Reloads 10% faster.", { fire: 1 }, "clock", { reload: 0.9 }),
-    paths: [
-      {
-        name: "Demolition",
-        checkpoints: ["damage", "reload", "damage", "health", "speed"],
-        second: up("Bigger Warhead", "+15% damage.", { fire: 2 }, "sword", { damage: 1.15 }),
-        upper: [
-          up("Long Tube", "+3 m range.", { fire: 3 }, "range", { range: 3 }),
-          up("Fast Rockets", "Rockets fly 40% faster.", { ice: 5 }, "rocket", { shotSpeed: 1.4 }),
-        ],
-        lower: [
-          up("Wide Blast", "+1 m splash.", { fire: 3 }, "range", { splash: 1 }),
-          up("Napalm", "Blasts leave fire burning for 3 seconds.", { fire: 3, dark: 2 }, "flame", {
-            napalm: true,
-          }),
-        ],
-        capstone: up(
-          "Cluster Warhead",
-          "Rockets throw out 5 bomblets where they burst.",
-          { fire: 4, dark: 4 },
-          "star",
-          { signature: 2 },
-        ),
+      fire: {
+        name: "Wrecker",
+        six: special("Bunker Buster", "+30% damage to buildings.", "hammer", {
+          buildingDamage: 1.3,
+        }),
+        ten: special("Twin Barrels", "Every 4th shot fires two shells.", "barrage", {
+          twinEvery: 4,
+        }),
       },
-      {
-        name: "Hit and Run",
-        checkpoints: ["health", "reload", "speed", "damage", "reload"],
-        second: up("Flak Jacket", "+20% health.", { nature: 2 }, "heart", { hp: 1.2 }),
-        upper: [
-          up("Light Pack", "+12% move speed.", { ice: 3 }, "speed", { speed: 1.12 }),
-          up("Getaway", "+30% move speed for 2 seconds after each shot.", { ice: 5 }, "speed", {
-            getaway: true,
-          }),
-        ],
-        lower: [
-          up("Speed Loader", "Reloads 20% faster.", { fire: 3 }, "clock", { reload: 0.8 }),
-          up("Double Tap", "Holds two rockets before reloading.", { fire: 3, dark: 2 }, "barrage", {
-            doubleTap: true,
-          }),
-        ],
-        capstone: up(
-          "Guided Rocket",
-          "Rockets curve round cover to reach a locked target.",
-          { fire: 4, dark: 4 },
-          "skull",
-          { guided: true },
-        ),
+      ice: {
+        name: "Panzer",
+        six: special("Bulldozer", "Moves at 45% speed while firing.", "speed", { fireSpeed: 0.45 }),
+        ten: special("Autoloader", "Fires 25% faster.", "clock", { reload: 0.75 }),
       },
-    ],
-  },
-  grenadier: {
-    first: up("Strong Arm", "+2 m range.", { fire: 1 }, "range", { range: 2 }),
-    paths: [
-      {
-        name: "Ordnance",
-        checkpoints: ["damage", "reload", "damage", "health", "speed"],
-        second: up("Bigger Charge", "+15% damage.", { fire: 2 }, "sword", { damage: 1.15 }),
-        upper: [
-          up("Long Throw", "+3 m range.", { fire: 3 }, "range", { range: 3 }),
-          up("Short Fuse", "Grenades land 40% sooner.", { ice: 5 }, "clock", { flight: 0.6 }),
-        ],
-        lower: [
-          up("Wider Blast", "+1 m splash.", { fire: 3 }, "grenade", { splash: 1 }),
-          up(
-            "Mine Sweeper",
-            "Shows every mine, and blasts set them off from twice as far.",
-            { fire: 3, dark: 2 },
-            "crosshair",
-            { mineSweeper: true },
-          ),
-        ],
-        capstone: up(
-          "Skipping Stone",
-          "Grenades skip on for two more blasts.",
-          { fire: 4, dark: 4 },
-          "star",
-          { signature: 2 },
-        ),
-      },
-      {
-        name: "Old Campaigner",
-        checkpoints: ["health", "reload", "health", "speed", "damage"],
-        second: up("Stiff Upper Lip", "+20% health.", { nature: 2 }, "heart", { hp: 1.2 }),
-        upper: [
-          up("Quick March", "+12% move speed.", { ice: 3 }, "speed", { speed: 1.12 }),
-          up("Tea Break", "Destroying a building heals 15%.", { nature: 5 }, "medkit", {
-            healOnKill: 0.15,
-          }),
-        ],
-        lower: [
-          up("Quick Pin", "Throws 20% faster.", { fire: 3 }, "clock", { reload: 0.8 }),
-          up("Twin Grenades", "Every 3rd throw is two grenades.", { fire: 3, dark: 2 }, "grenade", {
-            twinEvery: 3,
-          }),
-        ],
-        capstone: up(
-          "Smoke Shell",
-          "Every 5th grenade leaves smoke: defenses can't aim into it for 4 seconds.",
-          { ice: 4, dark: 4 },
-          "smoke",
-          { smokeShell: true },
-        ),
-      },
-    ],
-  },
-  engineer: {
-    first: up("Spare Parts", "Fires 10% faster.", { fire: 1 }, "gear", { reload: 0.9 }),
-    paths: [
-      {
-        name: "Salvager",
-        checkpoints: ["damage", "reload", "damage", "health", "speed"],
-        second: up("Sharper Rounds", "+15% damage.", { fire: 2 }, "sword", { damage: 1.15 }),
-        upper: [
-          up("Longer Barrel", "+3 m range.", { fire: 3 }, "range", { range: 3 }),
-          up("Armor Piercing", "+25% damage to defenses.", { fire: 5 }, "crosshair", {
-            defenseDamage: 1.25,
-          }),
-        ],
-        lower: [
-          up("Quick Wrench", "Fires 20% faster.", { fire: 3 }, "clock", { reload: 0.8 }),
-          up("Overclock", "His turrets fire 30% faster.", { fire: 3, dark: 2 }, "energy", {
-            overclock: true,
-          }),
-        ],
-        capstone: up(
-          "Salvage",
-          "Everything he destroys comes back as his turret for a while.",
-          { fire: 4, dark: 4 },
+      dark: {
+        name: "Siege Engine",
+        six: special("Reactive Armor", "Takes 20% less from blasts.", "shield", {
+          blastTaken: 0.8,
+        }),
+        ten: special(
+          "Aftershock",
+          "Whatever it destroys goes up in a shockwave that can set off the next.",
           "star",
           { signature: 1 },
         ),
       },
-      {
+    },
+  },
+  bazooka: {
+    first: up("Quick Loader", "Reloads 10% faster.", { fire: 1 }, "clock", { reload: 0.9 }),
+    quick: special("Hot Motor", "Rockets fly 20% faster.", "rocket", { shotSpeed: 1.2 }),
+    wide: special("Bigger Bang", "+0.5 m splash.", "range", { splash: 0.5 }),
+    branches: {
+      nature: {
+        name: "Daredevil",
+        six: special("Blast Shield", "Takes 25% less from blasts.", "shield", { blastTaken: 0.75 }),
+        ten: special("Second Wind", "Destroying a building heals 15%.", "medkit", {
+          healOnKill: 0.15,
+        }),
+      },
+      fire: {
+        name: "Demolition",
+        six: special("Napalm", "Blasts leave fire burning for 3 seconds.", "flame", {
+          napalm: true,
+        }),
+        ten: special("Cluster Warhead", "Rockets throw out 5 bomblets where they burst.", "star", {
+          signature: 2,
+        }),
+      },
+      ice: {
+        name: "Hit and Run",
+        six: special("Fast Rockets", "Rockets fly 40% faster.", "rocket", { shotSpeed: 1.4 }),
+        ten: special("Getaway", "+30% move speed for 2 seconds after each shot.", "speed", {
+          getaway: true,
+        }),
+      },
+      dark: {
+        name: "Trickshot",
+        six: special("Double Tap", "Holds two rockets before reloading.", "barrage", {
+          doubleTap: true,
+        }),
+        ten: special(
+          "Guided Rocket",
+          "Rockets curve round cover to reach a locked target.",
+          "skull",
+          { guided: true },
+        ),
+      },
+    },
+  },
+  grenadier: {
+    first: up("Bigger Charge", "+10% damage.", { fire: 1 }, "sword", { damage: 1.1 }),
+    quick: special("Light Grenades", "Grenades land 15% sooner.", "clock", { flight: 0.85 }),
+    wide: special("Bigger Bang", "+0.5 m splash.", "grenade", { splash: 0.5 }),
+    branches: {
+      nature: {
+        name: "Old Campaigner",
+        six: special("Tea Break", "Destroying a building heals 15%.", "medkit", {
+          healOnKill: 0.15,
+        }),
+        ten: special(
+          "Last Orders",
+          "Enrages below 30% health: throws 40% faster and takes 25% less damage.",
+          "skull",
+          { lastStand: true },
+        ),
+      },
+      fire: {
+        name: "Ordnance",
+        six: special("Twin Grenades", "Every 3rd throw is two grenades.", "grenade", {
+          twinEvery: 3,
+        }),
+        ten: special("Skipping Stone", "Grenades skip on for two more blasts.", "star", {
+          signature: 2,
+        }),
+      },
+      ice: {
+        name: "Quick March",
+        six: special("Short Fuse", "Grenades land 40% sooner.", "clock", { flight: 0.6 }),
+        ten: special("Rapid Lob", "Throws 30% faster.", "clock", { reload: 0.7 }),
+      },
+      dark: {
+        name: "Saboteur",
+        six: special(
+          "Mine Sweeper",
+          "Shows every mine, and blasts set them off from twice as far.",
+          "crosshair",
+          { mineSweeper: true },
+        ),
+        ten: special(
+          "Smoke Shell",
+          "Every 5th grenade leaves smoke: defenses can't aim into it for 4 seconds.",
+          "smoke",
+          { smokeShell: true },
+        ),
+      },
+    },
+  },
+  engineer: {
+    first: up("Spare Parts", "Fires 10% faster.", { fire: 1 }, "gear", { reload: 0.9 }),
+    quick: special("Oiled Gears", "Shots fly 20% faster.", "gear", { shotSpeed: 1.2 }),
+    branches: {
+      nature: {
+        name: "Medic Bay",
+        six: special("Patch Up", "Destroying a building heals 10%.", "medkit", {
+          healOnKill: 0.1,
+        }),
+        ten: special("Repair Beam", "Slowly repairs the Tank and turrets near him.", "hammer", {
+          repairBeam: true,
+        }),
+      },
+      fire: {
+        name: "Salvager",
+        six: special("Armor Piercing", "+25% damage to defenses.", "crosshair", {
+          defenseDamage: 1.25,
+        }),
+        ten: special(
+          "Salvage",
+          "Everything he destroys comes back as his turret for a while.",
+          "star",
+          { signature: 1 },
+        ),
+      },
+      ice: {
+        name: "Mechanic",
+        six: special("Overclock", "His turrets fire 30% faster.", "energy", { overclock: true }),
+        ten: special("Rapid Fire", "Fires 25% faster.", "clock", { reload: 0.75 }),
+      },
+      dark: {
         name: "Gadgeteer",
-        checkpoints: ["health", "speed", "health", "reload", "damage"],
-        second: up("Hard Hat", "+20% health.", { nature: 2 }, "heart", { hp: 1.2 }),
-        upper: [
-          up("Tool Belt", "+12% move speed.", { ice: 3 }, "speed", { speed: 1.12 }),
-          up(
-            "Pocket Turret",
-            "Drops a small turret every 30 seconds.",
-            { ice: 3, dark: 2 },
-            "turret",
-            { pocketTurret: true },
-          ),
-        ],
-        lower: [
-          up("Patch Up", "Destroying a building heals 10%.", { nature: 3 }, "medkit", {
-            healOnKill: 0.1,
-          }),
-          up(
-            "Repair Beam",
-            "Slowly repairs the Tank and turrets near him.",
-            { nature: 5 },
-            "hammer",
-            {
-              repairBeam: true,
-            },
-          ),
-        ],
-        capstone: up(
+        six: special("Pocket Turret", "Drops a small turret every 30 seconds.", "turret", {
+          pocketTurret: true,
+        }),
+        ten: special(
           "Decoy Drone",
           "Every 30 seconds, a drone draws the defenses' fire for 6 seconds.",
-          { nature: 4, dark: 4 },
           "skull",
           { decoyDrone: true },
         ),
       },
-    ],
+    },
   },
 };
+
+/** One plain step up a branch: a name, and how much of which stat in percent. */
+type Step = readonly [
+  name: string,
+  stat: "hp" | "taken" | "damage" | "defense" | "speed" | "reload" | "building",
+  percent: number,
+];
+
+/**
+ * The plain steps up each branch, at tiers 2, 3, 4, 5, 7, 8 and 9, round its specials at 6 and
+ * 10. Nature keeps a hero alive, fire hits harder, ice is quicker and dark is a bit of everything.
+ */
+const STEPS: Record<CrystalKind, readonly Step[]> = {
+  nature: [
+    ["Hardy", "hp", 6],
+    ["Brace", "taken", 5],
+    ["Sturdy", "hp", 7],
+    ["Mend", "hp", 5],
+    ["Iron Will", "hp", 9],
+    ["Bulwark", "taken", 7],
+    ["Unbreakable", "hp", 10],
+  ],
+  fire: [
+    ["Sharp", "damage", 5],
+    ["Breaker", "defense", 10],
+    ["Fierce", "damage", 6],
+    ["Payload", "building", 10],
+    ["Ferocity", "damage", 8],
+    ["Siegebreaker", "defense", 12],
+    ["Devastation", "damage", 10],
+  ],
+  ice: [
+    ["Nimble", "speed", 5],
+    ["Brisk", "reload", 5],
+    ["Swift", "speed", 6],
+    ["Quick", "reload", 5],
+    ["Fleet", "reload", 6],
+    ["Rapid", "speed", 8],
+    ["Lightning", "reload", 8],
+  ],
+  dark: [
+    ["Shadow", "damage", 4],
+    ["Cunning", "reload", 5],
+    ["Grit", "hp", 5],
+    ["Edge", "damage", 5],
+    ["Dread", "reload", 6],
+    ["Menace", "hp", 6],
+    ["Nightfall", "damage", 6],
+  ],
+};
+
+/** Which tiers of a branch are plain steps: the specials sit at 6 and 10. */
+const STEP_TIERS = [2, 3, 4, 5, 7, 8, 9] as const;
+
+function step(kind: HeroKind, [name, stat, base]: Step): Draft {
+  const gun = stat === "damage" || stat === "reload";
+  const percent = gun ? gunShare(kind, base) : base;
+  const more = 1 + percent / 100;
+  const less = 1 - percent / 100;
+  switch (stat) {
+    case "hp":
+      return up(name, `+${percent}% health.`, {}, "heart", { hp: more });
+    case "taken":
+      return up(name, `Takes ${percent}% less damage.`, {}, "shield", { damageTaken: less });
+    case "damage":
+      return up(name, `+${percent}% damage.`, {}, "sword", { damage: more });
+    case "defense":
+      return up(name, `+${percent}% damage to defenses.`, {}, "crosshair", { defenseDamage: more });
+    case "building":
+      return up(name, `+${percent}% damage to buildings.`, {}, "hammer", { buildingDamage: more });
+    case "speed":
+      return up(name, `+${percent}% move speed.`, {}, "speed", { speed: more });
+    case "reload":
+      return up(name, `${RELOAD_WORDS[kind].verb} ${percent}% faster.`, {}, "clock", {
+        reload: less,
+      });
+  }
+}
+
+/** What each branch's checkpoints give, round and round along it. */
+function checkpointStats(kind: HeroKind, branch: CrystalKind): readonly CheckpointStat[] {
+  switch (branch) {
+    case "nature":
+      return kind === "medic" ? ["health", "heal"] : ["health"];
+    case "fire":
+      return ["damage"];
+    case "ice":
+      return kind === "rifleman"
+        ? ["reload", "unload", "speed"]
+        : kind === "heavy"
+          ? ["spin", "reload", "speed"]
+          : ["reload", "speed"];
+    case "dark":
+      return ["damage", "reload", "health"];
+  }
+}
+
+/** The draft at one tier of a branch. */
+function branchDraft(kind: HeroKind, branch: CrystalKind, tier: number): Draft {
+  const tree = TREES[kind];
+  const b = tree.branches[branch];
+  if (tier === 6) return b.six;
+  if (tier === TIERS) return b.ten;
+  // Tier 5 is where a hero's own kind of weapon gets its turn, if it has one.
+  if (tier === 5) {
+    if (branch === "ice") return tree.quick;
+    if (branch === "fire" && tree.wide) return tree.wide;
+    if (branch === "nature" && tree.mend) return tree.mend;
+  }
+  const at = STEP_TIERS.indexOf(tier as (typeof STEP_TIERS)[number]);
+  const plain = STEPS[branch][at];
+  if (!plain) throw new Error(`No step for tier ${tier}`);
+  return step(kind, plain);
+}
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z]+/g, "-");
 
 function buildTree(kind: HeroKind): readonly TreeUpgrade[] {
-  const { first, paths } = TREES[kind];
+  const { first, branches } = TREES[kind];
   const out: TreeUpgrade[] = [];
-  const add = (
-    draft: Draft,
-    tier: number,
-    needs: readonly string[],
-    path: string | null,
-    column: number,
-    row: number,
-  ): TreeUpgrade => {
-    const id = `${kind}-${slug(draft.name)}`;
-    const gold = upgradeGold(tier);
-    const upgrade = { ...draft, id, tier, gold, needs, path, column, row, line: null };
-    out.push(upgrade);
-    return upgrade;
+  // Ids changed with the four branches, so nothing from the old trees is taken for something new.
+  const idOf = (name: string) => `${kind}:${slug(name)}`;
+  const start: TreeUpgrade = {
+    ...first,
+    id: idOf(first.name),
+    tier: 1,
+    gold: upgradeGold(1),
+    hq: tierHq(1),
+    needs: [],
+    path: null,
+    branch: null,
+    column: 0,
+    row: 1.5,
+    line: null,
   };
-  const start = add(first, 1, [], null, 0, 3.5);
-  paths.forEach((p, i) => {
-    const top = i * 4;
+  out.push(start);
+  BRANCHES.forEach((branch, row) => {
+    const { name: path } = branches[branch];
+    const stats = checkpointStats(kind, branch);
     let made = 0;
-    /** Lays the checkpoints from an upgrade towards the next, and says the last of them. */
-    const line = (
-      from: TreeUpgrade,
-      to: { draft: Draft; column: number; row: number },
-      tier: number,
-    ): string => {
-      const bend = tier === 5 ? "in" : to.row === from.row ? "straight" : "out";
-      let needs = from.id;
+    let previous = start;
+    for (let tier = 2; tier <= TIERS; tier++) {
+      const draft = branchDraft(kind, branch, tier);
+      const id = idOf(draft.name);
+      const column = tier - 1;
+      const bend = previous.row === row ? "straight" : "out";
+      let needs = previous.id;
       for (let n = 0; n < CHECKPOINTS_PER_LINE; n++) {
-        const stat = p.checkpoints[made % p.checkpoints.length] ?? "health";
-        const percent = CHECKPOINT_PERCENT[tier] ?? 0;
+        const stat = stats[made % stats.length] ?? "health";
         const at = ALONG_LINE[bend][n] ?? 0.5;
-        const id = `${kind}-step-${i}-${made}`;
+        const stepId = `${kind}:${branch}-${made}`;
         out.push({
-          ...checkpoint(kind, stat, percent),
-          id,
+          ...checkpoint(kind, stat, CHECKPOINT_PERCENT[tier] ?? 0),
+          id: stepId,
           tier: 0,
           gold: CHECKPOINT_GOLD[tier] ?? 0,
+          hq: tierHq(tier),
           needs: [needs],
-          path: p.name,
-          ...lineAt(from, to, at),
-          line: { from: from.id, to: `${kind}-${slug(to.draft.name)}`, at },
+          path,
+          branch,
+          ...lineAt(previous, { column, row }, at),
+          line: { from: previous.id, to: id, at },
         });
-        needs = id;
+        needs = stepId;
         made++;
       }
-      return needs;
-    };
-    const place = (draft: Draft, column: number, row: number) => ({ draft, column, row });
-
-    const toSecond = place(p.second, 1, top + 1.5);
-    const second = add(p.second, 2, [line(start, toSecond, 2)], p.name, 1, top + 1.5);
-    const ends = [p.upper, p.lower].map(([third, fourth], j) => {
-      const row = top + 0.5 + j * 2;
-      const toThird = place(third, 2, row);
-      const middle = add(third, 3, [line(second, toThird, 3)], p.name, 2, row);
-      const toFourth = place(fourth, 3, row);
-      return add(fourth, 4, [line(middle, toFourth, 4)], p.name, 3, row);
-    });
-    const toTop = place(p.capstone, 4, top + 1.5);
-    const needs = ends.map((end) => line(end, toTop, 5));
-    add(p.capstone, 5, needs, p.name, 4, top + 1.5);
+      const upgrade: TreeUpgrade = {
+        ...draft,
+        // Every upgrade on a branch is paid for in its own crystal.
+        crystals: { [branch]: TIER_CRYSTALS[tier] ?? 1 },
+        id,
+        tier,
+        gold: upgradeGold(tier),
+        hq: tierHq(tier),
+        needs: [needs],
+        path,
+        branch,
+        column,
+        row,
+        line: null,
+      };
+      out.push(upgrade);
+      previous = upgrade;
+    }
   });
   return out;
 }
@@ -803,15 +845,14 @@ export function heroTree(kind: HeroKind): readonly TreeUpgrade[] {
   return BUILT.get(kind) ?? [];
 }
 
-/** The names of a hero's two paths. */
-export function treePaths(kind: HeroKind): readonly [string, string] {
-  const [a, b] = TREES[kind].paths;
-  return [a.name, b.name];
+/** The names of a hero's four branches, in the order of BRANCHES. */
+export function treePaths(kind: HeroKind): readonly string[] {
+  return BRANCHES.map((b) => TREES[kind].branches[b].name);
 }
 
-/** The hero's two best upgrades, their capstones. */
+/** The best upgrade on each branch: the one at its end. */
 export function capstones(kind: HeroKind): readonly TreeUpgrade[] {
-  return heroTree(kind).filter((u) => u.tier === 5);
+  return heroTree(kind).filter((u) => u.tier === TIERS);
 }
 
 /** The upgrades proper, without the checkpoints between them. */
@@ -835,9 +876,10 @@ export function canBuy(
   owned: readonly string[],
   gold: number,
   crystals: Crystals,
+  hq: number,
 ): boolean {
   if (owned.includes(upgrade.id) || lockedBy(kind, upgrade, owned)) return false;
-  if (gold < upgrade.gold) return false;
+  if (upgrade.hq > hq || gold < upgrade.gold) return false;
   return CRYSTAL_KINDS.every((k) => crystals[k] >= (upgrade.crystals[k] ?? 0));
 }
 
@@ -859,18 +901,67 @@ export function heroMods(kind: HeroKind, owned: readonly string[]): HeroMods {
   return out;
 }
 
-/** Keeps only upgrades that exist and whose path is intact, for untrusted saved data. */
-export function readOwned(kind: HeroKind, value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const wanted = new Set(value.filter((id): id is string => typeof id === "string"));
+/** What a set of upgrades cost: gold and crystals. Ones from the old trees cost what they did. */
+function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystals: CrystalCost } {
+  const tree = new Map(heroTree(kind).map((u) => [u.id, u]));
+  const old = OLD_UPGRADE_COSTS[kind];
+  let gold = 0;
+  const crystals: CrystalCost = {};
+  const addCrystals = (k: CrystalKind, n: number) => {
+    if (n > 0) crystals[k] = (crystals[k] ?? 0) + n;
+  };
+  for (const id of ids) {
+    const now = tree.get(id);
+    if (now) {
+      gold += now.gold;
+      for (const k of CRYSTAL_KINDS) addCrystals(k, now.crystals[k] ?? 0);
+      continue;
+    }
+    const before = id.startsWith(`${kind}-`) ? old[id.slice(kind.length + 1)] : undefined;
+    if (!before) continue;
+    const [coins = 0, ...gems] = before;
+    gold += coins;
+    OLD_CRYSTAL_ORDER.forEach((k, i) => {
+      addCrystals(k, gems[i] ?? 0);
+    });
+  }
+  return { gold, crystals };
+}
+
+/**
+ * Keeps the upgrades that are still to be had and that the headquarters allows, each with what
+ * comes before it, and says what the rest cost, to give back: upgrades from the old trees, and
+ * any above what the headquarters lets a hero have. Untrusted data is fine.
+ */
+export function trimUpgrades(
+  kind: HeroKind,
+  value: unknown,
+  hq = Number.POSITIVE_INFINITY,
+): { owned: string[]; refund: { gold: number; crystals: CrystalCost } } {
+  const given = Array.isArray(value)
+    ? [...new Set(value.filter((id): id is string => typeof id === "string"))]
+    : [];
+  const wanted = new Set(given);
   const owned: string[] = [];
   for (const upgrade of heroTree(kind)) {
-    if (!wanted.has(upgrade.id)) continue;
+    if (!wanted.has(upgrade.id) || upgrade.hq > hq) continue;
     if (upgrade.needs.length === 0 || upgrade.needs.some((id) => owned.includes(id))) {
       owned.push(upgrade.id);
     }
   }
-  return owned;
+  const kept = new Set(owned);
+  return {
+    owned,
+    refund: costOf(
+      kind,
+      given.filter((id) => !kept.has(id)),
+    ),
+  };
+}
+
+/** Keeps only upgrades that exist, that the headquarters allows, and whose path is intact. */
+export function readOwned(kind: HeroKind, value: unknown, hq?: number): string[] {
+  return trimUpgrades(kind, value, hq).owned;
 }
 
 /** Each hero's upgrades, empty to start with. */
@@ -881,5 +972,5 @@ export function noUpgrades(): Record<HeroKind, string[]> {
   >;
 }
 
-/** Upgrades and checkpoints together. */
-export const UPGRADES_PER_HERO = 55;
+/** Upgrades and checkpoints together: the first, then nine of each on four branches. */
+export const UPGRADES_PER_HERO = 1 + BRANCHES.length * (TIERS - 1) * (1 + CHECKPOINTS_PER_LINE);

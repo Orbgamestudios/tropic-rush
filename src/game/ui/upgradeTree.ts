@@ -1,16 +1,18 @@
-// The hero's upgrade tree, in the style of the owner's mockup: thirteen brass-rimmed tiles joined
-// by lines of small checkpoints, which light up gold as they're bought, the chosen one on a cream
-// spec card at the right, and the wallet in the corner. Bought with personal gold and crystals.
-// The board is much wider than the screen, and scrolls sideways, so it has room to spread out.
+// The hero's upgrade tree, in the style of the owner's mockup: brass-rimmed tiles joined by lines
+// of small checkpoints, which light up gold as they're bought, the chosen one on a cream spec card
+// at the right, and the wallet in the corner. From the first upgrade it branches four ways, one
+// for each crystal. The board is much wider than the screen, and scrolls sideways.
 
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES } from "../logic/heroProgress";
 import {
+  BRANCHES,
   canBuy,
   heroTree,
   lineAt,
   lockedBy,
+  TIERS,
   type TreeUpgrade,
   treePaths,
 } from "../logic/heroTrees";
@@ -36,6 +38,8 @@ export interface UpgradeTreeHost {
   save(): SaveData;
   /** The island's gold, which pays for upgrades. */
   gold(): number;
+  /** The crew's headquarters level, which sets how far up the tree a hero can go. */
+  hq(): number;
   /** False if the crew's island turned it down. */
   buy(kind: HeroKind, upgrade: TreeUpgrade): boolean;
   onBack(): void;
@@ -50,7 +54,7 @@ const WIRE_POINTS = 6;
 
 /** Where an upgrade sits on the board, as shares of its width and height. */
 function spot(u: { column: number; row: number }): { x: number; y: number } {
-  return { x: 0.06 + u.column * 0.215, y: 0.07 + u.row * 0.122 };
+  return { x: 0.035 + u.column * 0.104, y: 0.14 + u.row * 0.245 };
 }
 
 /** The stretch of line from an upgrade or checkpoint to the next, as an SVG path. */
@@ -197,7 +201,11 @@ export class UpgradeTree {
     }
     for (const u of tree) {
       const { x, y } = spot(u);
-      const node = el("button", u.line ? "tree-node tree-step" : `tree-node tree-tier-${u.tier}`);
+      const big = u.tier === 1 || u.tier === TIERS;
+      const node = el(
+        "button",
+        u.line ? "tree-node tree-step" : `tree-node${big ? " tree-big" : ""}`,
+      );
       node.style.left = `${x * 100}%`;
       node.style.top = `${y * 100}%`;
       node.setAttribute("aria-label", u.line ? u.text : u.name);
@@ -211,11 +219,12 @@ export class UpgradeTree {
       this.board.append(node);
       this.nodes.set(u.id, node);
     }
-    // Each path's name, above where it starts.
-    treePaths(kind).forEach((name, i) => {
-      const label = el("div", "tree-path", name);
-      label.style.left = `${(0.06 + 0.215) * 100}%`;
-      label.style.top = `${(0.07 + (i * 4 + 1.5) * 0.122 - 0.125) * 100}%`;
+    // Each branch's name in its crystal's color, above where it starts.
+    treePaths(kind).forEach((name, row) => {
+      const label = el("div", `tree-path tree-path-${BRANCHES[row]}`, name);
+      const { x, y } = spot({ column: 1, row });
+      label.style.left = `${x * 100}%`;
+      label.style.top = `${(y - 0.11) * 100}%`;
       this.board.append(label);
     });
   }
@@ -224,17 +233,19 @@ export class UpgradeTree {
     const save = this.host.save();
     const kind = this.hero;
     const owned = save.upgrades[kind];
+    const hq = this.host.hq();
     this.gold.set(this.host.gold());
     this.wallet.set(save.crystals);
     for (const u of heroTree(kind)) {
       const node = this.nodes.get(u.id);
       if (!node) continue;
       const has = owned.includes(u.id);
+      const open = lockedBy(kind, u, owned) === null && u.hq <= hq;
       node.classList.toggle("owned", has);
-      node.classList.toggle("open", !has && lockedBy(kind, u, owned) === null);
-      node.classList.toggle("ready", canBuy(kind, u, owned, this.host.gold(), save.crystals));
+      node.classList.toggle("open", !has && open);
+      node.classList.toggle("ready", canBuy(kind, u, owned, this.host.gold(), save.crystals, hq));
       node.classList.toggle("selected", u === this.selected);
-      const shut = !u.line && !has && lockedBy(kind, u, owned) !== null;
+      const shut = !u.line && !has && !open;
       const lock = node.querySelector(".tree-node-lock");
       if (shut && !lock) node.append(icon("lock", "tree-node-lock"));
       if (!shut) lock?.remove();
@@ -257,12 +268,13 @@ export class UpgradeTree {
     const save = this.host.save();
     const kind = this.hero;
     const owned = save.upgrades[kind];
+    const hq = this.host.hq();
     const has = owned.includes(u.id);
     this.specIcon.replaceChildren(icon(u.icon as IconName));
     this.specName.textContent = u.name;
     this.specPath.textContent = u.line
       ? `${u.path}: checkpoint`
-      : u.tier === 5
+      : u.tier === TIERS
         ? `${u.path}: capstone`
         : (u.path ?? "First upgrade");
     this.specText.textContent = u.text;
@@ -279,15 +291,18 @@ export class UpgradeTree {
     );
     this.specCost.style.display = has ? "none" : "";
     const blocked = lockedBy(kind, u, owned);
+    const ready = canBuy(kind, u, owned, this.host.gold(), save.crystals, hq);
     this.specNote.textContent = has
       ? "Owned"
-      : blocked
-        ? "First buy what comes before it"
-        : canBuy(kind, u, owned, this.host.gold(), save.crystals)
-          ? ""
-          : "Win more raids for gold and crystals";
+      : u.hq > hq
+        ? `Needs headquarters ${u.hq}`
+        : blocked
+          ? "First buy what comes before it"
+          : ready
+            ? ""
+            : "Win more raids for gold and crystals";
     this.buy.style.display = has ? "none" : "";
-    this.buy.disabled = !canBuy(kind, u, owned, this.host.gold(), save.crystals);
+    this.buy.disabled = !ready;
     setLabel(this.buy, "Upgrade");
   }
 
@@ -297,7 +312,7 @@ export class UpgradeTree {
     const save = this.host.save();
     const kind = this.hero;
     const owned = save.upgrades[kind];
-    if (!canBuy(kind, u, owned, this.host.gold(), save.crystals)) {
+    if (!canBuy(kind, u, owned, this.host.gold(), save.crystals, this.host.hq())) {
       sfx.error();
       return;
     }
@@ -317,6 +332,6 @@ export class UpgradeTree {
     sfx.levelUp();
     if (node) sparkleAt(this.fx, node, { count: 24, spread: 90 });
     this.refresh();
-    if (u.tier === 5) this.reveal.show(HERO_NAMES[kind], heroPortrait(kind), u);
+    if (u.tier === TIERS) this.reveal.show(HERO_NAMES[kind], heroPortrait(kind), u);
   }
 }

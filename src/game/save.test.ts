@@ -226,7 +226,7 @@ describe("save", () => {
       memberId: "m-1",
       gold: 1234,
       crystals: { nature: 1, fire: 2, ice: 3, dark: 4 },
-      upgrades: { ...noUpgrades(), grenadier: ["grenadier-strong-arm"] },
+      upgrades: { ...noUpgrades(), grenadier: ["grenadier:bigger-charge"] },
       blueprints: ["mortar"],
       blueprintDrought: 2,
       unlocked: ["rifleman", "medic", "heavy", "grenadier"],
@@ -276,6 +276,22 @@ describe("save", () => {
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
+  });
+
+  it("hands back the crystals an upgrade from the old trees took, once", () => {
+    const storage = memoryStorage();
+    storage.items.set(
+      "tropic-rush:save:v1",
+      JSON.stringify({
+        upgrades: { grenadier: ["grenadier-strong-arm"] },
+        crystals: { nature: 0, ice: 0, fire: 2, dark: 0 },
+      }),
+    );
+    const loaded = loadSave(storage);
+    expect(loaded.upgrades.grenadier).toEqual([]);
+    expect(loaded.crystals.fire).toBe(3);
+    writeSave(loaded, storage);
+    expect(loadSave(storage).crystals.fire).toBe(3);
   });
 
   it("hands back what an old save spent on hero levels, once", () => {

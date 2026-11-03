@@ -13,7 +13,7 @@ import { PROGRESSION } from "../logic/economy";
 export const STAGES = 10;
 
 /** The buildings modeled so far. */
-const MODELED: readonly BuildingType[] = ["gunTurret"];
+const MODELED: readonly BuildingType[] = ["gunTurret", "mortar", "harpoon"];
 
 type Side = "enemy" | "crew";
 
@@ -98,6 +98,8 @@ export interface KitBuilding {
   guns: THREE.Object3D | null;
   muzzles: THREE.Object3D[];
   spinner: THREE.Object3D | null;
+  /** What a launcher throws, sitting ready: it goes with the shot and comes back to reload. */
+  bolt: THREE.Object3D | null;
 }
 
 /** A modeled building at this level, or null if it hasn't been modeled or hasn't arrived. */
@@ -121,7 +123,14 @@ export function kitBuilding(type: BuildingType, level: number, crew: boolean): K
   root.add(copy);
   // Fitted to its tiles once for every stage, so an upgrade never changes its size.
   root.userData.fit = "kit";
-  return { root, head: part("head"), guns: part("guns"), muzzles, spinner: part("radar") };
+  return {
+    root,
+    head: part("head"),
+    guns: part("guns"),
+    muzzles,
+    spinner: part("radar"),
+    bolt: part("bolt"),
+  };
 }
 
 /** A copy of one of the models that aren't buildings, in crew paint, or null until it's arrived. */

@@ -190,15 +190,9 @@ export class WorldMapScreen {
         const rating = island.difficulty.toLowerCase();
         const pin = el("button", `map-pin map-${rating}`);
         pin.setAttribute("aria-label", island.name);
-        pin.classList.toggle("retaken", island.retaken);
         pin.classList.toggle("rival", island.rival !== null);
-        pin.classList.toggle("puzzle", island.puzzle !== null);
         pin.append(
-          el(
-            "span",
-            "map-pin-title",
-            island.retaken ? "Retaken!" : island.puzzle ? "Puzzle" : "Raid",
-          ),
+          el("span", "map-pin-title", "Raid"),
           el("span", "map-pin-rating", `HQ ${island.hq} · ${island.difficulty}`),
         );
         pin.addEventListener("click", () => {
@@ -263,11 +257,8 @@ export class WorldMapScreen {
     this.cardTip.textContent = archetypeTip(island);
     const crew = this.handlers.crewOnline();
     const prints = this.handlers.blueprintsOn(island);
-    this.cardNote.textContent = island.retaken
-      ? "Raiders rebuilt it: every building, all at full level."
-      : prints.length > 0
-        ? `Blueprints to find here: ${prints.join(", ")}.`
-        : "";
+    this.cardNote.textContent =
+      prints.length > 0 ? `Blueprints to find here: ${prints.join(", ")}.` : "";
     this.cardNote.style.display = this.cardNote.textContent ? "block" : "none";
     this.teamUp.style.display = crew > 0 ? "" : "none";
   }

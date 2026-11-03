@@ -197,7 +197,7 @@ describe("raiders retaking islands", () => {
     return world;
   };
 
-  it("takes back 10 to 15% of what's held each day, over time", () => {
+  it("takes back about a quarter of what's held each day, over time", () => {
     const world = held();
     let lost = 0;
     const nights = 2000;
@@ -205,8 +205,8 @@ describe("raiders retaking islands", () => {
       lost += retakeIslands(world, night, 3).lost.length;
     }
     const share = lost / nights / world.taken.length;
-    expect(share).toBeGreaterThan(0.1);
-    expect(share).toBeLessThan(0.15);
+    expect(share).toBeGreaterThan(0.22);
+    expect(share).toBeLessThan(0.28);
   });
 
   it("gives nothing back on a night it has nothing to take", () => {

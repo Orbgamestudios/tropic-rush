@@ -31,6 +31,8 @@ export interface BuildingModel {
   muzzles?: THREE.Object3D[];
   /** Turns all the while, like a radar dish. */
   spinner?: THREE.Object3D | null;
+  /** What a launcher throws, sitting ready: it goes with the shot and comes back to reload. */
+  bolt?: THREE.Object3D | null;
 }
 
 const C = COLORS;

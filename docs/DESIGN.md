@@ -77,35 +77,55 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
 
-## Added 2026-11-03, puzzle islands (owner's request)
+## Added 2026-11-03 (owner's requests)
 
-- **One island in five is a puzzle (Decided):** its defenses are laid out by hand instead of in rings,
-  each layout with a trick to it. The seed picks which islands and which puzzle, so every phone sees
-  the same, and none come before headquarters 3. A puzzle island says Puzzle on its map tag, with a
-  teal edge, and its card and the scout name the puzzle and give a hint.
-- **The puzzles:**
-  - **Mortar checkerboard:** mortars on every other square round the headquarters, up to 20.
-    Shells take two seconds to land, so keep moving and clear it from a corner.
-  - **Sniper horseshoe:** watchtowers in a U opening towards the beach, a storage in its mouth as
-    bait. Every tower sees into the U; go round the outside of one arm. A strong one has a second U
-    and flamethrowers round the headquarters.
-  - **Flame gauntlet:** two rows of flamethrowers lining the way in, four on a strong base. They
-    only reach 11.5 m, so pick them off from outside, but mortars behind the headquarters cover
-    those lanes and guns beside it their top end.
-  - **Harpoon ring:** harpoons all round the headquarters, a second ring on a strong base. Harpoons
-    hit Heavy and Tank harder, so send someone light.
-  - **Picket wall:** guns and storages shoulder to shoulder across the way in, one gap with fire
-    behind it. Break through a storage instead. A strong one has sniper towers behind the wall.
-  - **Crossfire:** an ordinary base's defenses split into two batteries either side of an open
-    headquarters. Take one from the outside, where the other can't reach.
-  - **Honey pot:** the storages in an open yard on the beach side, ringed by mortars, and guns
-    behind the headquarters. Grab the loot fast, or leave it.
-- **Fit:** each puzzle only goes on kinds of island it fits: the gauntlet on long ones, the wall on
-  wide ones, and so on. Anything the island has no room for goes as near its spot as there's ground.
-- **Fair fights:** a puzzle carries 0.85 to 1.4 times the firepower of an ordinary base of its
-  level, counting each defense's level, since harpoons, flamethrowers and towers come later and
-  stand lower. This breaks "as many of each as the headquarters allows" on purpose: ten mortars
-  can stand on a headquarters 6 island. Storages and mills are as usual.
+- **Puzzle islands (Decided):** about one island in five from headquarters 3 has its defenses laid
+  out by design instead of in rings, each layout with its own way in. **Changed 2026-11-03:** they
+  look like any other island on the map, the card and the scout, with no tag or hint: the layout is
+  the surprise. The seed picks which islands and which layout, so every phone sees the same.
+- **Thirty layouts,** made from shapes filled with different defenses: a checkerboard (of mortars;
+  guns and flamethrowers in turn; harpoons in, mortars out), a U open to the beach (of sniper towers
+  with fire round the headquarters on a strong base; guns with mortars outside; harpoons and
+  towers), rows lining the way in (a flame gauntlet backed by mortars and guns; guns with mortars
+  outside; harpoons and towers in turn), rings round the headquarters (harpoons; flamethrowers
+  hugging it with guns round them; guns and mortars in turn), a picket wall of guns and storages
+  with towers behind, a crossfire between two batteries, a honey pot of storages ringed by mortars,
+  spirals (fire at the heart; guns and harpoons), crosses (guns with mortars at the tips; fire in
+  close with harpoons at the tips), five spokes of five kinds, a V pointing at the beach (guns with
+  mortars at its point; sniper towers with fire at its point), diamonds (towers and harpoons;
+  mortars with guns outside), three little forts (one kind each; towers and fire), rings in rings
+  (fire, guns, mortars; guns with towers outside), a bowtie (mortars in front, guns behind), and the
+  walls of a square (towers on the corners, guns along the walls; mortars and flamethrowers).
+- **Fit:** each layout only goes on the kinds of island it fits, and only between the headquarters
+  levels it's meant for: a small shape runs out of room on a strong base. Anything the island has no
+  room for goes as near its spot as there's ground.
+- **Fair fights:** a layout carries 0.85 to 1.4 times the firepower of an ordinary base of its
+  level, counting each defense's level. This breaks "as many of each as the headquarters allows" on
+  purpose: ten mortars can stand on a headquarters 6 island. Storages and mills are as usual.
+- **Islands taken back:** about a quarter of what a crew holds goes back each day, up from 10 to
+  15%, and a retaken island looks like any other: no tag, no note on its card, no smoke over it.
+- **Gun turret: 30 levels.** It reaches all thirty only at headquarters 20, a level and a half for
+  each headquarters level, and changes its look every third level. Each level adds 6%, half the
+  usual step, so by level 15 (headquarters 10) it's about where a level 10 turret was, and the
+  twenty levels after keep it growing. Costs and build times are spread the same way: level 30
+  costs and takes what level 10 did. It fires 30% faster, every 0.23 s, for 32 a bullet, about 10%
+  more damage a second at the same level; 32 rather than 38 keeps the first islands winnable.
+  Turrets on islands from before moved up to where their level now sits.
+- **Hero trees rebuilt:** twice as long, branching four ways from the first upgrade, one branch
+  for each crystal, and no upgrade adds range any more. Each tier opens at a headquarters level, so
+  a hero is only as strong as the islands the crew can reach. Everything bought on the old trees
+  was given back, the crystals to the player and the gold to the island. See
+  `docs/HERO_TREES.md`.
+- **Gun turret's top:** the trim round the top of the drum no longer lies level with the drum's own
+  top, which made the two flicker against each other.
+- **Mortar modeled:** ten looks like the turret's, from a pipe on a forked log in sandbags to a
+  polished emplacement with a radar dish. Its tube turns to its target, tipped up, and when it
+  fires it slams back down along itself with a big flash and a puff of smoke over the muzzle.
+  The tube gets fatter twice on the way up, at looks 4 and 8, so a strong mortar shows from afar.
+- **Harpoon launcher modeled:** a great crossbow on a turning mount, ten looks from log limbs and
+  a log harpoon in sandbags to polished steel with lights and a radar dish. When it fires, the
+  bowstring snaps forward and the harpoon on the stock goes; a second later the next one slides on,
+  and the string draws back, ready by the end of its reload.
 
 ## Added 2026-11-02, seventh batch (owner's requests)
 

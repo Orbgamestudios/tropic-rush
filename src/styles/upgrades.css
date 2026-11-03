@@ -113,7 +113,7 @@
 
 .tree-board {
   position: relative;
-  width: 1500px;
+  width: 2000px;
   height: 100%;
 }
 
@@ -153,6 +153,22 @@
   pointer-events: none;
 }
 
+.tree-path-nature {
+  color: #8fe07a;
+}
+
+.tree-path-fire {
+  color: #ff9a5c;
+}
+
+.tree-path-ice {
+  color: #8fdcff;
+}
+
+.tree-path-dark {
+  color: #c79bff;
+}
+
 .tree-node {
   position: absolute;
   display: flex;
@@ -161,7 +177,7 @@
   gap: 1px;
   width: 124px;
   margin-left: -62px;
-  margin-top: -30px;
+  margin-top: -24px;
   padding: 0;
   border: 0;
   background: none;
@@ -171,8 +187,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 60px;
-  height: 60px;
+  width: 48px;
+  height: 48px;
   border: 2px solid #3e4f6d;
   border-radius: 8px;
   background: linear-gradient(180deg, #27344c, #141c2d);
@@ -181,15 +197,13 @@
     inset 0 1px 0 rgb(255 255 255 / 0.08);
 }
 
-.tree-tier-1,
-.tree-tier-5 {
-  margin-top: -36px;
+.tree-big {
+  margin-top: -29px;
 }
 
-.tree-tier-1 .tree-node-face,
-.tree-tier-5 .tree-node-face {
-  width: 72px;
-  height: 72px;
+.tree-big .tree-node-face {
+  width: 58px;
+  height: 58px;
 }
 
 .tree-node-icon {
@@ -274,16 +288,15 @@
 
 .tree-node-lock {
   position: absolute;
-  top: 38px;
-  left: 76px;
-  width: 20px;
-  height: 20px;
+  top: 30px;
+  left: 72px;
+  width: 18px;
+  height: 18px;
 }
 
-.tree-tier-5 .tree-node-lock,
-.tree-tier-1 .tree-node-lock {
-  top: 48px;
-  left: 82px;
+.tree-big .tree-node-lock {
+  top: 38px;
+  left: 78px;
 }
 
 .tree-spec {

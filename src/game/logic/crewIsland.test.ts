@@ -20,6 +20,7 @@ import {
   hqLevel,
   hqNeeds,
   isBuildableTile,
+  LAYOUT_VERSION,
   MAX_TOOL_LEVEL,
   OBSTACLE_KINDS,
   obstacleAtTile,
@@ -37,6 +38,7 @@ import {
   upgradeBlocker,
 } from "./crewIsland";
 import {
+  buildingPower,
   buildTime,
   costFor,
   levelCap,
@@ -158,6 +160,41 @@ describe("sharing heroes", () => {
     expect(sanitizeLayout({ upgrades: { rifleman: ["made-up"] } }, NOW).upgrades.rifleman).toEqual(
       [],
     );
+  });
+
+  it("won't take a hero further up the tree than the headquarters allows", () => {
+    const start = starterLayout(NOW);
+    const [first, step] = heroTree("rifleman");
+    if (!first || !step) throw new Error("missing upgrades");
+    const op = (id: string) => ({ kind: "heroUpgrade", hero: "rifleman", id }) as const;
+    const one = applyOp(start, op(first.id), NOW);
+    if (!one) throw new Error("refused");
+    // The first checkpoint on a branch leads to tier 2, which opens at headquarters 2.
+    expect(tryOp(one, op(step.id), NOW)).toEqual({ error: "Needs headquarters 2" });
+    expect(applyOp(island(2), op(first.id), NOW)).not.toBeNull();
+  });
+
+  it("gives back old-tree upgrades' gold, a little at a time if storage is full", () => {
+    const old = sanitizeLayout(
+      {
+        ...starterLayout(NOW),
+        version: 0,
+        upgrades: { rifleman: ["rifleman-basic-training", "rifleman-step-0-0"] },
+        resources: { gold: 0, timber: 0, stone: 0, scrap: 0 },
+      },
+      NOW,
+    );
+    expect(old.upgrades.rifleman).toEqual([]);
+    expect(old.resources.gold + old.owed).toBe(650);
+    const full = sanitizeLayout(
+      { ...old, resources: { ...old.resources, gold: capacity(old).gold }, owed: 650 },
+      NOW,
+    );
+    expect(full.owed).toBe(650);
+    const spent = { ...full, resources: { ...full.resources, gold: capacity(full).gold - 200 } };
+    const later = settle(spent, NOW + 1000);
+    expect(later.owed).toBeCloseTo(450, 0);
+    expect(later.resources.gold).toBeCloseTo(capacity(full).gold, 0);
   });
 });
 
@@ -502,9 +539,14 @@ describe("crew island progression", () => {
 
   it("takes minutes, then hours, for each level, and longer for the headquarters", () => {
     const minutes = (type: BuildingType, level: number) => buildTime(type, level) / 60_000;
-    expect(minutes("gunTurret", 1)).toBe(0.5);
-    expect([2, 3, 4, 5].map((level) => minutes("gunTurret", level))).toEqual([1, 2, 3, 5]);
-    expect(minutes("gunTurret", 8)).toBeGreaterThanOrEqual(60);
+    expect(minutes("mortar", 1)).toBe(0.5);
+    expect([2, 3, 4, 5].map((level) => minutes("mortar", level))).toEqual([1, 2, 3, 5]);
+    expect(minutes("mortar", 8)).toBeGreaterThanOrEqual(60);
+    // A turret's thirty levels take as long, three at a time, as an ordinary building's ten.
+    expect([1, 2, 3, 4, 6, 7].map((level) => minutes("gunTurret", level))).toEqual([
+      0.5, 0.5, 0.5, 1, 1, 2,
+    ]);
+    expect(minutes("gunTurret", 30)).toBe(minutes("mortar", 10));
     expect(minutes("headquarters", 2)).toBeLessThanOrEqual(5);
     expect(minutes("headquarters", 6)).toBeLessThanOrEqual(30);
     expect(minutes("headquarters", 8)).toBeGreaterThanOrEqual(60);
@@ -540,7 +582,8 @@ describe("crew island progression", () => {
   it("says what the next level of a building gives", () => {
     expect(nextLevelGain("goldMine", 1)).toMatch(/an hour/);
     expect(nextLevelGain("goldVault", 1)).toMatch(/storage/);
-    expect(nextLevelGain("gunTurret", 1)).toBe("+12% strength");
+    expect(nextLevelGain("mortar", 1)).toBe("+12% strength");
+    expect(nextLevelGain("gunTurret", 1)).toBe("+6% strength");
   });
 
   it("sells land mines from HQ 2, a tile each, and they can't be upgraded", () => {
@@ -651,7 +694,11 @@ describe("crew island progression", () => {
     const mine = building("m", "goldMine", at(0, 0));
     const close = turret("t", at(3, 0).x, at(3, 0).y);
     const back = sanitizeLayout(
-      { buildings: [hq, { ...mine, level: 2 }, { ...close, level: 2 }], cleared: allCleared() },
+      {
+        buildings: [hq, { ...mine, level: 2 }, { ...close, level: 2 }],
+        cleared: allCleared(),
+        version: LAYOUT_VERSION,
+      },
       NOW,
     );
     expect(back.buildings.map((b) => b.id).sort()).toEqual(["hq", "m", "t"]);
@@ -661,10 +708,34 @@ describe("crew island progression", () => {
     expect(b.level).toBe(2);
   });
 
+  it("moves a turret from when they had 10 levels up to where it sits among 30, once", () => {
+    const hq = { ...(starterLayout(NOW).buildings[0] as PlacedBuilding), level: 20 };
+    const old = { ...turret("t", at(0, 0).x, at(0, 0).y), level: 4 };
+    const moved = sanitizeLayout({ buildings: [hq, old], cleared: allCleared() }, NOW);
+    expect(moved.buildings.find((b) => b.id === "t")?.level).toBe(10);
+    expect(moved.version).toBe(LAYOUT_VERSION);
+    const again = sanitizeLayout(moved, NOW);
+    expect(again.buildings.find((b) => b.id === "t")?.level).toBe(10);
+    // Never past what the headquarters allows: HQ 4 lets a turret reach level 6.
+    const low = { ...hq, level: 4 };
+    const capped = sanitizeLayout({ buildings: [low, old], cleared: allCleared() }, NOW);
+    expect(capped.buildings.find((b) => b.id === "t")?.level).toBe(6);
+  });
+
+  it("gives a gun turret thirty levels, all of them only at the top headquarters level", () => {
+    expect([1, 2, 4, 10, 19, 20].map((hq) => levelCap("gunTurret", hq))).toEqual([
+      1, 3, 6, 15, 28, 30,
+    ]);
+    expect(levelCap("mortar", 4)).toBe(4);
+    expect(buildingPower(30, "gunTurret")).toBeCloseTo(1 + 0.06 * 29);
+    expect(buildingPower(10, "mortar")).toBeCloseTo(2.08);
+  });
+
   it("cleans up untrusted layout data, dropping what the headquarters doesn't allow", () => {
     expect(sanitizeLayout(null, NOW)).toEqual(starterLayout(NOW));
     const hq = starterLayout(NOW).buildings[0] as PlacedBuilding;
     const messy = {
+      version: LAYOUT_VERSION,
       cleared: ["nonsense", 4],
       resources: { gold: 1e9, timber: -5, stone: "x" },
       stamp: NOW - HOUR,
@@ -682,7 +753,8 @@ describe("crew island progression", () => {
     const clean = sanitizeLayout(messy, NOW);
     expect(clean.buildings.map((b) => [b.id, b.level])).toEqual([
       ["hq", 2],
-      ["ok", 2],
+      // A gun turret has thirty levels, and an HQ 2 lets it reach three of them.
+      ["ok", 3],
       ["m", 1],
     ]);
     expect(clean.resources.gold).toBe(capacity(clean).gold);

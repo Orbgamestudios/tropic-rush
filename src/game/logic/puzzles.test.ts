@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import { BUILDINGS, type BuildingType } from "./buildings";
 import { buildingCenter } from "./crewIsland";
 import { enemyBase } from "./enemyBase";
-import { islandShape } from "./islandShapes";
+import { archetypeFor, islandShape } from "./islandShapes";
 import {
   baseWorth,
+  inRange,
   PUZZLES,
   type Puzzle,
   puzzleDefenses,
   puzzleFor,
   puzzlePlan,
+  suitsOf,
   worthOf,
 } from "./puzzles";
 import { add, distance, normalize, scale, sub, vec } from "./vec";
@@ -52,18 +54,32 @@ describe("puzzle islands", () => {
     }
   });
 
-  it("deals out every puzzle once its level comes round", () => {
+  it("deals out every layout somewhere in its range of levels", () => {
     const seen = new Set<Puzzle>();
-    for (let seed = 0; seed < 4000; seed++) {
-      const p = puzzleFor(seed, 12);
-      if (p) seen.add(p);
+    for (let hq = 3; hq <= 20; hq++) {
+      for (let seed = 0; seed < 3000; seed++) {
+        const p = puzzleFor(seed, hq);
+        if (p) seen.add(p);
+      }
     }
     expect([...seen].sort()).toEqual([...ALL].sort());
+    expect(ALL.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("only puts a layout on a kind of island it fits, at a level it's meant for", () => {
+    for (let seed = 0; seed < 3000; seed++) {
+      for (const hq of [4, 9, 15]) {
+        const p = puzzleFor(seed, hq);
+        if (!p) continue;
+        expect(inRange(p, hq)).toBe(true);
+        expect(suitsOf(p)).toContain(archetypeFor(seed, hq));
+      }
+    }
   });
 
   it("gives a puzzle about the firepower of an ordinary base", () => {
     for (const puzzle of ALL) {
-      for (let hq = PUZZLES[puzzle].from; hq <= 20; hq++) {
+      for (let hq = PUZZLES[puzzle].from; hq <= (PUZZLES[puzzle].to ?? 20); hq++) {
         const types = puzzlePlan(puzzle, hq)
           .map((s) => s.type)
           .filter((t): t is BuildingType => t !== "storage" && BUILDINGS[t].attack !== undefined);
@@ -76,7 +92,8 @@ describe("puzzle islands", () => {
 
   it("builds every puzzle in full, and mostly where it was drawn", { timeout: 60_000 }, () => {
     for (const puzzle of ALL) {
-      for (const hq of [PUZZLES[puzzle].from, 8, 14, 20]) {
+      const { from, to = 20 } = PUZZLES[puzzle];
+      for (const hq of [...new Set([from, Math.round((from + to) / 2), to])]) {
         const shares: number[] = [];
         for (let k = 0; k < 6; k++) {
           const seed = seedFor(puzzle, hq, k * 1000);

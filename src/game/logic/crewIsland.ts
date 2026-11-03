@@ -38,7 +38,7 @@ import {
   weaponUpGold,
 } from "./gunboat";
 import { HERO_KINDS, type HeroKind } from "./heroes";
-import { heroTree, lockedBy, noUpgrades, readOwned } from "./heroTrees";
+import { heroTree, lockedBy, noUpgrades, trimUpgrades } from "./heroTrees";
 import { isOnGrass, landingPoints, trailPoints } from "./island";
 import { createRng } from "./rng";
 import { BLUEPRINT_TYPES, type Blueprint, isWeapon, needsBlueprint } from "./spoils";
@@ -205,7 +205,18 @@ export interface CrewLayout {
   lastNight: number;
   /** Rival crews' raids on this island, newest first. */
   raidLog: RivalRaid[];
+  /** Which of the island's one-off changes have been made to it; see LAYOUT_VERSION. */
+  version: number;
+  /** Gold given back for hero upgrades, paid into the stock as there's room for it. */
+  owed: number;
 }
+
+/**
+ * Bumped for each change an old island needs made to it, once. 1: gun turrets went from 10
+ * levels to 30, so each old level moved up to where it now sits, and the hero trees were rebuilt,
+ * so every upgrade from the old ones was given back.
+ */
+export const LAYOUT_VERSION = 1;
 
 /** A rival crew's raid on this island, for the crew to read about later. */
 export interface RivalRaid {
@@ -787,7 +798,9 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
   // Finished clearing: the patch is gone and pays out, and loose brush touching it comes away
   // too, so nobody has to tap every tile.
   const finished = layout.jobs.filter((j) => j.doneAt <= now);
-  if (finished.length === 0) return { ...layout, resources, stamp: now };
+  if (finished.length === 0) {
+    return { ...layout, ...payOwed(resources, layout.owed, cap), stamp: now };
+  }
   const cleared = [...layout.cleared];
   const done = new Set(cleared);
   let { statues } = layout;
@@ -809,7 +822,7 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
     }
   }
   const jobs = layout.jobs.filter((j) => j.doneAt > now);
-  return { ...layout, resources, cleared, jobs, statues, stamp: now };
+  return { ...layout, ...payOwed(resources, layout.owed, cap), cleared, jobs, statues, stamp: now };
 }
 
 /** Why a building can't be built right now, or null if it can (ignoring where it goes). */
@@ -927,7 +940,10 @@ export function hqNeeds(
   level: number,
 ): HqNeed[] {
   const needs = HQ_NEEDS.filter((n) => level >= n.from).map(({ type, behind }) => {
-    const need = Math.max(1, Math.min(PROGRESSION[type].maxLevel, level - behind));
+    // A building with more, smaller levels is asked for whatever it could reach back then.
+    const need = PROGRESSION[type].stretch
+      ? Math.max(1, levelCap(type, level - behind))
+      : Math.max(1, Math.min(PROGRESSION[type].maxLevel, level - behind));
     const levels = layout.buildings.filter((b) => b.type === type).map((b) => b.level);
     return { text: `${BUILDINGS[type].label} level ${need}`, have: Math.max(0, ...levels), need };
   });
@@ -1112,6 +1128,7 @@ export function tryOp(
       const owned = layout.upgrades[op.hero];
       if (owned.includes(op.id)) return { layout };
       if (lockedBy(op.hero, upgrade, owned)) return { error: "Buy what comes before it first" };
+      if (upgrade.hq > hqLevel(layout)) return { error: `Needs headquarters ${upgrade.hq}` };
       const upgrades = { ...layout.upgrades, [op.hero]: [...owned, op.id] };
       if (!op.pay) return { layout: { ...layout, upgrades } };
       if (layout.resources.gold < upgrade.gold) return { error: "Not enough gold" };
@@ -1272,6 +1289,8 @@ export function starterLayout(now = Date.now()): CrewLayout {
     relicSeed: Math.floor(now / 1000) % 2 ** 31,
     lastNight: 0,
     raidLog: [],
+    version: LAYOUT_VERSION,
+    owed: 0,
   };
 }
 
@@ -1312,15 +1331,31 @@ export function buildingAtTile(
 }
 
 /**
+ * The heroes' upgrades from untrusted data, kept to what the headquarters allows, and the gold
+ * the rest cost, to give back: upgrades from the old trees, and any above the headquarters' cap.
+ */
+function readUpgrades(value: Partial<Record<HeroKind, unknown>> | undefined, hq: number) {
+  const upgrades = noUpgrades();
+  let refund = 0;
+  for (const kind of HERO_KINDS) {
+    const { owned, refund: back } = trimUpgrades(kind, value?.[kind], hq);
+    upgrades[kind] = owned;
+    refund += back.gold;
+  }
+  return { upgrades, refund };
+}
+
+/** Pays what's owed into the stock, as far as there's room for it. */
+function payOwed(resources: Purse, owed: number, cap: Purse): { resources: Purse; owed: number } {
+  const paid = Math.max(0, Math.min(owed, cap.gold - resources.gold));
+  return { resources: { ...resources, gold: resources.gold + paid }, owed: owed - paid };
+}
+
+/**
  * Checks untrusted layout data (from storage or the network) and drops anything invalid:
  * buildings that don't fit or that the headquarters' level doesn't allow, and levels above its
  * caps. It never charges for anything.
  */
-function readUpgrades(value: Partial<Record<HeroKind, unknown>> | undefined) {
-  const upgrades = noUpgrades();
-  for (const kind of HERO_KINDS) upgrades[kind] = readOwned(kind, value?.[kind]);
-  return upgrades;
-}
 
 export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
   const data = value as {
@@ -1339,9 +1374,12 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     relicSeed?: unknown;
     lastNight?: unknown;
     raidLog?: unknown;
+    version?: unknown;
+    owed?: unknown;
   } | null;
   const raw = data?.buildings;
   if (!Array.isArray(raw)) return starterLayout(now);
+  const version = Number.isInteger(data?.version) ? (data?.version as number) : 0;
   const allIds = obstacles().map((o) => o.id);
   const known = new Set(allIds);
   const rawCleared = Array.isArray(data?.cleared) ? data.cleared : [];
@@ -1353,7 +1391,9 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     const b = item as Partial<PlacedBuilding>;
     if (typeof b.id !== "string" || typeof b.type !== "string" || !(b.type in FOOTPRINTS)) continue;
     if (!Number.isInteger(b.x) || !Number.isInteger(b.y)) continue;
-    const level = Number.isInteger(b.level) ? Math.max(0, b.level as number) : 1;
+    const saved = Number.isInteger(b.level) ? Math.max(0, b.level as number) : 1;
+    // A turret from when they had 10 levels goes to where that level sits among 30.
+    const level = version < 1 && b.type === "gunTurret" && saved > 0 ? 1 + (saved - 1) * 3 : saved;
     parsed.push({
       id: b.id,
       type: b.type as BuildingType,
@@ -1454,22 +1494,27 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     ? (data?.relicSeed as number)
     : OLD_RELIC_SEED;
   const lastNight = Number.isInteger(data?.lastNight) ? (data?.lastNight as number) : 0;
+  const heroes = readUpgrades(data?.upgrades, hq);
+  const saved = typeof data?.owed === "number" && Number.isFinite(data.owed) ? data.owed : 0;
+  const paying = payOwed(resources, Math.max(0, saved) + heroes.refund, cap);
   return {
     buildings: standing,
     cleared,
     tools,
     jobs,
     builds,
-    resources,
+    resources: paying.resources,
     stamp,
     blueprints,
     researched,
     weaponLevels,
-    upgrades: readUpgrades(data?.upgrades),
+    upgrades: heroes.upgrades,
     statues: readStatues(data?.statues),
     relicSeed,
     lastNight,
     raidLog: readRaidLog(data?.raidLog),
+    version: LAYOUT_VERSION,
+    owed: paying.owed,
   };
 }
 

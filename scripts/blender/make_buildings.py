@@ -17,7 +17,7 @@ import sys
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -139,7 +139,7 @@ def turret_base(g, s, top):
             g.cyl(1.12, 1.02, top, (0, 0, top / 2), "plate", sides=10)
             for z in (0.18, top * 0.5, top - 0.18):
                 g.rivets([(1.08 * math.cos(a / 14 * 2 * math.pi), 1.08 * math.sin(a / 14 * 2 * math.pi), z) for a in range(14)])
-            g.cyl(1.14, 1.14, 0.14, (0, 0, top - 0.07), "steel", sides=10)
+            g.cyl(1.14, 1.14, 0.14, (0, 0, top - 0.04), "steel", sides=10)
             g.box((0.05, 0.55, 0.75), (0.86, -0.6, 0.6), "paintDark", (0, 0, -0.62), 0.02)
         g.cyl(0.78, 0.8, 0.14, (0, 0, top), "steel", sides=16)
     else:
@@ -150,7 +150,7 @@ def turret_base(g, s, top):
             g.cyl(1.5, 1.14, skirt, (0, 0, 0.24 + skirt / 2), "polished" if s >= 9 else paint, sides=sides)
         g.cyl(1.14, 1.08, top - 0.24, (0, 0, 0.24 + (top - 0.24) / 2), paint, sides=sides)
         g.cyl(1.2, 1.2, 0.3, (0, 0, 0.4), "paintDark", sides=sides)
-        g.cyl(1.16, 1.16, 0.16, (0, 0, top - 0.08), "paintDark" if s <= 8 else "brass", sides=sides)
+        g.cyl(1.16, 1.16, 0.16, (0, 0, top - 0.05), "paintDark" if s <= 8 else "brass", sides=sides)
         # An access hatch on the forward side, and vents round the back.
         g.box((0.06, 0.6, 0.85), (1.1, -0.45, top * 0.55), "paintDark", (0, 0, -0.38), 0.02)
         for i in range(3 if s <= 8 else 5):
@@ -283,7 +283,280 @@ def gun_turret(s):
     return [body, head, guns, *extra]
 
 
-BUILDINGS = {"gunTurret": gun_turret}
+# ---------------------------------------------------------------------------------------------
+# Mortar: a low emplacement, and a stubby tube on a turning mount, tipped up towards its target.
+
+MORTAR_PITCH = 0.95
+
+
+def mortar_base(g, s, top):
+    if s <= 2:
+        for y in (-0.55, 0.55):
+            g.bar((-0.9, y, 0.1), (0.9, y, 0.1), 0.12, "log", 7)
+        deck(g, 1.9, top - 0.03, "plank" if s == 1 else "plankGrey")
+        if s == 2:
+            g.box((1.7, 1.7, 0.03), (0, 0, top + 0.005), "tin", (0, 0, 0.12), 0.0)
+    elif s <= 4:
+        for c in range(2):
+            z = 0.12 + c * 0.22
+            for side in (-1, 1):
+                if c % 2 == 0:
+                    g.bar((-0.95, side * 0.8, z), (0.95, side * 0.8, z), 0.12, "log", 7)
+                else:
+                    g.bar((side * 0.8, -0.95, z), (side * 0.8, 0.95, z), 0.12, "log", 7)
+        deck(g, 2.0, top - 0.03)
+        if s == 4:
+            for x, y in ((0.9, 0.9), (-0.9, 0.9), (0.9, -0.9), (-0.9, -0.9)):
+                g.cyl(0.1, 0.1, top + 0.3, (x, y, (top + 0.3) / 2), "log", sides=7)
+            g.cyl(0.62, 0.66, 0.1, (0, 0, top + 0.05), "plankGrey", sides=12)
+    elif s <= 6:
+        g.cyl(1.2, 1.15, top, (0, 0, top / 2), "plate", sides=8 if s == 5 else 12)
+        g.rivets([(1.18 * math.cos(a / 12 * 2 * math.pi), 1.18 * math.sin(a / 12 * 2 * math.pi), top * 0.6) for a in range(12)])
+        g.cyl(1.2, 1.2, 0.1, (0, 0, top - 0.02), "steel", sides=8 if s == 5 else 12)
+        g.cyl(0.66, 0.7, 0.12, (0, 0, top + 0.06), "steel", sides=16)
+    else:
+        sides = 12 if s <= 8 else 20
+        paint = "paint" if s <= 8 else "paintClean"
+        if s >= 8:
+            g.cyl(1.55, 1.22, 0.35, (0, 0, 0.42), "polished" if s >= 9 else paint, sides=sides)
+        g.cyl(1.22, 1.16, top - 0.24, (0, 0, 0.24 + (top - 0.24) / 2), paint, sides=sides)
+        g.cyl(1.25, 1.25, 0.1, (0, 0, 0.36), "paintDark", sides=sides, caps=False)
+        g.cyl(1.24, 1.24, 0.12, (0, 0, top - 0.02), "paintDark" if s <= 8 else "brass", sides=sides, caps=False)
+        g.cyl(0.7, 0.74, 0.12, (0, 0, top + 0.08), "polished" if s >= 9 else "steel", sides=24)
+        if s == 10:
+            g.cyl(1.27, 1.27, 0.05, (0, 0, top * 0.62), "lamp", sides=sides, caps=False)
+            for i in range(8):
+                a = (i + 0.5) / 8 * 2 * math.pi
+                g.cyl(0.09, 0.09, 0.04, (2.12 * math.cos(a), 2.12 * math.sin(a), 0.25), "lamp", sides=8)
+    # Rounds ready to hand, round the back.
+    if s <= 4:
+        for i, (x, y) in enumerate(((-1.55, 0.7), (-1.6, -0.2))):
+            g.box((0.5, 0.42, 0.34), (x, y, 0.17), "plank" if i == 0 else "plankGrey", (0, 0, 0.2 * i - 0.1), 0.012)
+    elif s <= 6:
+        for i, (x, y) in enumerate(((-1.6, 0.6), (-1.6, -0.1))):
+            g.box((0.5, 0.45, 0.36), (x, y, 0.42), "plate", (0, 0, 0.05 * i), 0.02)
+    else:
+        g.box((0.55, 0.8, 0.4), (-1.65, 0.3, 0.46), "paintDark", chamfer=0.03)
+        for i in range(4):
+            g.cyl(0.08, 0.08, 0.4, (-1.55 + (i % 2) * 0.2, -0.45 + (i // 2) * 0.2, 0.46), "brass", sides=8)
+
+
+def mortar_gun(head, s, top):
+    t = (s - 1) / 9
+    # The tube gets fatter twice on the way up, so the step shows from across the island.
+    radius = 0.2 if s <= 3 else 0.28 if s <= 7 else 0.36
+    # Raised as it fattens, so the breech clears the base.
+    pivot_z = top + lerp(0.5, 0.65, t) + (radius - 0.2) * 1.2
+    length = lerp(1.6, 2.2, t)
+    tube = Group("guns", pivot=(0, 0, pivot_z), seed=200 + s, parent=head, tilt=(0, -MORTAR_PITCH, 0))
+    z = pivot_z
+    material = "pipe" if s <= 3 else "steel" if s <= 6 else "gunmetal"
+    # The tube is drawn lying along +x through its pivot; the tilt stands it up.
+    tube.bar((-0.55, 0, z), (length, 0, z), radius, material, 12)
+    tube.cyl(radius + 0.06, radius + 0.03, 0.22, (-0.62, 0, z), "steel" if s >= 3 else "pipe", (0, math.pi / 2, 0), sides=12)
+    tube.points["muzzle0"] = (length + 0.12, 0, z)
+    if s <= 2:
+        for x in (0.2, 0.9):
+            tube.cyl(radius + 0.04, radius + 0.04, 0.08, (x, 0, z), "rope", (0, math.pi / 2, 0), sides=10)
+    elif s <= 6:
+        for x in (0.1, length - 0.1):
+            tube.cyl(radius + 0.04, radius + 0.04, 0.1, (x, 0, z), "steel", (0, math.pi / 2, 0), sides=12, caps=False)
+        if s >= 5:
+            tube.cyl(radius + 0.08, radius + 0.08, 0.6, (0.25, 0, z), "gunmetal", (0, math.pi / 2, 0), sides=12)
+    else:
+        jacket = "gunmetal" if s <= 8 else "polished"
+        tube.cyl(radius + 0.07, radius + 0.07, length * 0.45, (length * 0.25, 0, z), jacket, (0, math.pi / 2, 0), sides=14)
+        for k in range(3):
+            tube.cyl(radius + 0.09, radius + 0.09, 0.05, (length * (0.1 + k * 0.12), 0, z), "brass" if s >= 9 else "steel", (0, math.pi / 2, 0), sides=14, caps=False)
+        if s >= 9:
+            tube.box((0.22, radius * 2 + 0.06, radius * 2 + 0.06), (length + 0.04, 0, z), "gunmetal", chamfer=0.03)
+    # The mount the tube turns on, and what holds it up.
+    if s <= 4:
+        for side in (-1, 1):
+            head.box((0.5, 0.08, 0.6), (0, side * (radius + 0.12), pivot_z - 0.2), "plank", (0, 0.1, 0), 0.01)
+        leg = "log" if s <= 2 else "pipe"
+        for side in (-1, 1):
+            head.bar((1.0, side * 0.45, top), (0.35, side * 0.12, pivot_z + 0.45), 0.06, leg, 7)
+        head.box((0.8, 0.8, 0.08), (-0.1, 0, top + 0.04), "plankGrey" if s <= 2 else "tin", (0, 0, 0.1), 0.01)
+    else:
+        plate = "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+        for side in (-1, 1):
+            head.box((0.7, 0.1, 0.75), (-0.05, side * (radius + 0.15), pivot_z - 0.15), plate, chamfer=0.03)
+        for side in (-1, 1):
+            head.bar((0.95, side * 0.5, top + 0.1), (0.4, side * 0.14, pivot_z + 0.5), 0.05, "steel", 8)
+        head.cyl(0.6, 0.6, 0.12, (0, 0, top + 0.18), plate, sides=20)
+        if s >= 7:
+            head.box((0.28, 0.2, 0.22), (-0.2, radius + 0.36, pivot_z + 0.15), "paintDark", chamfer=0.02)
+            head.box((0.04, 0.14, 0.08), (-0.07, radius + 0.36, pivot_z + 0.18), "glass", chamfer=0.0)
+            for side in (-1, 1):
+                head.bar((-0.4, side * 0.3, top + 0.2), (0.05, side * 0.18, pivot_z + 0.25), 0.045, "pipe", 8)
+        if s >= 9:
+            head.box((0.04, 0.9, 0.06), (0.32, 0, top + 0.26), "hazard", chamfer=0.0)
+    extra = []
+    if s == 10:
+        head.bar((-0.55, -0.45, top + 0.2), (-0.55, -0.45, top + 1.2), 0.04, "steel", 8)
+        dish = Group("radar", pivot=(-0.55, -0.45, top + 1.2), seed=300, parent=head)
+        dish.cyl(0.06, 0.06, 0.08, (-0.55, -0.45, top + 1.24), "brass", sides=10)
+        dish.cyl(0.38, 0.07, 0.18, (-0.48, -0.45, top + 1.36), "polished", (0.0, -0.45, 0), sides=16, caps=False)
+        dish.cyl(0.05, 0.05, 0.08, (-0.25, -0.45, top + 1.46), "lamp", sides=8)
+        extra.append(dish)
+    return [tube, *extra]
+
+
+def mortar(s):
+    top = lerp(0.42, 0.95, (s - 1) / 9)
+    body = Group("body", seed=s)
+    head = Group("head", pivot=(0, 0, top), seed=100 + s)
+    turret_ground(body, s)
+    mortar_base(body, s, top)
+    parts = mortar_gun(head, s, top)
+    return [body, head, *parts]
+
+
+# ---------------------------------------------------------------------------------------------
+# Harpoon launcher: a great crossbow on a turning mount, a harpoon on its stock and its line on a
+# drum. When it fires, the bowstring snaps forward and the harpoon goes; then the string draws back
+# and the next harpoon slides on.
+
+
+def harpoon_base(g, s, top):
+    if s <= 2:
+        for i in range(3):
+            a = i / 3 * 2 * math.pi + 0.5
+            drum(g, (0.5 * math.cos(a), 0.5 * math.sin(a), 0), h=top - 0.42, material="rust")
+        deck(g, 1.7, top - 0.36)
+        g.bar((0.0, 0.0, top - 0.34), (0.0, 0.0, top), 0.16, "log", 7)
+    elif s <= 4:
+        for x in (-0.65, 0.65):
+            for y in (-0.65, 0.65):
+                g.beam((x, y, 0), (x * 0.9, y * 0.9, top - 0.1), 0.18, 0.18, "log")
+        for x, y in ((0.7, 0), (-0.7, 0), (0, 0.7), (0, -0.7)):
+            along = Vector((0, 1, 0)) if abs(x) > 0 else Vector((1, 0, 0))
+            low = Vector((x, y, 0.2)) - along * 0.6
+            high = Vector((x, y, top - 0.35)) + along * 0.6
+            g.beam(tuple(low), tuple(high), 0.08, 0.05, "plank")
+        deck(g, 1.7, top - 0.06, "plank" if s == 4 else "plankGrey")
+        g.cyl(0.5, 0.55, 0.12, (0, 0, top), "plankGrey", sides=10)
+    elif s <= 6:
+        g.cyl(1.0, 0.9, top, (0, 0, top / 2), "plate", sides=8 if s == 5 else 12)
+        for z in (0.2, top - 0.2):
+            g.rivets([(0.98 * math.cos(a / 12 * 2 * math.pi), 0.98 * math.sin(a / 12 * 2 * math.pi), z) for a in range(12)])
+        g.cyl(1.02, 1.02, 0.12, (0, 0, top - 0.02), "steel", sides=8 if s == 5 else 12, caps=False)
+        g.cyl(0.66, 0.7, 0.12, (0, 0, top), "steel", sides=16)
+    else:
+        sides = 12 if s <= 8 else 20
+        paint = "paint" if s <= 8 else "paintClean"
+        if s >= 8:
+            g.cyl(1.4, 1.02, 0.5, (0, 0, 0.49), "polished" if s >= 9 else paint, sides=sides)
+        g.cyl(1.02, 0.94, top - 0.24, (0, 0, 0.24 + (top - 0.24) / 2), paint, sides=sides)
+        g.cyl(1.05, 1.05, 0.25, (0, 0, 0.42), "paintDark", sides=sides, caps=False)
+        g.cyl(1.04, 1.04, 0.12, (0, 0, top - 0.02), "paintDark" if s <= 8 else "brass", sides=sides, caps=False)
+        g.box((0.06, 0.5, 0.7), (0.98, -0.35, top * 0.55), "paintDark", (0, 0, -0.4), 0.02)
+        g.cyl(0.7, 0.74, 0.12, (0, 0, top), "polished" if s >= 9 else "steel", sides=24)
+        if s == 10:
+            g.cyl(1.07, 1.07, 0.05, (0, 0, top * 0.75), "lamp", sides=sides, caps=False)
+            for i in range(8):
+                a = (i + 0.5) / 8 * 2 * math.pi
+                g.cyl(0.09, 0.09, 0.04, (2.12 * math.cos(a), 2.12 * math.sin(a), 0.25), "lamp", sides=8)
+    # Spare harpoons lying on a crate round the back.
+    spare = "log" if s <= 3 else "steel" if s <= 6 else "gunmetal"
+    tip = "tin" if s <= 3 else "plate" if s <= 6 else "polished"
+    crate = "plank" if s <= 4 else "plate" if s <= 6 else "paintDark"
+    g.box((0.5, 0.9, 0.3), (-1.55, -0.2, 0.15), crate, chamfer=0.015)
+    for y in (-0.45, -0.2, 0.05):
+        g.bar((-1.75, y - 0.3, 0.34), (-1.35, y + 0.35, 0.34), 0.035, spare, 6)
+        g.cyl(0.07, 0.01, 0.2, (-1.3, y + 0.43, 0.34), tip, (-math.pi / 2, 0, -0.55), sides=6)
+
+
+def harpoon_gun(head, s, top):
+    t = (s - 1) / 9
+    z = top + lerp(0.42, 0.55, t)
+    reach = lerp(1.15, 1.6, t)
+    wood = s <= 4
+    stock = "plank" if s <= 2 else "plankGrey" if s <= 4 else "steel" if s <= 6 else "gunmetal"
+    limbs = "log" if s <= 2 else "plank" if s <= 4 else "steel" if s <= 6 else "gunmetal" if s <= 8 else "polished"
+    head.cyl(0.6, 0.62, 0.12, (0, 0, top + 0.06), "plankGrey" if wood else "steel", sides=16)
+    # The stock the harpoon lies along, on a post up from the mount.
+    head.box((0.3, 0.3, z - top - 0.1), (-0.05, 0, (top + z) / 2), stock, chamfer=0.02)
+    head.box((2.1, 0.34, 0.18), (-0.15, 0, z), stock, chamfer=0.02 if not wood else 0.012)
+    # The bow, its limbs swept back from the front of the stock.
+    tips = []
+    for side in (-1, 1):
+        root = (0.75, side * 0.14, z + 0.02)
+        tip = (0.32, side * reach, z + 0.02)
+        head.beam(root, tip, 0.14 if wood else 0.1, 0.12, limbs)
+        if s >= 5:
+            mid = ((root[0] + tip[0]) / 2 - 0.05, (root[1] + tip[1]) / 2, z + 0.1)
+            head.beam((0.72, side * 0.14, z + 0.1), mid, 0.08, 0.06, limbs)
+        if s <= 4:
+            for k in (0.3, 0.65):
+                at = (lerp(root[0], tip[0], k), lerp(root[1], tip[1], k), z + 0.02)
+                head.cyl(0.085, 0.085, 0.05, at, "rope" if s <= 2 else "steel", (0, math.pi / 2, 0), sides=7, caps=False)
+        tips.append(tip)
+    head.box((0.24, 0.42, 0.24), (0.78, 0, z + 0.02), "plank" if wood else "gunmetal", chamfer=0.02)
+    # Its line, wound on a drum at the side, and a crank at the back.
+    head.cyl(0.22, 0.22, 0.34, (-0.45, -0.42, z - 0.05), "rope", (math.pi / 2, 0, 0), sides=12)
+    head.cyl(0.26, 0.26, 0.04, (-0.45, -0.25, z - 0.05), stock, (math.pi / 2, 0, 0), sides=12)
+    head.cyl(0.26, 0.26, 0.04, (-0.45, -0.59, z - 0.05), stock, (math.pi / 2, 0, 0), sides=12)
+    head.bar((-1.2, -0.25, z), (-1.2, 0.25, z), 0.04, "steel", 6)
+    head.bar((-1.2, 0.25, z), (-1.2, 0.25, z + 0.25), 0.03, "steel", 6)
+    if s >= 5:
+        plate = "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+        # A housing round the back of the stock, and a shield over the bow's middle.
+        head.box((0.7, 0.62, 0.42), (-0.75, 0, z + 0.12), plate, chamfer=0.04)
+        head.box((0.06, 1.1, 0.5), (0.95, 0, z + 0.22), plate if s <= 8 else "polished", (0, -0.35, 0), 0.02)
+        if s <= 6:
+            head.rivets([(0.99, y, z + 0.3) for y in (-0.4, 0, 0.4)])
+    if s >= 7:
+        head.box((0.24, 0.14, 0.16), (-0.6, 0.36, z + 0.4), "paintDark", chamfer=0.02)
+        head.box((0.04, 0.1, 0.07), (-0.47, 0.36, z + 0.42), "glass", chamfer=0.0)
+    if s >= 8:
+        head.cyl(0.15, 0.13, 0.26, (-0.5, -0.45, z + 0.42), "steel" if s <= 8 else "polished", (0, math.pi / 2, 0), sides=12)
+        head.cyl(0.12, 0.12, 0.03, (-0.36, -0.45, z + 0.42), "lamp", (0, math.pi / 2, 0), sides=12)
+    if s >= 9:
+        head.box((0.04, 1.12, 0.07), (0.98, 0, z + 0.43), "hazard", (0, -0.35, 0), 0.0)
+    extra = []
+    if s == 10:
+        head.bar((-1.0, 0.3, z), (-1.0, 0.3, z + 0.9), 0.04, "steel", 8)
+        dish = Group("radar", pivot=(-1.0, 0.3, z + 0.9), seed=300, parent=head)
+        dish.cyl(0.06, 0.06, 0.08, (-1.0, 0.3, z + 0.94), "brass", sides=10)
+        dish.cyl(0.36, 0.07, 0.17, (-0.94, 0.3, z + 1.05), "polished", (0.0, -0.45, 0), sides=16, caps=False)
+        dish.cyl(0.05, 0.05, 0.08, (-0.73, 0.3, z + 1.14), "lamp", sides=8)
+        extra.append(dish)
+    # The bowstring and its latch: they snap forward when it fires.
+    string = Group("guns", pivot=(0, 0, top), seed=200 + s, parent=head)
+    cord = "rope" if s <= 4 else "pipe"
+    latch = (-0.55, 0, z + 0.12)
+    for tip in tips:
+        string.bar(tip, latch, 0.025, cord, 5)
+    string.box((0.16, 0.2, 0.12), latch, "plank" if wood else "gunmetal", chamfer=0.015)
+    # The harpoon on the stock: it goes when it fires, and the next slides on.
+    bolt = Group("bolt", pivot=(0, 0, top), seed=250 + s, parent=head)
+    shaft = "log" if s <= 3 else "steel" if s <= 6 else "gunmetal"
+    point = "tin" if s <= 3 else "plate" if s <= 6 else "polished"
+    by = z + 0.15
+    end = 1.25 + 0.35 * t
+    bolt.bar((-0.5, 0, by), (end, 0, by), 0.045 if s <= 3 else 0.04, shaft, 7)
+    bolt.cyl(0.1, 0.01, 0.34, (end + 0.15, 0, by), point, (0, math.pi / 2, 0), sides=8)
+    for side in (-1, 1):
+        bolt.beam((end + 0.02, side * 0.02, by), (end - 0.14, side * 0.14, by), 0.04, 0.02, point)
+    if s >= 7:
+        bolt.cyl(0.06, 0.06, 0.05, (0.2, 0, by), "brass" if s >= 9 else "steel", (0, math.pi / 2, 0), sides=8, caps=False)
+    bolt.points["muzzle0"] = (end + 0.35, 0, by)
+    return [string, bolt, *extra]
+
+
+def harpoon(s):
+    top = lerp(1.25, 2.25, (s - 1) / 9)
+    body = Group("body", seed=s)
+    head = Group("head", pivot=(0, 0, top), seed=100 + s)
+    turret_ground(body, s)
+    harpoon_base(body, s, top)
+    parts = harpoon_gun(head, s, top)
+    return [body, head, *parts]
+
+
+BUILDINGS = {"gunTurret": gun_turret, "mortar": mortar, "harpoon": harpoon}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -479,7 +752,8 @@ def bake_light(groups, stage):
     whole = bmesh.new()
     for g in groups:
         copy = g.bm.copy()
-        bmesh.ops.translate(copy, verts=copy.verts, vec=g.pivot)
+        place = Matrix.Translation(g.pivot) @ g.tilt.to_matrix().to_4x4()
+        bmesh.ops.transform(copy, matrix=place, verts=copy.verts)
         mesh = bpy.data.meshes.new("scratch")
         copy.to_mesh(mesh)
         copy.free()
@@ -491,10 +765,11 @@ def bake_light(groups, stage):
     for g in groups:
         g.bm.normal_update()
         layer = g.bm.loops.layers.color.new("Col")
+        tilt = g.tilt.to_matrix()
         for face in g.bm.faces:
             for loop in face.loops:
-                normal = g.normal_of(loop)
-                at = loop.vert.co + g.pivot + normal * 0.012
+                normal = tilt @ g.normal_of(loop)
+                at = tilt @ loop.vert.co + g.pivot + normal * 0.012
                 turn = normal.to_track_quat("Z", "Y")
                 blocked = 0.0
                 for ray in rays:
@@ -539,6 +814,7 @@ def build(name, sheet):
             # wherever suits the compression, so the mesh can't be what turns.
             pivot = bpy.data.objects.new(g.name, None)
             pivot.location = g.pivot
+            pivot.rotation_euler = g.tilt
             scene.collection.objects.link(pivot)
             shape.parent = pivot
             shape.location = (0, 0, 0)

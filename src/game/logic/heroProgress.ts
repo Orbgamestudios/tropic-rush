@@ -93,7 +93,7 @@ export function heroStats(kind: HeroKind, owned: readonly string[]): HeroStats {
     hp: Math.round(spec.hp * mods.hp),
     dps: Math.round(dps / mods.reload),
     speed: spec.speed * mods.speed,
-    range: attack.range + mods.range,
+    range: attack.range,
   };
 }
 

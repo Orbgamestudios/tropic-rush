@@ -43,6 +43,14 @@ interface Progression {
   unlockHq: number;
   /** Its highest level. */
   maxLevel: number;
+  /**
+   * Levels for each one of an ordinary building's, for a building that grows in more, smaller
+   * steps: it reaches its last level only at the top headquarters level, and each level costs
+   * and takes that much less more than the last.
+   */
+  stretch?: number;
+  /** How much stronger each level makes it, if not the usual 12%. */
+  powerPerLevel?: number;
   /** [HQ level, how many allowed from that level on], in rising order. */
   counts: readonly (readonly [number, number])[];
   /** Cost to build it (level 1). Upgrades cost more each level. */
@@ -74,7 +82,11 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
   },
   gunTurret: {
     unlockHq: 1,
-    maxLevel: 10,
+    maxLevel: 30,
+    stretch: 3,
+    // Half the usual step: by level 15, where a headquarters 10 has it, it's about where a
+    // level 10 turret was, and the twenty levels after keep it growing.
+    powerPerLevel: 0.06,
     counts: [
       [1, 1],
       [3, 2],
@@ -165,16 +177,26 @@ export function allowedCount(type: BuildingType, hqLevel: number): number {
   return count;
 }
 
+const stretchOf = (type: BuildingType) => PROGRESSION[type].stretch ?? 1;
+
 /** How much a building's health and damage are multiplied by at a level, in a raid. */
-export function buildingPower(level: number): number {
-  return 1 + 0.12 * (Math.max(1, level) - 1);
+export function buildingPower(level: number, type?: BuildingType): number {
+  const step = (type && PROGRESSION[type].powerPerLevel) ?? 0.12;
+  return 1 + step * (Math.max(1, level) - 1);
 }
 
 /** The highest level a building can reach at this headquarters level. */
 export function levelCap(type: BuildingType, hqLevel: number): number {
   const p = PROGRESSION[type];
   if (type === "headquarters") return p.maxLevel;
-  return Math.max(0, Math.min(p.maxLevel, hqLevel - p.unlockHq + 1));
+  const reached = hqLevel - p.unlockHq + 1;
+  if (reached <= 0) return 0;
+  // A stretched building gets all its levels by the top headquarters level, not one per level.
+  if (p.stretch) {
+    const span = MAX_HQ_LEVEL - p.unlockHq + 1;
+    return Math.min(p.maxLevel, Math.max(1, Math.floor((reached * p.maxLevel) / span)));
+  }
+  return Math.min(p.maxLevel, reached);
 }
 
 const scale = (cost: Partial<Purse>, factor: number): Partial<Purse> => {
@@ -196,7 +218,8 @@ export function nextLevelGain(type: BuildingType, level: number): string {
   if (STORAGES[type]) {
     return `+${formatAmount(storageCapacity(level + 1) - storageCapacity(level))} storage`;
   }
-  return `+${Math.round((buildingPower(level + 1) / buildingPower(level) - 1) * 100)}% strength`;
+  const gain = buildingPower(level + 1, type) / buildingPower(level, type) - 1;
+  return `+${Math.round(gain * 100)}% strength`;
 }
 
 /** Cost to bring a building to `level` (level 1 is building it). */
@@ -208,7 +231,7 @@ export function costFor(type: BuildingType, level: number): Partial<Purse> {
     if (level >= 3) cost.scrap = Math.round((120 * 1.32 ** (level - 3)) / 10) * 10;
     return cost;
   }
-  return scale(PROGRESSION[type].cost, 1.45 ** (level - 1));
+  return scale(PROGRESSION[type].cost, 1.45 ** ((level - 1) / stretchOf(type)));
 }
 
 /** Minutes of work to bring a building to a level, from 1 upward; level 1 is building it. */
@@ -223,7 +246,9 @@ const MINUTE_MS = 60_000;
 /** Milliseconds of work to bring a building to `level`. */
 export function buildTime(type: BuildingType, level: number): number {
   const table = type === "headquarters" ? HQ_MINUTES : BUILD_MINUTES;
-  const minutes = table[Math.max(0, Math.min(table.length, level) - 1)] ?? 0;
+  // A stretched building's levels take as long as the ordinary level they're a share of.
+  const step = Math.ceil(level / stretchOf(type));
+  const minutes = table[Math.max(0, Math.min(table.length, step) - 1)] ?? 0;
   return minutes * MINUTE_MS;
 }
 

@@ -4,7 +4,6 @@
 
 import { BUILDINGS } from "../logic/buildings";
 import type { ScoutRow } from "../logic/enemyBase";
-import { PUZZLES } from "../logic/puzzles";
 import type { RaidBuilding } from "../logic/raid";
 import type { MapIsland } from "../logic/worldMap";
 import { buildingIcon } from "../render/thumbnails";
@@ -47,9 +46,6 @@ export class ScoutScreen {
   readonly root = el("div", "scout");
   private readonly name = el("div", "scout-name");
   private readonly rating = el("div", "scout-rating");
-  private readonly puzzle = el("div", "scout-puzzle");
-  /** What the bar along the bottom says when no building's picked. */
-  private hint = HINT;
   private readonly tally = el("div", "scout-tally");
   private readonly info = el("div", "scout-info");
   private readonly teamBar = el("div", "scout-team");
@@ -65,7 +61,7 @@ export class ScoutScreen {
     private readonly handlers: ScoutHandlers,
   ) {
     const title = el("div", "scout-title");
-    title.append(el("div", "scout-tag", "Scouting"), this.name, this.rating, this.puzzle);
+    title.append(el("div", "scout-tag", "Scouting"), this.name, this.rating);
     const back = button({
       icon: "map",
       aria: "Back to map",
@@ -115,9 +111,6 @@ export class ScoutScreen {
     this.name.textContent = island.name;
     this.rating.className = `scout-rating map-${island.difficulty.toLowerCase()}`;
     this.rating.textContent = `${island.difficulty} · Headquarters ${island.hq}`;
-    this.puzzle.textContent = island.puzzle ? `Puzzle · ${PUZZLES[island.puzzle].label}` : "";
-    this.puzzle.style.display = island.puzzle ? "" : "none";
-    this.hint = island.puzzle ? PUZZLES[island.puzzle].tip : HINT;
     this.tally.replaceChildren(
       ...report.map((row) => {
         const tile = el("div", "scout-tile");
@@ -132,7 +125,7 @@ export class ScoutScreen {
         return tile;
       }),
     );
-    this.info.textContent = this.hint;
+    this.info.textContent = HINT;
     this.root.style.display = "block";
   }
 
@@ -181,7 +174,7 @@ export class ScoutScreen {
     if (!known || this.moved >= TAP_SLOP || this.pointers.size > 0) return;
     const building = this.handlers.onTap(e.clientX, e.clientY);
     sfx.tick();
-    this.info.textContent = building ? factsAbout(building) : this.hint;
+    this.info.textContent = building ? factsAbout(building) : HINT;
   }
 
   private pinchSpread(): number {

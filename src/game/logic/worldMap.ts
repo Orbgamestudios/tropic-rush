@@ -12,7 +12,7 @@ import { type CrystalKind, islandCrystal } from "./crystals";
 import { allowedCount, MAX_HQ_LEVEL } from "./economy";
 import { type RaidReward, raidReward } from "./heroProgress";
 import { ARCHETYPES, type Archetype, archetypeFor } from "./islandShapes";
-import { PUZZLES, type Puzzle, puzzleDefenses, puzzleFor } from "./puzzles";
+import { type Puzzle, puzzleDefenses, puzzleFor } from "./puzzles";
 import { createRng } from "./rng";
 
 export type Difficulty = "Easy" | "Fair" | "Hard" | "Deadly";
@@ -372,15 +372,13 @@ function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland
   };
 }
 
-/** The short name of an island's kind, for its card: its puzzle, if it's one. */
+/** The short name of an island's kind, for its card. */
 export function archetypeLabel(island: MapIsland): string {
-  if (island.puzzle) return `Puzzle · ${PUZZLES[island.puzzle].label}`;
   return island.archetype === "player" ? "Player island" : ARCHETYPES[island.archetype].label;
 }
 
 /** How to go about taking an island, for its card. */
 export function archetypeTip(island: MapIsland): string {
-  if (island.puzzle) return PUZZLES[island.puzzle].tip;
   return island.archetype === "player" ? "" : ARCHETYPES[island.archetype].tip;
 }
 
@@ -590,10 +588,10 @@ function regionsToSplotches(world: WorldProgress): WorldProgress {
 }
 
 /** The share of a crew's islands taken back each day, at least and at most. */
-const RETAKEN_SHARE = [0.1, 0.15] as const;
+const RETAKEN_SHARE = [0.22, 0.28] as const;
 
 /**
- * The night's move: raiders and rival crews take back about a tenth of the crew's islands, a part
+ * The night's move: raiders and rival crews take back about a quarter of the crew's islands, a part
  * of an island being a chance of a whole one. Each comes back with a stronger headquarters, built
  * up to everything that level allows.
  */

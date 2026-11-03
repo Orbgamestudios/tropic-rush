@@ -73,7 +73,7 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
     height: 5.6,
     hp: 1100,
     energy: 4,
-    attack: { kind: "bullet", range: 21, damage: 38, reload: 0.3, speed: 30 },
+    attack: { kind: "bullet", range: 21, damage: 32, reload: 0.23, speed: 30 },
   },
   mortar: {
     label: "Mortar",

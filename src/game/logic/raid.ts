@@ -500,7 +500,7 @@ export function createRaid(
   const buildings = layout.buildings.map((b): RaidBuilding => {
     const spec = BUILDINGS[b.type];
     const level = b.level ?? 1;
-    const power = buildingPower(level);
+    const power = buildingPower(level, b.type);
     const hp = spec.hp * power * buffs.health;
     return {
       id: nextId++,
@@ -861,7 +861,7 @@ function updateAttack(
             "bullet",
             fromAngle(angleOf(hero.burstDir) + stray),
             atk.speed * m.shotSpeed,
-            atk.range + m.range,
+            atk.range,
             atk.damage * hero.power,
             0,
             1,
@@ -894,7 +894,7 @@ function updateAttack(
           explosive ? "shell" : "bullet",
           shotDir,
           atk.speed * m.shotSpeed,
-          atk.range + m.range,
+          atk.range,
           atk.damage * hero.power * (explosive ? SIGNATURE.explosiveDamage : 1),
           explosive ? SIGNATURE.explosiveSplash + m.splash : 0,
           1,
@@ -918,7 +918,7 @@ function updateAttack(
             kind,
             shot,
             atk.speed * m.shotSpeed,
-            atk.range + m.range,
+            atk.range,
             atk.damage * hero.power,
             atk.splash > 0 ? atk.splash + m.splash : 0,
             atk.buildingBonus,
@@ -939,7 +939,7 @@ function updateAttack(
     }
     case "lob": {
       if (dir && hero.reload <= 0) {
-        const range = atk.range + m.range;
+        const range = atk.range;
         const reach = clamp(aimDistance, 3, range);
         const duration = atk.flightTime * m.flight * (0.55 + (0.45 * reach) / range);
         hero.shotCount++;
@@ -990,7 +990,7 @@ function updateAttack(
         );
         hero.reload = shotTime(hero, atk.reload);
       } else if (dir && hero.reload <= 0) {
-        const range = atk.range + m.range;
+        const range = atk.range;
         const reach = clamp(aimDistance, 0, range);
         hero.shotCount++;
         const miracle = m.miracle && hero.shotCount % TRICKS.miracleEvery === 0;
@@ -1455,13 +1455,13 @@ function updateCrewTurrets(state: RaidState, dt: number): void {
 
 /** How far a hero reaches, perks included. */
 export function heroRange(hero: RaidHero): number {
-  return HEROES[hero.kind].attack.range + hero.mods.range;
+  return HEROES[hero.kind].attack.range;
 }
 
 /** How far a hero reaches a building from, perks included: a medic's acid doesn't go as far. */
 function reachOfBuildings(hero: RaidHero): number {
   const atk = HEROES[hero.kind].attack;
-  return atk.kind === "heal" ? atk.acid.range + hero.mods.range : heroRange(hero);
+  return atk.kind === "heal" ? atk.acid.range : heroRange(hero);
 }
 
 /**

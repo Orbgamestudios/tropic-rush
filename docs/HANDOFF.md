@@ -152,20 +152,33 @@ loads the game with every model blocked to make sure it still does.
 
 ## Puzzle islands
 
-`logic/puzzles.ts` holds the layouts, each a list of spots in meters from the headquarters, forward
-towards the beach and across. `enemyBase.ts` lays them right after the headquarters, a tile apart
+`logic/puzzles.ts` holds about thirty layouts, made from a dozen shapes (`SHAPES`) each filled with
+different defenses, each a list of spots in meters from the headquarters, forward towards the beach
+and across. `fill` picks how many to put down, to match an ordinary base's firepower. `enemyBase.ts` lays them right after the headquarters, a tile apart
 rather than the rings' two, and moves anything the island has no ground for to the nearest spot that
 fits. `puzzles.test.ts` checks how often they come up, their firepower, and that each mostly stands
 where it was drawn. To see one, `tropicRush.visit(seed, hq)` scouts any island, and `puzzleFor` says
 which seeds are puzzles.
 
-Each puzzle lists the kinds of island it suits. That list came from measuring how much of each layout
-held its shape on each kind: the gauntlet needs a long island, the wall a wide one. If a puzzle's
-`from` level comes before any island kind it suits, it never turns up, so check both together.
+Each shape lists the kinds of island it suits (`SUITS`), and each layout the headquarters levels it
+turns up at (`from` and `to`). Both came from measuring: how much of each layout held its shape on
+each kind of island, and where its firepower stayed between 0.85 and 1.4 of an ordinary base's. If
+a layout's `from` level comes before any island kind it suits, it never turns up, so check both
+together. Changing what a defense is worth (`WORTH`, or a defense's stats) moves those ranges:
+`puzzles.test.ts` says which.
 
 A plain bot with no upgrades can't tell much above headquarters 4, ordinary island or puzzle. It did
 show one outlier: it fights from 12 m, just outside a flamethrower's reach, so it cleared a bare flame
 gauntlet. That's why the gauntlet has mortars and guns behind it now.
+
+## One-off changes to old islands
+
+`LAYOUT_VERSION` in `crewIsland.ts` says which one-off changes an island has had: `sanitizeLayout`
+makes any it hasn't, once, and the server runs the same code, so every phone agrees. Version 1 moved
+gun turrets from 10 levels to 30. Hero upgrades from the old trees are given back on every load
+that finds one, which is once: the island's gold goes into `owed`, paid into the stock as there's
+room, and the player's crystals back into their save. `oldTrees.ts` keeps what the old upgrades
+cost for that.
 
 ## Building models
 
@@ -200,8 +213,9 @@ primitives in `models.ts` until the file arrives or for buildings not modeled ye
 shells are `MODELS` in the Blender script rather than `BUILDINGS`: one look each, in crew paint, in
 `gunboat.glb` (about 60 KB). Scenery built before the files arrive, the home island's boat and the
 map's, swaps the model in when they land (`GunboatScenery`). The gun turret's
-file is about 330 KB for all ten looks, 1,000 to 3,800 triangles each, and the sandbags are the dear
-part.
+file is about 340 KB for all ten looks, 1,000 to 3,800 triangles each, the mortar's 280 KB and the
+harpoon launcher's 360 KB; the sandbags are the dear part. A part can be tilted on its pivot (`Group(..., tilt=...)`): it's drawn as
+if it weren't and the tilt stands it up, which is how the mortar's tube kicks back along itself.
 
 ## Baked art
 

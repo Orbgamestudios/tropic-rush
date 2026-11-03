@@ -219,9 +219,12 @@ def write_atlas(path, side):
 class Group:
     """One piece of a building: the body, or a head that turns on its own."""
 
-    def __init__(self, name, pivot=(0, 0, 0), seed=1, parent=None):
+    def __init__(self, name, pivot=(0, 0, 0), seed=1, parent=None, tilt=(0, 0, 0)):
         self.name = name
         self.pivot = Vector(pivot)
+        # Turned this way about its pivot: its parts are drawn as if it weren't, such as a mortar's
+        # tube laid flat, and the turn tips them up.
+        self.tilt = Euler(tilt, "XYZ")
         # Another group this one moves with, and named spots on it, such as where a gun's muzzle is.
         self.parent = parent
         self.points = {}

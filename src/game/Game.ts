@@ -20,7 +20,7 @@ import { allowedCount, emptyPurse, PROGRESSION, type Purse, RESOURCES } from "./
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
 import { HERO_KINDS, type HeroKind } from "./logic/heroes";
 import { raidReward } from "./logic/heroProgress";
-import { heroMods, noUpgrades, readOwned, type TreeUpgrade } from "./logic/heroTrees";
+import { heroMods, noUpgrades, readOwned, type TreeUpgrade, trimUpgrades } from "./logic/heroTrees";
 import { BASE_CENTER, HOME_SHAPE } from "./logic/island";
 import { archetypeFor } from "./logic/islandShapes";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
@@ -301,6 +301,7 @@ export class Game {
       onTrade: () => this.crystalSwap.show(true),
       save: () => this.save,
       gold: () => this.crew.gold(),
+      hq: () => hqLevel(this.crew.snapshot().layout),
       buy: (kind, upgrade) => this.buyUpgrade(kind, upgrade),
       onBack: () =>
         this.go(() =>
@@ -460,6 +461,7 @@ export class Game {
       if (document.hidden) void this.pushAccount();
     });
     this.enterCrew();
+    if (!this.save.crewCode) this.trimHeroes();
     const params = new URLSearchParams(location.search);
     this.stage.sky.setPlace(this.skyPlace());
     this.skyCard = new SkyCard(screens, (share) => void this.answerSkyCard(share));
@@ -854,6 +856,7 @@ export class Game {
         this.crewMembers = members;
         this.crewUpgrades = layout.upgrades;
         this.crew.heard(layout, serverNow);
+        this.trimHeroes();
         this.shareUpgrades();
       },
       onReject: () => {},
@@ -870,15 +873,36 @@ export class Game {
     const crew = this.crewUpgrades;
     if (!crew) return;
     const { upgrades } = this.save;
+    const hq = hqLevel(this.crew.snapshot().layout);
     const shared = noUpgrades();
     for (const kind of HERO_KINDS) {
-      shared[kind] = readOwned(kind, [...crew[kind], ...upgrades[kind]]);
+      shared[kind] = readOwned(kind, [...crew[kind], ...upgrades[kind]], hq);
       for (const id of shared[kind]) {
         if (!crew[kind].includes(id)) this.link?.sendOp({ kind: "heroUpgrade", hero: kind, id });
       }
     }
     if (HERO_KINDS.some((k) => shared[k].length !== upgrades[k].length)) {
       this.updateSave({ upgrades: shared });
+    }
+  }
+
+  /**
+   * Keeps each hero's upgrades to what the headquarters allows, giving back the crystals for the
+   * rest; the island gives back the gold. A crew's phone only does this with the island fresh from
+   * the crew's server: a stale one could have too low a headquarters.
+   */
+  private trimHeroes(): void {
+    const hq = hqLevel(this.crew.snapshot().layout);
+    const { upgrades } = this.save;
+    let { crystals } = this.save;
+    const kept = noUpgrades();
+    for (const kind of HERO_KINDS) {
+      const { owned, refund } = trimUpgrades(kind, upgrades[kind], hq);
+      kept[kind] = owned;
+      crystals = addCrystals(crystals, refund.crystals);
+    }
+    if (HERO_KINDS.some((k) => kept[k].length !== upgrades[k].length)) {
+      this.updateSave({ upgrades: kept, crystals });
     }
   }
 

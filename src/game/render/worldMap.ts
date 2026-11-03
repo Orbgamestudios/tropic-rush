@@ -449,13 +449,12 @@ export class WorldMapView {
     }
   }
 
-  /** Grey smoke over the islands raiders have retaken, so they stand out on the map. */
+  /** Smoke over the volcanoes, which makes them easy to spot across the map. */
   private placeSmoke(): void {
     for (const s of this.smoke) this.root.remove(s.puff);
     this.smoke.length = 0;
     for (const island of this.islands) {
-      // Volcanoes smoke too, which makes them easy to spot across the map.
-      if (!island.retaken && island.archetype !== "volcano") continue;
+      if (island.archetype !== "volcano") continue;
       this.smokeMaterials.forEach((material, i) => {
         const puff = new THREE.Sprite(material);
         this.root.add(puff);
