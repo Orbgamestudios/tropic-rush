@@ -107,6 +107,22 @@ export function painted(geometry: THREE.BufferGeometry, color: number): THREE.Bu
 }
 
 /** Merges painted geometries into one, so a whole prop draws in a single call. */
+/** The ground draws first of all, so whatever's laid on it can go straight after. */
+export const GROUND_ORDER = -2;
+export const ON_GROUND_ORDER = -1;
+
+/**
+ * Has a material draw right after the ground and before anything standing on it, ignoring depth:
+ * the ground can't slice it on a slope, and whatever stands on it still covers it.
+ */
+export function laidOnGround<T extends THREE.Material>(material: T): T {
+  material.transparent = false;
+  if (material.blending === THREE.NormalBlending) material.blending = THREE.CustomBlending;
+  material.depthTest = false;
+  material.depthWrite = false;
+  return material;
+}
+
 export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   const prepared = parts.map((g) => {
     const ng = g.index ? g.toNonIndexed() : g;

@@ -189,7 +189,7 @@ function pedestal(): { root: THREE.Group; glow: THREE.Mesh; ring: THREE.Mesh } {
     new THREE.MeshBasicMaterial({ color: 0x7cc8ff, transparent: true, opacity: 0.9 }),
   );
   glow.rotation.x = Math.PI / 2;
-  glow.position.y = 0.56;
+  glow.position.y = 0.58;
   root.add(glow);
   // A soft halo on the floor around the pedestal.
   const ring = new THREE.Mesh(
@@ -202,7 +202,7 @@ function pedestal(): { root: THREE.Group; glow: THREE.Mesh; ring: THREE.Mesh } {
     }),
   );
   ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.01;
+  ring.position.y = 0.03;
   root.add(ring);
   return { root, glow, ring };
 }

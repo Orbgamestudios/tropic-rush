@@ -1,8 +1,9 @@
-// Bakes the tile the world map's clouds are drawn from, so a phone only has to look it up. Domes
-// piled on domes make the cauliflower tops of a deck of cumulus seen from above, on a slow swell of
-// noise. Then the sun comes in low from the north-west, so each puff has a lit side and a shaded one
-// and throws a shadow on the next. It tiles in both directions. Red is how thick the cloud is, and
-// green how brightly it's lit.
+// Bakes the tile the world map's clouds are drawn from, so a phone only has to look it up. It's real
+// shapes rather than noise: big balls of cloud on a slow swell, smaller ones sat on their surface,
+// and smaller still on those, which is how the cauliflower top of a cumulus goes. Then the sun comes
+// in low from the north-west, so each puff has a lit side and a shaded one and throws a shadow on
+// the next. It tiles in both directions. Red is how thick the cloud is, and green how brightly it's
+// lit.
 //
 //   node scripts/make-clouds.mjs
 
@@ -25,10 +26,6 @@ function rng(seed) {
 
 const wrap = (i, n) => ((i % n) + n) % n;
 const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
-const smooth = (a, b, x) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
 
 /** Smooth noise over a grid that wraps round every `cells` cells. */
 function valueLayer(cells, seed) {
@@ -48,57 +45,40 @@ function valueLayer(cells, seed) {
   };
 }
 
-/** Round billows: the height of a dome over each scattered point, wrapping the same way. */
-function puffLayer(cells, seed) {
-  const random = rng(seed);
-  const points = Float32Array.from({ length: cells * cells * 2 }, () => random());
-  return (x, y) => {
-    const fx = x * cells;
-    const fy = y * cells;
-    const ix = Math.floor(fx);
-    const iy = Math.floor(fy);
-    let nearest = 9;
-    for (let j = -1; j <= 1; j++) {
-      for (let i = -1; i <= 1; i++) {
-        const k = (wrap(iy + j, cells) * cells + wrap(ix + i, cells)) * 2;
-        const dx = ix + i + points[k] - fx;
-        const dy = iy + j + points[k + 1] - fy;
-        nearest = Math.min(nearest, dx * dx + dy * dy);
-      }
-    }
-    return Math.sqrt(Math.max(0, 1 - nearest * 1.6));
-  };
+const swellA = valueLayer(3, 11);
+const swellB = valueLayer(7, 12);
+/** Everything below is in pixels, height included, so a ball is lit as the ball it is. */
+const height = new Float32Array(SIZE * SIZE);
+for (let y = 0; y < SIZE; y++) {
+  for (let x = 0; x < SIZE; x++) {
+    height[y * SIZE + x] =
+      (swellA(x / SIZE, y / SIZE) * 0.7 + swellB(x / SIZE, y / SIZE) * 0.3) * 150;
+  }
 }
 
-const swells = [4, 8, 16, 32, 64].map((cells, i) => ({
-  layer: valueLayer(cells, 11 + i),
-  weight: 0.5 ** i,
-}));
-const billows = [6, 13, 27, 55].map((cells, i) => ({
-  layer: puffLayer(cells, 41 + i),
-  weight: [1, 0.62, 0.34, 0.16][i],
-}));
-
-const sum = (list, x, y) => {
-  let total = 0;
-  let weight = 0;
-  for (const { layer, weight: w } of list) {
-    total += layer(x, y) * w;
-    weight += w;
+/** Sets a ball of cloud on whatever's there, sunk in by a share of its size. */
+function ball(cx, cy, radius, sunk) {
+  const base =
+    height[wrap(Math.round(cy), SIZE) * SIZE + wrap(Math.round(cx), SIZE)] - radius * sunk;
+  const reach = Math.ceil(radius);
+  for (let y = -reach; y <= reach; y++) {
+    for (let x = -reach; x <= reach; x++) {
+      const across = radius * radius - x * x - y * y;
+      if (across <= 0) continue;
+      const k = wrap(Math.round(cy) + y, SIZE) * SIZE + wrap(Math.round(cx) + x, SIZE);
+      height[k] = Math.max(height[k], base + Math.sqrt(across));
+    }
   }
-  return total / weight;
-};
+}
 
-const height = new Float32Array(SIZE * SIZE);
-for (let py = 0; py < SIZE; py++) {
-  for (let px = 0; px < SIZE; px++) {
-    const x = px / SIZE;
-    const y = py / SIZE;
-    // Bent by itself, so nothing lines up with the grid underneath.
-    const warpX = x + (swells[0].layer(x, y) - 0.5) * 0.035;
-    const warpY = y + (swells[0].layer(y + 0.37, x + 0.61) - 0.5) * 0.035;
-    const swell = smooth(0.3, 0.72, sum(swells, warpX, warpY));
-    height[py * SIZE + px] = swell * 0.5 + sum(billows, warpX, warpY) * 0.5;
+const scatter = rng(77);
+for (const { count, least, most, sunk } of [
+  { count: 40, least: 90, most: 150, sunk: 0.62 },
+  { count: 130, least: 46, most: 84, sunk: 0.56 },
+  { count: 340, least: 22, most: 38, sunk: 0.5 },
+]) {
+  for (let i = 0; i < count; i++) {
+    ball(scatter() * SIZE, scatter() * SIZE, least + (most - least) * scatter(), sunk);
   }
 }
 
@@ -128,49 +108,35 @@ function blurred(source, radius) {
   return out;
 }
 
-let lowest = 1;
-let highest = 0;
-for (const h of height) {
-  lowest = Math.min(lowest, h);
-  highest = Math.max(highest, h);
-}
-for (let k = 0; k < height.length; k++) height[k] = (height[k] - lowest) / (highest - lowest);
+height.set(blurred(blurred(height, 5), 4));
 
-// Where one dome meets the next is a crease: a cloud's surface has no hard edges.
-const soft = blurred(blurred(height, 3), 2);
-height.set(soft);
-const hollows = blurred(height, 12);
-const STEPS = 22;
-const STEP = 2;
-/** How much a sun ray rises for each pixel it travels, against a height of 1 for the tallest cloud. */
-const RISE = 0.0065;
-/** How steep the surface reads for lighting. */
-const RELIEF = 16;
-const sun = [-Math.SQRT1_2, -Math.SQRT1_2];
-const SUN_HIGH = 0.62;
+const hollows = blurred(height, 30);
+const SUN = { x: -0.5, y: -0.5, z: 0.71 };
+const REACH = 140;
 const pixels = Buffer.alloc(SIZE * SIZE * 3);
+const sorted = Float32Array.from(height).sort();
+const lowest = sorted[Math.floor(sorted.length * 0.01)];
+const highest = sorted[Math.floor(sorted.length * 0.995)];
 for (let y = 0; y < SIZE; y++) {
   for (let x = 0; x < SIZE; x++) {
     const k = y * SIZE + x;
     const here = height[k];
-    let blocked = 0;
-    for (let s = 1; s <= STEPS; s++) {
-      const along = s * STEP;
-      const qx = wrap(Math.round(x + sun[0] * along), SIZE);
-      const qy = wrap(Math.round(y + sun[1] * along), SIZE);
-      const over = height[qy * SIZE + qx] - (here + along * RISE);
-      if (over > 0) blocked += over;
+    let shaded = 0;
+    for (let along = 3; along < REACH; along += 3) {
+      const qx = wrap(Math.round(x + SUN.x * along), SIZE);
+      const qy = wrap(Math.round(y + SUN.y * along), SIZE);
+      const ray = here + along * SUN.z;
+      shaded = Math.max(shaded, Math.min(1, (height[qy * SIZE + qx] - ray) / 30));
     }
-    const lit = Math.exp(-blocked * 0.55);
-    const east = height[y * SIZE + wrap(x + 1, SIZE)] - height[y * SIZE + wrap(x - 1, SIZE)];
-    const south = height[wrap(y + 1, SIZE) * SIZE + x] - height[wrap(y - 1, SIZE) * SIZE + x];
-    const nx = -east * RELIEF;
-    const ny = -south * RELIEF;
+    const nx = -(height[y * SIZE + wrap(x + 1, SIZE)] - height[y * SIZE + wrap(x - 1, SIZE)]) / 2;
+    const ny = -(height[wrap(y + 1, SIZE) * SIZE + x] - height[wrap(y - 1, SIZE) * SIZE + x]) / 2;
     const across = Math.hypot(nx, ny, 1);
-    const facing = Math.max(0, (nx * sun[0] + ny * sun[1] + SUN_HIGH) / across / 1.2);
-    const open = Math.min(1, Math.max(0, 1 - (hollows[k] - here) * 3));
-    const light = (0.56 + 0.62 * facing * lit) * (0.76 + 0.24 * open);
-    pixels[k * 3] = Math.round(here * 255);
+    const facing = Math.max(0, ((nx * SUN.x + ny * SUN.y + SUN.z) / across + 0.35) / 1.35);
+    const open = Math.min(1, Math.max(0, 1 - (hollows[k] - here) / 34));
+    const light = (0.3 + 0.8 * facing * (1 - shaded * 0.7)) * (0.66 + 0.34 * open);
+    pixels[k * 3] = Math.round(
+      Math.min(1, Math.max(0, (here - lowest) / (highest - lowest))) * 255,
+    );
     pixels[k * 3 + 1] = Math.round(Math.min(1, light) * 255);
     pixels[k * 3 + 2] = 0;
   }

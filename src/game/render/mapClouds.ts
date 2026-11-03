@@ -5,8 +5,9 @@
 // joined to its neighbor, then the mask is blurred and the shader draws the edge further in than
 // it was painted: gaps too narrow to survive that close up, so the clear sky is one open stretch of
 // sea, not patches with strands of cloud left between islands. Towards that edge only the thickest
-// puffs are left, so the deck breaks up the way real cloud does, and throws a shadow on the sea. A
-// new splotch dissolves open from the old mask to the new one.
+// puffs are left, thinning to wisps, and a slow third look at the tile bends the whole edge so it
+// wanders in and out instead of following the mask. It throws a shadow on the sea. A new splotch
+// dissolves open from the old mask to the new one.
 
 import * as THREE from "three";
 import type { SkyHole } from "../logic/worldMap";
@@ -17,7 +18,7 @@ const MASK_HEIGHT = 340;
 /** How much sky the mask covers past the furthest splotch, in map units. */
 const MASK_MARGIN = 70;
 /** How far past its true edge each patch of sky is painted, and so the widest gap that closes. */
-const GROW = 16;
+const GROW = 30;
 /** Patches are joined by a band this wide at most, either side, in map units. */
 const JOIN_WIDTH = 15;
 /** The sheet follows the camera, and is always bigger than the view. */
@@ -46,25 +47,26 @@ const FRAGMENT = /* glsl */ `
   varying vec2 vMap;
   void main() {
     vec2 p = vMap;
-    vec2 wide = texture2D(uTile, p / 130.0 + vec2(uTime * 0.0035, uTime * 0.0012)).rg;
-    vec2 near = texture2D(uTile, p / 47.0 - vec2(uTime * 0.0026, -uTime * 0.0048)).rg;
-    float thick = smoothstep(0.3, 0.74, wide.r * 0.62 + near.r * 0.38);
-    float lit = wide.g * 0.55 + near.g * 0.45;
-    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(wide.r, near.r) - 0.5) * 0.02;
+    vec2 wide = texture2D(uTile, p / 118.0 + vec2(uTime * 0.0019, uTime * 0.0007)).rg;
+    vec2 near = texture2D(uTile, p / 53.0 - vec2(uTime * 0.0012, -uTime * 0.0022)).rg;
+    float thick = smoothstep(0.12, 0.8, wide.r * 0.72 + near.r * 0.28);
+    vec2 flow = texture2D(uTile, p.yx / 410.0 + vec2(uTime * 0.0011, -uTime * 0.0008)).rg - 0.5;
+    float lit = wide.g;
+    vec2 uv = (p - uBox.xy) / uBox.zw + (vec2(wide.r, near.r) - 0.5) * 0.03 + flow * 0.1;
     float before = texture2D(uBefore, uv).r;
     float now = texture2D(uMask, uv).r;
     // A new splotch tears open from its thin spots first.
     float clear = mix(before, now, smoothstep(thick - 0.25, thick + 0.25, uLift * 1.5 - 0.25));
     // The painted patches ran past their true edge, so the shore is drawn well inside them. Deep in
     // the bank it's solid, and towards the edge only the thickest puffs stay.
-    float cover = 1.0 - smoothstep(0.32, 0.92, clear);
-    float edge = 1.06 - cover * 1.9;
-    float alpha = smoothstep(edge, edge + 0.28, thick);
+    float cover = 1.0 - smoothstep(0.1, 1.0, clear);
+    float edge = 1.02 - cover * 1.5;
+    float alpha = smoothstep(edge, edge + 0.52, thick);
     float under = texture2D(uMask, uv + vec2(${SHADOW_FALLS.x}.0, ${SHADOW_FALLS.y}.0) / uBox.zw).r;
     float shadow = (1.0 - smoothstep(0.45, 0.9, under)) * 0.22 * (1.0 - alpha);
     if (alpha + shadow < 0.004) discard;
     // Bright on the sun's side of each puff, blue-grey in the hollows.
-    vec3 cloud = mix(vec3(0.54, 0.62, 0.78), vec3(1.0, 0.995, 0.98), smoothstep(0.6, 0.92, lit));
+    vec3 cloud = mix(vec3(0.44, 0.54, 0.74), vec3(1.0, 0.995, 0.98), smoothstep(0.34, 0.92, lit));
     vec3 color = mix(vec3(0.02, 0.1, 0.2), cloud * uUnlit, alpha);
     gl_FragColor = vec4(color, alpha + shadow);
     #include <tonemapping_fragment>
@@ -186,7 +188,7 @@ export class MapClouds {
         spot(hole.x + (towards.x - hole.x) * t, hole.y + (towards.y - hole.y) * t, width);
       }
     }
-    soften(canvas, Math.max(2, Math.round(GROW * sx)));
+    soften(canvas, Math.max(2, Math.round(GROW * 1.5 * sx)));
   }
 
   /** Paints the sky as it stands. With `animate`, whatever's new dissolves open. */

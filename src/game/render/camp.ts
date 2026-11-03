@@ -115,13 +115,13 @@ function tentGeometry(): THREE.BufferGeometry {
   // A ridge tent: a triangular prism lying along x.
   const body = new THREE.CylinderGeometry(1.25, 1.25, 3, 3, 1);
   body.rotateZ(Math.PI / 2);
-  body.rotateX(Math.PI / 6 + Math.PI);
+  body.rotateX(Math.PI / 6);
   body.translate(0, 0.62, 0);
   parts.push(painted(body, 0x7d7a52));
   // The dark doorway at the front.
   const door = new THREE.CylinderGeometry(0.62, 0.62, 0.05, 3, 1);
   door.rotateZ(Math.PI / 2);
-  door.rotateX(Math.PI / 6 + Math.PI);
+  door.rotateX(Math.PI / 6);
   door.translate(1.52, 0.31, 0);
   parts.push(painted(door, 0x2b2a22));
   for (const x of [-1.6, 1.6])

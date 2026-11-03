@@ -76,6 +76,16 @@ These were explicitly left out to keep the first version to a basic structure:
   levels up. It reaches its deepest spot by headquarters 16.
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
+
+## Added 2026-11-02, seventh batch (owner's requests)
+
+- **Heavy:** base speed 4.3, down 12% from 4.9.
+- **Map clouds:** soft cumulus made of real stacked puffs, not noise. The edge thins to wisps and
+  wanders in and out rather than following a line.
+- **Circles on the ground:** nothing flat is cut off by a hill now. Hero rings lean with the slope,
+  and mines, blast rings and scorch marks draw straight after the ground, so the ground can't slice
+  them and anyone standing on them stays in front.
+
 ## Added 2026-11-02, sixth batch (owner's requests)
 
 - **Watchtowers lead their target:** the sights slide ahead of a moving hero to where they'll be when

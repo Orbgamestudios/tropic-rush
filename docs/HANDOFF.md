@@ -153,9 +153,11 @@ loads the game with every model blocked to make sure it still does.
 ## Baked art
 
 `node scripts/make-clouds.mjs` bakes the world map's cloud tile into `public/textures`. Its red
-channel is thickness and its green is light, so `mapClouds.ts` only has to look it up. The shader
-samples it at about the size of an island: at map scale a tile much bigger than that just reads as
-a flat white sheet.
+channel is thickness and its green is light, so `mapClouds.ts` only has to look it up. It's balls of
+cloud stacked on balls, lit as real shapes, because noise never read as puffy. The tile spans 118
+map units: at 170 the owner found the puffs too big, and past that they blur into a white sheet. How
+soft and wandering the edge is comes from the `alpha` band and the `flow` sample in the shader, and
+how far the band reaches comes from how wide the mask is blurred.
 
 ## The picture and battery
 
@@ -166,6 +168,15 @@ pass over the finished picture, because each of those is a whole screen of extra
 frame. So a custom shader finishes its own color with `#include <tonemapping_fragment>` and
 `#include <colorspace_fragment>`, or it comes out too dark. The vignette is a page element, and the
 touch of extra color is part of tone mapping, in `stage.ts`.
+
+Anything lying on the ground has to allow for the terrain mesh being coarser than `height()`, or
+hills poke through it. Use `laidOnGround()` from `shapes.ts`: the ground draws first of all, and this
+draws next, ignoring depth, so the ground can't cut it and whatever stands on it still covers it.
+That order costs an iPhone nothing, as its GPU drops hidden pixels whatever order they arrive in.
+Danger circles stay plain `depthTest: false` instead, because they must show over trees and walls.
+
+The sea on the world map leaves no depth, so it can't hide the edge of the land, and a map island's
+mesh is the coast. `addLand` cuts its cells along the shoreline for that reason.
 
 Quality steps down during fights if frames stay under 27 a second, and never comes back up. That
 limit sits under 30 on purpose: Low Power Mode holds an iPhone to exactly 30, which is no reason to

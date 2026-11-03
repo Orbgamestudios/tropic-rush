@@ -4,6 +4,7 @@
 
 import * as THREE from "three";
 import type { LightPool } from "./lightPool";
+import { laidOnGround, ON_GROUND_ORDER } from "./shapes";
 import { SKY } from "./sky";
 
 const GRID = 4;
@@ -293,6 +294,7 @@ class Layer {
     order: number,
     /** Dims with the hour; glowing things don't. */
     unlit: { value: THREE.Color } = { value: new THREE.Color(1, 1, 1) },
+    onGround = false,
   ) {
     const quad = new THREE.PlaneGeometry(1, 1);
     this.geometry.index = quad.index;
@@ -320,6 +322,7 @@ class Layer {
       side: THREE.DoubleSide,
       blending,
     });
+    if (onGround) laidOnGround(this.material);
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = order;
@@ -627,7 +630,15 @@ export class Effects {
   private readonly groundAt: (x: number, z: number) => number;
   private readonly solid = new Layer(340, THREE.NormalBlending, 1, 5, SKY.unlit);
   private readonly glow = new Layer(460, THREE.AdditiveBlending, 0, 6);
-  private readonly marks = new Layer(36, THREE.NormalBlending, 0, 1, SKY.unlit);
+  private readonly marks = new Layer(36, THREE.NormalBlending, 0, ON_GROUND_ORDER, SKY.unlit, true);
+  private readonly ripples = new Layer(
+    16,
+    THREE.AdditiveBlending,
+    0,
+    ON_GROUND_ORDER,
+    undefined,
+    true,
+  );
   private readonly debris = new Debris(90);
   private emitters: Emitter[] = [];
   private skulls: Skull[] = [];
@@ -637,7 +648,13 @@ export class Effects {
     private readonly lights: LightPool | null = null,
   ) {
     this.groundAt = groundAt;
-    this.root.add(this.marks.mesh, this.debris.mesh, this.solid.mesh, this.glow.mesh);
+    this.root.add(
+      this.marks.mesh,
+      this.ripples.mesh,
+      this.debris.mesh,
+      this.solid.mesh,
+      this.glow.mesh,
+    );
   }
 
   /** Light thrown on the ground under `pos`, after dark. */
@@ -747,7 +764,7 @@ export class Effects {
 
   /** A blast's mark on the land: the ring of air, thrown-up dust and a scorch that stays a while. */
   private groundBlast(x: number, y: number, z: number, r: number): void {
-    this.glow.add({
+    this.ripples.add({
       x,
       y,
       z,

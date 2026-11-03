@@ -101,19 +101,23 @@ function heroRing(radius: number, leader: boolean): THREE.Mesh {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(radius * 2, radius * 2),
+    new THREE.PlaneGeometry(radius * 2, radius * 2).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
       depthWrite: false,
-      // Laid flat over slopes, so it ignores the depth of what's under it.
+      // It can't bend with the ground, so it ignores the depth of what's under it.
       depthTest: false,
     }),
   );
-  mesh.rotation.x = -Math.PI / 2;
   mesh.renderOrder = 2;
   return mesh;
 }
+
+/** How far either side the ground is read to find its slope, in meters. */
+const SLOPE_SPAN = 0.8;
+const UP = new THREE.Vector3(0, 1, 0);
+const slope = new THREE.Vector3();
 
 const BULLET_HEIGHT = 1.1;
 /** Smoke wider than this is a whole screen of it, not a grenade's wisp. */
@@ -339,7 +343,8 @@ export class RaidView {
 
     for (const m of state.mines) {
       const mesh = mineModel();
-      mesh.position.set(m.pos.x, this.ground(m.pos.x, m.pos.y) + 0.03, m.pos.y);
+      mesh.position.set(m.pos.x, this.ground(m.pos.x, m.pos.y) + 0.08, m.pos.y);
+      this.layOnSlope(mesh, m.pos.x, m.pos.y);
       this.root.add(mesh);
       this.mines.set(m.id, mesh);
     }
@@ -474,6 +479,14 @@ export class RaidView {
       gem.position.y += (this.groundUnderGem(gem) + 6.5 - gem.position.y) * Math.min(1, dt * 2);
       gem.rotation.y = time * 1.6;
     }
+  }
+
+  /** Tilts something lying on the ground to the lie of the land under it. */
+  private layOnSlope(mesh: THREE.Object3D, x: number, y: number): void {
+    const east = this.ground(x + SLOPE_SPAN, y) - this.ground(x - SLOPE_SPAN, y);
+    const south = this.ground(x, y + SLOPE_SPAN) - this.ground(x, y - SLOPE_SPAN);
+    slope.set(-east, SLOPE_SPAN * 2, -south).normalize();
+    mesh.quaternion.setFromUnitVectors(UP, slope);
   }
 
   private groundUnderGem(gem: THREE.Group): number {
@@ -662,6 +675,7 @@ export class RaidView {
       model.root.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y);
       ring.visible = h.alive && !this.defending;
       ring.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y) + 0.06, h.pos.y);
+      this.layOnSlope(ring, h.pos.x, h.pos.y);
       ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
       // Turn smoothly rather than snapping.
       const turned = angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);

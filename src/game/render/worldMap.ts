@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { HOME_SHAPE, type IslandShape } from "../logic/island";
 import { islandShape } from "../logic/islandShapes";
 import { createRng } from "../logic/rng";
-import { clamp, lerp } from "../logic/vec";
+import { clamp, lerp, smoothstep } from "../logic/vec";
 import {
   clearSky,
   islandRadius,
@@ -129,7 +129,9 @@ function newBatch(): Batch {
 }
 
 /** A map island is drawn from this many samples of the real island's land, each way. */
-const MODEL_CELLS = 30;
+const MODEL_CELLS = 40;
+/** How far over the sea a map island's shore sits. */
+const SHORE_RISE = 0.04;
 
 /** Where an island's land lies: its middle, and how far it reaches from there. */
 function landBounds(shape: IslandShape): { x: number; z: number; reach: number } {
@@ -179,31 +181,53 @@ function addLand(
   const indices: number[] = [];
   const count = MODEL_CELLS + 1;
   const color = new THREE.Color();
+  const shore = new Float32Array(count * count);
   for (let j = 0; j < count; j++) {
     for (let i = 0; i < count; i++) {
       const wx = mx - reach + i * step;
       const wz = mz - reach + j * step;
       const sd = shape.shoreDistance(wx, wz);
-      const land = sd > 0;
-      const rise = land ? 0.2 + Math.max(0, shape.height(wx, wz)) * scale * 0.9 : -0.25;
-      positions.push(x + (wx - mx) * scale, rise, z + (wz - mz) * scale);
-      color.copy(sand);
-      if (sd > shape.beachWidth(wx, wz)) color.copy(grass);
-      if (shape.height(wx, wz) > 11) color.copy(rock);
-      if (shape.lava(wx, wz) > 0.3) color.copy(lava);
+      const ground = shape.height(wx, wz);
+      shore[j * count + i] = sd;
+      const rise = SHORE_RISE + Math.max(0, ground) * scale * 0.9;
+      positions.push(x + (wx - mx) * scale, rise + (sd > 0 ? 0.16 : 0), z + (wz - mz) * scale);
+      color.copy(sand).lerp(grass, smoothstep(-1.2, 1.2, sd - shape.beachWidth(wx, wz)));
+      color.lerp(rock, smoothstep(9, 12, ground));
+      color.lerp(lava, smoothstep(0.15, 0.45, shape.lava(wx, wz)));
       colors.push(color.r, color.g, color.b);
     }
   }
-  const landAt = (i: number, j: number) => (positions[(j * count + i) * 3 + 1] ?? -1) > 0;
+  // The sea leaves no depth, so whatever's in this mesh shows. Cells are cut where the coast
+  // crosses them, or the shore is a staircase of whole cells.
+  const crossings = new Map<number, number>();
+  const crossing = (p: number, q: number) => {
+    const key = Math.min(p, q) * count * count + Math.max(p, q);
+    const known = crossings.get(key);
+    if (known !== undefined) return known;
+    const t = (shore[p] ?? 0) / ((shore[p] ?? 0) - (shore[q] ?? 0));
+    const made = positions.length / 3;
+    const along = (axis: number) => {
+      const a = positions[p * 3 + axis] ?? 0;
+      return a + ((positions[q * 3 + axis] ?? 0) - a) * t;
+    };
+    positions.push(along(0), SHORE_RISE, along(2));
+    colors.push(sand.r, sand.g, sand.b);
+    crossings.set(key, made);
+    return made;
+  };
   for (let j = 0; j + 1 < count; j++) {
     for (let i = 0; i + 1 < count; i++) {
-      if (!landAt(i, j) && !landAt(i + 1, j) && !landAt(i, j + 1) && !landAt(i + 1, j + 1))
-        continue;
       const a = j * count + i;
-      const b = a + 1;
-      const c = a + count;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
+      const ring = [a, a + count, a + count + 1, a + 1];
+      const outline: number[] = [];
+      ring.forEach((p, k) => {
+        const q = ring[(k + 1) % 4] ?? p;
+        const here = (shore[p] ?? 0) > 0;
+        if (here) outline.push(p);
+        if (here !== (shore[q] ?? 0) > 0) outline.push(crossing(p, q));
+      });
+      for (let k = 1; k + 1 < outline.length; k++)
+        indices.push(outline[0] ?? 0, outline[k] ?? 0, outline[k + 1] ?? 0);
     }
   }
   const g = new THREE.BufferGeometry();

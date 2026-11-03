@@ -5,7 +5,18 @@
 import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
 import { COLORS, material } from "./palette";
-import { at, ball, barrel, cone, cyl, flatten, mesh, rbox } from "./shapes";
+import {
+  at,
+  ball,
+  barrel,
+  cone,
+  cyl,
+  flatten,
+  laidOnGround,
+  mesh,
+  ON_GROUND_ORDER,
+  rbox,
+} from "./shapes";
 
 export interface BuildingModel {
   root: THREE.Group;
@@ -536,12 +547,8 @@ export function decoyDroneModel(): { root: THREE.Group; head: THREE.Object3D } {
 export function mineModel(): THREE.Mesh {
   const m = new THREE.Mesh(
     new THREE.CylinderGeometry(0.4, 0.45, 0.12, 14),
-    new THREE.MeshLambertMaterial({
-      color: 0x3a3a34,
-      transparent: true,
-      opacity: 0.35,
-    }),
+    laidOnGround(new THREE.MeshLambertMaterial({ color: 0x3a3a34, opacity: 0.35 })),
   );
-  m.receiveShadow = true;
+  m.renderOrder = ON_GROUND_ORDER;
   return m;
 }

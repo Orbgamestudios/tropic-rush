@@ -12,6 +12,7 @@ import { bladeTexture, swathes } from "./meadow";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
+import { GROUND_ORDER } from "./shapes";
 import { SKY } from "./sky";
 
 const RINGS = 84;
@@ -400,6 +401,7 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   material.customProgramCacheKey = () => `tropic-ground-${shade ? "shaded" : "plain"}`;
   const ground = new THREE.Mesh(geometry, material);
   ground.receiveShadow = true;
+  ground.renderOrder = GROUND_ORDER;
   return ground;
 }
 
