@@ -98,9 +98,10 @@ function sharedShapes(): NonNullable<typeof shapes> {
     palm: palmGeometry(),
     tree: jungleTreeGeometry(),
     bush: bushGeometry(),
-    enemyHq: bakedBuilding(buildingModel("headquarters").root),
-    crewHq: bakedBuilding(buildingModel("headquarters", true).root),
-    tower: bakedBuilding(buildingModel("watchtower").root),
+    // The map's tiny buildings are baked into its batches, so they're always the plain ones.
+    enemyHq: bakedBuilding(buildingModel("headquarters", false, 1, true).root),
+    crewHq: bakedBuilding(buildingModel("headquarters", true, 1, true).root),
+    tower: bakedBuilding(buildingModel("watchtower", false, 1, true).root),
   };
   return shapes;
 }

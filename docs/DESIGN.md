@@ -126,6 +126,11 @@ These were explicitly left out to keep the first version to a basic structure:
   a log harpoon in sandbags to polished steel with lights and a radar dish. When it fires, the
   bowstring snaps forward and the harpoon on the stock goes; a second later the next one slides on,
   and the string draws back, ready by the end of its reload.
+- **Headquarters modeled:** ten looks, a new one every second level of its twenty: a plank shack
+  under a tin roof, a shack with a lean-to and a lookout, a log cabin, a two-storey timber house
+  with towers on stilts, plated walls with drum towers, painted steel, and at the end polished domes
+  over a glass control room with a radar dish. No sandbags. The world map keeps its tiny plain
+  headquarters, baked into the map's islands.
 
 ## Added 2026-11-02, seventh batch (owner's requests)
 

@@ -560,6 +560,241 @@ BUILDINGS = {"gunTurret": gun_turret, "mortar": mortar, "harpoon": harpoon}
 
 
 # ---------------------------------------------------------------------------------------------
+# Headquarters: a block with its door to the front, an upper floor from the fourth look, towers on
+# its corners and a flag on top. No sandbags: it isn't a defense.
+
+PANEL = 1.8
+
+
+def panels(g, a, b, z0, height, material, thick=0.16, gap=None, skew=0.0):
+    """A wall from a to b made of panels about PANEL long, so a long wall's texture stays the
+    right size. With gap, a doorway that wide is left in the middle."""
+    a = Vector(a)
+    b = Vector(b)
+    length = (b - a).length
+    heading = math.atan2(b.y - a.y, b.x - a.x)
+    count = max(1, round(length / PANEL))
+    each = length / count
+    r = g.rng
+    for i in range(count):
+        middle = (i + 0.5) * each
+        if gap and abs(middle - length / 2) < gap / 2 + each / 2 - 0.05:
+            # Either side of the doorway, a narrower panel up to its edge.
+            near = length / 2 - gap / 2 if middle < length / 2 else length / 2 + gap / 2
+            far = i * each if middle < length / 2 else (i + 1) * each
+            lo, hi = sorted((near, far))
+            if hi - lo < 0.15:
+                continue
+            middle = (lo + hi) / 2
+            run = hi - lo
+        else:
+            run = each
+        at = a + (b - a) * (middle / length)
+        tilt = (r.uniform(-skew, skew), r.uniform(-skew, skew), heading + r.uniform(-skew, skew))
+        g.box((run * 0.98, thick, height), (at.x, at.y, z0 + height / 2), material, tilt, 0.012)
+
+
+def box_walls(g, half, z0, height, material, door=0.0, thick=0.16, skew=0.0, mix=None):
+    """Four walls round the middle; the front one (towards +x) with a door if `door` is wide."""
+    corners = [(half, -half), (half, half), (-half, half), (-half, -half)]
+    for i in range(4):
+        a = (*corners[i], 0)
+        b = (*corners[(i + 1) % 4], 0)
+        stuff = mix[i % len(mix)] if mix else material
+        panels(g, a, b, z0, height, stuff, thick, gap=door if i == 0 and door else None, skew=skew)
+
+
+def slab(g, half, z, material, thick=0.14):
+    """A flat roof or floor, laid in panels too."""
+    count = max(1, round(half * 2 / PANEL))
+    each = half * 2 / count
+    for i in range(count):
+        for j in range(count):
+            at = (-half + (i + 0.5) * each, -half + (j + 0.5) * each, z)
+            g.box((each, each, thick), at, material, chamfer=0.0)
+
+
+def gable(g, half, z, rise, material):
+    """A pitched roof of two slopes, ridge running front to back."""
+    for side in (-1, 1):
+        slope = math.atan2(rise, half)
+        span = math.hypot(half, rise) + 0.25
+        count = max(1, round(half * 2 / PANEL))
+        each = (half * 2 + 0.5) / count
+        for i in range(count):
+            x = -half - 0.25 + (i + 0.5) * each
+            at = (x, side * half / 2, z + rise / 2)
+            g.box((each * 0.99, span, 0.06), at, material, (side * -slope, 0, 0), 0.01)
+
+
+def hq_tower(g, s, at, height, radius):
+    x, y = at
+    if s <= 4:
+        for dx in (-1, 1):
+            for dy in (-1, 1):
+                g.beam((x + dx * radius * 0.7, y + dy * radius * 0.7, 0), (x + dx * radius * 0.6, y + dy * radius * 0.6, height), 0.14, 0.14, "log")
+        g.box((radius * 1.8, radius * 1.8, 0.1), (x, y, height), "plank", (0, 0, 0.1), 0.01)
+        for side in (-1, 1):
+            g.box((radius * 1.7, 0.06, 0.4), (x, y + side * radius * 0.85, height + 0.25), "plankGrey", chamfer=0.008)
+        g.cyl(radius * 1.25, 0.05, 0.7, (x, y, height + 0.75), "tin" if s >= 3 else "rust", sides=4)
+        return
+    body = "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+    sides = 8 if s <= 6 else 12 if s <= 8 else 16
+    g.cyl(radius, radius * 0.92, height, (x, y, height / 2), body, sides=sides)
+    g.cyl(radius + 0.06, radius + 0.06, 0.18, (x, y, height - 0.05), "steel" if s <= 6 else "paintDark" if s <= 8 else "brass", sides=sides, caps=False)
+    if s <= 6:
+        g.rivets([(x + radius * 1.0 * math.cos(a / 8 * 2 * math.pi), y + radius * 1.0 * math.sin(a / 8 * 2 * math.pi), height * 0.55) for a in range(8)])
+    roof = "tin" if s == 5 else "steel" if s == 6 else "paintDark" if s <= 8 else "polished"
+    g.cyl(radius * 1.15, 0.06, radius * 1.1, (x, y, height + radius * 0.55), roof, sides=sides)
+    # A window slit facing out.
+    out = Vector((x, y, 0)).normalized()
+    g.box((0.06, 0.4, 0.22), (x + out.x * radius * 0.98, y + out.y * radius * 0.98, height * 0.7), "glass" if s >= 7 else "gunmetal", (0, 0, math.atan2(out.y, out.x)), 0.0)
+    if s >= 8:
+        g.cyl(0.13, 0.11, 0.2, (x + out.x * radius * 0.6, y + out.y * radius * 0.6, height + 0.1), "polished" if s >= 9 else "steel", (0, math.pi / 2, math.atan2(out.y, out.x)), sides=10)
+
+
+def headquarters(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    parts = [g]
+    half = lerp(2.4, 3.4, t)
+    lower = lerp(1.7, 2.7, t)
+    door = 1.3
+    # The ground it stands on.
+    if s >= 5:
+        pad = "concrete"
+        g.box((half * 2 + 1.4, half * 2 + 1.4, 0.2), (0, 0, 0.1), pad, chamfer=0.04)
+        if s >= 7:
+            g.box((half * 2 + 1.6, half * 2 + 1.6, 0.08), (0, 0, 0.04), "plate" if s <= 8 else "steel", chamfer=0.02)
+    floor = 0.2 if s >= 5 else 0.0
+    if s <= 3:
+        # A shack, then a cabin: boards, then logs, under a pitched tin roof.
+        if s == 3:
+            courses = int(lower / 0.26)
+            for c in range(courses):
+                z = 0.13 + c * 0.26
+                for x0, y0, x1, y1 in ((half, -half, half, half), (-half, -half, -half, half), (-half, half, half, half), (-half, -half, half, -half)):
+                    # The side walls' logs sit half a log up, so they cross the others' at corners.
+                    z = 0.13 + c * 0.26 + (0.13 if y0 == y1 else 0.0)
+                    if x0 == x1 == half and c < 7:
+                        # The doorway in the front wall.
+                        for y_from, y_to in ((-half - 0.15, -door / 2), (door / 2, half + 0.15)):
+                            g.bar((half, y_from, z), (half, y_to, z), 0.13, "log", 7)
+                        continue
+                    g.bar((x0 + (0.15 if x0 == x1 == -half else 0), y0 - 0.15 if y0 == y1 else y0, z), (x1, y1 + 0.15 if y0 == y1 else y1, z), 0.13, "log", 7)
+        else:
+            mix = ["plank", "plankGrey"] if s == 1 else ["plank", "tin", "plankGrey", "tin"]
+            box_walls(g, half, floor, lower, "plank", door=door, skew=0.03, mix=mix)
+            for x in (-half, half):
+                for y in (-half, half):
+                    g.bar((x, y, 0), (x * 1.01, y * 1.01, lower + 0.1), 0.1, "log", 6)
+        gable(g, half + 0.2, lower, half * 0.55, "rust" if s <= 2 else "tin")
+        g.box((0.06, door * 0.9, lower * 0.85), (half + 0.02, 0, lower * 0.42), "plankGrey", (0, 0, 0.25), 0.01)
+        if s == 3:
+            g.cyl(0.18, 0.18, 1.2, (-half * 0.5, half * 0.4, lower + half * 0.55), "pipe", sides=8)
+        if s == 2:
+            # A lean-to round the back, and a lookout on one corner.
+            panels(g, (-half - 1.4, -1.2, 0), (-half - 1.4, 1.2, 0), 0, 1.3, "plankGrey", skew=0.04)
+            g.box((1.6, 2.6, 0.05), (-half - 0.75, 0, 1.45), "tin", (0.0, 0.25, 0.0), 0.01)
+            hq_tower(g, s, (half + 0.4, half + 0.4), lower + 1.2, 0.7)
+        # Crates by the door.
+        for i, (x, y) in enumerate(((half + 0.9, -half + 0.6), (half + 0.8, -half + 1.2))):
+            g.box((0.5, 0.5, 0.5), (x, y, 0.25), "plank" if i == 0 else "plankGrey", (0, 0, 0.3 * i), 0.012)
+        flag_z = lower + half * 0.55
+    else:
+        wood = s == 4
+        lower_wall = "plank" if wood else "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+        box_walls(g, half, floor, lower, lower_wall, door=door, skew=0.01 if wood else 0.0)
+        if s == 5:
+            # Timber framing between the plates.
+            for x in (-half, half):
+                for y in (-half, half):
+                    g.beam((x, y, floor), (x, y, floor + lower), 0.2, 0.2, "log")
+        if s <= 6:
+            g.box((half * 2 + 0.2, half * 2 + 0.2, 0.14), (0, 0, floor + lower), "steel" if s >= 5 else "plank", chamfer=0.02)
+        else:
+            g.box((half * 2 + 0.25, half * 2 + 0.25, 0.22), (0, 0, floor + lower), "paintDark" if s <= 8 else "steel", chamfer=0.03)
+            if s >= 9:
+                # Brass round the roof's edge, not over all of it.
+                for x0, y0, x1, y1 in ((half, -half, half, half), (-half, -half, -half, half), (-half, half, half, half), (-half, -half, half, -half)):
+                    g.bar((x0 * 1.04, y0 * 1.04, floor + lower + 0.12), (x1 * 1.04, y1 * 1.04, floor + lower + 0.12), 0.04, "brass", 6)
+            g.box((half * 2 + 0.3, half * 2 + 0.3, 0.3), (0, 0, floor + 0.3), "paintDark", chamfer=0.03)
+        if s >= 6:
+            g.rivets([(half + 0.09, y, floor + lower * 0.85) for y in (-half * 0.7, -half * 0.35, half * 0.35, half * 0.7)])
+        # Windows down the sides, and the door.
+        window = "glass" if s >= 7 else "gunmetal"
+        for side in (-1, 1):
+            for x in (-half * 0.45, half * 0.35):
+                g.box((0.7, 0.06, 0.4), (x, side * (half + 0.09), floor + lower * 0.62), window, chamfer=0.0)
+        g.box((0.08, door * 0.95, lower * 0.75), (half + 0.05, 0, floor + lower * 0.37), "plankGrey" if wood else "gunmetal", chamfer=0.015)
+        # A canopy over the door and a step up to it.
+        canopy = "tin" if s <= 5 else "steel" if s <= 6 else "paintDark" if s <= 8 else "polished"
+        g.box((0.9, door + 0.7, 0.07), (half + 0.45, 0, floor + lower * 0.82), canopy, (0, -0.18, 0), 0.015)
+        for side in (-1, 1):
+            g.bar((half + 0.85, side * (door / 2 + 0.25), floor), (half + 0.85, side * (door / 2 + 0.25), floor + lower * 0.78), 0.05, "log" if wood else "steel", 6)
+        g.box((0.6, door + 0.4, 0.14), (half + 0.35, 0, floor + 0.07), "plank" if wood else "concrete", chamfer=0.02)
+        if s >= 9:
+            g.box((0.06, door + 0.3, 0.12), (half + 0.1, 0, floor + lower * 0.8), "hazard", chamfer=0.0)
+            g.box((0.04, half * 2 + 0.3, 0.06), (half + 0.12, 0, floor + lower * 0.95), "lamp", chamfer=0.0)
+        # The upper floor.
+        upper_half = half * 0.6
+        upper = lerp(1.2, 1.9, t)
+        base = floor + lower + 0.07
+        if s == 10:
+            # A glass control room on top.
+            box_walls(g, upper_half, base, upper, "glass", thick=0.08)
+            for x in (-upper_half, upper_half):
+                for y in (-upper_half, upper_half):
+                    g.cyl(0.08, 0.08, upper, (x, y, base + upper / 2), "polished", sides=8)
+        else:
+            upper_wall = "plank" if s <= 5 else "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+            box_walls(g, upper_half, base, upper, upper_wall, thick=0.14)
+            for side in (-1, 1):
+                g.box((0.06, 0.8, 0.35), (upper_half + 0.08, side * upper_half * 0.45, base + upper * 0.6), window, chamfer=0.0)
+        roof = "tin" if s <= 5 else "steel" if s <= 6 else "paintDark" if s <= 8 else "polished"
+        g.box((upper_half * 2 + 0.4, upper_half * 2 + 0.4, 0.14), (0, 0, base + upper + 0.07), roof, chamfer=0.03)
+        if s == 4:
+            # A ladder up the front to the roof of the lower floor.
+            for side in (-1, 1):
+                g.beam((half + 0.5, half * 0.6 + side * 0.22, 0), (half + 0.1, half * 0.6 + side * 0.22, lower), 0.06, 0.05, "plankGrey")
+        if s >= 8:
+            # A railing round the roof deck.
+            rail = "steel" if s <= 8 else "polished"
+            for x0, y0, x1, y1 in ((half, -half, half, half), (-half, -half, -half, half), (-half, half, half, half), (-half, -half, half, -half)):
+                g.bar((x0, y0, floor + lower + 0.55), (x1, y1, floor + lower + 0.55), 0.03, rail, 6)
+        # Towers on the corners.
+        radius = lerp(0.7, 1.1, t)
+        height = floor + lower + lerp(0.9, 1.7, t)
+        for x in (-half, half):
+            for y in (-half, half):
+                hq_tower(g, s, (x * 1.02, y * 1.02), height, radius)
+        flag_z = base + upper + 0.14
+        if s >= 8:
+            g.bar((-upper_half * 0.5, -upper_half * 0.5, flag_z), (-upper_half * 0.5, -upper_half * 0.5, flag_z + 1.6), 0.025, "steel", 6)
+        if s == 10:
+            mast = (upper_half * 0.4, -upper_half * 0.4)
+            g.bar((*mast, flag_z), (*mast, flag_z + 0.6), 0.05, "steel", 8)
+            dish = Group("radar", pivot=(*mast, flag_z + 0.6), seed=300, parent=g)
+            dish.cyl(0.08, 0.08, 0.1, (*mast, flag_z + 0.65), "brass", sides=10)
+            dish.cyl(0.6, 0.1, 0.26, (mast[0] + 0.1, mast[1], flag_z + 0.82), "polished", (0.0, -0.45, 0), sides=18, caps=False)
+            dish.cyl(0.06, 0.06, 0.1, (mast[0] + 0.42, mast[1], flag_z + 0.98), "lamp", sides=8)
+            parts.append(dish)
+            for i in range(8):
+                a = (i + 0.5) / 8 * 2 * math.pi
+                g.cyl(0.1, 0.1, 0.04, ((half + 0.55) * math.cos(a) * 1.25, (half + 0.55) * math.sin(a) * 1.25, 0.21), "lamp", sides=8)
+    # The flag, ragged on a crooked pole at first, crisp on a steel mast at the end.
+    pole = "log" if s <= 4 else "steel" if s <= 8 else "polished"
+    lean = 0.08 if s <= 2 else 0.0
+    top = (0.1 + lean, 0.1, flag_z + 2.2)
+    g.bar((0.1, 0.1, flag_z), top, 0.05, pole, 6)
+    g.box((0.9, 0.03, 0.55), (top[0] - 0.47, top[1], top[2] - 0.32), "canvas" if s <= 3 else "paint", (0, 0, 0.1 if s <= 3 else 0), 0.0)
+    return parts
+
+
+BUILDINGS["headquarters"] = headquarters
+
+
+# ---------------------------------------------------------------------------------------------
 # The crew's gunboat, and what it fires. Bow towards +x, the waterline at z = 0.
 
 # Stern to bow: where each frame of the hull stands, its half-width, keel and gunwale.
@@ -875,7 +1110,9 @@ def render_sheet(name, holders, side):
     links.new(colour.outputs["Color"], mix.inputs[7])
     links.new(mix.outputs[2], bsdf.inputs["Base Color"])
     bsdf.inputs["Roughness"].default_value = 0.85
-    spacing = 6.5
+    # Room for each look: a headquarters is twice the width of a turret.
+    grow = 1.75 if name == "headquarters" else 1.0
+    spacing = 6.5 * grow
     for i, holder in enumerate(holders):
         holder.location = ((i % 5) * spacing, -(i // 5) * spacing * 1.05, 0)
         if side == "crew" and i > 0:
@@ -890,11 +1127,11 @@ def render_sheet(name, holders, side):
                 child.rotation_euler = (0, 0, -0.55)
     ground = bpy.data.meshes.new("ground")
     bm = bmesh.new()
-    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=60)
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=60 * grow)
     bm.to_mesh(ground)
     bm.free()
     floor = bpy.data.objects.new("ground", ground)
-    floor.location = (13, -3, 0)
+    floor.location = (13 * grow, -3 * grow, 0)
     sand = bpy.data.materials.new("sand")
     sand.use_nodes = True
     sand.node_tree.nodes.get("Principled BSDF").inputs["Base Color"].default_value = (0.55, 0.45, 0.3, 1)
@@ -912,8 +1149,8 @@ def render_sheet(name, holders, side):
     scene.world = world
     camera = bpy.data.objects.new("camera", bpy.data.cameras.new("camera"))
     camera.data.type = "ORTHO"
-    camera.data.ortho_scale = 34
-    camera.location = (13, -32, 30)
+    camera.data.ortho_scale = 34 * grow
+    camera.location = (13 * grow, -32 * grow, 30 * grow)
     camera.rotation_euler = (math.radians(46), 0, 0)
     scene.collection.objects.link(camera)
     scene.camera = camera

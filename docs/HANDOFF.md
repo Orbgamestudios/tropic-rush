@@ -209,12 +209,13 @@ compression. Empty leaves, such as the `muzzle` points, survive packing only wit
 `prune({ keepLeaves: true })`.
 
 The game looks a building up in `render/buildingKit.ts`, and falls back to the old model built from
-primitives in `models.ts` until the file arrives or for buildings not modeled yet. The gunboat and its
+primitives in `models.ts` until the file arrives or for buildings not modeled yet. The world map
+bakes its tiny buildings into its islands, so it asks for the plain ones (`buildingModel(..., plain)`). The gunboat and its
 shells are `MODELS` in the Blender script rather than `BUILDINGS`: one look each, in crew paint, in
 `gunboat.glb` (about 60 KB). Scenery built before the files arrive, the home island's boat and the
 map's, swaps the model in when they land (`GunboatScenery`). The gun turret's
-file is about 340 KB for all ten looks, 1,000 to 3,800 triangles each, the mortar's 280 KB and the
-harpoon launcher's 360 KB; the sandbags are the dear part. A part can be tilted on its pivot (`Group(..., tilt=...)`): it's drawn as
+file is about 340 KB for all ten looks, 1,000 to 3,800 triangles each, the mortar's 280 KB, the
+harpoon launcher's 360 KB and the headquarters' 260 KB; the sandbags are the dear part. A part can be tilted on its pivot (`Group(..., tilt=...)`): it's drawn as
 if it weren't and the tilt stands it up, which is how the mortar's tube kicks back along itself.
 
 ## Baked art

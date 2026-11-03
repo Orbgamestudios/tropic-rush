@@ -103,8 +103,14 @@ const templates = new Map<string, BuildingModel>();
  * else one built from primitives, baked into a mesh or two the first time it's asked for and
  * shared from then on, so a whole base draws in a handful of calls.
  */
-export function buildingModel(type: BuildingType, crew = false, level = 1): BuildingModel {
-  const kit = kitBuilding(type, level, crew);
+export function buildingModel(
+  type: BuildingType,
+  crew = false,
+  level = 1,
+  /** The one from primitives even once the Blender model's in, to bake into something else. */
+  plain = false,
+): BuildingModel {
+  const kit = plain ? null : kitBuilding(type, level, crew);
   if (kit) return { ...kit, flame: null };
   const key = `${type}|${crew}`;
   let template = templates.get(key);

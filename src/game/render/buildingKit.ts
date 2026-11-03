@@ -13,7 +13,7 @@ import { PROGRESSION } from "../logic/economy";
 export const STAGES = 10;
 
 /** The buildings modeled so far. */
-const MODELED: readonly BuildingType[] = ["gunTurret", "mortar", "harpoon"];
+const MODELED: readonly BuildingType[] = ["gunTurret", "mortar", "harpoon", "headquarters"];
 
 type Side = "enemy" | "crew";
 
