@@ -4,18 +4,16 @@ import { BUILDINGS } from "./buildings";
 import { applyOp, type CrewLayout, type PlacedBuilding, starterLayout } from "./crewIsland";
 import { hqCapacity } from "./economy";
 import {
-  heldReward,
-  nextRaidTime,
-  nightNumber,
   raiderForce,
+  raidingShip,
   runNightRaid,
   startNightRaid,
   stepNightRaid,
   stolenBy,
 } from "./nightRaid";
+import { heldReward, raiderShip } from "./raiderShip";
 
 const NOW = 1_000_000_000;
-const HOUR = 3_600_000;
 
 /** An HQ 1 island with what that level allows: one gun turret and one mortar, by the HQ. */
 function fortified(): CrewLayout {
@@ -36,14 +34,6 @@ function fortified(): CrewLayout {
 }
 
 describe("night raids", () => {
-  it("ticks over once a day at the raid hour, in local time", () => {
-    const utc3am = 20_000 * 24 * HOUR + 3 * HOUR;
-    expect(nightNumber(utc3am - 1, 0)).toBe(nightNumber(utc3am, 0) - 1);
-    expect(nightNumber(utc3am + 23 * HOUR, 0)).toBe(nightNumber(utc3am, 0));
-    expect(nextRaidTime(utc3am - HOUR, 0)).toBe(utc3am);
-    expect(nextRaidTime(utc3am, 0)).toBe(utc3am + 24 * HOUR);
-  });
-
   it("sends more and stronger raiders at a higher headquarters", () => {
     const low = raiderForce(1, 5);
     const high = raiderForce(12, 5);
@@ -64,15 +54,27 @@ describe("night raids", () => {
     const stock = starterLayout(NOW).resources;
     expect(bare.report.stolen.gold).toBeGreaterThan(0);
     expect(bare.report.stolen.gold).toBeLessThan(stock.gold);
-    expect(bare.report.reward).toBe(0);
+    expect(bare.report.reward).toEqual({});
+    expect(bare.report.crystals).toEqual({});
   });
 
-  it("pays gold for holding the island, and takes nothing that wasn't reached", () => {
+  it("pays for holding the island, and takes nothing that wasn't reached", () => {
     const held = runNightRaid(fortified(), 1, 11);
-    expect(held.report.reward).toBeGreaterThan(0);
+    expect(held.report.reward.gold).toBeGreaterThan(0);
+    expect(Object.values(held.report.crystals).reduce((a, b) => a + (b ?? 0), 0)).toBe(2);
     expect(held.report.stolen).toEqual({});
-    expect(heldReward(1, true)).toBeGreaterThan(heldReward(1, false));
-    expect(heldReward(10, false)).toBeGreaterThan(heldReward(1, false));
+  });
+
+  it("raids with the day's ship: its raiders, and its pay for holding it off", () => {
+    const ship = raiderShip(20_000, 1);
+    const raid = runNightRaid(fortified(), ship.day, ship.seed, raidingShip(ship));
+    expect(raid.report.raiders).toBe(ship.kinds.length);
+    const replay = startNightRaid(raid, raid.seed);
+    expect(replay.heroes.map((h) => h.kind)).toEqual(ship.kinds);
+    if (raid.report.survived) {
+      const most = heldReward(ship.hq, ship.difficulty, raid.seed, true);
+      expect(raid.report.reward.gold).toBeLessThanOrEqual(most.purse.gold ?? 0);
+    }
   });
 
   it("only takes a share of what's in a broken storage", () => {
@@ -86,7 +88,7 @@ describe("night raids", () => {
 
   it("counts a night once, however many crewmates' phones report it", () => {
     const start = fortified();
-    const hit = { kind: "night", night: 50, stolen: { gold: 100 }, reward: 0 } as const;
+    const hit = { kind: "night", night: 50, stolen: { gold: 100 }, reward: {} } as const;
     const once = applyOp(start, hit, NOW + 1000);
     if (!once) throw new Error("refused");
     expect(once.resources.gold).toBeLessThan(start.resources.gold);
@@ -98,12 +100,20 @@ describe("night raids", () => {
     const start = fortified();
     const robbed = applyOp(
       start,
-      { kind: "night", night: 50, stolen: { gold: 1e9 }, reward: 0 },
+      { kind: "night", night: 50, stolen: { gold: 1e9 }, reward: {} },
       NOW + 1000,
     );
     expect(robbed?.resources.gold).toBe(0);
-    const paid = applyOp(start, { kind: "night", night: 50, stolen: {}, reward: 1e9 }, NOW + 1000);
+    const paid = applyOp(
+      start,
+      { kind: "night", night: 50, stolen: {}, reward: { gold: 1e9, timber: 50 } },
+      NOW + 1000,
+    );
     expect(paid?.resources.gold).toBe(hqCapacity(1));
+    expect(paid?.resources.timber).toBe(start.resources.timber + 50);
+    // An older phone still reports its pay as gold alone.
+    const old = applyOp(start, { kind: "night", night: 50, stolen: {}, reward: 30 }, NOW + 1000);
+    expect(old?.resources.gold).toBe(start.resources.gold + 30);
   });
 
   it("fights with what the statues give, the same in the replay", () => {
@@ -117,11 +127,12 @@ describe("night raids", () => {
 
   it("replays exactly the same raid from its seed", () => {
     const crew = fortified();
-    const { report, seed } = runNightRaid(crew, 3, 77);
-    const again = startNightRaid(crew, seed);
+    const ship = raidingShip(raiderShip(20_001, 3));
+    const raid = runNightRaid(crew, 3, 77, ship);
+    const again = startNightRaid({ ...crew, ship }, raid.seed);
     while (again.status === "playing") stepNightRaid(again, SIM_STEP);
-    expect(again.time).toBeCloseTo(report.seconds, 6);
-    expect(again.buildings.filter((b) => b.destroyed)).toHaveLength(report.destroyed);
-    expect(again.heroes.filter((h) => !h.alive)).toHaveLength(report.raidersDown);
+    expect(again.time).toBeCloseTo(raid.report.seconds, 6);
+    expect(again.buildings.filter((b) => b.destroyed)).toHaveLength(raid.report.destroyed);
+    expect(again.heroes.filter((h) => !h.alive)).toHaveLength(raid.report.raidersDown);
   });
 });

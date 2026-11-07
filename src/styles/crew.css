@@ -484,12 +484,6 @@
 
 /* ---------- Night raid ---------- */
 
-.crew-top-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 2px;
-}
-
 /* Countdowns over patches being cleared. */
 .crew-pin-layer {
   position: absolute;
@@ -510,6 +504,91 @@
   font-size: 13px;
   color: var(--gold-text);
   white-space: nowrap;
+}
+
+/* A tab over a producer with something to collect, and over the supply ship with cargo aboard.
+   It bobs, and a full one glows, since it has stopped making anything. */
+.crew-collect {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 2px solid var(--brass);
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--navy-500), var(--navy-900));
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 4px 8px rgb(0 0 0 / 0.45);
+  pointer-events: auto;
+  animation: collect-bob 1.6s ease-in-out infinite;
+}
+
+.crew-collect::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 2px solid var(--brass);
+  border-bottom: 2px solid var(--brass);
+  background: var(--navy-900);
+}
+
+.crew-collect.full {
+  border-color: var(--brass-hi);
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    0 0 12px 3px rgb(255 214 106 / 0.6);
+}
+
+.crew-collect-icon {
+  width: 26px;
+  height: 26px;
+}
+
+/* At the edge of the screen, the pointer has nothing to point at. */
+.crew-supply.edge::after {
+  display: none;
+}
+
+.crew-supply-title {
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--gold-text);
+  text-shadow: var(--outline-thin);
+}
+
+@keyframes collect-bob {
+  50% {
+    translate: 0 -4px;
+  }
+}
+
+/* Resources on their way from a tab up to the bar, over everything. */
+.crew-flow-icon {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  pointer-events: none;
+}
+
+.crew-resource.bump {
+  animation: resource-bump 0.25s ease-out;
+}
+
+@keyframes resource-bump {
+  40% {
+    scale: 1.08;
+  }
 }
 
 /* Clear of the panel's close button. */
@@ -666,6 +745,25 @@
   font-weight: 800;
   color: var(--cream);
   text-align: center;
+  white-space: pre-line;
+}
+
+/* The next raider ship, under a rule of its own. */
+.crew-night-ship {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1.5px solid rgb(220 174 90 / 0.35);
+}
+
+.crew-night-ship-title {
+  font-family: var(--display);
+  font-size: 17px;
+  letter-spacing: 0.6px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
 }
 
 .crew-night-row {

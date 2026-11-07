@@ -20,19 +20,20 @@ import {
   TILE,
 } from "../logic/crewIsland";
 import type { CrystalKind } from "../logic/crystals";
-import { formatDuration } from "../logic/economy";
+import { formatDuration, PRODUCERS, producerHold } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
-import { HOME_SHAPE, homeHeight, landingPoints } from "../logic/island";
+import { HOME_SHAPE, homeHeight, landingPoints, supplyDock } from "../logic/island";
 import { statueBefore } from "../logic/statues";
 import { tideTurn } from "../logic/tides";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
-import type { JobPin } from "../ui/crewUi";
+import type { CollectPin, JobPin } from "../ui/crewUi";
 import { kitVersion, stageFor } from "./buildingKit";
-import { buildClouds, type CloudView } from "./clouds";
+import { type CloudView, homeClouds } from "./clouds";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
 import { HomeHeroes } from "./homeHeroes";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
+import { Lookout } from "./lookout";
 import { buildingModel, GunboatScenery } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
@@ -305,6 +306,9 @@ export interface Holder {
   name: string;
 }
 
+/** A producer shows its tab once it holds this share of what it can. */
+const COLLECT_AT = 0.05;
+
 export class CrewIslandView {
   readonly root = new THREE.Group();
   readonly camera: HomeCamera;
@@ -332,7 +336,12 @@ export class CrewIslandView {
   };
   /** Radar dishes and the like, turning all the while. */
   private spinners: THREE.Object3D[] = [];
+  /** The defenses' heads, each keeping watch over the beach. */
+  private heads: THREE.Object3D[] = [];
+  private readonly lookouts = new WeakMap<THREE.Object3D, Lookout>();
   private readonly boat = new GunboatScenery();
+  /** The supply ship, tied up along the beach whenever it has cargo aboard. */
+  private readonly supply = new GunboatScenery();
   private readonly previewGroup = new THREE.Group();
   private previewKey = "";
   private readonly tilesMaterial = new THREE.MeshBasicMaterial({
@@ -382,7 +391,7 @@ export class CrewIslandView {
     const landing = landingPoints();
     this.overgrowth = new OvergrowthView(scenery);
     this.terrain = buildTerrain(scenery, { height: homeHeight, shade: this.overgrowth.shade });
-    this.clouds = buildClouds(HOME_SEED);
+    this.clouds = homeClouds();
     // Beyond the grass it's the raid islands' shore; the grass itself is the overgrowth.
     const shore = buildShore(HOME_SEED, scenery, landing.spawn, homeHeight, -0.5);
     this.freshFinds = () => {
@@ -393,14 +402,20 @@ export class CrewIslandView {
       }
       shore.add(beachFinds(HOME_SEED, scenery, landing.spawn, homeHeight, HOME_SHAPE));
     };
-    const { boat } = this;
+    const { boat, supply } = this;
     boat.root.position.set(landing.boat.x, 0, landing.boat.y);
     boat.root.rotation.y = -angleOf(sub(landing.spawn, landing.boat));
+    const dock = supplyDock();
+    supply.root.position.set(dock.x, 0, dock.y);
+    supply.root.rotation.y = -angleOf(sub(landing.spawn, dock));
+    supply.root.scale.setScalar(0.8);
+    supply.root.visible = false;
     this.root.add(
       this.terrain.root,
       shore,
       homeCliffs(),
       boat.root,
+      supply.root,
       this.clouds.root,
       this.grid,
       this.previewGroup,
@@ -499,9 +514,11 @@ export class CrewIslandView {
       this.blocks.delete(id);
     }
     this.spinners = [];
+    this.heads = [];
     for (const { group } of this.blocks.values()) {
       group.traverse((o) => {
         if (o.name.endsWith("_radar")) this.spinners.push(o);
+        if (o.name.endsWith("_head")) this.heads.push(o);
       });
     }
     if (holders.length === 0) this.placeTags(layout, holders);
@@ -714,6 +731,44 @@ export class CrewIslandView {
   }
 
   /** Where each clearing job's countdown goes, as fractions of the screen's width and height. */
+  /** Shows the supply ship at its dock, or sends it off. */
+  showSupply(on: boolean): void {
+    this.supply.root.visible = on;
+  }
+
+  /** Where a spot this far over the ground is on screen, as shares of its width and height. */
+  onScreen(wx: number, wz: number, up: number): { x: number; y: number; visible: boolean } {
+    const p = new THREE.Vector3(wx, homeHeight(wx, wz) + up, wz).project(this.stage.camera);
+    const x = (p.x + 1) / 2;
+    const y = (1 - p.y) / 2;
+    return { x, y, visible: p.z < 1 && x > 0 && x < 1 && y > 0.1 && y < 1 };
+  }
+
+  /** The tabs over the producers that have enough made to be worth collecting. */
+  collectPins(layout: Pick<CrewLayout, "buildings" | "held">): CollectPin[] {
+    return layout.buildings.flatMap((b) => {
+      const resource = PRODUCERS[b.type];
+      const held = layout.held[b.id] ?? 0;
+      const most = producerHold(b.level);
+      if (!resource || held < most * COLLECT_AT) return [];
+      const c = buildingCenter(b);
+      return [
+        {
+          id: b.id,
+          resource,
+          full: held >= most - 0.5,
+          ...this.onScreen(c.x, c.y, BUILDINGS[b.type].height + 1.5),
+        },
+      ];
+    });
+  }
+
+  /** Where the supply ship's tab goes on screen. */
+  supplyPin(): { x: number; y: number; visible: boolean } {
+    const dock = supplyDock();
+    return this.onScreen(dock.x, dock.y, 4);
+  }
+
   jobPins(
     layout: Pick<CrewLayout, "jobs" | "builds" | "buildings" | "statues" | "relicSeed">,
     now: number,
@@ -784,7 +839,16 @@ export class CrewIslandView {
   update(dt: number, time: number): void {
     this.camera.update(dt);
     this.boat.refresh();
+    if (this.supply.root.visible) this.supply.refresh();
     for (const spinner of this.spinners) spinner.rotation.y += dt * SPIN;
+    for (const head of this.heads) {
+      let lookout = this.lookouts.get(head);
+      if (!lookout) {
+        lookout = new Lookout();
+        this.lookouts.set(head, lookout);
+      }
+      head.rotation.y = lookout.update(time, dt, null);
+    }
     this.overgrowth.setDistance(this.camera.distance);
     this.overgrowth.update(dt);
     this.heroes.update(dt);

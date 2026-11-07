@@ -7,10 +7,11 @@
 # scripts/pack-buildings.mjs` then squeezes them into public/. With --sheet it also renders every
 # stage side by side, to look over before the game sees them.
 #
-# A building keeps one design from first stage to last. Only what it's made of moves on: scrap wood
-# and rope, then planks and tin, then a timber frame with riveted plate, then painted steel, then
-# polished steel with lights. Defenses stand on the bare ground for their first stages, then on a
-# concrete pad that ends up with lights set in it.
+# A building keeps one design from first stage to last. Only what it's made of moves on: wood and
+# rope, then planks, then a timber frame with flat plate, then painted steel, then clean paint with
+# lights. Nothing is rusty or shiny, and from the first stage some of it is painted in the side's
+# own colour, the crew's blue or the raiders' red. Defenses stand on the bare ground for their
+# first stages, then on a concrete pad that ends up with lights set in it.
 
 import math
 import os
@@ -44,7 +45,7 @@ def turret_ground(g, s):
     elif s >= 7:
         sides = 8 if s <= 8 else 16
         g.cyl(2.3, 2.4, 0.24, (0, 0, 0.12), "concrete", sides=sides)
-        g.cyl(2.42, 2.42, 0.1, (0, 0, 0.05), "plate" if s <= 8 else "steel", sides=sides)
+        g.cyl(2.42, 2.42, 0.1, (0, 0, 0.05), "plate" if s <= 8 else "plate", sides=sides)
         if s >= 9:
             g.cyl(2.32, 2.32, 0.05, (0, 0, 0.26), "hazard", sides=sides, caps=False)
         if s == 10:
@@ -91,7 +92,7 @@ def turret_base(g, s, top):
     if s <= 2:
         for i in range(3):
             a = i / 3 * 2 * math.pi + 0.5
-            drum(g, (0.5 * math.cos(a), 0.5 * math.sin(a), 0), h=top - 0.48, material="plate")
+            drum(g, (0.5 * math.cos(a), 0.5 * math.sin(a), 0), h=top - 0.48, material="paint")
         deck(g, 1.7, top - 0.42)
         g.bar((0.04, 0.02, top - 0.4), (-0.02, 0.0, top), 0.14, "log", 7)
         if s == 2:
@@ -114,7 +115,7 @@ def turret_base(g, s, top):
                     else:
                         g.bar((side * 0.75, -0.95, z), (side * 0.75, 0.95, z), 0.12, "log", 7)
             for side in (-1, 1):
-                g.box((1.3, 0.04, 0.7), (0.0, side * 0.9, top * 0.5), "plate", (0.03, 0, g.rng.uniform(-0.05, 0.05)), 0.01)
+                g.box((1.3, 0.04, 0.7), (0.0, side * 0.9, top * 0.5), "paint", (0.03, 0, g.rng.uniform(-0.05, 0.05)), 0.01)
         else:
             for x in (-0.75, 0.75):
                 for y in (-0.75, 0.75):
@@ -145,25 +146,27 @@ def turret_base(g, s, top):
             for i in range(posts):
                 a = i / posts * 2 * math.pi
                 at = (1.02 * math.cos(a), 1.02 * math.sin(a), top * 0.42)
-                g.box((0.78, 0.05, top * 0.62), at, "plate", (0, 0, a + math.pi / 2), 0.015)
+                g.box((0.78, 0.05, top * 0.62), at, "paint" if i % 2 else "plate", (0, 0, a + math.pi / 2), 0.015)
                 g.rivets([(1.06 * math.cos(a) - 0.3 * math.sin(a) * k, 1.06 * math.sin(a) + 0.3 * math.cos(a) * k, top * 0.7)
                           for k in (-1, 0, 1)])
         else:
             g.cyl(1.12, 1.02, top, (0, 0, top / 2), "plate", sides=10)
+            # A painted band round the drum.
+            g.cyl(1.13, 1.11, top * 0.22, (0, 0, top * 0.72), "paint", sides=10, caps=False)
             for z in (0.18, top * 0.5, top - 0.18):
                 g.rivets([(1.08 * math.cos(a / 14 * 2 * math.pi), 1.08 * math.sin(a / 14 * 2 * math.pi), z) for a in range(14)])
-            g.cyl(1.14, 1.14, 0.14, (0, 0, top - 0.04), "steel", sides=10)
+            g.cyl(1.14, 1.14, 0.14, (0, 0, top - 0.04), "plate", sides=10)
             g.box((0.05, 0.55, 0.75), (0.86, -0.6, 0.6), "paintDark", (0, 0, -0.62), 0.02)
-        g.cyl(0.78, 0.8, 0.14, (0, 0, top), "steel", sides=16)
+        g.cyl(0.78, 0.8, 0.14, (0, 0, top), "plate", sides=16)
     else:
         sides = 8 if s <= 8 else 16
         paint = "paint" if s <= 8 else "paintClean"
         skirt = top * 0.32
         if s >= 8:
-            g.cyl(1.5, 1.14, skirt, (0, 0, 0.24 + skirt / 2), "polished" if s >= 9 else paint, sides=sides)
+            g.cyl(1.5, 1.14, skirt, (0, 0, 0.24 + skirt / 2), paint, sides=sides)
         g.cyl(1.14, 1.08, top - 0.24, (0, 0, 0.24 + (top - 0.24) / 2), paint, sides=sides)
         g.cyl(1.2, 1.2, 0.3, (0, 0, 0.4), "paintDark", sides=sides)
-        g.cyl(1.16, 1.16, 0.16, (0, 0, top - 0.05), "paintDark" if s <= 8 else "brass", sides=sides)
+        g.cyl(1.16, 1.16, 0.16, (0, 0, top - 0.05), "paintDark", sides=sides)
         # An access hatch on the forward side, and vents round the back.
         g.box((0.06, 0.6, 0.85), (1.1, -0.45, top * 0.55), "paintDark", (0, 0, -0.38), 0.02)
         for i in range(3 if s <= 8 else 5):
@@ -172,22 +175,22 @@ def turret_base(g, s, top):
         if s >= 8:
             for i in range(4):
                 f = (i + 1) / 5
-                g.bar((-1.18, -0.2, f * top + 0.2), (-1.18, 0.2, f * top + 0.2), 0.025, "steel", 5)
-        g.cyl(0.8, 0.84, 0.14, (0, 0, top), "polished" if s >= 9 else "steel", sides=24)
+                g.bar((-1.18, -0.2, f * top + 0.2), (-1.18, 0.2, f * top + 0.2), 0.025, "plate", 5)
+        g.cyl(0.8, 0.84, 0.14, (0, 0, top), "gunmetal" if s >= 9 else "plate", sides=24)
         if s == 10:
             # Finished rather than added to: cooling fins down the drum, a band of light round it,
-            # brass at the foot of the skirt and lights set flush in the pad.
+            # a dark band at the foot of the skirt and lights set flush in the pad.
             for i in range(16):
                 a = (i + 0.5) / 16 * 2 * math.pi
                 if abs(((a + math.pi) % (2 * math.pi)) - math.pi) < 0.5:
                     continue
-                g.box((0.16, 0.05, top * 0.4), (1.16 * math.cos(a), 1.16 * math.sin(a), top * 0.6), "polished", (0, 0, a), 0.012)
+                g.box((0.16, 0.05, top * 0.4), (1.16 * math.cos(a), 1.16 * math.sin(a), top * 0.6), "paintDark", (0, 0, a), 0.012)
             g.cyl(1.19, 1.19, 0.07, (0, 0, top * 0.84), "lamp", sides=sides, caps=False)
-            g.cyl(1.53, 1.53, 0.08, (0, 0, 0.3), "brass", sides=sides, caps=False)
+            g.cyl(1.53, 1.53, 0.08, (0, 0, 0.3), "paintDark", sides=sides, caps=False)
 
 
 def barrel_pair(g, s, top, length, spread, z):
-    material = "pipe" if s <= 3 else "steel" if s <= 6 else "gunmetal"
+    material = "pipe" if s <= 3 else "plate" if s <= 6 else "gunmetal"
     radius = 0.065 if s <= 3 else 0.075
     for i, side in enumerate((-1, 1)):
         y = side * spread
@@ -197,17 +200,16 @@ def barrel_pair(g, s, top, length, spread, z):
             for x in (0.35, 0.8):
                 g.cyl(radius + 0.035, radius + 0.035, 0.07, (x, y, z), "rope", (0, math.pi / 2, 0), sides=7)
         elif s <= 6:
-            g.cyl(radius + 0.03, radius + 0.03, 0.12, (length - 0.05, y, z), "steel", (0, math.pi / 2, 0), sides=8)
+            g.cyl(radius + 0.03, radius + 0.03, 0.12, (length - 0.05, y, z), "plate", (0, math.pi / 2, 0), sides=8)
             if s >= 5:
                 g.cyl(radius + 0.06, radius + 0.06, 0.55, (0.45, y, z), "gunmetal", (0, math.pi / 2, 0), sides=10)
         else:
-            jacket = "gunmetal" if s <= 8 else "polished"
-            g.cyl(radius + 0.06, radius + 0.06, length * 0.42, (length * 0.3, y, z), jacket, (0, math.pi / 2, 0), sides=12)
+            g.cyl(radius + 0.06, radius + 0.06, length * 0.42, (length * 0.3, y, z), "gunmetal", (0, math.pi / 2, 0), sides=12)
             for k in range(4):
-                g.cyl(radius + 0.075, radius + 0.075, 0.04, (length * (0.14 + k * 0.1), y, z), "steel", (0, math.pi / 2, 0), sides=12, caps=False)
+                g.cyl(radius + 0.075, radius + 0.075, 0.04, (length * (0.14 + k * 0.1), y, z), "plate", (0, math.pi / 2, 0), sides=12, caps=False)
             if s >= 9:
                 g.box((0.24, 0.2, 0.2), (length + 0.08, y, z), "gunmetal", chamfer=0.03)
-                g.box((0.08, 0.22, 0.06), (length + 0.08, y, z), "steel", chamfer=0.01)
+                g.box((0.08, 0.22, 0.06), (length + 0.08, y, z), "plate", chamfer=0.01)
 
 
 def turret_gun(g, guns, s, top):
@@ -224,7 +226,7 @@ def turret_gun(g, guns, s, top):
         if s == 1:
             g.planks(1.15, 0.72, (0.5, 0, z + 0.05), math.pi / 2, "plank", boards=3, sag=0.06, thick=0.06)
         else:
-            g.box((0.05, 1.25, 0.8), (0.52, 0, z + 0.05), "plate", (0.04, -0.12, 0.03), 0.01)
+            g.box((0.05, 1.25, 0.8), (0.52, 0, z + 0.05), "paint", (0.04, -0.12, 0.03), 0.01)
             g.box((0.04, 1.0, 0.18), (0.48, 0, z + 0.48), "plankGrey", (0, 0, 0.05), 0.01)
         g.box((0.44, 0.3, 0.28), (-0.38, 0.33, top + 0.22), "plank", (0, 0, 0.2), 0.012)
         g.box((0.36, 0.26, 0.24), (-0.42, -0.3, top + 0.2), "plankGrey", (0, 0, -0.15), 0.012)
@@ -232,21 +234,21 @@ def turret_gun(g, guns, s, top):
     if s <= 4:
         g.cyl(0.55, 0.58, 0.1, (0, 0, top + 0.05), "plankGrey", sides=10)
         g.box((0.95, width, 0.55), (-0.05, 0, top + 0.37), "plank", chamfer=0.015)
-        g.box((1.15, width + 0.15, 0.05), (-0.1, 0, top + 0.68), "plate", (0, 0.12, 0.02), 0.01)
+        g.box((1.15, width + 0.15, 0.05), (-0.1, 0, top + 0.68), "paint", (0, 0.12, 0.02), 0.01)
         barrel_pair(guns, s, top, length, spread, z)
-        g.box((0.05, width + 0.2, 0.85), (0.5, 0, z), "plate", (0, -0.1, 0), 0.01)
+        g.box((0.05, width + 0.2, 0.85), (0.5, 0, z), "paint", (0, -0.1, 0), 0.01)
         if s == 4:
             g.rivets([(0.54, y, z + dz) for y in (-0.5, -0.17, 0.17, 0.5) for dz in (-0.3, 0.32)])
-            g.bar((0.1, 0.0, top + 0.68), (0.1, 0.0, top + 1.0), 0.02, "steel", 5)
+            g.bar((0.1, 0.0, top + 0.68), (0.1, 0.0, top + 1.0), 0.02, "plate", 5)
         g.box((0.4, 0.3, 0.3), (-0.6, width / 2 + 0.05, top + 0.25), "plank", chamfer=0.012)
         return
-    plate = "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
-    trim = "steel" if s <= 6 else "paintDark" if s <= 8 else "brass"
+    plate = "paint" if s <= 8 else "paintClean"
+    trim = "plate" if s <= 6 else "paintDark"
     g.cyl(0.74, 0.74, 0.12, (0, 0, top + 0.06), trim, sides=16 if s <= 8 else 24)
     height = lerp(0.6, 0.85, t)
     g.box((1.15, width, height), (-0.12, 0, top + 0.12 + height / 2), plate, chamfer=0.04)
     # A sloped front plate over the guns' roots.
-    armour = plate if s <= 8 else "polished"
+    armour = plate
     g.box((0.62, width + 0.04, 0.06), (0.52, 0, top + 0.18 + height * 0.62), armour, (0, -0.62, 0), 0.02)
     g.box((0.22, width * 0.7, 0.5), (0.5, 0, z), "gunmetal", chamfer=0.03)
     barrel_pair(guns, s, top, length, spread, z)
@@ -259,21 +261,21 @@ def turret_gun(g, guns, s, top):
         g.box((0.04, 0.12, 0.08), (-0.14, 0.25, top + 0.26 + height), "glass", chamfer=0.0)
     if s >= 8:
         side = width / 2 + 0.2
-        g.cyl(0.04, 0.04, 0.3, (0.0, side - 0.08, top + height * 0.6), "steel", (math.pi / 2, 0, 0), sides=6)
-        g.cyl(0.17, 0.15, 0.3, (0.05, side, top + height * 0.8), "steel" if s <= 8 else "polished", (0, math.pi / 2, 0), sides=12)
+        g.cyl(0.04, 0.04, 0.3, (0.0, side - 0.08, top + height * 0.6), "plate", (math.pi / 2, 0, 0), sides=6)
+        g.cyl(0.17, 0.15, 0.3, (0.05, side, top + height * 0.8), "plate" if s <= 8 else "gunmetal", (0, math.pi / 2, 0), sides=12)
         g.cyl(0.14, 0.14, 0.03, (0.21, side, top + height * 0.8), "lamp", (0, math.pi / 2, 0), sides=12)
     if s >= 9:
         g.box((0.04, width + 0.06, 0.07), (0.79, 0, top + 0.2 + height * 0.42), "hazard", (0, -0.62, 0), 0.0)
         for y in (-1, 1):
-            g.box((0.6, 0.05, 0.05), (-0.15, y * (width / 2 + 0.03), top + 0.12 + height), "brass", chamfer=0.01)
+            g.box((0.6, 0.05, 0.05), (-0.15, y * (width / 2 + 0.03), top + 0.12 + height), "paintDark", chamfer=0.01)
     if s == 10:
-        g.bar((-0.6, 0.3, top + 0.12 + height), (-0.6, 0.3, top + 1.4 + height), 0.025, "steel", 6)
-        g.bar((-0.45, -0.3, top + 0.12 + height), (-0.45, -0.3, top + 0.55 + height), 0.05, "steel", 8)
+        g.bar((-0.6, 0.3, top + 0.12 + height), (-0.6, 0.3, top + 1.4 + height), 0.025, "plate", 6)
+        g.bar((-0.45, -0.3, top + 0.12 + height), (-0.45, -0.3, top + 0.55 + height), 0.05, "plate", 8)
         # The dish turns on its own, round the top of its mast.
         dish = Group("radar", pivot=(-0.45, -0.3, top + 0.55 + height), seed=300, parent=g)
-        dish.cyl(0.07, 0.07, 0.08, (-0.45, -0.3, top + 0.59 + height), "brass", sides=10)
-        dish.cyl(0.42, 0.08, 0.2, (-0.38, -0.3, top + 0.72 + height), "polished", (0.0, -0.45, 0), sides=16, caps=False)
-        dish.bar((-0.38, -0.3, top + 0.72 + height), (-0.12, -0.3, top + 0.84 + height), 0.02, "steel", 5)
+        dish.cyl(0.07, 0.07, 0.08, (-0.45, -0.3, top + 0.59 + height), "gunmetal", sides=10)
+        dish.cyl(0.42, 0.08, 0.2, (-0.38, -0.3, top + 0.72 + height), "plate", (0.0, -0.45, 0), sides=16, caps=False)
+        dish.bar((-0.38, -0.3, top + 0.72 + height), (-0.12, -0.3, top + 0.84 + height), 0.02, "plate", 5)
         dish.cyl(0.05, 0.05, 0.08, (-0.12, -0.3, top + 0.84 + height), "lamp", sides=8)
         return [dish]
         for y in (-1, 1):
@@ -306,7 +308,7 @@ def mortar_base(g, s, top):
             g.bar((-0.9, y, 0.1), (0.9, y, 0.1), 0.12, "log", 7)
         deck(g, 1.9, top - 0.03, "plank" if s == 1 else "plankGrey")
         if s == 2:
-            g.box((1.7, 1.7, 0.03), (0, 0, top + 0.005), "plate", (0, 0, 0.12), 0.0)
+            g.box((1.7, 1.7, 0.03), (0, 0, top + 0.005), "paint", (0, 0, 0.12), 0.0)
     elif s <= 4:
         for c in range(2):
             z = 0.12 + c * 0.22
@@ -322,18 +324,20 @@ def mortar_base(g, s, top):
             g.cyl(0.62, 0.66, 0.1, (0, 0, top + 0.05), "plankGrey", sides=12)
     elif s <= 6:
         g.cyl(1.2, 1.15, top, (0, 0, top / 2), "plate", sides=8 if s == 5 else 12)
+        # A painted band round the drum.
+        g.cyl(1.21, 1.19, top * 0.3, (0, 0, top * 0.35), "paint", sides=8 if s == 5 else 12, caps=False)
         g.rivets([(1.18 * math.cos(a / 12 * 2 * math.pi), 1.18 * math.sin(a / 12 * 2 * math.pi), top * 0.6) for a in range(12)])
-        g.cyl(1.2, 1.2, 0.1, (0, 0, top - 0.02), "steel", sides=8 if s == 5 else 12)
-        g.cyl(0.66, 0.7, 0.12, (0, 0, top + 0.06), "steel", sides=16)
+        g.cyl(1.2, 1.2, 0.1, (0, 0, top - 0.02), "plate", sides=8 if s == 5 else 12)
+        g.cyl(0.66, 0.7, 0.12, (0, 0, top + 0.06), "plate", sides=16)
     else:
         sides = 12 if s <= 8 else 20
         paint = "paint" if s <= 8 else "paintClean"
         if s >= 8:
-            g.cyl(1.55, 1.22, 0.35, (0, 0, 0.42), "polished" if s >= 9 else paint, sides=sides)
+            g.cyl(1.55, 1.22, 0.35, (0, 0, 0.42), paint, sides=sides)
         g.cyl(1.22, 1.16, top - 0.24, (0, 0, 0.24 + (top - 0.24) / 2), paint, sides=sides)
         g.cyl(1.25, 1.25, 0.1, (0, 0, 0.36), "paintDark", sides=sides, caps=False)
-        g.cyl(1.24, 1.24, 0.12, (0, 0, top - 0.02), "paintDark" if s <= 8 else "brass", sides=sides, caps=False)
-        g.cyl(0.7, 0.74, 0.12, (0, 0, top + 0.08), "polished" if s >= 9 else "steel", sides=24)
+        g.cyl(1.24, 1.24, 0.12, (0, 0, top - 0.02), "paintDark", sides=sides, caps=False)
+        g.cyl(0.7, 0.74, 0.12, (0, 0, top + 0.08), "gunmetal" if s >= 9 else "plate", sides=24)
         if s == 10:
             g.cyl(1.27, 1.27, 0.05, (0, 0, top * 0.62), "lamp", sides=sides, caps=False)
     # Rounds ready to hand, round the back.
@@ -342,11 +346,11 @@ def mortar_base(g, s, top):
             g.box((0.5, 0.42, 0.34), (x, y, 0.17), "plank" if i == 0 else "plankGrey", (0, 0, 0.2 * i - 0.1), 0.012)
     elif s <= 6:
         for i, (x, y) in enumerate(((-1.6, 0.6), (-1.6, -0.1))):
-            g.box((0.5, 0.45, 0.36), (x, y, 0.42), "plate", (0, 0, 0.05 * i), 0.02)
+            g.box((0.5, 0.45, 0.36), (x, y, 0.42), "paint", (0, 0, 0.05 * i), 0.02)
     else:
         g.box((0.55, 0.8, 0.4), (-1.65, 0.3, 0.46), "paintDark", chamfer=0.03)
         for i in range(4):
-            g.cyl(0.08, 0.08, 0.4, (-1.55 + (i % 2) * 0.2, -0.45 + (i // 2) * 0.2, 0.46), "brass", sides=8)
+            g.cyl(0.08, 0.08, 0.4, (-1.55 + (i % 2) * 0.2, -0.45 + (i // 2) * 0.2, 0.46), "paint", sides=8)
 
 
 def mortar_gun(head, s, top):
@@ -358,24 +362,23 @@ def mortar_gun(head, s, top):
     length = lerp(1.6, 2.2, t)
     tube = Group("guns", pivot=(0, 0, pivot_z), seed=200 + s, parent=head, tilt=(0, -MORTAR_PITCH, 0))
     z = pivot_z
-    material = "pipe" if s <= 3 else "steel" if s <= 6 else "gunmetal"
+    material = "pipe" if s <= 3 else "plate" if s <= 6 else "gunmetal"
     # The tube is drawn lying along +x through its pivot; the tilt stands it up.
     tube.bar((-0.55, 0, z), (length, 0, z), radius, material, 12)
-    tube.cyl(radius + 0.06, radius + 0.03, 0.22, (-0.62, 0, z), "steel" if s >= 3 else "pipe", (0, math.pi / 2, 0), sides=12)
+    tube.cyl(radius + 0.06, radius + 0.03, 0.22, (-0.62, 0, z), "plate" if s >= 3 else "pipe", (0, math.pi / 2, 0), sides=12)
     tube.points["muzzle0"] = (length + 0.12, 0, z)
     if s <= 2:
         for x in (0.2, 0.9):
             tube.cyl(radius + 0.04, radius + 0.04, 0.08, (x, 0, z), "rope", (0, math.pi / 2, 0), sides=10)
     elif s <= 6:
         for x in (0.1, length - 0.1):
-            tube.cyl(radius + 0.04, radius + 0.04, 0.1, (x, 0, z), "steel", (0, math.pi / 2, 0), sides=12, caps=False)
+            tube.cyl(radius + 0.04, radius + 0.04, 0.1, (x, 0, z), "plate", (0, math.pi / 2, 0), sides=12, caps=False)
         if s >= 5:
             tube.cyl(radius + 0.08, radius + 0.08, 0.6, (0.25, 0, z), "gunmetal", (0, math.pi / 2, 0), sides=12)
     else:
-        jacket = "gunmetal" if s <= 8 else "polished"
-        tube.cyl(radius + 0.07, radius + 0.07, length * 0.45, (length * 0.25, 0, z), jacket, (0, math.pi / 2, 0), sides=14)
+        tube.cyl(radius + 0.07, radius + 0.07, length * 0.45, (length * 0.25, 0, z), "gunmetal", (0, math.pi / 2, 0), sides=14)
         for k in range(3):
-            tube.cyl(radius + 0.09, radius + 0.09, 0.05, (length * (0.1 + k * 0.12), 0, z), "brass" if s >= 9 else "steel", (0, math.pi / 2, 0), sides=14, caps=False)
+            tube.cyl(radius + 0.09, radius + 0.09, 0.05, (length * (0.1 + k * 0.12), 0, z), "paint" if s <= 8 else "paintClean", (0, math.pi / 2, 0), sides=14, caps=False)
         if s >= 9:
             tube.box((0.22, radius * 2 + 0.06, radius * 2 + 0.06), (length + 0.04, 0, z), "gunmetal", chamfer=0.03)
     # The mount the tube turns on, and what holds it up.
@@ -385,13 +388,13 @@ def mortar_gun(head, s, top):
         leg = "log" if s <= 2 else "pipe"
         for side in (-1, 1):
             head.bar((1.0, side * 0.45, top), (0.35, side * 0.12, pivot_z + 0.45), 0.06, leg, 7)
-        head.box((0.8, 0.8, 0.08), (-0.1, 0, top + 0.04), "plankGrey" if s <= 2 else "plate", (0, 0, 0.1), 0.01)
+        head.box((0.8, 0.8, 0.08), (-0.1, 0, top + 0.04), "plankGrey" if s <= 2 else "paint", (0, 0, 0.1), 0.01)
     else:
-        plate = "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+        plate = "paint" if s <= 8 else "paintClean"
         for side in (-1, 1):
             head.box((0.7, 0.1, 0.75), (-0.05, side * (radius + 0.15), pivot_z - 0.15), plate, chamfer=0.03)
         for side in (-1, 1):
-            head.bar((0.95, side * 0.5, top + 0.1), (0.4, side * 0.14, pivot_z + 0.5), 0.05, "steel", 8)
+            head.bar((0.95, side * 0.5, top + 0.1), (0.4, side * 0.14, pivot_z + 0.5), 0.05, "plate", 8)
         head.cyl(0.6, 0.6, 0.12, (0, 0, top + 0.18), plate, sides=20)
         if s >= 7:
             head.box((0.28, 0.2, 0.22), (-0.2, radius + 0.36, pivot_z + 0.15), "paintDark", chamfer=0.02)
@@ -402,10 +405,10 @@ def mortar_gun(head, s, top):
             head.box((0.04, 0.9, 0.06), (0.32, 0, top + 0.26), "hazard", chamfer=0.0)
     extra = []
     if s == 10:
-        head.bar((-0.55, -0.45, top + 0.2), (-0.55, -0.45, top + 1.2), 0.04, "steel", 8)
+        head.bar((-0.55, -0.45, top + 0.2), (-0.55, -0.45, top + 1.2), 0.04, "plate", 8)
         dish = Group("radar", pivot=(-0.55, -0.45, top + 1.2), seed=300, parent=head)
-        dish.cyl(0.06, 0.06, 0.08, (-0.55, -0.45, top + 1.24), "brass", sides=10)
-        dish.cyl(0.38, 0.07, 0.18, (-0.48, -0.45, top + 1.36), "polished", (0.0, -0.45, 0), sides=16, caps=False)
+        dish.cyl(0.06, 0.06, 0.08, (-0.55, -0.45, top + 1.24), "gunmetal", sides=10)
+        dish.cyl(0.38, 0.07, 0.18, (-0.48, -0.45, top + 1.36), "plate", (0.0, -0.45, 0), sides=16, caps=False)
         dish.cyl(0.05, 0.05, 0.08, (-0.25, -0.45, top + 1.46), "lamp", sides=8)
         extra.append(dish)
     return [tube, *extra]
@@ -432,7 +435,7 @@ def harpoon_base(g, s, top):
     if s <= 2:
         for i in range(3):
             a = i / 3 * 2 * math.pi + 0.5
-            drum(g, (0.5 * math.cos(a), 0.5 * math.sin(a), 0), h=top - 0.42, material="plate")
+            drum(g, (0.5 * math.cos(a), 0.5 * math.sin(a), 0), h=top - 0.42, material="paint")
         deck(g, 1.7, top - 0.36)
         g.bar((0.0, 0.0, top - 0.34), (0.0, 0.0, top), 0.16, "log", 7)
     elif s <= 4:
@@ -448,26 +451,28 @@ def harpoon_base(g, s, top):
         g.cyl(0.5, 0.55, 0.12, (0, 0, top), "plankGrey", sides=10)
     elif s <= 6:
         g.cyl(1.0, 0.9, top, (0, 0, top / 2), "plate", sides=8 if s == 5 else 12)
+        # A painted band round the drum.
+        g.cyl(0.98, 0.96, top * 0.3, (0, 0, top * 0.5), "paint", sides=8 if s == 5 else 12, caps=False)
         for z in (0.2, top - 0.2):
             g.rivets([(0.98 * math.cos(a / 12 * 2 * math.pi), 0.98 * math.sin(a / 12 * 2 * math.pi), z) for a in range(12)])
-        g.cyl(1.02, 1.02, 0.12, (0, 0, top - 0.02), "steel", sides=8 if s == 5 else 12, caps=False)
-        g.cyl(0.66, 0.7, 0.12, (0, 0, top), "steel", sides=16)
+        g.cyl(1.02, 1.02, 0.12, (0, 0, top - 0.02), "plate", sides=8 if s == 5 else 12, caps=False)
+        g.cyl(0.66, 0.7, 0.12, (0, 0, top), "plate", sides=16)
     else:
         sides = 12 if s <= 8 else 20
         paint = "paint" if s <= 8 else "paintClean"
         if s >= 8:
-            g.cyl(1.4, 1.02, 0.5, (0, 0, 0.49), "polished" if s >= 9 else paint, sides=sides)
+            g.cyl(1.4, 1.02, 0.5, (0, 0, 0.49), paint, sides=sides)
         g.cyl(1.02, 0.94, top - 0.24, (0, 0, 0.24 + (top - 0.24) / 2), paint, sides=sides)
         g.cyl(1.05, 1.05, 0.25, (0, 0, 0.42), "paintDark", sides=sides, caps=False)
-        g.cyl(1.04, 1.04, 0.12, (0, 0, top - 0.02), "paintDark" if s <= 8 else "brass", sides=sides, caps=False)
+        g.cyl(1.04, 1.04, 0.12, (0, 0, top - 0.02), "paintDark", sides=sides, caps=False)
         g.box((0.06, 0.5, 0.7), (0.98, -0.35, top * 0.55), "paintDark", (0, 0, -0.4), 0.02)
-        g.cyl(0.7, 0.74, 0.12, (0, 0, top), "polished" if s >= 9 else "steel", sides=24)
+        g.cyl(0.7, 0.74, 0.12, (0, 0, top), "gunmetal" if s >= 9 else "plate", sides=24)
         if s == 10:
             g.cyl(1.07, 1.07, 0.05, (0, 0, top * 0.75), "lamp", sides=sides, caps=False)
     # Spare harpoons lying on a crate round the back.
-    spare = "log" if s <= 3 else "steel" if s <= 6 else "gunmetal"
-    tip = "plate" if s <= 6 else "polished"
-    crate = "plank" if s <= 4 else "plate" if s <= 6 else "paintDark"
+    spare = "log" if s <= 3 else "plate" if s <= 6 else "gunmetal"
+    tip = "plate" if s <= 6 else "gunmetal"
+    crate = "plank" if s <= 2 else "paint" if s <= 8 else "paintClean"
     g.box((0.5, 0.9, 0.3), (-1.55, -0.2, 0.15), crate, chamfer=0.015)
     for y in (-0.45, -0.2, 0.05):
         g.bar((-1.75, y - 0.3, 0.34), (-1.35, y + 0.35, 0.34), 0.035, spare, 6)
@@ -479,9 +484,9 @@ def harpoon_gun(head, s, top):
     z = top + lerp(0.42, 0.55, t)
     reach = lerp(1.15, 1.6, t)
     wood = s <= 4
-    stock = "plank" if s <= 2 else "plankGrey" if s <= 4 else "steel" if s <= 6 else "gunmetal"
-    limbs = "log" if s <= 2 else "plank" if s <= 4 else "steel" if s <= 6 else "gunmetal" if s <= 8 else "polished"
-    head.cyl(0.6, 0.62, 0.12, (0, 0, top + 0.06), "plankGrey" if wood else "steel", sides=16)
+    stock = "plank" if s <= 2 else "plankGrey" if s <= 4 else "plate" if s <= 6 else "gunmetal"
+    limbs = "log" if s <= 2 else "plank" if s <= 4 else "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+    head.cyl(0.6, 0.62, 0.12, (0, 0, top + 0.06), "plankGrey" if wood else "plate", sides=16)
     # The stock the harpoon lies along, on a post up from the mount.
     head.box((0.3, 0.3, z - top - 0.1), (-0.05, 0, (top + z) / 2), stock, chamfer=0.02)
     head.box((2.1, 0.34, 0.18), (-0.15, 0, z), stock, chamfer=0.02 if not wood else 0.012)
@@ -497,36 +502,36 @@ def harpoon_gun(head, s, top):
         if s <= 4:
             for k in (0.3, 0.65):
                 at = (lerp(root[0], tip[0], k), lerp(root[1], tip[1], k), z + 0.02)
-                head.cyl(0.085, 0.085, 0.05, at, "rope" if s <= 2 else "steel", (0, math.pi / 2, 0), sides=7, caps=False)
+                head.cyl(0.085, 0.085, 0.05, at, "rope" if s <= 2 else "plate", (0, math.pi / 2, 0), sides=7, caps=False)
         tips.append(tip)
     head.box((0.24, 0.42, 0.24), (0.78, 0, z + 0.02), "plank" if wood else "gunmetal", chamfer=0.02)
     # Its line, wound on a drum at the side, and a crank at the back.
     head.cyl(0.22, 0.22, 0.34, (-0.45, -0.42, z - 0.05), "rope", (math.pi / 2, 0, 0), sides=12)
     head.cyl(0.26, 0.26, 0.04, (-0.45, -0.25, z - 0.05), stock, (math.pi / 2, 0, 0), sides=12)
     head.cyl(0.26, 0.26, 0.04, (-0.45, -0.59, z - 0.05), stock, (math.pi / 2, 0, 0), sides=12)
-    head.bar((-1.2, -0.25, z), (-1.2, 0.25, z), 0.04, "steel", 6)
-    head.bar((-1.2, 0.25, z), (-1.2, 0.25, z + 0.25), 0.03, "steel", 6)
+    head.bar((-1.2, -0.25, z), (-1.2, 0.25, z), 0.04, "plate", 6)
+    head.bar((-1.2, 0.25, z), (-1.2, 0.25, z + 0.25), 0.03, "plate", 6)
     if s >= 5:
-        plate = "plate" if s <= 6 else "paint" if s <= 8 else "paintClean"
+        plate = "paint" if s <= 8 else "paintClean"
         # A housing round the back of the stock, and a shield over the bow's middle.
         head.box((0.7, 0.62, 0.42), (-0.75, 0, z + 0.12), plate, chamfer=0.04)
-        head.box((0.06, 1.1, 0.5), (0.95, 0, z + 0.22), plate if s <= 8 else "polished", (0, -0.35, 0), 0.02)
+        head.box((0.06, 1.1, 0.5), (0.95, 0, z + 0.22), plate, (0, -0.35, 0), 0.02)
         if s <= 6:
             head.rivets([(0.99, y, z + 0.3) for y in (-0.4, 0, 0.4)])
     if s >= 7:
         head.box((0.24, 0.14, 0.16), (-0.6, 0.36, z + 0.4), "paintDark", chamfer=0.02)
         head.box((0.04, 0.1, 0.07), (-0.47, 0.36, z + 0.42), "glass", chamfer=0.0)
     if s >= 8:
-        head.cyl(0.15, 0.13, 0.26, (-0.5, -0.45, z + 0.42), "steel" if s <= 8 else "polished", (0, math.pi / 2, 0), sides=12)
+        head.cyl(0.15, 0.13, 0.26, (-0.5, -0.45, z + 0.42), "plate" if s <= 8 else "gunmetal", (0, math.pi / 2, 0), sides=12)
         head.cyl(0.12, 0.12, 0.03, (-0.36, -0.45, z + 0.42), "lamp", (0, math.pi / 2, 0), sides=12)
     if s >= 9:
         head.box((0.04, 1.12, 0.07), (0.98, 0, z + 0.43), "hazard", (0, -0.35, 0), 0.0)
     extra = []
     if s == 10:
-        head.bar((-1.0, 0.3, z), (-1.0, 0.3, z + 0.9), 0.04, "steel", 8)
+        head.bar((-1.0, 0.3, z), (-1.0, 0.3, z + 0.9), 0.04, "plate", 8)
         dish = Group("radar", pivot=(-1.0, 0.3, z + 0.9), seed=300, parent=head)
-        dish.cyl(0.06, 0.06, 0.08, (-1.0, 0.3, z + 0.94), "brass", sides=10)
-        dish.cyl(0.36, 0.07, 0.17, (-0.94, 0.3, z + 1.05), "polished", (0.0, -0.45, 0), sides=16, caps=False)
+        dish.cyl(0.06, 0.06, 0.08, (-1.0, 0.3, z + 0.94), "gunmetal", sides=10)
+        dish.cyl(0.36, 0.07, 0.17, (-0.94, 0.3, z + 1.05), "plate", (0.0, -0.45, 0), sides=16, caps=False)
         dish.cyl(0.05, 0.05, 0.08, (-0.73, 0.3, z + 1.14), "lamp", sides=8)
         extra.append(dish)
     # The bowstring and its latch: they snap forward when it fires.
@@ -538,8 +543,8 @@ def harpoon_gun(head, s, top):
     string.box((0.16, 0.2, 0.12), latch, "plank" if wood else "gunmetal", chamfer=0.015)
     # The harpoon on the stock: it goes when it fires, and the next slides on.
     bolt = Group("bolt", pivot=(0, 0, top), seed=250 + s, parent=head)
-    shaft = "log" if s <= 3 else "steel" if s <= 6 else "gunmetal"
-    point = "plate" if s <= 6 else "polished"
+    shaft = "log" if s <= 3 else "plate" if s <= 6 else "gunmetal"
+    point = "plate" if s <= 6 else "gunmetal"
     by = z + 0.15
     end = 1.25 + 0.35 * t
     bolt.bar((-0.5, 0, by), (end, 0, by), 0.045 if s <= 3 else 0.04, shaft, 7)
@@ -547,7 +552,7 @@ def harpoon_gun(head, s, top):
     for side in (-1, 1):
         bolt.beam((end + 0.02, side * 0.02, by), (end - 0.14, side * 0.14, by), 0.04, 0.02, point)
     if s >= 7:
-        bolt.cyl(0.06, 0.06, 0.05, (0.2, 0, by), "brass" if s >= 9 else "steel", (0, math.pi / 2, 0), sides=8, caps=False)
+        bolt.cyl(0.06, 0.06, 0.05, (0.2, 0, by), "paint" if s <= 8 else "paintClean", (0, math.pi / 2, 0), sides=8, caps=False)
     bolt.points["muzzle0"] = (end + 0.35, 0, by)
     return [string, bolt, *extra]
 
@@ -635,17 +640,18 @@ def slab(g, half, z, material, thick=0.14, at=(0, 0)):
             g.box((hx * 2 / across, hy * 2 / along, thick), centre, material, chamfer=0.0)
 
 
-def gable(g, half, z, rise, material):
-    """A pitched roof of two slopes, ridge running front to back."""
+def gable(g, half, z, rise, material, at=(0, 0)):
+    """A pitched roof of two slopes, ridge running front to back, over a block centred on `at`."""
+    hx, hy = halves(half)
     for side in (-1, 1):
-        slope = math.atan2(rise, half)
-        span = math.hypot(half, rise) + 0.25
-        count = max(1, round(half * 2 / PANEL))
-        each = (half * 2 + 0.5) / count
+        slope = math.atan2(rise, hy)
+        span = math.hypot(hy, rise) + 0.25
+        count = max(1, round(hx * 2 / PANEL))
+        each = (hx * 2 + 0.5) / count
         for i in range(count):
-            x = -half - 0.25 + (i + 0.5) * each
-            at = (x, side * half / 2, z + rise / 2)
-            g.box((each * 0.99, span, 0.06), at, material, (side * -slope, 0, 0), 0.01)
+            x = at[0] - hx - 0.25 + (i + 0.5) * each
+            spot = (x, at[1] + side * hy / 2, z + rise / 2)
+            g.box((each * 0.99, span, 0.06), spot, material, (side * -slope, 0, 0), 0.01)
 
 
 def headquarters(s):
@@ -810,6 +816,543 @@ def headquarters(s):
 
 
 BUILDINGS["headquarters"] = headquarters
+
+# ---------------------------------------------------------------------------------------------
+# The rest of the buildings. Each grows the way the headquarters does: boards and logs under flat
+# sheet metal, then plate, then concrete and paint, with something in the side's colour from the
+# first stage on: a roof, a door, a band or a flag. Doors face the front (+x).
+
+
+def team_of(s):
+    return "paint" if s <= 8 else "paintClean"
+
+
+def wall_of(s):
+    return "plank" if s <= 2 else "plankGrey" if s <= 4 else "plate" if s <= 6 else "concrete"
+
+
+def frame_of(s):
+    """What posts, masts and frames are made of."""
+    return "log" if s <= 4 else "plate" if s <= 6 else team_of(s)
+
+
+def shed(g, s, at, half, height, door=0.9, windows=True):
+    """A small building: boards under a pitched metal roof with a painted ridge at first, then plate
+    and concrete under a flat painted roof. Its door faces the front."""
+    hx, hy = halves(half)
+    x, y = at
+    team = team_of(s)
+    box_walls(g, (hx, hy), 0, height, wall_of(s), door=door, skew=0.02 if s <= 2 else 0.0, at=at)
+    if s <= 4:
+        rise = hy * 0.55
+        gable(g, (hx + 0.15, hy + 0.15), height, rise, "plate", at=at)
+        g.bar((x - hx - 0.4, y, height + rise + 0.03), (x + hx + 0.4, y, height + rise + 0.03), 0.07, team, 8)
+    else:
+        slab(g, (hx + 0.15, hy + 0.15), height, team, 0.14, at=at)
+    if door:
+        g.box((0.06, door * 0.9, height * 0.78), (x + hx + 0.02, y, height * 0.39), team, chamfer=0.01)
+    if windows and s >= 5:
+        glass = "glass" if s >= 7 else "gunmetal"
+        for side in (-1, 1):
+            g.box((min(0.7, hx), 0.06, 0.32), (x - hx * 0.2, y + side * (hy + 0.09), height * 0.62), glass, chamfer=0.0)
+
+
+def flag(g, s, at, z, height=1.6):
+    """A flag in the side's colour on a pole."""
+    x, y = at
+    pole = "log" if s <= 4 else "gunmetal"
+    g.bar((x, y, z), (x, y, z + height), 0.04, pole, 6)
+    g.box((0.6, 0.03, 0.38), (x - 0.31, y, z + height - 0.21), team_of(s), chamfer=0.0)
+
+
+def lamps(g, points):
+    for p in points:
+        g.cyl(0.08, 0.08, 0.05, p, "lamp", sides=8)
+
+
+def rails(g, s, a, b, gauge=0.35):
+    """A little track from a to b, sleepers and all."""
+    a = Vector(a)
+    b = Vector(b)
+    along = (b - a).normalized()
+    side = Vector((-along.y, along.x, 0))
+    length = (b - a).length
+    for k in (-1, 1):
+        g.bar(a + side * gauge * k + Vector((0, 0, 0.08)), b + side * gauge * k + Vector((0, 0, 0.08)), 0.035, "gunmetal", 6)
+    for i in range(int(length / 0.5)):
+        p = a + along * (0.25 + i * 0.5)
+        g.box((0.14, gauge * 2 + 0.35, 0.05), (p.x, p.y, 0.03), "plankGrey", (0, 0, math.atan2(along.y, along.x)), 0.0)
+
+
+def cart(g, s, at, load="ore"):
+    x, y = at
+    body = "plankGrey" if s <= 3 else "plate" if s <= 6 else team_of(s)
+    g.box((0.95, 0.75, 0.45), (x, y, 0.42), body, chamfer=0.03)
+    for dx in (-0.3, 0.3):
+        for dy in (-0.4, 0.4):
+            g.cyl(0.14, 0.14, 0.08, (x + dx, y + dy, 0.16), "gunmetal", (math.pi / 2, 0, 0), sides=10)
+    g.cyl(0.42, 0.1, 0.32, (x, y, 0.78), load, sides=7)
+
+
+def rock(g, at, r, h, turn=0.0):
+    """A boulder: a squat cone of rough rock."""
+    x, y = at
+    g.cyl(r, r * 0.5, h, (x, y, h / 2), "stone", (0, 0, turn), sides=7)
+
+
+# --- Producers: 4 x 4 tiles, so everything stays within 3.6 m of the middle. ---------------------
+
+
+def gold_mine(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    # A hill of rock at the back, tunnelled into from the front.
+    for x, y, r, h in ((-1.9, 0.0, 1.8, 2.0), (-1.3, 1.6, 1.25, 1.3), (-1.4, -1.6, 1.3, 1.2), (-2.6, 1.0, 1.0, 1.1)):
+        rock(g, (x, y), r, h + 0.4 * t, turn=x + y)
+    tall = lerp(1.7, 2.3, t)
+    wide = 1.5
+    post = frame_of(s)
+    g.box((0.5, wide - 0.2, tall - 0.1), (-0.65, 0, (tall - 0.1) / 2), "gunmetal", chamfer=0.0)
+    for side in (-1, 1):
+        g.beam((-0.4, side * wide / 2, 0), (-0.4, side * wide / 2, tall), 0.24, 0.24, post)
+    g.beam((-0.4, -wide / 2 - 0.25, tall), (-0.4, wide / 2 + 0.25, tall), 0.28, 0.28, post)
+    if s >= 2:
+        g.box((0.05, 1.2, 0.34), (-0.24, 0, tall + 0.36), team, chamfer=0.01)
+    rails(g, s, (-0.5, 0, 0), (3.2, 0, 0))
+    cart(g, s, (1.9, 0))
+    g.cyl(0.8, 0.15, 0.55, (1.2, 1.9, 0.27), "ore", sides=8)
+    if s >= 3:
+        shed(g, s, (1.5, -2.1), (1.0, 0.85), lerp(1.6, 2.3, t), door=0.8)
+    if s >= 5:
+        # A headframe over the shaft, with its winding wheel.
+        top = lerp(4.2, 5.4, (s - 5) / 5)
+        for side in (-1, 1):
+            g.beam((-1.6, side * 0.9, 1.6), (-1.6, side * 0.45, top), 0.16, 0.16, post)
+            g.beam((-0.6, side * 0.75, 0.3), (-1.55, side * 0.45, top - 0.2), 0.12, 0.12, post)
+        g.beam((-1.6, -0.6, top), (-1.6, 0.6, top), 0.18, 0.18, post)
+        g.cyl(0.65, 0.65, 0.12, (-1.6, 0, top + 0.1), "gunmetal", (math.pi / 2, 0, 0), sides=16)
+        g.cyl(0.2, 0.2, 0.16, (-1.6, 0, top + 0.1), team, (math.pi / 2, 0, 0), sides=10)
+        flag(g, s, (-1.6, 0.6), top + 0.1, 1.4)
+    else:
+        flag(g, s, (-1.9, 0.0), 2.3, 1.4)
+    if s >= 9:
+        lamps(g, [(-0.4, -wide / 2 - 0.1, tall + 0.2), (-0.4, wide / 2 + 0.1, tall + 0.2)])
+    return [g]
+
+
+def lumber_camp(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    # Logs waiting at the back, piled up.
+    rows = 3 if s <= 4 else 4
+    for row in range(rows):
+        for i in range(rows - row):
+            y = (i - (rows - row - 1) / 2) * 0.55
+            g.bar((-3.1, y, 0.27 + row * 0.46), (-1.2, y, 0.27 + row * 0.46), 0.25, "log", 9)
+    # The saw shed: open at the front at first, walled in later.
+    height = lerp(2.1, 2.9, t)
+    hx, hy = 1.4, 1.4
+    x0 = 0.5
+    post = frame_of(s)
+    if s <= 4:
+        for px in (x0 - hx, x0 + hx):
+            for py in (-hy, hy):
+                g.beam((px, py, 0), (px, py, height), 0.18, 0.18, post)
+        gable(g, (hx + 0.2, hy + 0.2), height, hy * 0.55, "plate", at=(x0, 0))
+        g.bar((x0 - hx - 0.45, 0, height + hy * 0.55 + 0.03), (x0 + hx + 0.45, 0, height + hy * 0.55 + 0.03), 0.07, team, 8)
+    else:
+        panels(g, (x0 - hx, -hy, 0), (x0 - hx, hy, 0), 0, height, wall_of(s))
+        for side in (-1, 1):
+            panels(g, (x0 - hx - 0.08, side * hy, 0), (x0 + hx * 0.2, side * hy, 0), 0, height, wall_of(s))
+        slab(g, (hx + 0.25, hy + 0.25), height, team, 0.14, at=(x0, 0))
+    # The bench, a log on it, and the blade.
+    g.box((2.4, 0.6, 0.7), (x0, 0, 0.35), "plank" if s <= 4 else "plate", chamfer=0.02)
+    g.bar((x0 - 1.1, 0, 0.95), (x0 + 0.9, 0, 0.95), 0.24, "log", 9)
+    blade = 0.5 + 0.1 * t
+    g.cyl(blade, blade, 0.04, (x0 + 0.4, 0, 0.7 + blade * 0.5), "plate", (math.pi / 2, 0, 0), sides=18)
+    g.cyl(0.12, 0.12, 0.1, (x0 + 0.4, 0, 0.7 + blade * 0.5), team, (math.pi / 2, 0, 0), sides=10)
+    # Sawn boards stacked out front.
+    for k in range(3 + s // 3):
+        g.box((1.6, 0.9, 0.08), (2.6, -1.5, 0.05 + k * 0.1), "plank", (0, 0, 0.03 * (k % 2)), 0.008)
+    if s >= 6:
+        # A steam engine driving the saw, its stack smoking.
+        g.box((0.9, 0.8, 0.9), (x0 - 0.2, 1.9, 0.45), "gunmetal", chamfer=0.04)
+        g.cyl(0.16, 0.18, 2.4 + t, (x0 - 0.4, 1.9, 1.2 + t / 2), "pipe", sides=10)
+        g.cyl(0.21, 0.21, 0.12, (x0 - 0.4, 1.9, 0.6 + 2.4 * 0.62), team, sides=10, caps=False)
+    flag(g, s, (x0 + hx, hy), height + 0.1, 1.3)
+    if s >= 9:
+        lamps(g, [(x0 + hx + 0.1, -hy, height - 0.2), (x0 + hx + 0.1, hy, height - 0.2)])
+    return [g]
+
+
+def quarry(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    # The rock face it's cut from, stepped where blocks have come out.
+    for i, (x, y, w, h) in enumerate(((-2.6, 0.0, 1.4, 2.2), (-2.4, 1.7, 1.5, 1.6), (-2.5, -1.6, 1.3, 1.8), (-1.6, 0.6, 0.9, 0.9))):
+        g.box((w, 1.8, h + 0.4 * t), (x, y, (h + 0.4 * t) / 2), "stone", (0, 0, 0.1 * i), 0.08)
+    g.box((4.2, 5.4, 0.04), (0.8, 0, 0.02), "dirt", chamfer=0.0)
+    # Cut blocks, stacked on pallets.
+    for px, py in ((1.2, 1.7), (2.4, 1.7), (1.2, -1.9)):
+        g.box((1.0, 1.0, 0.12), (px, py, 0.06), "plank", chamfer=0.01)
+        for k in range(1 + (s + int(px)) % 3):
+            g.box((0.85, 0.85, 0.42), (px, py, 0.33 + k * 0.42), "stone", (0, 0, 0.06 * k), 0.03)
+    # A derrick lifting a block off the face.
+    mast = frame_of(s)
+    top = lerp(3.2, 4.6, t)
+    base = (-0.2, -0.9)
+    g.bar((*base, 0), (*base, top), 0.12 if s <= 4 else 0.1, mast, 8)
+    g.bar((base[0], base[1], top * 0.3), (-2.0, 0.2, top), 0.08, mast, 8)
+    g.bar((-2.0, 0.2, top), (-2.0, 0.2, 1.4), 0.02, "rope" if s <= 4 else "gunmetal", 5)
+    g.box((0.6, 0.6, 0.45), (-2.0, 0.2, 1.15), "stone", chamfer=0.03)
+    g.box((0.6, 0.5, 0.4), (base[0], base[1] + 0.45, 0.6), "plankGrey" if s <= 4 else team, chamfer=0.02)
+    cart(g, s, (2.4, -0.4), "stone")
+    if s >= 3:
+        shed(g, s, (2.2, -2.5), (0.9, 0.7), lerp(1.5, 2.2, t), door=0.7)
+    flag(g, s, (-2.6, 0.0), 2.6 + 0.4 * t, 1.3)
+    if s >= 9:
+        lamps(g, [(base[0], base[1], top + 0.1)])
+    return [g]
+
+
+def scrap_yard(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    # Sorted stock: stacks of plate, drums, and crates, nothing left lying about.
+    for k in range(3 + s // 3):
+        g.box((1.4, 1.0, 0.07), (-2.2, 1.6, 0.04 + k * 0.08), "plate", (0, 0, 0.05 * (k % 3)), 0.006)
+    for i in range(3 if s <= 4 else 5):
+        a = i * 1.3
+        drum(g, (1.9 + 0.55 * math.cos(a), 1.9 + 0.5 * math.sin(a), 0), material=team if i % 2 else "plate", r=0.32, h=0.75)
+    for i, (x, y) in enumerate(((-2.4, -0.3), (-2.4, 0.5), (-1.7, -0.1))):
+        g.box((0.6, 0.6, 0.6), (x, y, 0.3 + (0.6 if i == 2 else 0)), "plank" if s <= 4 else "plate", (0, 0, 0.2 * i), 0.012)
+    # The press that bales it.
+    press = "plankGrey" if s <= 2 else "gunmetal"
+    g.box((1.3, 1.1, 1.0 + 0.4 * t), (-0.4, -1.8, (1.0 + 0.4 * t) / 2), press, chamfer=0.04)
+    g.box((1.32, 0.2, 0.25), (-0.4, -1.8, 0.75 + 0.3 * t), team, chamfer=0.01)
+    for k in range(min(4, s // 2)):
+        g.box((0.5, 0.5, 0.5), (0.6 + (k % 2) * 0.55, -2.3 + (k // 2) * 0.55, 0.25), "plate", chamfer=0.02)
+    if s >= 2:
+        shed(g, s, (2.0, -1.4), (1.0, 0.9), lerp(1.6, 2.3, t), door=0.8)
+    if s >= 5:
+        # A crane with a magnet on it.
+        top = lerp(3.4, 4.6, (s - 5) / 5)
+        mast = frame_of(s)
+        g.box((0.7, 0.7, 0.5), (0.2, 0.5, 0.25), "gunmetal", chamfer=0.03)
+        g.bar((0.2, 0.5, 0.5), (0.2, 0.5, top), 0.14, mast, 8)
+        g.bar((0.2, 0.5, top), (-1.8, 1.3, top + 0.3), 0.08, mast, 8)
+        g.bar((-1.8, 1.3, top + 0.3), (-1.8, 1.3, 1.3), 0.02, "gunmetal", 5)
+        g.cyl(0.38, 0.38, 0.16, (-1.8, 1.3, 1.2), team, sides=14)
+    flag(g, s, (2.9, 0.5), 0.0, 2.0 + t)
+    if s >= 9:
+        lamps(g, [(-0.4, -1.25, 1.2 + 0.4 * t)])
+    return [g]
+
+
+# --- Storages: 3 x 3 tiles, so everything stays within 2.6 m of the middle. ----------------------
+
+
+def gold_vault(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    if s <= 3:
+        shed(g, s, (-0.5, 0), (1.3, 1.2), lerp(1.7, 2.1, t), door=0.8)
+        # A strongbox at the door, banded in paint, and sacks of gold beside it.
+        g.box((0.8, 0.6, 0.55), (1.4, -1.2, 0.28), "plank", chamfer=0.02)
+        for dx in (-0.25, 0.25):
+            g.box((0.06, 0.62, 0.57), (1.4 + dx, -1.2, 0.28), team, chamfer=0.0)
+    else:
+        height = lerp(1.9, 2.8, t)
+        walls = "plate" if s <= 6 else "concrete"
+        g.box((2.8, 2.8, 0.2), (-0.3, 0, 0.1), "concrete", chamfer=0.03)
+        box_walls(g, 1.3, 0.2, height, walls, thick=0.2, at=(-0.3, 0))
+        slab(g, 1.5, 0.2 + height, team, 0.18, at=(-0.3, 0))
+        # The round door, with its wheel.
+        g.cyl(0.75, 0.75, 0.16, (1.08, 0, 0.2 + height * 0.45), "gunmetal", (0, math.pi / 2, 0), sides=20)
+        g.cyl(0.6, 0.6, 0.06, (1.18, 0, 0.2 + height * 0.45), team, (0, math.pi / 2, 0), sides=20, caps=False)
+        g.cyl(0.25, 0.25, 0.08, (1.22, 0, 0.2 + height * 0.45), "plate", (0, math.pi / 2, 0), sides=6)
+        if s >= 7:
+            g.box((0.06, 2.6, 0.2), (1.05, 0, 0.2 + height - 0.15), team, chamfer=0.0)
+    # Gold, stacked in bars on a pallet.
+    bars = 2 + s // 2
+    g.box((1.0, 0.8, 0.1), (1.6, 1.4, 0.05), "plank", chamfer=0.01)
+    for k in range(bars):
+        layer = k // 4
+        i = k % 4
+        g.box((0.4, 0.18, 0.12), (1.4 + (i % 2) * 0.42, 1.25 + (i // 2) * 0.32, 0.16 + layer * 0.13), "ore", (0, 0, (layer % 2) * 0.1), 0.02)
+    for i in range(2 if s <= 5 else 3):
+        g.cyl(0.24, 0.16, 0.42, (2.1, -0.3 + i * 0.5, 0.21), "canvas", sides=8)
+    if s >= 9:
+        lamps(g, [(1.1, -0.9, 2.4), (1.1, 0.9, 2.4)])
+    flag(g, s, (-1.5, -1.5), 0.2 + lerp(1.9, 2.8, t) if s >= 4 else 0.0, 1.4 if s >= 4 else 2.6)
+    return [g]
+
+
+def timber_shed(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    height = lerp(2.0, 2.8, t)
+    hx, hy = 1.6, 1.5
+    post = frame_of(s)
+    for px in (-hx, hx):
+        for py in (-hy, hy):
+            g.beam((px, py, 0), (px, py, height), 0.18, 0.18, post)
+    if s >= 5:
+        panels(g, (-hx, -hy, 0), (-hx, hy, 0), 0, height, wall_of(s))
+    if s <= 4:
+        gable(g, (hx + 0.2, hy + 0.2), height, hy * 0.55, "plate")
+        g.bar((-hx - 0.45, 0, height + hy * 0.55 + 0.03), (hx + 0.45, 0, height + hy * 0.55 + 0.03), 0.07, team, 8)
+    else:
+        slab(g, (hx + 0.3, hy + 0.3), height, team, 0.14)
+    # Logs stacked inside, ends to the front.
+    rows = 2 + min(3, s // 3)
+    for row in range(rows):
+        for i in range(rows - row + 1):
+            y = (i - (rows - row) / 2) * 0.5
+            g.bar((-hx + 0.3, y, 0.25 + row * 0.42), (hx - 0.1, y, 0.25 + row * 0.42), 0.22, "log", 9)
+    if s >= 7:
+        g.box((0.06, hy * 2, 0.22), (hx + 0.12, 0, height - 0.18), team, chamfer=0.0)
+    if s >= 9:
+        lamps(g, [(hx + 0.12, -hy + 0.2, height - 0.4), (hx + 0.12, hy - 0.2, height - 0.4)])
+    return [g]
+
+
+def stone_yard(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    # A low wall round three sides, capped in paint once it's built properly.
+    wall = "stone" if s <= 4 else "plate" if s <= 6 else "concrete"
+    high = lerp(0.5, 0.9, t)
+    edge = 2.3
+    panels(g, (-edge, -edge, 0), (-edge, edge, 0), 0, high, wall, thick=0.3)
+    for side in (-1, 1):
+        panels(g, (-edge - 0.15, side * edge, 0), (edge, side * edge, 0), 0, high, wall, thick=0.3)
+    if s >= 5:
+        for a, b in (((-edge, -edge), (-edge, edge)), ((-edge, -edge), (edge, -edge)), ((-edge, edge), (edge, edge))):
+            g.bar((*a, high + 0.05), (*b, high + 0.05), 0.08, team, 6)
+    # Blocks, stacked high.
+    stacks = ((-1.2, -1.1), (-1.2, 0.2), (0.2, -1.1), (0.2, 1.2), (-1.2, 1.3))
+    for n, (x, y) in enumerate(stacks[: 3 + s // 4]):
+        for k in range(1 + (n + s) % 3):
+            g.box((0.95, 0.95, 0.5), (x, y, 0.25 + k * 0.5), "stone", (0, 0, 0.08 * ((n + k) % 3)), 0.04)
+    if s >= 6:
+        # A gantry to lift them, over the middle.
+        top = lerp(2.4, 3.2, (s - 6) / 4)
+        frame = frame_of(s)
+        for side in (-1, 1):
+            g.beam((-1.6, side * 1.9, 0), (-1.6, side * 1.9, top), 0.14, 0.14, frame)
+            g.beam((1.2, side * 1.9, 0), (1.2, side * 1.9, top), 0.14, 0.14, frame)
+            g.beam((-1.6, side * 1.9, top), (1.2, side * 1.9, top), 0.16, 0.16, frame)
+        g.beam((-0.4, -2.0, top + 0.1), (-0.4, 2.0, top + 0.1), 0.18, 0.18, team)
+        g.bar((-0.4, 0.2, top), (-0.4, 0.2, 1.8), 0.02, "gunmetal", 5)
+    flag(g, s, (1.9, 1.9), 0.0, 2.0 + t)
+    if s >= 9:
+        lamps(g, [(-edge, -edge, high + 0.15), (-edge, edge, high + 0.15)])
+    return [g]
+
+
+def scrap_bin(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    if s <= 3:
+        for i, (x, y) in enumerate(((-1.0, -1.0), (-1.0, 0.0), (0.0, -1.0), (-1.0, 1.0), (0.0, 0.2))):
+            if i >= 3 + s:
+                break
+            g.box((0.8, 0.8, 0.7), (x, y, 0.35), "plank" if i % 2 else "plankGrey", (0, 0, 0.15 * i), 0.012)
+            g.box((0.82, 0.12, 0.72), (x, y, 0.35), team, (0, 0, 0.15 * i), 0.0)
+    else:
+        # Bins with painted lids, then a container behind them.
+        for i, y in enumerate((-1.4, -0.5, 0.4)):
+            g.box((0.9, 0.8, 0.9), (1.2, y, 0.45), "plate" if s <= 6 else "gunmetal", chamfer=0.03)
+            g.box((0.95, 0.85, 0.08), (1.2, y, 0.94), team, (0, 0.12 * (i % 2), 0), 0.01)
+        if s >= 7:
+            g.box((1.4, 4.2, 1.5), (-1.2, 0, 0.75), team, chamfer=0.03)
+            for k in range(7):
+                g.box((1.42, 0.05, 1.3), (-1.2, -1.8 + k * 0.6, 0.75), "paintDark", chamfer=0.0)
+            g.box((0.06, 1.2, 1.3), (-0.5, -1.2, 0.75), "gunmetal", chamfer=0.0)
+        else:
+            shed(g, s, (-1.0, 0), (1.0, 1.4), lerp(1.7, 2.2, t), door=0.9)
+    flag(g, s, (1.9, 1.9), 0.0, 2.0 + t)
+    if s >= 9:
+        lamps(g, [(1.7, -1.4, 1.0), (1.7, 0.4, 1.0)])
+    return [g]
+
+
+def refinery(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    team = team_of(s)
+    tank = "plank" if s <= 3 else "plate" if s <= 6 else team
+    spots = ((-1.8, -1.6, 1.0), (-1.8, 1.4, 0.9), (0.4, -1.9, 0.8))
+    for i, (x, y, r) in enumerate(spots[: 2 + (s >= 4)]):
+        h = (1.6 + i * 0.3) * (1 + 0.5 * t)
+        g.cyl(r, r, h, (x, y, h / 2), tank, sides=14)
+        g.cyl(r * 0.85, r * 0.3, 0.4, (x, y, h + 0.2), "gunmetal" if s >= 4 else "plankGrey", sides=14)
+        for k in (0.25, 0.75):
+            g.cyl(r + 0.03, r + 0.03, 0.12, (x, y, h * k), team if tank != team else "paintDark", sides=14, caps=False)
+    # Pipes between them, and to the still.
+    g.bar((-1.8, -1.6, 1.2), (-1.8, 1.4, 1.2), 0.1, "pipe", 8)
+    g.bar((-1.8, -0.2, 1.2), (0.8, -0.2, 1.2), 0.1, "pipe", 8)
+    # The still: a stack and its house.
+    stack = lerp(3.4, 6.0, t)
+    g.cyl(0.32, 0.26, stack, (1.3, 1.3, stack / 2), "stone" if s <= 3 else "plate" if s <= 6 else "concrete", sides=10)
+    g.cyl(0.35, 0.35, 0.3, (1.3, 1.3, stack * 0.8), team, sides=10, caps=False)
+    shed(g, s, (1.6, -0.6), (1.1, 1.0), lerp(1.7, 2.6, t), door=0.8)
+    if s >= 9:
+        lamps(g, [(1.3, 1.3, stack + 0.05)])
+    flag(g, s, (2.8, 2.6), 0.0, 2.2 + t)
+    return [g]
+
+
+def laboratory(s):
+    t = (s - 1) / 9
+    g = Group("body", seed=s)
+    parts = [g]
+    team = team_of(s)
+    height = lerp(1.9, 2.8, t)
+    shed(g, s, (-0.3, 0), (1.4, 1.3), height, door=0.8)
+    top = height + (1.3 * 0.55 if s <= 4 else 0.07)
+    # A bench out front with its glassware.
+    g.box((0.6, 1.2, 0.75), (1.75, -0.8, 0.38), "plank" if s <= 4 else "plate", chamfer=0.02)
+    for i in range(3):
+        g.cyl(0.08, 0.05, 0.22, (1.75, -1.2 + i * 0.35, 0.86), "glass", sides=8)
+    if s >= 4:
+        # A glass dome on the roof.
+        dome = lerp(0.6, 0.9, t)
+        g.cyl(dome, dome * 0.4, dome * 0.8, (-0.3, 0, top + dome * 0.4), "glass", sides=14)
+        g.cyl(dome + 0.05, dome + 0.05, 0.12, (-0.3, 0, top + 0.06), team, sides=14)
+    mast = (-1.3, 1.0)
+    g.bar((*mast, top), (*mast, top + 1.4 + t), 0.04, "gunmetal", 6)
+    g.box((0.04, 0.5, 0.04), (mast[0], mast[1], top + 1.2 + t), "gunmetal", chamfer=0.0)
+    if s >= 7:
+        # A dish that turns on its own.
+        at = (0.7, -1.0, top)
+        g.bar(at, (at[0], at[1], top + 0.5), 0.05, "gunmetal", 8)
+        dish = Group("radar", pivot=(at[0], at[1], top + 0.5), seed=300, parent=g)
+        dish.cyl(0.07, 0.07, 0.08, (at[0], at[1], top + 0.55), "gunmetal", sides=10)
+        dish.cyl(0.45, 0.08, 0.2, (at[0] + 0.08, at[1], top + 0.7), "plate", (0.0, -0.45, 0), sides=16, caps=False)
+        dish.cyl(0.05, 0.05, 0.08, (at[0] + 0.32, at[1], top + 0.82), "lamp", sides=8)
+        parts.append(dish)
+    if s >= 9:
+        lamps(g, [(0.92, -0.6, height - 0.2), (0.92, 0.6, height - 0.2)])
+    return parts
+
+
+# --- Two more defenses. -------------------------------------------------------------------------
+
+
+def flamethrower(s):
+    t = (s - 1) / 9
+    top = lerp(1.25, 2.4, t)
+    body = Group("body", seed=s)
+    head = Group("head", pivot=(0, 0, top), seed=100 + s)
+    nozzle = Group("guns", pivot=(0, 0, top), seed=200 + s, parent=head)
+    team = team_of(s)
+    turret_base(body, s, top)
+    # The fuel: two tanks riding on the mount, then a shielded housing.
+    head.cyl(0.6, 0.62, 0.12, (0, 0, top + 0.06), "plankGrey" if s <= 4 else "plate", sides=16)
+    for side in (-1, 1):
+        r = lerp(0.2, 0.28, t)
+        head.cyl(r, r, 1.0, (-0.35, side * (r + 0.05), top + 0.12 + r), team, (0, math.pi / 2, 0), sides=12)
+        head.cyl(r * 0.6, r * 0.6, 0.1, (0.18, side * (r + 0.05), top + 0.12 + r), "gunmetal", (0, math.pi / 2, 0), sides=10)
+    z = top + lerp(0.6, 0.85, t)
+    if s >= 5:
+        head.box((0.9, 0.9, 0.6), (-0.1, 0, z), team, chamfer=0.04)
+        head.box((0.06, 1.0, 0.7), (0.4, 0, z), "plate" if s <= 6 else team, (0, -0.25, 0), 0.02)
+    else:
+        head.box((0.6, 0.5, 0.4), (-0.1, 0, z - 0.05), "plank" if s <= 2 else "plankGrey", chamfer=0.02)
+    length = lerp(1.2, 1.7, t)
+    nozzle.bar((0.0, 0, z), (length, 0, z), lerp(0.08, 0.11, t), "gunmetal", 10)
+    nozzle.cyl(0.14, 0.1, 0.22, (length, 0, z), "gunmetal", (0, math.pi / 2, 0), sides=10)
+    nozzle.bar((0.2, 0, z - 0.12), (length - 0.1, 0, z - 0.12), 0.03, "pipe", 6)
+    if s >= 3:
+        nozzle.cyl(0.04, 0.04, 0.06, (length + 0.05, 0, z - 0.12), "lamp", (0, math.pi / 2, 0), sides=6)
+    nozzle.points["muzzle0"] = (length + 0.15, 0, z)
+    parts = [body, head, nozzle]
+    grow(parts, GROW, 0.24 if s >= 7 else 0.0)
+    turret_ground(body, s)
+    return parts
+
+
+def watchtower(s):
+    t = (s - 1) / 9
+    top = lerp(4.2, 6.2, t)
+    body = Group("body", seed=s)
+    head = Group("head", pivot=(0, 0, top), seed=100 + s)
+    rifle = Group("guns", pivot=(0, 0, top), seed=200 + s, parent=head)
+    team = team_of(s)
+    spread = 1.2
+    if s <= 4:
+        # Log legs leaning in, braced, with a ladder up the back.
+        for dx in (-1, 1):
+            for dy in (-1, 1):
+                body.beam((dx * spread, dy * spread, 0), (dx * 0.8, dy * 0.8, top), 0.2, 0.2, "log")
+        for z in (top * 0.35, top * 0.7):
+            k = 1 - z / top * 0.33
+            for a, b in (((-1, -1), (1, -1)), ((-1, 1), (1, 1)), ((-1, -1), (-1, 1)), ((1, -1), (1, 1))):
+                body.bar((a[0] * spread * k, a[1] * spread * k, z), (b[0] * spread * k, b[1] * spread * k, z), 0.06, "plankGrey", 6)
+        for side in (-1, 1):
+            body.beam((-spread - 0.4, side * 0.25, 0), (-0.95, side * 0.25, top), 0.06, 0.05, "plankGrey")
+        if s >= 3:
+            panels(body, (-0.85, -0.85, top * 0.62), (-0.85, 0.85, top * 0.62), top * 0.62, top * 0.3, "plank")
+    else:
+        # A square tower, then a tapered concrete one, banded in paint.
+        walls = "plate" if s <= 6 else "concrete"
+        body.cyl(1.25, 0.95, top - 0.1, (0, 0, (top - 0.1) / 2), walls, (0, 0, math.pi / 4), sides=4)
+        for k in (0.3, 0.7):
+            body.cyl(1.25 - 0.3 * k + 0.04, 1.25 - 0.3 * k - 0.02, 0.3, (0, 0, top * k), team, (0, 0, math.pi / 4), sides=4, caps=False)
+        body.box((0.06, 0.7, 1.3), (0.88, 0, 0.65), team, chamfer=0.01)
+        if s >= 7:
+            for k in range(3):
+                body.box((0.06, 0.35, 0.2), (0.84 - k * 0.05, 0, top * (0.35 + k * 0.2)), "glass", chamfer=0.0)
+    # The platform, with a parapet round it.
+    deck(body, 2.0, top - 0.04, "plank" if s <= 4 else "plankGrey")
+    rail = "plankGrey" if s <= 2 else "plank" if s <= 4 else team
+    for a, b in (((-1, -1), (1, -1)), ((-1, 1), (1, 1)), ((-1, -1), (-1, 1))):
+        body.box((abs(b[0] - a[0]) * 1.0 + 0.1, abs(b[1] - a[1]) * 1.0 + 0.1, 0.45), ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, top + 0.22), rail, chamfer=0.01)
+    # The rifle, on a swivel, with its scope and a shield.
+    z = top + 0.75
+    head.cyl(0.3, 0.34, 0.25, (0, 0, top + 0.12), "plankGrey" if s <= 4 else "gunmetal", sides=12)
+    head.box((0.5, 0.3, 0.3), (-0.15, 0, z - 0.12), team, chamfer=0.03)
+    length = lerp(1.6, 2.2, t)
+    rifle.bar((-0.4, 0, z), (length, 0, z), 0.05, "gunmetal", 8)
+    rifle.cyl(0.07, 0.07, 0.45, (0.1, 0, z + 0.14), "gunmetal", (0, math.pi / 2, 0), sides=8)
+    rifle.cyl(0.05, 0.05, 0.04, (0.34, 0, z + 0.14), "glass", (0, math.pi / 2, 0), sides=8)
+    rifle.points["muzzle0"] = (length + 0.08, 0, z)
+    if s >= 5:
+        head.box((0.06, 0.8, 0.45), (0.45, 0, z - 0.1), team, (0, -0.2, 0), 0.02)
+    flag(body, s, (-0.9, 0.9), top + 0.4, 1.3)
+    if s >= 9:
+        lamps(body, [(1.0, -1.0, top + 0.5), (1.0, 1.0, top + 0.5)])
+    parts = [body, head, rifle]
+    turret_ground(body, s)
+    return parts
+
+
+BUILDINGS.update(
+    {
+        "flamethrower": flamethrower,
+        "watchtower": watchtower,
+        "goldMine": gold_mine,
+        "lumberCamp": lumber_camp,
+        "quarry": quarry,
+        "scrapYard": scrap_yard,
+        "goldVault": gold_vault,
+        "timberShed": timber_shed,
+        "stoneYard": stone_yard,
+        "scrapBin": scrap_bin,
+        "refinery": refinery,
+        "laboratory": laboratory,
+    }
+)
 
 
 # ---------------------------------------------------------------------------------------------

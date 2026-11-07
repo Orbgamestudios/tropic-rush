@@ -36,6 +36,7 @@ import {
   type RaidState,
   stepRaid,
 } from "./logic/raid";
+import { shipAtSea } from "./logic/raiderShip";
 import {
   type Blueprint,
   blueprintName,
@@ -51,7 +52,9 @@ import {
   beatRival,
   islandSpot,
   type MapIsland,
+  raiderHome,
   settleRivals,
+  shipSpot,
   takeIsland,
   worldIslands,
 } from "./logic/worldMap";
@@ -153,7 +156,6 @@ const SKY_CARD_MS = 12_000;
 const HINT_WINS = 3;
 
 /** The slowest the picture needs to run in a fight, and on a screen nobody's touching. */
-const FULL_FRAME_MS = 1000 / 60;
 const CALM_FRAME_MS = 1000 / 30;
 const FRAME_SLACK_MS = 2;
 /** Screens with so little on them that they can be sharper for less than a fight costs. */
@@ -282,7 +284,6 @@ export class Game {
     );
     this.hud = new Hud(container, {
       onBoat: () => this.controls.pressBoat(),
-      onSprint: (held) => this.controls.holdSprint(held),
       onAbility: (ability) => this.controls.selectAbility(ability),
       onPause: () => this.setPaused(true),
     });
@@ -439,6 +440,13 @@ export class Game {
           }),
         sendOp: (op) => this.link?.sendOp(op),
         onReplay: (raid) => this.go(() => this.startReplay(raid)),
+        onStrikeBack: (raid) => {
+          if (!raid.ship) return;
+          const home = raiderHome(raid.ship, raid.night, raid.report.stolen);
+          if (this.crew.active) this.crew.exit();
+          this.mapHero = this.save.unlocked.includes(this.save.hero) ? this.save.hero : "rifleman";
+          this.attack(home);
+        },
       },
     );
     this.wipe = layer(container, "wipe");
@@ -651,12 +659,12 @@ export class Game {
     this.container.style.setProperty("--ui-scale", String(s.uiScale));
     this.controls.uiScale = s.uiScale;
     this.controls.setLayout(s.controls);
-    this.hud.placeSprint(s.controls.aim);
     sfx.setMuted(s.muted);
     music.setMuted(s.musicMuted);
     sfx.setVolume(s.soundVolume);
     music.setVolume(s.musicVolume);
     setHaptics(s.haptics);
+    this.stage.setGraphics(s.graphics);
   }
 
   /** The track for wherever the player is now. */
@@ -1353,12 +1361,16 @@ export class Game {
     this.stage.ignoreSlowFrames();
   }
 
-  /** Lays the world out as it stands. */
+  /** Lays the world out as it stands, with the day's raider ship if it's still out there. */
   private drawMap(): void {
     const { world, crystals } = this.save;
-    const islands = worldIslands(world, hqLevel(this.crew.snapshot().layout));
+    const hq = hqLevel(this.crew.snapshot().layout);
+    const islands = worldIslands(world, hq);
+    const ship = shipAtSea(Date.now(), hq);
+    const raiders = ship ? { ship, ...shipSpot(world, islands, ship.spotSeed) } : null;
     this.mapView.setWorld(islands, world, this.reveal !== null);
-    this.mapScreen.show(islands, world, crystals);
+    this.mapView.setRaiders(raiders);
+    this.mapScreen.show(islands, world, crystals, raiders);
   }
 
   /** Moves real crews onto any player islands that are open, if the server knows of any. */
@@ -1566,6 +1578,8 @@ export class Game {
     this.hideScreens();
     const state = startNightRaid(raid, raid.seed);
     const layout = nightIsland(raid, raid.seed);
+    // The sky as it was when the raiders came.
+    this.stage.sky.holdClock(raid.ship?.at ?? null);
     this.state = state;
     this.view = new RaidView(layout, state, this.labels, raid);
     this.stage.scene.add(this.view.root);
@@ -1584,6 +1598,7 @@ export class Game {
   private endReplay(): void {
     if (this.phase !== "replay") return;
     this.replay.show(false);
+    this.stage.sky.holdClock(null);
     this.applySettings();
     this.goHome();
     this.crew.showNightResult();
@@ -1594,6 +1609,7 @@ export class Game {
     if (!state || !view) return;
     this.accumulator += dt * this.replaySpeed;
     while (this.accumulator >= SIM_STEP && state.status === "playing") {
+      view.remember(state);
       stepNightRaid(state, SIM_STEP);
       view.handleEvents(state.events, state);
       playRaidEvents(state.events, state, undefined);
@@ -1606,8 +1622,9 @@ export class Game {
         this.go(() => this.endReplay());
       }
     }
+    view.between = state.status === "playing" ? this.accumulator / SIM_STEP : 1;
     const watched = state.heroes.find((h) => h.alive) ?? state.heroes[0];
-    if (watched) this.rig.update(dt, watched.pos, vec(0, -3));
+    if (watched) this.rig.update(dt, view.drawnAt(watched), vec(0, -3));
     view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
     this.replay.update(state);
   }
@@ -1661,7 +1678,8 @@ export class Game {
     requestAnimationFrame(this.frame);
     const calm = this.calmNow(now);
     // A little under the gap, or a 60 Hz screen would miss every other frame by a whisker.
-    if (now - this.last < (calm ? CALM_FRAME_MS : FULL_FRAME_MS) - FRAME_SLACK_MS) return;
+    const fullFrame = 1000 / this.save.settings.frameRate;
+    if (now - this.last < Math.max(fullFrame, calm ? CALM_FRAME_MS : 0) - FRAME_SLACK_MS) return;
     const frameTime = (now - this.last) / 1000;
     const dt = steadied(Math.min(MAX_FRAME_SECONDS, frameTime));
     this.last = now;
@@ -1719,6 +1737,7 @@ export class Game {
       while (this.accumulator >= SIM_STEP) {
         const live = this.phase === "raid" && !this.paused;
         const input = live ? this.controls.read(hero.pos) : IDLE_INPUT;
+        view.remember(state);
         stepRaid(state, this.inputs(input), SIM_STEP);
         view.handleEvents(state.events, state);
         playRaidEvents(state.events, state, this.player());
@@ -1727,6 +1746,8 @@ export class Game {
       }
       coop?.hostFrame(state, dt);
     }
+    // A guest's phone draws what the host last sent, as it is.
+    view.between = coop && !coop.isHost ? 1 : this.accumulator / SIM_STEP;
     if (!this.paused) {
       this.setControlMode(
         this.phase !== "raid" ? "off" : hero.inBoat ? "boat" : hero.alive ? "hero" : "off",
@@ -1772,7 +1793,7 @@ export class Game {
     // A falling base takes the camera with it, ending back at the headquarters' wreck.
     const hq = state.buildings.find((b) => b.type === "headquarters");
     const sweep = state.status === "won" ? hq?.pos : state.conquest !== null && view.lastBlast;
-    this.rig.update(dt, sweep || watched.pos, vec(0, -3), heading, watched.firing);
+    this.rig.update(dt, sweep || view.drawnAt(watched), vec(0, -3), heading, watched.firing);
     view.aim = aim;
     view.update(
       state,
@@ -1810,7 +1831,9 @@ export class Game {
     const target = this.raidTarget;
     const before = this.save.world;
     const { rival } = target ?? { rival: null };
-    let world = won && target ? takeIsland(before, target.id) : before;
+    // A raider ship's own base can't be held: winning there wins back what its raid took.
+    const revenge = won ? target?.revenge : undefined;
+    let world = won && target && !target.revenge ? takeIsland(before, target.id) : before;
     if (won && target && rival) {
       // Keep a note of who was beaten here: what the island pays goes by their strength.
       world = beatRival({ ...world, rivals: { ...world.rivals, [target.id]: rival } }, rival);
@@ -1828,6 +1851,12 @@ export class Game {
     this.spoils = spoils;
     // Everything a raid pays goes to the island, the only gold there is.
     loot.gold = (loot.gold ?? 0) + reward.gold + (spoils?.chest ?? 0);
+    for (const r of RESOURCES) {
+      const back = revenge?.[r] ?? 0;
+      if (back > 0) loot[r] = (loot[r] ?? 0) + back;
+    }
+    const night = this.save.nightRaid;
+    if (revenge && night) this.updateSave({ nightRaid: { ...night, avenged: true } });
     const prints = spoils?.blueprint ? [...this.save.blueprints, spoils.blueprint] : null;
     this.updateSave({
       world,

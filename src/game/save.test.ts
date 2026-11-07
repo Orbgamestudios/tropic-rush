@@ -47,6 +47,8 @@ const DEFAULTS: SaveData = {
   unlocked: ["rifleman"],
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
+  cargo: {},
+  cargoDay: 0,
   nightRaid: null,
   world: NEW_WORLD,
   loot: {},
@@ -244,9 +246,13 @@ describe("save", () => {
           move: { x: 0.2, y: 0.8, size: 1.3 },
           aim: { x: 0.85, y: 0.7, size: 0.9 },
         },
+        graphics: "low",
+        frameRate: 30,
         rev: DEFAULT_SETTINGS.rev,
       },
       nightChecked: 20_000,
+      cargo: { gold: 300, stone: 40 },
+      cargoDay: 20_001,
       nightRaid: {
         night: 20_000,
         seed: 5,
@@ -261,7 +267,8 @@ describe("save", () => {
           raiders: 2,
           raidersDown: 2,
           stolen: { gold: 40 },
-          reward: 160,
+          reward: { gold: 160, timber: 90 },
+          crystals: { ice: 2 },
         },
       },
       world: {
@@ -276,6 +283,26 @@ describe("save", () => {
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);
+  });
+
+  it("reads a night raid from before the ships, which paid gold alone", () => {
+    const storage = memoryStorage();
+    const report = { survived: true, destroyedPercent: 0, destroyed: 0, total: 3, seconds: 60 };
+    storage.items.set(
+      "tropic-rush:save:v1",
+      JSON.stringify({
+        nightRaid: {
+          night: 9,
+          seed: 1,
+          buildings: [],
+          cleared: [],
+          report: { ...report, reward: 160 },
+        },
+      }),
+    );
+    const raid = loadSave(storage).nightRaid;
+    expect(raid?.report.reward).toEqual({ gold: 160 });
+    expect(raid?.report.crystals).toEqual({});
   });
 
   it("hands back the crystals an upgrade from the old trees took, once", () => {

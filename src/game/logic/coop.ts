@@ -79,10 +79,6 @@ interface HeroSnap {
   target: number | null;
   /** Seconds left of the boosts that change how fast a guest's own hero walks. */
   rage: number;
-  haste: number;
-  iced: number;
-  sprinting: boolean;
-  sprintLeft: number;
 }
 
 type ProjectileSnap = [
@@ -175,10 +171,6 @@ export function takeSnapshot(
       unsteady: h.unsteady,
       target: h.targetId,
       rage: h.rage,
-      haste: h.haste,
-      iced: h.iced,
-      sprinting: h.sprinting,
-      sprintLeft: h.sprintLeft,
     })),
     buildings,
     sights,
@@ -252,10 +244,6 @@ export function applySnapshot(
     h.unsteady = s.unsteady;
     h.targetId = s.target;
     h.rage = s.rage;
-    h.haste = s.haste;
-    h.iced = s.iced;
-    h.sprinting = s.sprinting;
-    h.sprintLeft = s.sprintLeft;
     targets[i] = { x: s.x, y: s.y, facing: s.f };
     if (i === seat) {
       if (distance(h.pos, s) > SNAP_BACK) h.pos = { x: s.x, y: s.y };

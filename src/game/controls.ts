@@ -7,7 +7,7 @@
 // then spring back home. In the gunboat: drag to look
 // around, tap the island to fire the selected ability.
 // Computer: WASD/arrows move, drag the mouse from the hero to aim and release to lock on (click
-// to lock onto the nearest tower), E gunboat, Shift sprint, 1-3 abilities.
+// to lock onto the nearest tower), E gunboat, 1-3 abilities.
 
 import type { Ability } from "./logic/gunboat";
 import { ABILITY_ORDER } from "./logic/gunboat";
@@ -87,7 +87,6 @@ export class Controls {
   private pendingLock: Vec2 | null = null;
   private lastHero: Vec2 | null = null;
   private pendingBoat = false;
-  private sprintHeld = false;
   private heldMove = vec(0, 0);
   private pendingAbility: { ability: Ability; target: Vec2 } | null = null;
   private readonly leftVisual: { base: HTMLElement; knob: HTMLElement };
@@ -134,10 +133,6 @@ export class Controls {
 
   pressBoat(): void {
     this.pendingBoat = true;
-  }
-
-  holdSprint(held: boolean): void {
-    this.sprintHeld = held;
   }
 
   selectAbility(ability: Ability): void {
@@ -198,7 +193,6 @@ export class Controls {
       autoAim: this.pendingAutoAim,
       toggleBoat: this.pendingBoat,
       boatAbility: this.pendingAbility,
-      sprint: this.sprintHeld || this.keys.has("shift"),
     };
     this.pendingAutoAim = false;
     this.pendingLock = null;
@@ -372,7 +366,6 @@ export class Controls {
     this.right = null;
     this.pan = null;
     this.mouse.down = false;
-    this.sprintHeld = false;
     this.goHome(this.leftVisual);
     this.goHome(this.rightVisual);
   }

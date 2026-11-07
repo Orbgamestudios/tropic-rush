@@ -41,6 +41,10 @@ export interface SaveData {
   settings: Settings;
   /** The last night the raid was run for; 0 until this phone has seen its first night. */
   nightChecked: number;
+  /** What the supply ship is carrying from the crew's islands, waiting to be unloaded. */
+  cargo: Partial<Purse>;
+  /** The day it was last loaded (see shipDay), or 0 on a new phone. */
+  cargoDay: number;
   /** The latest night raid, for its report and replay. */
   nightRaid: NightRaid | null;
   /** Which islands of the world are taken, retaken or out of the cloud. */
@@ -83,9 +87,21 @@ export interface Settings {
   haptics: boolean;
   /** Where the sticks sit, and how big they are. */
   controls: ControlLayout;
+  /**
+   * How much the picture asks of the phone: auto steps down by itself if it's struggling; low
+   * drops shadows and sharpness to save battery.
+   */
+  graphics: Graphics;
+  /** The most frames a second it draws: 120 for screens that can show them, 30 to save battery. */
+  frameRate: FrameRate;
   /** Bumped when the defaults change, so older saves pick up the new tilt and UI size. */
   rev: number;
 }
+
+export const GRAPHICS = ["auto", "high", "medium", "low"] as const;
+export type Graphics = (typeof GRAPHICS)[number];
+export const FRAME_RATES = [120, 60, 30] as const;
+export type FrameRate = (typeof FRAME_RATES)[number];
 
 const SETTINGS_REV = 2;
 export const TILT_RANGE = [-0.6, 1] as const;
@@ -108,6 +124,8 @@ export const DEFAULT_SETTINGS: Settings = {
   soundVolume: 1,
   haptics: true,
   controls: DEFAULT_CONTROLS,
+  graphics: "auto",
+  frameRate: 120,
   rev: SETTINGS_REV,
 };
 
@@ -144,6 +162,8 @@ function readSettings(value: unknown): Settings {
     soundVolume: ranged(v.soundVolume, 0, 1, DEFAULT_SETTINGS.soundVolume),
     haptics: v.haptics !== false,
     controls: readControls(v.controls),
+    graphics: GRAPHICS.find((g) => g === v.graphics) ?? DEFAULT_SETTINGS.graphics,
+    frameRate: FRAME_RATES.find((r) => r === v.frameRate) ?? DEFAULT_SETTINGS.frameRate,
     rev: SETTINGS_REV,
   };
 }
@@ -167,6 +187,8 @@ const DEFAULT_SAVE: SaveData = {
   unlocked: starters(),
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
+  cargo: {},
+  cargoDay: 0,
   nightRaid: null,
   world: NEW_WORLD,
   loot: {},
@@ -181,7 +203,12 @@ function readNightRaid(value: unknown): NightRaid | null {
     Array.isArray(v.buildings) &&
     Array.isArray(v.cleared) &&
     typeof v.report?.survived === "boolean";
-  return ok ? (v as NightRaid) : null;
+  if (!ok) return null;
+  const raid = v as NightRaid;
+  // Raids from before the ships paid gold alone, as a number, and no crystals.
+  const paid = raid.report.reward as unknown;
+  const reward = typeof paid === "number" ? (paid > 0 ? { gold: paid } : {}) : readLoot(paid);
+  return { ...raid, report: { ...raid.report, reward, crystals: raid.report.crystals ?? {} } };
 }
 
 function readLoot(value: unknown): Partial<Purse> {
@@ -255,6 +282,8 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       unlocked,
       settings: readSettings(parsed.settings),
       nightChecked: count(parsed.nightChecked),
+      cargo: readLoot(parsed.cargo),
+      cargoDay: count(parsed.cargoDay),
       nightRaid: readNightRaid(parsed.nightRaid),
       world: sanitizeWorld(parsed.world),
       loot: readLoot(parsed.loot),

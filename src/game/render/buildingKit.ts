@@ -133,10 +133,10 @@ export function kitBuilding(type: BuildingType, level: number, crew: boolean): K
   };
 }
 
-/** A copy of one of the models that aren't buildings, in crew paint, or null until it's arrived. */
-export function kitPiece(name: Piece): THREE.Object3D | null {
+/** A copy of one of the models that aren't buildings, or null until it's arrived. */
+export function kitPiece(name: Piece, crew = true): THREE.Object3D | null {
   const piece = pieces.get(name);
-  const look = looks.crew;
+  const look = looks[crew ? "crew" : "enemy"];
   if (!piece || !look) return null;
   const copy = piece.clone(true);
   copy.traverse((o) => {

@@ -294,6 +294,11 @@ export function landingPoints(): { spawn: Vec2; boat: Vec2 } {
   };
 }
 
+/** Where the supply ship ties up on the crew's island: along the beach from the gunboat. */
+export function supplyDock(): Vec2 {
+  return pointAtShoreDistance(BEACH_DIRECTION, -3, -9);
+}
+
 /** The dirt trail's bends, from the landing up to the headquarters. */
 export function trailPoints(spawn: Vec2, hq: Vec2): Vec2[] {
   const mid = vec(

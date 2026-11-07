@@ -14,7 +14,6 @@ import {
   type HeroInput,
   IDLE_INPUT,
   type RaidState,
-  SPRINT,
   stepRaid,
 } from "./raid";
 import { distance, normalize, scale, sub, type Vec2, vec } from "./vec";
@@ -365,63 +364,6 @@ describe("raid combat", () => {
     run(state, 2, [input({ aim: vec(0, -9 / 18.6) })]);
     expect(state.mines[0]?.exploded).toBe(true);
     expect(hero(state).hp).toBe(hero(state).maxHp);
-  });
-});
-
-describe("sprinting", () => {
-  const north = vec(0, -1);
-
-  it("is a little quicker for as long as it's held, then runs out", () => {
-    const walking = raid([]);
-    const sprinting = raid([]);
-    run(walking, 1, [input({ move: north })]);
-    run(sprinting, 1, [input({ move: north, sprint: true })]);
-    const ratio = hero(sprinting).pos.y / hero(walking).pos.y;
-    expect(ratio).toBeCloseTo(SPRINT.speed, 1);
-    run(sprinting, SPRINT.seconds, [input({ move: north, sprint: true })]);
-    expect(hero(sprinting).sprinting).toBe(false);
-  });
-
-  it("stops the moment it's let go, keeping what's left of it", () => {
-    const state = raid([]);
-    run(state, 1, [input({ move: north, sprint: true })]);
-    stepRaid(state, [input({ move: north })], DT);
-    expect(hero(state).sprinting).toBe(false);
-    expect(hero(state).sprintLeft).toBeCloseTo(SPRINT.seconds - 1, 1);
-    run(state, 0.5, [input({ move: north, sprint: true })]);
-    expect(hero(state).sprinting).toBe(true);
-  });
-
-  it("doesn't go anywhere standing still", () => {
-    const state = raid([]);
-    run(state, 1, [input({ sprint: true })]);
-    expect(hero(state).sprinting).toBe(false);
-    expect(hero(state).sprintLeft).toBe(SPRINT.seconds);
-  });
-
-  it("can shoot on the run, with the aim all over the place", () => {
-    const walking = raid([]);
-    const sprinting = raid([]);
-    run(walking, 1, [input({ move: north, aim: north })]);
-    run(sprinting, 1, [input({ move: north, aim: north, sprint: true })]);
-    expect(hero(sprinting).sprinting).toBe(true);
-    expect(aimStretch(hero(sprinting)).width).toBeGreaterThan(aimStretch(hero(walking)).width * 2);
-    expect(hero(sprinting).pos.y).toBeLessThan(hero(walking).pos.y * 2);
-  });
-
-  it("refills slowly, and won't start again on the last drop", () => {
-    const state = raid([]);
-    run(state, SPRINT.seconds + 0.5, [input({ move: north, sprint: true })]);
-    expect(hero(state).sprinting).toBe(false);
-    const tillReady = (SPRINT.least / SPRINT.seconds) * SPRINT.recharge;
-    run(state, tillReady - 1, [input({ move: north })]);
-    stepRaid(state, [input({ move: north, sprint: true })], DT);
-    expect(hero(state).sprinting).toBe(false);
-    run(state, 1, [input({ move: north })]);
-    stepRaid(state, [input({ move: north, sprint: true })], DT);
-    expect(hero(state).sprinting).toBe(true);
-    run(state, SPRINT.recharge + 1);
-    expect(hero(state).sprintLeft).toBe(SPRINT.seconds);
   });
 });
 
@@ -965,16 +907,6 @@ describe("hero upgrades", () => {
     expect(before - h.hp).toBeCloseTo(85);
   });
 
-  it("keeps a hero moving while they fire, with Run and Gun", () => {
-    const walked = (names: string[]) => {
-      const state = raided(["rifleman"], names, towers);
-      const start = hero(state).pos.x;
-      run(state, 1, [input({ move: vec(1, 0), aim: vec(0, -1) })]);
-      return hero(state).pos.x - start;
-    };
-    expect(walked(["Run and Gun"])).toBeGreaterThan(walked([]) * 1.5);
-  });
-
   it("carries healing on after a bottle lands, with Lingering Dose", () => {
     const state = raided(["medic"], ["Lingering Dose"], []);
     run(state, 1.2, [input({ aim: vec(0.3, 0) })]);
@@ -994,14 +926,13 @@ describe("hero upgrades", () => {
     expect(mate.hp).toBe(before);
   });
 
-  it("boosts healed crewmates with Ice Pack and Adrenaline", () => {
-    const state = raided(["medic", "rifleman"], ["Ice Pack", "Adrenaline"], []);
+  it("speeds up healed crewmates' fire with Adrenaline", () => {
+    const state = raided(["medic", "rifleman"], ["Adrenaline"], []);
     const mate = hero(state, 1);
     mate.pos = { ...hero(state, 0).pos };
     run(state, 1.2, [input({ aim: vec(0.2, 0) })]);
-    expect(mate.iced).toBeGreaterThan(0);
     expect(mate.pumped).toBeGreaterThan(0);
-    expect(hero(state, 0).iced).toBe(0);
+    expect(hero(state, 0).pumped).toBe(0);
   });
 
   it("makes every 5th bottle a big one, with Miracle Bottle", () => {
@@ -1107,10 +1038,17 @@ describe("hero upgrades", () => {
     expect(building(state, 0).hp).toBeLessThan(after);
   });
 
-  it("gets away quick after a shot, with Getaway", () => {
-    const state = raided(["bazooka"], ["Getaway"], towers);
-    run(state, 0.1, [fire(vec(0, -1))]);
-    expect(hero(state).haste).toBeGreaterThan(1.5);
+  it("fires two rockets every 4th shot, with Salvo", () => {
+    const rockets = (names: string[]) => {
+      const state = raided(["bazooka"], names, towers);
+      let count = 0;
+      for (let t = 0; t < 10; t += DT) {
+        stepRaid(state, [fire(vec(0, -1))], DT);
+        count += state.events.filter((e) => e.type === "shot").length;
+      }
+      return count;
+    };
+    expect(rockets(["Salvo"])).toBeGreaterThan(rockets([]));
   });
 
   it("fires a second rocket straight after the first, with Double Tap", () => {

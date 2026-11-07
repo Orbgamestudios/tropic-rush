@@ -5,11 +5,15 @@
 // own world to the scene and removes it afterwards.
 
 import * as THREE from "three";
+import type { Graphics } from "../save";
 import { COLORS } from "./palette";
 import { LIGHT_DISTANCE, Sky } from "./sky";
 
 /** How sharp a fight is at each step of quality: any more only costs battery on a phone. */
 const PIXEL_RATIOS = [1.5, 1.3, 1.15, 1.15];
+/** The steps of quality a fixed graphics setting sits at, the last of them dropping to 1. */
+const FIXED_QUALITY = { high: 0, medium: 2, low: 3 } as const;
+const LOW_PIXEL_RATIO = 1;
 /** A screen with little on it, that mostly sits still, can afford to be sharper. */
 const LIGHT_PIXEL_RATIO = 2;
 /**
@@ -45,6 +49,8 @@ export class Stage {
   height = 1;
   /** Keeps full quality however slow frames are, for screenshots in test browsers. */
   holdQuality = false;
+  /** What the settings ask for; anything but auto stays where it's put. */
+  private graphics: Graphics = "auto";
 
   constructor(private readonly container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -115,23 +121,36 @@ export class Stage {
    */
   adaptQuality(dt: number): void {
     this.elapsed += dt;
-    if (this.holdQuality || this.light) return;
+    if (this.holdQuality || this.light || this.graphics !== "auto") return;
     if (this.elapsed < 3 || this.quality >= PIXEL_RATIOS.length - 1) return; // skip start-up compiling
     const frame = Math.min(dt, WORST_FRAME);
     this.slowSeconds =
       dt > SLOW_FRAME ? this.slowSeconds + frame : Math.max(0, this.slowSeconds - frame);
     if (this.slowSeconds < SLOW_SECONDS) return;
     this.slowSeconds = 0;
-    this.quality++;
-    if (this.quality === 2) {
-      this.shadowEvery = 4;
-      this.sun.shadow.mapSize.set(1024, 1024);
+    this.setQuality(this.quality + 1);
+  }
+
+  /** The graphics setting: auto starts sharp and steps down if it must; the rest stay put. */
+  setGraphics(graphics: Graphics): void {
+    if (graphics === this.graphics) return;
+    this.graphics = graphics;
+    this.slowSeconds = 0;
+    this.setQuality(graphics === "auto" ? 0 : FIXED_QUALITY[graphics]);
+  }
+
+  /** Each step down: resolution, then a smaller shadow map drawn less often, then no shadows. */
+  private setQuality(quality: number): void {
+    this.quality = quality;
+    const shadowSize = quality >= 2 ? 1024 : 1536;
+    if (this.sun.shadow.mapSize.x !== shadowSize) {
+      this.sun.shadow.mapSize.set(shadowSize, shadowSize);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
-      this.shadowsStale = true;
-    } else if (this.quality === 3) {
-      this.sun.castShadow = false;
     }
+    this.shadowEvery = quality >= 2 ? 4 : 3;
+    this.sun.castShadow = quality < 3;
+    this.shadowsStale = true;
     this.setPixelRatio();
   }
 
@@ -143,7 +162,12 @@ export class Stage {
   }
 
   private setPixelRatio(): void {
-    const ratio = this.light ? LIGHT_PIXEL_RATIO : (PIXEL_RATIOS[this.quality] ?? 1);
+    const low = this.graphics === "low";
+    const ratio = low
+      ? LOW_PIXEL_RATIO
+      : this.light
+        ? LIGHT_PIXEL_RATIO
+        : (PIXEL_RATIOS[this.quality] ?? 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ratio));
     this.resize();
   }

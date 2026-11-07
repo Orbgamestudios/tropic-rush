@@ -1,9 +1,11 @@
 // The world map's overlay: drag to look around and pinch to zoom, a plate on every island with its
 // difficulty, a line saying what it'll take to lift the next bank of cloud, a card when an
-// island is tapped (what's there, what it pays, Scout, Team up and Attack), and one way out:
-// Return to island.
+// island is tapped (what's there, what it pays, Scout, Team up and Attack), a plate on the day's
+// raider ship with a card of its own (when it's likely to strike, who's aboard, what holding it
+// off pays), and one way out: Return to island.
 
 import type { Crystals } from "../logic/crystals";
+import type { RaiderShip } from "../logic/raiderShip";
 import {
   archetypeLabel,
   archetypeTip,
@@ -15,6 +17,7 @@ import {
 import { button, CLOSE_MS, CrystalWallet, el, layerPlacer } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
+import { shipDetails } from "./raiderShipCard";
 
 /** A crewmate out raiding or about to, shown on the map. */
 export interface CrewRaid {
@@ -65,6 +68,9 @@ export class WorldMapScreen {
   readonly root = el("div", "map-screen");
   private readonly pinLayer = el("div", "map-pins");
   private readonly homePin = el("div", "map-pin map-home-pin");
+  private readonly shipPin = el("button", "map-pin map-ship-pin");
+  private shipAt: { x: number; y: number } | null = null;
+  private readonly shipCard = el("div", "map-card map-ship-card");
   private readonly card = el("div", "map-card");
   private cardShutting: ReturnType<typeof setTimeout> | null = null;
   private readonly cardName = el("div", "map-card-name");
@@ -175,13 +181,42 @@ export class WorldMapScreen {
       handlers.onZoom(e.deltaY > 0 ? 1.1 : 0.9);
     });
     this.homePin.append(el("span", "map-pin-title", "Home"));
+    this.shipPin.addEventListener("click", () => {
+      if (this.dragged) return;
+      sfx.tick();
+      this.select(null);
+      this.shipCard.classList.add("open");
+    });
+    this.shipCard.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.root.append(this.shipCard);
     this.root.style.display = "none";
     parent.append(this.root);
   }
 
-  show(islands: readonly MapIsland[], world: WorldProgress, crystals: Crystals): void {
+  show(
+    islands: readonly MapIsland[],
+    world: WorldProgress,
+    crystals: Crystals,
+    raiders: { ship: RaiderShip; x: number; y: number } | null = null,
+  ): void {
     this.root.style.display = "block";
     this.select(null);
+    this.shipCard.classList.remove("open");
+    this.shipAt = raiders;
+    if (raiders) {
+      const { ship } = raiders;
+      this.shipPin.className = `map-pin map-ship-pin map-${ship.difficulty.toLowerCase()}`;
+      this.shipPin.setAttribute("aria-label", `Raider ship: ${ship.crew}`);
+      this.shipPin.replaceChildren(
+        el("span", "map-pin-title", "Raiders"),
+        el("span", "map-pin-rating", `HQ ${ship.hq} · ${ship.difficulty}`),
+      );
+      this.shipCard.replaceChildren(
+        el("div", "map-card-name", ship.crew),
+        el("div", "map-card-kind", "Raider ship · they'll land on your island tonight"),
+        shipDetails(ship),
+      );
+    }
     this.wallet.set(crystals);
     // What's already held needs no tag.
     const pins = islands
@@ -208,7 +243,11 @@ export class WorldMapScreen {
         };
       });
     this.pins = pins;
-    this.pinLayer.replaceChildren(this.homePin, ...pins.map((p) => p.node));
+    this.pinLayer.replaceChildren(
+      this.homePin,
+      ...(raiders ? [this.shipPin] : []),
+      ...pins.map((p) => p.node),
+    );
     const left = islandsToNextCloud(world);
     this.progress.textContent = `Take ${left} more ${left === 1 ? "island" : "islands"} to lift a cloud`;
     this.drawnMoves = -1;
@@ -228,6 +267,7 @@ export class WorldMapScreen {
 
   private select(island: MapIsland | null): void {
     this.selected = island;
+    if (island) this.shipCard.classList.remove("open");
     if (this.cardShutting) clearTimeout(this.cardShutting);
     this.cardShutting = null;
     if (island) {
@@ -307,7 +347,10 @@ export class WorldMapScreen {
     if (this.fingers.size > 0 || !this.pressAt) return;
     // A tap on open water closes the card; a tap on a plate opens one.
     const tapped = !this.dragged && !(e.target as HTMLElement).closest?.(".map-pin");
-    if (tapped && e.type === "pointerup") this.select(null);
+    if (tapped && e.type === "pointerup") {
+      this.select(null);
+      this.shipCard.classList.remove("open");
+    }
     this.pressAt = null;
   }
 
@@ -318,7 +361,10 @@ export class WorldMapScreen {
     this.drawnMoves = moves;
     const place = layerPlacer(this.root);
     const home = { x: 0, y: -islandRadius(HOME_SIZE) * 0.7, node: this.homePin };
-    for (const { x, y, node } of [home, ...this.pins]) {
+    const ship = this.shipAt
+      ? [{ x: this.shipAt.x, y: this.shipAt.y - 2, node: this.shipPin }]
+      : [];
+    for (const { x, y, node } of [home, ...ship, ...this.pins]) {
       const p = this.handlers.screen(x, y);
       const off =
         p.x < -OFF_SCREEN || p.x > 1 + OFF_SCREEN || p.y < -OFF_SCREEN || p.y > 1 + OFF_SCREEN;

@@ -2,7 +2,14 @@
 // camera's tilt and zoom and the size of the whole UI, sound, and the controls editor; changes
 // apply as you drag.
 
-import { DEFAULT_SETTINGS, type Settings, TILT_RANGE, UI_SCALE_RANGE } from "../save";
+import {
+  DEFAULT_SETTINGS,
+  FRAME_RATES,
+  GRAPHICS,
+  type Settings,
+  TILT_RANGE,
+  UI_SCALE_RANGE,
+} from "../save";
 import {
   button,
   closeOnBackdrop,
@@ -61,6 +68,8 @@ export class PauseMenu {
   private readonly musicButton: HTMLButtonElement;
   private readonly hapticsButton: HTMLButtonElement;
   private readonly cameraMode: HTMLButtonElement;
+  private readonly graphicsButton: HTMLButtonElement;
+  private readonly frameRateButton: HTMLButtonElement;
   private readonly skyTimes = el("span", "pause-sky-times");
   private readonly skyButton: HTMLButtonElement;
   private inRaid = true;
@@ -150,9 +159,36 @@ export class PauseMenu {
       handlers.onSettings({ ...s, camera: s.camera === "top" ? "behind" : "top" });
       this.refresh();
     });
+    // Each tap steps on to the next choice, round and round.
+    this.graphicsButton = button({
+      label: "Graphics: auto",
+      icon: "star",
+      variant: "steel",
+      size: "sm",
+    });
+    this.graphicsButton.addEventListener("click", () => {
+      const s = handlers.settings();
+      const next = GRAPHICS[(GRAPHICS.indexOf(s.graphics) + 1) % GRAPHICS.length] ?? "auto";
+      handlers.onSettings({ ...s, graphics: next });
+      this.refresh();
+    });
+    this.frameRateButton = button({
+      label: "Frame rate: 120",
+      icon: "energy",
+      variant: "steel",
+      size: "sm",
+    });
+    this.frameRateButton.addEventListener("click", () => {
+      const s = handlers.settings();
+      const next = FRAME_RATES[(FRAME_RATES.indexOf(s.frameRate) + 1) % FRAME_RATES.length] ?? 60;
+      handlers.onSettings({ ...s, frameRate: next });
+      this.refresh();
+    });
     const buttons = el("div", "pause-buttons");
     buttons.append(
       this.cameraMode,
+      this.graphicsButton,
+      this.frameRateButton,
       this.sound,
       this.musicButton,
       this.hapticsButton,
@@ -162,8 +198,10 @@ export class PauseMenu {
         variant: "steel",
         size: "sm",
         onClick: () => {
-          const { muted, musicMuted, musicVolume, soundVolume, haptics, controls, camera } =
-            handlers.settings();
+          const s = handlers.settings();
+          const { muted, musicMuted, musicVolume, soundVolume, haptics, controls, camera } = s;
+          // What suits this phone and its battery stays as chosen.
+          const { graphics, frameRate } = s;
           handlers.onSettings({
             ...DEFAULT_SETTINGS,
             muted,
@@ -173,6 +211,8 @@ export class PauseMenu {
             haptics,
             controls,
             camera,
+            graphics,
+            frameRate,
           });
           this.refresh();
         },
@@ -326,6 +366,8 @@ export class PauseMenu {
     setLabel(this.musicButton, s.musicMuted ? "Music off" : "Music on");
     setLabel(this.hapticsButton, s.haptics ? "Vibration on" : "Vibration off");
     setLabel(this.cameraMode, s.camera === "top" ? "Camera: top" : "Camera: behind");
+    setLabel(this.graphicsButton, `Graphics: ${s.graphics}`);
+    setLabel(this.frameRateButton, `Frame rate: ${s.frameRate}`);
     const { times, here } = this.handlers.sky();
     this.skyTimes.textContent = times;
     setLabel(this.skyButton, here ? "Use time zone" : "Use my location");

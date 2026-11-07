@@ -4,7 +4,7 @@ import { ARCHETYPES, type Archetype } from "./islandShapes";
 import {
   beatRival,
   clearSky,
-  dailyTribute,
+  dailyCargo,
   islandRadius,
   islandsToNextCloud,
   NEW_WORLD,
@@ -184,9 +184,23 @@ describe("the world", () => {
     const hard = islands[islands.length - 1];
     expect(hard?.hq).toBeGreaterThan(easy?.hq ?? 0);
     expect(hard?.reward.gold).toBeGreaterThan(easy?.reward.gold ?? 0);
-    expect(easy?.difficulty).toBe("Easy");
-    const raiders = worldIslands(NEW_WORLD, 20).filter((i) => !i.rival);
-    expect(raiders.every((i) => i.difficulty === "Easy")).toBe(true);
+  });
+
+  it("follows the crew's headquarters, from easy to impossible, up to headquarters 50", () => {
+    const raiders = (hq: number) => worldIslands(liftClouds(40), hq).filter((i) => !i.rival);
+    for (const hq of [1, 8, 20, 45]) {
+      const islands = raiders(hq);
+      const bands = new Set(islands.map((i) => i.difficulty));
+      expect(bands.size, `hq ${hq}`).toBeGreaterThanOrEqual(4);
+      for (const island of islands) {
+        expect(island.hq).toBeGreaterThanOrEqual(Math.max(1, hq - 3));
+        expect(island.hq).toBeLessThanOrEqual(Math.min(50, hq + 12));
+        if (island.difficulty === "Impossible") {
+          expect(island.hq).toBeGreaterThanOrEqual(Math.min(50, hq + 7));
+        }
+      }
+    }
+    expect(Math.max(...raiders(45).map((i) => i.hq))).toBe(50);
   });
 });
 
@@ -197,7 +211,7 @@ describe("raiders retaking islands", () => {
     return world;
   };
 
-  it("takes back about a quarter of what's held each day, over time", () => {
+  it("takes back a fifth of what's held each night, over time", () => {
     const world = held();
     let lost = 0;
     const nights = 2000;
@@ -205,8 +219,8 @@ describe("raiders retaking islands", () => {
       lost += retakeIslands(world, night, 3).lost.length;
     }
     const share = lost / nights / world.taken.length;
-    expect(share).toBeGreaterThan(0.22);
-    expect(share).toBeLessThan(0.28);
+    expect(share).toBeGreaterThan(0.19);
+    expect(share).toBeLessThan(0.21);
   });
 
   it("gives nothing back on a night it has nothing to take", () => {
@@ -312,15 +326,22 @@ describe("player islands", () => {
     expect(again.rivals).toEqual(world.rivals);
   });
 
-  it("pays a little gold a day for each player island held, and nothing for raider islands", () => {
+  it("ships a day's cargo from what's held: gold from player islands, materials from the rest", () => {
     const [player] = home().filter((i) => i.rival);
     const [raider] = home().filter((i) => !i.rival);
     if (!player || !raider) throw new Error("no islands");
     const rivals = { [player.id]: crew("AAAAAA", 5) };
     const world = { ...NEW_WORLD, rivals, taken: [player.id, raider.id] };
-    expect(dailyTribute(world)).toBe(tributeFor(5));
+    const both = dailyCargo(world, 3);
+    const raiders = dailyCargo({ ...NEW_WORLD, taken: [raider.id] }, 3);
+    expect(dailyCargo({ ...NEW_WORLD, rivals, taken: [player.id] }, 3)).toEqual({
+      gold: tributeFor(5),
+    });
     expect(tributeFor(5)).toBeLessThan(300);
-    expect(dailyTribute({ ...NEW_WORLD, taken: [raider.id] })).toBe(0);
+    expect(raiders.timber).toBeGreaterThan(0);
+    expect(raiders.stone).toBeGreaterThan(0);
+    expect(both.gold).toBe(tributeFor(5) + (raiders.gold ?? 0));
+    expect(dailyCargo(NEW_WORLD, 3)).toEqual({});
   });
 
   it("hands a lost player island to another crew, not back to the raiders", () => {

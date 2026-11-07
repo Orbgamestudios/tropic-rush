@@ -24,7 +24,6 @@ export interface HeroMods {
   reload: number;
   /** Time between the bullets of a burst. */
   unload: number;
-  speed: number;
   /** Extra shots in a burst. */
   shots: number;
   /** Extra blast radius in meters. */
@@ -33,8 +32,6 @@ export interface HeroMods {
   /** Extra damage to buildings of any kind, and on top of that to defenses. */
   buildingDamage: number;
   defenseDamage: number;
-  /** Share of full speed while firing; 0 leaves the usual share. */
-  fireSpeed: number;
   spinUp: number;
   spread: number;
   /** How long a throw stays in the air. */
@@ -53,7 +50,6 @@ export interface HeroMods {
   lastStand: boolean;
   lingering: boolean;
   overheal: boolean;
-  icePack: boolean;
   adrenaline: boolean;
   miracle: boolean;
   overdrive: boolean;
@@ -63,7 +59,6 @@ export interface HeroMods {
   fieldRepairs: boolean;
   siegeMode: boolean;
   napalm: boolean;
-  getaway: boolean;
   doubleTap: boolean;
   guided: boolean;
   mineSweeper: boolean;
@@ -79,13 +74,11 @@ export const NO_MODS: HeroMods = {
   damage: 1,
   reload: 1,
   unload: 1,
-  speed: 1,
   shots: 0,
   splash: 0,
   heal: 1,
   buildingDamage: 1,
   defenseDamage: 1,
-  fireSpeed: 0,
   spinUp: 1,
   spread: 1,
   flight: 1,
@@ -99,7 +92,6 @@ export const NO_MODS: HeroMods = {
   lastStand: false,
   lingering: false,
   overheal: false,
-  icePack: false,
   adrenaline: false,
   miracle: false,
   overdrive: false,
@@ -109,7 +101,6 @@ export const NO_MODS: HeroMods = {
   fieldRepairs: false,
   siegeMode: false,
   napalm: false,
-  getaway: false,
   doubleTap: false,
   guided: false,
   mineSweeper: false,
@@ -125,7 +116,6 @@ const MULTIPLIED = new Set<keyof HeroMods>([
   "damage",
   "reload",
   "unload",
-  "speed",
   "heal",
   "buildingDamage",
   "defenseDamage",
@@ -255,7 +245,6 @@ type MiniStat =
   | "defense"
   | "building"
   | "reload"
-  | "speed"
   | "heal"
   | "weapon";
 
@@ -278,7 +267,6 @@ const MINI_NAMES: Record<Exclude<MiniStat, "reload" | "weapon">, readonly string
   damage: ["Punch", "Hard Hitter", "Follow Through", "Heavy Hand", "Killer Instinct"],
   defense: ["Weak Spot", "Tower Breaker", "Crack Shot"],
   building: ["Wrecker", "Knock Down", "Demolition Drill"],
-  speed: ["Fitness", "Light Feet", "Sprint Drill", "Long Strides"],
   heal: ["Strong Dose", "Kind Hands", "Fresh Bandages"],
 };
 
@@ -380,8 +368,6 @@ function mini(kind: HeroKind, stat: MiniStat, base: number, nth: number): Draft 
         reload: less,
       });
     }
-    case "speed":
-      return up(pick(MINI_NAMES.speed), `+${percent}% move speed.`, {}, "speed", { speed: more });
     case "heal":
       return up(pick(MINI_NAMES.heal), `+${percent}% healing.`, {}, "heal", { heal: more });
     case "weapon": {
@@ -473,9 +459,7 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       ice: {
         name: "Skirmisher",
-        opener: special("Run and Gun", "Moves at 40% speed while firing, not 20%.", "speed", {
-          fireSpeed: 0.4,
-        }),
+        opener: special("Snap Shot", "Reloads 15% faster.", "clock", { reload: 0.85 }),
         capstone: special("Fast Unload", "Bursts fire 40% quicker.", "clock", { reload: 0.6 }),
       },
       dark: {
@@ -526,9 +510,7 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       ice: {
         name: "Combat Medic",
-        opener: special("Ice Pack", "Healed crewmates move 20% faster for 3 seconds.", "speed", {
-          icePack: true,
-        }),
+        opener: special("Quick Hands", "Throws 15% faster.", "clock", { reload: 0.85 }),
         capstone: special(
           "Adrenaline",
           "Healed crewmates fire 20% faster for 3 seconds.",
@@ -581,9 +563,7 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       ice: {
         name: "Rolling Fire",
-        opener: special("Rolling Thunder", "Moves at 45% speed while firing.", "speed", {
-          fireSpeed: 0.45,
-        }),
+        opener: special("Belt Feed", "Fires 12% faster.", "barrage", { reload: 0.88 }),
         capstone: special("Hair Trigger", "Spins up 34% faster.", "gear", { spinUp: 0.66 }),
       },
       dark: {
@@ -632,9 +612,7 @@ const TREES: Record<HeroKind, TreeDraft> = {
       },
       ice: {
         name: "Panzer",
-        opener: special("Bulldozer", "Moves at 45% speed while firing.", "speed", {
-          fireSpeed: 0.45,
-        }),
+        opener: special("Quick Breech", "Reloads 15% faster.", "clock", { reload: 0.85 }),
         capstone: special("Autoloader", "Fires 25% faster.", "clock", { reload: 0.75 }),
       },
       dark: {
@@ -688,8 +666,8 @@ const TREES: Record<HeroKind, TreeDraft> = {
       ice: {
         name: "Hit and Run",
         opener: special("Fast Rockets", "Rockets fly 40% faster.", "rocket", { shotSpeed: 1.4 }),
-        capstone: special("Getaway", "+30% move speed for 2 seconds after each shot.", "speed", {
-          getaway: true,
+        capstone: special("Salvo", "Every 4th shot fires two rockets.", "barrage", {
+          twinEvery: 4,
         }),
       },
       dark: {
@@ -818,7 +796,7 @@ const TREES: Record<HeroKind, TreeDraft> = {
 /** One plain step: a name, and how much of which stat in percent. */
 type Step = readonly [
   name: string,
-  stat: "hp" | "taken" | "damage" | "defense" | "speed" | "reload",
+  stat: "hp" | "taken" | "damage" | "defense" | "reload",
   percent: number,
 ];
 
@@ -851,7 +829,7 @@ const SPLIT_STEPS: Record<Split, readonly [Step, Step, Step]> = {
   Survival: [
     ["Sturdy", "hp", 15],
     ["Brace", "taken", 10],
-    ["Swift", "speed", 18],
+    ["Iron Will", "hp", 12],
   ],
 };
 
@@ -881,8 +859,6 @@ function step(kind: HeroKind, [name, stat, base]: Step): Draft {
       return up(name, `+${percent}% damage.`, {}, "sword", { damage: more });
     case "defense":
       return up(name, `+${percent}% damage to defenses.`, {}, "crosshair", { defenseDamage: more });
-    case "speed":
-      return up(name, `+${percent}% move speed.`, {}, "speed", { speed: more });
     case "reload":
       return up(name, `${RELOAD_WORDS[kind].verb} ${percent}% faster.`, {}, "clock", {
         reload: less,
@@ -908,21 +884,21 @@ function miniStats(kind: HeroKind, path: Stretch): readonly MiniStat[] {
   const medic = kind === "medic";
   switch (path) {
     case "trunk":
-      return ["health", "damage", "weapon", "speed"];
+      return ["health", "damage", "weapon", "armor"];
     case "Sapper":
       return ["building", "defense", "damage"];
     case "Scrapper":
-      return medic ? ["heal", "armor", "speed"] : ["health", "armor", "speed"];
+      return medic ? ["heal", "armor", "blast"] : ["health", "armor", "blast"];
     case "Assault":
       return ["damage", "reload", "defense", "weapon"];
     case "Survival":
-      return medic ? ["heal", "health", "speed", "armor"] : ["health", "speed", "armor", "blast"];
+      return medic ? ["heal", "health", "armor"] : ["health", "armor", "blast"];
     case "nature":
       return medic ? ["health", "heal", "armor"] : ["health", "armor", "blast"];
     case "fire":
       return ["damage", "defense", "building"];
     case "ice":
-      return ["reload", "speed", "weapon"];
+      return ["reload", "weapon"];
     case "dark":
       return ["damage", "reload", "health", "blast"];
   }
@@ -1130,7 +1106,7 @@ export function heroMods(kind: HeroKind, owned: readonly string[]): HeroMods {
     for (const [key, value] of Object.entries(upgrade.mods) as [keyof HeroMods, unknown][]) {
       const target = out as unknown as Record<string, number | boolean>;
       if (typeof value === "boolean") target[key] = value;
-      else if (key === "fireSpeed" || key === "healOnKill" || key === "twinEvery") {
+      else if (key === "healOnKill" || key === "twinEvery") {
         target[key] = Math.max(target[key] as number, value as number);
       } else if (key === "signature") target[key] = value as number;
       else if (MULTIPLIED.has(key)) target[key] = (target[key] as number) * (value as number);
@@ -1161,6 +1137,29 @@ function firstTrunkCost(kind: HeroKind, name: string): readonly number[] | undef
   return gold ? [gold] : undefined;
 }
 
+/**
+ * Upgrades taken out of today's trees on 2026-11-07, because moving faster made dodging too easy:
+ * each by name, with the tier it sat at. All were paid for in ice.
+ */
+const RETIRED: Record<string, number> = {
+  swift: SPLIT_END,
+  "run-and-gun": SPLIT_END + 1,
+  "ice-pack": SPLIT_END + 1,
+  "rolling-thunder": SPLIT_END + 1,
+  bulldozer: SPLIT_END + 1,
+  getaway: TIERS,
+};
+
+/** What a retired upgrade cost: gold, then crystals in OLD_CRYSTAL_ORDER. */
+function retiredCost(name: string): readonly number[] | undefined {
+  const tier = RETIRED[name];
+  if (!tier) return undefined;
+  return [
+    upgradeGold(tier),
+    ...OLD_CRYSTAL_ORDER.map((k) => (k === "ice" ? (TIER_CRYSTALS[tier] ?? 0) : 0)),
+  ];
+}
+
 /** What a set of upgrades cost: gold and crystals. Ones from older trees cost what they did. */
 function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystals: CrystalCost } {
   const tree = new Map(heroTree(kind).map((u) => [u.id, u]));
@@ -1183,7 +1182,7 @@ function costOf(kind: HeroKind, ids: readonly string[]): { gold: number; crystal
       : id.startsWith(`${kind}:`)
         ? branchTreeCost(kind, name)
         : id.startsWith(`${kind}/`)
-          ? firstTrunkCost(kind, name)
+          ? (firstTrunkCost(kind, name) ?? retiredCost(name))
           : undefined;
     if (!before) continue;
     const [coins = 0, ...gems] = before;

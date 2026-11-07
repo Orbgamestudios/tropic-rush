@@ -1,13 +1,16 @@
-// Soft banks of mist drifting low over the sea around the island, so the edges of the view fade
+// Soft banks of mist drifting low over the sea around an island, so the edges of the view fade
 // into white puffs the way the beach mockup does. They stay off the landing beach's side so they
 // never hide the gunboat. Every puff is a quad tilted towards the camera, all merged into one
-// mesh: one draw call for the lot.
+// mesh: one draw call for the lot. The crew's own island has a sheet instead (homeClouds): the
+// world map's clouds seen close up, clear over the island and reaching out to the edges of the
+// view, but never along its bottom, on the camera's side.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { VIEW_YAW } from "../config";
 import { HOME_SHAPE, type IslandShape } from "../logic/island";
 import { createRng } from "../logic/rng";
+import { cloudTile } from "./mapClouds";
 import { SKY } from "./sky";
 
 const PUFFS = 170;
@@ -103,6 +106,115 @@ export function buildClouds(seed: number, shape: IslandShape = HOME_SHAPE): Clou
     dispose() {
       geometry?.dispose();
       texture.dispose();
+      material.dispose();
+    },
+  };
+}
+
+/** The sheet over the crew's island, in meters: wide enough to reach past any view of it. */
+const HOME_SHEET = { size: 1400, height: 9 } as const;
+/** Clear this far past the coast, solid this far out: the beach and the gunboat stay in the open. */
+const CLEAR_PAST = 9;
+const SOLID_PAST = 46;
+/** How much further out the cloud keeps on the camera's side, so it never covers the bottom of the screen. */
+const CAMERA_SIDE_CLEAR = 600;
+/** The furthest coast the bake of the island's outline can hold, in meters. */
+const OUTLINE_REACH = 220;
+
+const HOME_VERTEX = /* glsl */ `
+  varying vec2 vMap;
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vMap = world.xz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+/**
+ * The map's cloud, closer: the same baked tile at three times the size, with the clear sky round
+ * the island's own outline, its edge bent in and out by a slow third look at the tile.
+ */
+const HOME_FRAGMENT = /* glsl */ `
+  uniform sampler2D uTile;
+  uniform sampler2D uCoast;
+  uniform vec2 uToCamera;
+  uniform float uTime;
+  uniform vec3 uUnlit;
+  varying vec2 vMap;
+  void main() {
+    vec2 p = vMap;
+    vec2 wide = texture2D(uTile, p / 210.0 + vec2(uTime * 0.0021, uTime * 0.0008)).rg;
+    vec2 near = texture2D(uTile, p / 96.0 - vec2(uTime * 0.0013, -uTime * 0.0024)).rg;
+    float thick = smoothstep(0.12, 0.8, wide.r * 0.72 + near.r * 0.28);
+    vec2 flow = texture2D(uTile, p.yx / 520.0 + vec2(uTime * 0.0011, -uTime * 0.0008)).rg - 0.5;
+    float angle = atan(p.y, p.x) / 6.2831853 + 0.5;
+    float coast = texture2D(uCoast, vec2(angle, 0.5)).r * ${OUTLINE_REACH}.0;
+    float out_ = length(p) + (flow.x + flow.y) * 34.0 - coast;
+    // Nothing on the camera's side of the island, which is the bottom of the screen.
+    out_ -= smoothstep(-0.3, 0.3, dot(normalize(p), uToCamera)) * ${CAMERA_SIDE_CLEAR}.0;
+    float cover = smoothstep(${CLEAR_PAST}.0, ${SOLID_PAST}.0, out_);
+    // Deep in the bank it's solid, and towards the clear sky only the thickest puffs stay.
+    float edge = 1.02 - cover * 1.5;
+    float alpha = smoothstep(edge, edge + 0.52, thick);
+    if (alpha < 0.004) discard;
+    vec3 cloud = mix(vec3(0.44, 0.54, 0.74), vec3(1.0, 0.995, 0.98), smoothstep(0.34, 0.92, wide.g));
+    gl_FragColor = vec4(cloud * uUnlit, alpha);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+/** The island's coast all the way round, as a strip of texture: how far out it lies each way. */
+function coastStrip(shape: IslandShape): THREE.DataTexture {
+  const steps = 256;
+  const data = new Uint8Array(steps * 4);
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps - 0.5) * Math.PI * 2;
+    const reach = Math.min(1, coastAlong(shape, angle) / OUTLINE_REACH);
+    data[i * 4] = Math.round(reach * 255);
+    data[i * 4 + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(data, steps, 1);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** The cloud over the sea round the crew's island: one sheet, drawn in a single call. */
+export function homeClouds(shape: IslandShape = HOME_SHAPE): CloudView {
+  const root = new THREE.Group();
+  const geometry = new THREE.PlaneGeometry(HOME_SHEET.size, HOME_SHEET.size);
+  geometry.rotateX(-Math.PI / 2);
+  const coast = coastStrip(shape);
+  const time = { value: 0 };
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTile: { value: cloudTile() },
+      uCoast: { value: coast },
+      // The camera always looks from the same side: this way, along the ground.
+      uToCamera: { value: new THREE.Vector2(Math.sin(VIEW_YAW), Math.cos(VIEW_YAW)) },
+      uTime: time,
+      uUnlit: SKY.unlit,
+    },
+    vertexShader: HOME_VERTEX,
+    fragmentShader: HOME_FRAGMENT,
+    transparent: true,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.y = HOME_SHEET.height;
+  mesh.renderOrder = 5;
+  mesh.frustumCulled = false;
+  root.add(mesh);
+  return {
+    root,
+    update(seconds) {
+      time.value = seconds;
+    },
+    dispose() {
+      geometry.dispose();
+      coast.dispose();
       material.dispose();
     },
   };

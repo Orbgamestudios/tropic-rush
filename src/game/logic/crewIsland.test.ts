@@ -41,9 +41,11 @@ import {
   buildingPower,
   buildTime,
   costFor,
+  holdHours,
   levelCap,
   MAX_HQ_LEVEL,
   nextLevelGain,
+  producerHold,
   START_RESOURCES,
 } from "./economy";
 import { heroTree } from "./heroTrees";
@@ -676,14 +678,27 @@ describe("crew island progression", () => {
     });
   });
 
-  it("fills the stock from producers over time, up to what storage holds", () => {
+  it("holds what a producer makes until it's collected, a day's worth at first", () => {
     let layout = finishWork(place(island(3), building("m", "goldMine", at(0, 0))));
-    layout = { ...layout, resources: { gold: 0, timber: 0, stone: 0, scrap: 0 }, stamp: NOW };
+    const empty = { gold: 0, timber: 0, stone: 0, scrap: 0 };
+    layout = { ...layout, resources: empty, held: {}, stamp: NOW };
     const later = settle(layout, NOW + HOUR);
-    expect(later.resources.gold).toBeCloseTo(150);
-    expect(later.resources.timber).toBe(0);
+    expect(later.resources.gold).toBe(0);
+    expect(later.held.m).toBeCloseTo(150);
+    const collected = applyOp(later, { kind: "collect", id: "m" }, NOW + HOUR);
+    expect(collected?.resources.gold).toBeCloseTo(150);
+    expect(collected?.held.m).toBeCloseTo(0);
+    expect(tryOp(collected as CrewLayout, { kind: "collect", id: "m" }, NOW + HOUR)).toEqual({
+      error: "Nothing to collect",
+    });
+    // It stops at a day's work, and what storage can't take stays in it.
     const muchLater = settle(layout, NOW + 1000 * HOUR);
-    expect(muchLater.resources.gold).toBe(capacity(layout).gold);
+    expect(muchLater.held.m).toBe(producerHold(1));
+    expect(producerHold(1)).toBe(150 * 24);
+    expect(holdHours(10)).toBe(72);
+    const full = applyOp(muchLater, { kind: "collect", id: "m" }, NOW + 1000 * HOUR);
+    expect(full?.resources.gold).toBe(capacity(layout).gold);
+    expect(full?.held.m).toBe(producerHold(1) - capacity(layout).gold);
     const rich = { ...layout, resources: island().resources };
     const withVault = finishWork(place(rich, building("v", "goldVault", at(6, 0))));
     expect(capacity(withVault).gold).toBeGreaterThan(capacity(layout).gold);

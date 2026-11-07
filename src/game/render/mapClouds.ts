@@ -76,7 +76,7 @@ const FRAGMENT = /* glsl */ `
 
 let tile: THREE.Texture | null = null;
 
-function cloudTile(): THREE.Texture {
+export function cloudTile(): THREE.Texture {
   if (tile) return tile;
   tile = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/map-clouds.webp`);
   tile.wrapS = THREE.RepeatWrapping;

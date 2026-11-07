@@ -40,7 +40,7 @@ test("gets through to a raid with block figures when no models load", async ({ p
   await page.route("**/*.glb", (route) => route.abort());
 
   await openMap(page);
-  await page.locator("button.map-pin:visible").first().click();
+  await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
   await page.locator(".heroes-start").click();
   await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
@@ -59,7 +59,7 @@ test("picks a hero and starts a raid", async ({ page }) => {
   );
   await page.getByRole("button", { name: "Rifleman", exact: true }).click();
   await page.getByRole("button", { name: "Raid", exact: true }).click();
-  await page.locator("button.map-pin:visible").first().click();
+  await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
   await page.locator(".heroes-start").click();
 
@@ -75,7 +75,7 @@ test("picks a hero and starts a raid", async ({ page }) => {
 test("drags round the world map, and says what lifts the next cloud", async ({ page }) => {
   await openMap(page);
   await expect(page.locator(".map-progress")).toContainText("to lift a cloud", { timeout: 60_000 });
-  const pin = page.locator("button.map-pin:visible").first();
+  const pin = page.locator("button.map-pin:not(.map-ship-pin):visible").first();
   const before = await pin.evaluate((node) => (node as HTMLElement).style.transform);
   await page.mouse.move(400, 180);
   await page.mouse.down();
@@ -88,7 +88,7 @@ test("drags round the world map, and says what lifts the next cloud", async ({ p
 
 test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
   await openMap(page);
-  await page.locator("button.map-pin:visible").first().click();
+  await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
   await page.locator(".heroes-start").click();
   const boat = page.locator(".hud-boat");
@@ -109,7 +109,7 @@ test("sends a medic to attack on her own", async ({ page }) => {
   });
   await page.getByRole("button", { name: "Medic", exact: true }).click();
   await page.getByRole("button", { name: "Raid", exact: true }).click();
-  await page.locator("button.map-pin:visible").first().click();
+  await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await expect(page.getByRole("button", { name: "Attack" })).toBeEnabled();
 });
 
@@ -118,7 +118,7 @@ test("scouts an island, then attacks it", async ({ page }) => {
   page.on("pageerror", (error) => errors.push(error.message));
 
   await openMap(page);
-  await page.locator("button.map-pin:visible").first().click();
+  await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Scout" }).click();
   await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
 
@@ -136,11 +136,13 @@ test("backs out of scouting and scouts again", async ({ page }) => {
 
   await openMap(page);
   for (let round = 0; round < 2; round++) {
-    await page.locator("button.map-pin:visible").first().click();
+    await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
     await page.getByRole("button", { name: "Scout" }).click();
     await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
     await page.getByRole("button", { name: "Back to map" }).click();
-    await expect(page.locator("button.map-pin:visible").first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("button.map-pin:not(.map-ship-pin):visible").first()).toBeVisible({
+      timeout: 60_000,
+    });
   }
   expect(errors).toEqual([]);
 });
@@ -215,7 +217,9 @@ test("opens the profile from the crew bar, and the map from its button", async (
   await expect(page.getByRole("button", { name: "Create account" })).toBeHidden();
 
   await page.getByRole("button", { name: "World map" }).click();
-  await expect(page.locator("button.map-pin:visible").first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("button.map-pin:not(.map-ship-pin):visible").first()).toBeVisible({
+    timeout: 60_000,
+  });
   expect(errors).toEqual([]);
 });
 
@@ -243,10 +247,16 @@ test("resets the game from the settings, only after confirming", async ({ page }
 test("runs a night raid, replays it and reports the result", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-
+  // A raider ship has struck since this phone last looked: the raid plays out on the way in.
+  await page.addInitScript(() => {
+    localStorage.setItem("tropic-rush:save:v1", JSON.stringify({ nightChecked: 1 }));
+  });
   await page.goto("/");
-  await page.getByRole("button", { name: "Night raid", exact: true }).click();
-  await page.getByRole("button", { name: "Raid now" }).click();
+  await expect(page.locator(".crew-night-result")).toHaveText(/Island (held|overrun)!/, {
+    timeout: 60_000,
+  });
+  await expect(page.locator(".crew-night-ship")).toContainText("Likely to strike between");
+  await page.getByRole("button", { name: "Watch replay" }).click();
   await expect(page.locator(".replay-title")).toBeVisible({ timeout: 40_000 });
   await page.getByRole("button", { name: "Skip" }).click();
   await expect(page.locator(".crew-night-result")).toHaveText(/Island (held|overrun)!/, {

@@ -50,8 +50,8 @@ describe("hero progress", () => {
     const full = heroStats("rifleman", everything("rifleman"));
     expect(full.hp).toBeGreaterThan(trained.hp);
     expect(full.dps).toBeGreaterThan(start.dps);
-    expect(full.speed).toBeGreaterThan(start.speed);
-    // No upgrade reaches further.
+    // No upgrade makes a hero quicker on their feet, or reach further.
+    expect(full.speed).toBe(start.speed);
     expect(full.range).toBe(start.range);
   });
 

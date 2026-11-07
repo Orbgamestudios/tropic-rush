@@ -77,6 +77,57 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
 
+## Added 2026-11-07 (owner's requests)
+
+**Decided** unless a line says otherwise. The numbers are first passes.
+
+- **No sprint:** the sprint button and Shift are gone: running made dodging too easy.
+- **No faster feet from the trees:** nothing in the hero trees adds move speed any more. Survival's
+  third upgrade is Iron Will (+12% health) instead of Swift, speed minis became armor and blast
+  minis, and five specials were swapped: Snap Shot (Rifleman, reloads 15% faster) for Run and Gun,
+  Quick Hands (Medic, throws 15% faster) for Ice Pack, Belt Feed (Heavy, fires 12% faster) for
+  Rolling Thunder, Quick Breech (Tank, reloads 15% faster) for Bulldozer, and Salvo (Bazooka, every
+  4th shot fires two rockets) for Getaway. Whatever was bought of them was given back.
+- **Grenadier:** a 30% wider blast, 3.9 m from 3 m. (Read as the blast's spread: a grenade lands
+  exactly where it's aimed while standing still.)
+- **Islands taken back:** a fifth of what a crew holds each night, from about a quarter.
+- **Difficulty:** five bands, Easy (green), Medium (yellow), Hard (orange), Extreme (red) and
+  Impossible (purple), by how far a headquarters stands above the crew's: Easy is 1 to 3 below,
+  Medium level to 1 above, Hard 2 to 3, Extreme 4 to 6, Impossible 7 to 12. Shared by islands and
+  raider ships.
+- **Enemy headquarters follow the crew's:** a raider island's headquarters is rolled in a band
+  against the crew's own, so islands keep pace as the crew grows, up to headquarters 50, and the
+  further from home the likelier a hard one. A win's crystals go by the band; an Impossible island
+  gives at least two.
+- **Raider ships replace the nightly raid's clock:** each morning (5 am, local time) a raider ship
+  turns up somewhere in the open water of the crew's map, and that night, between 9 pm and 5 am,
+  it lands on their island. Tapping it says when it's likely to strike (a two-hour window), its
+  difficulty, its crew and plan (Tank wall, Heavy, medic and bazooka, Grenade rain, Rifle squad,
+  Rocket battery, Engineers' fort, Mixed crew), who's aboard, and what holding it off pays: a
+  crystal on an Easy ship up to four on an Impossible one, and gold, timber and stone that grow
+  with it. Raiders number 2 plus one for every 4 headquarters levels, up to 8. The Night raid and
+  Raid now buttons are gone: a raid can't be called in early. Its report opens on its own.
+- **Strike back:** a raid that gets through can be answered: Strike back raids the base the ship
+  sailed from, at its headquarters, and winning there wins back what was taken. It can't be held.
+- **Night replays:** no more tint over the island; the sky is the sky as it was when the raiders
+  came.
+- **Smarter raiders (from raider ships):** they circle a defense instead of standing in its sights,
+  go for buildings that pay the gunboat's energy while they're short of it, and one of them works
+  the gunboat: a shock grenade on a nest of defenses, then a barrage while it's stunned, a shell on
+  the toughest defense in reach, or a medkit on hurt raiders bunched together. Crews that bombard
+  save up for the big strikes. Their gunboat grows with the ship: shells and medkits from the
+  start, shock grenades from headquarters 6, barrages from 10. Raids from before the ships replay
+  as they ran.
+- **Producers hold their output:** a mill no longer pours straight into storage. It fills up to a
+  day's work at level 1, three days by level 10 (24 hours plus 5⅓ a level), and waits. Once it
+  holds 5% of that, a tab with its resource bobs over it; tap it and the resources fly up into the
+  bar at the top. A full one glows: it has stopped. What storage can't take stays in the mill.
+- **The supply ship:** what the crew's islands turn out no longer just appears. Each morning the
+  supply ship brings a day's cargo for each day since it last called, up to a week: tribute gold
+  from player islands, and gold, timber, stone and scrap from raider islands, by their
+  headquarters. It waits at the beach, with a Supplies tab (at the edge of the screen if the beach
+  isn't in view); tap it to unload, and whatever storage can't take stays aboard.
+
 ## Added 2026-11-03 (owner's requests)
 
 - **Puzzle islands (Decided):** about one island in five from headquarters 3 has its defenses laid
@@ -238,7 +289,7 @@ These were explicitly left out to keep the first version to a basic structure:
 
 ## Added 2026-11-02, third batch (owner's requests)
 
-- **Sprint:** hold to sprint: 30% faster for as long as it's held, up to 2.5 seconds, and whatever's
+- **Sprint (removed 2026-11-07):** hold to sprint: 30% faster for as long as it's held, up to 2.5 seconds, and whatever's
   left stays for next time. An empty tank takes 20 seconds to fill and needs half a second in it
   before it'll go again. It's allowed while shooting, but with four times the wobble of walking and
   firing, which is why the aim cone blows wide open.
@@ -938,7 +989,7 @@ Choices made while building the draft. All are **Proposed**:
   upgraded within the same level caps. Outpost is HQ 1, Fort HQ 6, Stronghold HQ 12. Each level
   adds 12% health and damage in a raid (**Proposed**). A crew's island and an enemy's are the
   same kind of thing.
-- **Nightly raid (Decided 2026-10-30):** once a day (3:00 local time) AI raiders land on the crew's
+- **Nightly raid (Decided 2026-10-30, reworked 2026-11-07 round raider ships, see there):** once a day (3:00 local time) AI raiders land on the crew's
   island. It's an ordinary raid with the crew's buildings as the target, simulated from a seed,
   so the replay is the same raid run again. The Night raid button shows the next raid and the
   last result, with Raid now to trigger one and Watch replay.

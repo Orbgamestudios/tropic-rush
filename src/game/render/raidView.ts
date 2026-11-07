@@ -2,6 +2,7 @@
 // rules' events into effects. It never changes the state.
 
 import * as THREE from "three";
+import { SIM_STEP } from "../config";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { CRYSTAL_KINDS } from "../logic/crystals";
@@ -33,6 +34,7 @@ import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
 import { HeroAnimator } from "./heroAnimator";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
+import { Lookout } from "./lookout";
 import {
   type BuildingModel,
   buildingModel,
@@ -73,6 +75,11 @@ interface BuildingView {
   collapse: number | null;
   baseY: number;
   sights: SniperSights | null;
+  /** Its head, watching the shore while there's nothing to shoot. */
+  lookout: Lookout;
+  /** The aim it had last frame, and how much longer it counts as in a fight, in seconds. */
+  lastAim: number;
+  alert: number;
 }
 
 interface HeroView {
@@ -282,6 +289,9 @@ export class RaidView {
   private readonly telegraphs = new Map<number, { ring: THREE.Mesh; fill: THREE.Mesh }>();
   private readonly zones = new Map<number, THREE.Object3D>();
   private readonly turrets = new Map<number, { root: THREE.Group; head: THREE.Object3D }>();
+  /** Where each hero stood before the rules' last step, and how far on to now the picture is. */
+  private readonly before = new Map<number, Vec2>();
+  between = 1;
   private readonly mines = new Map<number, THREE.Mesh>();
   private readonly boat: GunboatModel;
   /** How far the gunboat's barrel is kicked back, and where it rests. */
@@ -359,6 +369,9 @@ export class RaidView {
         rubble: null,
         baseRotation,
         kick: 0,
+        lookout: new Lookout(),
+        lastAim: b.aim,
+        alert: 0,
         gunsRest: model.guns?.position.clone() ?? new THREE.Vector3(),
         sinceShot: Number.POSITIVE_INFINITY,
         boltRest: model.bolt?.position.clone() ?? new THREE.Vector3(),
@@ -473,9 +486,6 @@ export class RaidView {
           break;
         case "loot":
           this.showLoot(e.pos, e.loot);
-          break;
-        case "sprint":
-          this.effects.footstep(this.at(e.pos, 0));
           break;
         case "heroDown":
           this.effects.skull(this.at(e.pos, 0));
@@ -605,7 +615,7 @@ export class RaidView {
     const aiming = this.showBars && !this.defending ? leader : undefined;
     this.aimView.update(state, aiming, this.aim, this.ground, time);
     this.overgrowth?.update(dt);
-    this.updateBuildings(state, dt);
+    this.updateBuildings(state, dt, time);
     this.updateHeroes(state, dt);
     this.lights.update(dt, time);
     this.fireflies.update(time);
@@ -684,7 +694,7 @@ export class RaidView {
     view.sinceShot = 0;
   }
 
-  private updateBuildings(state: RaidState, dt: number): void {
+  private updateBuildings(state: RaidState, dt: number, time: number): void {
     for (const b of state.buildings) {
       const view = this.buildings.get(b.id);
       if (!view) continue;
@@ -699,8 +709,15 @@ export class RaidView {
       if (health < 0.5 && Math.random() < dt * (health < 0.25 ? 9 : 4)) {
         this.effects.burn(this.at(b.pos, spec.height * 0.55), spec.radius * 0.6);
       }
-      // Models point along +x; the root is already turned to face the beach.
-      if (view.model.head) view.model.head.rotation.y = -b.aim - view.baseRotation;
+      // Models point along +x; the root is already turned to face the beach. In a fight the head
+      // follows its aim; otherwise it keeps watch.
+      if (view.model.head) {
+        if (b.firing || b.sights || b.aim !== view.lastAim) view.alert = 1;
+        else view.alert = Math.max(0, view.alert - dt);
+        view.lastAim = b.aim;
+        const aim = view.alert > 0 ? -b.aim - view.baseRotation : null;
+        view.model.head.rotation.y = view.lookout.update(time, dt, aim);
+      }
       if (view.model.flame) view.model.flame.visible = b.firing;
       const { guns, spinner, bolt } = view.model;
       if (bolt) {
@@ -747,6 +764,25 @@ export class RaidView {
     if (t >= 1) root.visible = false;
   }
 
+  /** Notes where every hero stands, just before the rules take a step. */
+  remember(state: RaidState): void {
+    for (const h of state.heroes) {
+      const before = this.before.get(h.id);
+      if (before) {
+        before.x = h.pos.x;
+        before.y = h.pos.y;
+      } else this.before.set(h.id, { ...h.pos });
+    }
+  }
+
+  /** Where a hero is drawn: between where it stood before the last step and where it is now. */
+  drawnAt(h: RaidHero): Vec2 {
+    const before = this.before.get(h.id);
+    if (!before || this.between >= 1) return h.pos;
+    const t = this.between;
+    return { x: before.x + (h.pos.x - before.x) * t, y: before.y + (h.pos.y - before.y) * t };
+  }
+
   private updateHeroes(state: RaidState, dt: number): void {
     this.ringPulse += dt;
     for (const h of state.heroes) {
@@ -759,10 +795,11 @@ export class RaidView {
         ring.visible = false;
         continue;
       }
-      model.root.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y);
+      const pos = this.drawnAt(h);
+      model.root.position.set(pos.x, this.ground(pos.x, pos.y), pos.y);
       ring.visible = h.alive && !this.defending;
-      ring.position.set(h.pos.x, this.ground(h.pos.x, h.pos.y) + 0.06, h.pos.y);
-      this.layOnSlope(ring, h.pos.x, h.pos.y);
+      ring.position.set(pos.x, this.ground(pos.x, pos.y) + 0.06, pos.y);
+      this.layOnSlope(ring, pos.x, pos.y);
       ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
       // Turn smoothly rather than snapping.
       const turned = angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
@@ -776,7 +813,7 @@ export class RaidView {
       if (h.moving) {
         view.stepTimer -= dt;
         if (view.stepTimer <= 0) {
-          view.stepTimer = h.sprinting ? 0.12 : 0.2;
+          view.stepTimer = 0.2;
           this.effects.footstep(this.at(h.pos, 0));
         }
       }
@@ -884,13 +921,17 @@ export class RaidView {
   }
 
   private placeProjectile(p: Projectile, obj: THREE.Object3D): void {
+    // Drawn as far back along its way as the picture is behind the rules.
+    const behind = (1 - this.between) * SIM_STEP;
     if (p.lob) {
       const { from, to, t: elapsed, duration, peak } = p.lob;
       obj.visible = elapsed >= 0;
-      const t = Math.max(0, Math.min(1, elapsed / duration));
+      const t = Math.max(0, Math.min(1, (elapsed - behind) / duration));
       const h0 = this.ground(from.x, from.y) + 1.6;
       const h1 = this.ground(to.x, to.y) + 0.2;
-      obj.position.set(p.pos.x, h0 + (h1 - h0) * t + 4 * peak * t * (1 - t), p.pos.y);
+      const x = from.x + (to.x - from.x) * t;
+      const y = from.y + (to.y - from.y) * t;
+      obj.position.set(x, h0 + (h1 - h0) * t + 4 * peak * t * (1 - t), y);
       // Nose first along the arc: a shell points the way it's going.
       const climb = h1 - h0 + 4 * peak * (1 - 2 * t);
       obj.rotation.set(
@@ -900,7 +941,9 @@ export class RaidView {
       );
       return;
     }
-    obj.position.set(p.pos.x, this.ground(p.pos.x, p.pos.y) + BULLET_HEIGHT, p.pos.y);
+    const x = p.pos.x - p.vel.x * behind;
+    const y = p.pos.y - p.vel.y * behind;
+    obj.position.set(x, this.ground(x, y) + BULLET_HEIGHT, y);
     obj.rotation.y = -Math.atan2(p.vel.y, p.vel.x);
   }
 

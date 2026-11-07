@@ -944,7 +944,7 @@
   color: #9df27e;
 }
 
-.map-fair {
+.map-medium {
   --pin: #ffe07a;
   color: #ffe07a;
 }
@@ -954,9 +954,14 @@
   color: #ffa94d;
 }
 
-.map-deadly {
+.map-extreme {
   --pin: #ff7a66;
   color: #ff7a66;
+}
+
+.map-impossible {
+  --pin: #c79bff;
+  color: #c79bff;
 }
 
 .map-yours {
@@ -1012,6 +1017,46 @@
 .map-card-rating {
   font-size: 13px;
   font-weight: 900;
+}
+
+/* The day's raider ship: its card always on the left, clear of the island cards. */
+.map-ship-card {
+  right: auto;
+  left: 14px;
+  bottom: 96px;
+}
+
+.map-ship-pin {
+  border-color: var(--pin);
+}
+
+/* What a raider ship's card says, on the map and in the night raid panel. */
+.ship-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #c6d2e4;
+}
+
+.ship-rating {
+  font-weight: 900;
+}
+
+.ship-plan {
+  color: var(--gold-text);
+}
+
+.ship-pays {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ship-pays-label {
+  color: #9df27e;
 }
 
 .map-card-facts {
@@ -1220,14 +1265,6 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-/* Moonlight: the whole island goes cool and dark. A plain see-through layer, because this UI
-   layer is isolated from the 3D view and a blend mode wouldn't reach it. */
-.replay-tint {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 45%, rgb(16 28 74 / 0.34), rgb(8 14 44 / 0.62));
 }
 
 .replay-bar {

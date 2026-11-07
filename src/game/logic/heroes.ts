@@ -198,7 +198,8 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
     hp: 1105,
     speed: 5.4,
     radius: 0.55,
-    attack: { kind: "lob", range: 18.6, damage: 145, reload: 1.3, splash: 3, flightTime: 0.9 },
+    // A blast 30% wider than it first was, from 3 m.
+    attack: { kind: "lob", range: 18.6, damage: 145, reload: 1.3, splash: 3.9, flightTime: 0.9 },
     heavy: false,
   },
   engineer: {

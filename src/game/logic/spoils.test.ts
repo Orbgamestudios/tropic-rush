@@ -10,7 +10,7 @@ import {
 
 const roll = (changes: Partial<SpoilsRoll> = {}): SpoilsRoll => ({
   seed: 1,
-  difficulty: "Fair",
+  difficulty: "Medium",
   crystal: "fire",
   defenses: ["gunTurret", "mortar", "harpoon"],
   known: [],
@@ -59,9 +59,9 @@ describe("spoils", () => {
   it("gives the island's own crystal, in the amounts the plan sets", () => {
     expect(rollSpoils(roll({ crystal: "ice" })).crystals).toEqual({ ice: 1 });
     expect(crystalsOver({ difficulty: "Easy" })).toBeCloseTo(0.5, 0);
-    expect(crystalsOver({ difficulty: "Fair" })).toBe(1);
+    expect(crystalsOver({ difficulty: "Medium" })).toBe(1);
     expect(crystalsOver({ difficulty: "Hard" })).toBeCloseTo(1.5, 0);
-    expect(crystalsOver({ difficulty: "Deadly" })).toBeCloseTo(1.95, 0);
+    expect(crystalsOver({ difficulty: "Extreme" })).toBeCloseTo(1.95, 0);
   });
 
   it("always gives something on a first win", () => {
@@ -105,8 +105,8 @@ describe("spoils", () => {
       return n;
     };
     expect(chests(1.4)).toBeGreaterThan(chests(1));
-    expect(crystalsOver({ difficulty: "Deadly", luck: 1.4 })).toBeGreaterThan(
-      crystalsOver({ difficulty: "Deadly", luck: 1 }),
+    expect(crystalsOver({ difficulty: "Extreme", luck: 1.4 })).toBeGreaterThan(
+      crystalsOver({ difficulty: "Extreme", luck: 1 }),
     );
   });
 

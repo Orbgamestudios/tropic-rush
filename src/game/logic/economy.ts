@@ -284,6 +284,16 @@ export function productionPerHour(level: number): number {
   return Math.round(150 * 1.3 ** (level - 1));
 }
 
+/** Hours of work a producer holds until it's collected: a day at level 1, three days by level 10. */
+export function holdHours(level: number): number {
+  return 24 + ((Math.max(1, level) - 1) * 16) / 3;
+}
+
+/** The most a producer holds at a level, until it's collected. */
+export function producerHold(level: number): number {
+  return Math.round(productionPerHour(level) * holdHours(level));
+}
+
 export function canAfford(purse: Purse, cost: Partial<Purse>): boolean {
   return RESOURCES.every((r) => purse[r] >= (cost[r] ?? 0));
 }

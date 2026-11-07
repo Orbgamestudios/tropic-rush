@@ -126,6 +126,17 @@ describe("hero trees", () => {
     }
   });
 
+  it("makes no hero faster on their feet: moving fast made dodging too easy", () => {
+    for (const kind of HERO_KINDS) {
+      for (const u of heroTree(kind)) {
+        expect(u.text, u.name).not.toMatch(/move|speed while/i);
+      }
+    }
+    // What was bought before is given back, at what it cost.
+    const retired = trimUpgrades("rifleman", ["rifleman/swift", "rifleman/run-and-gun"]);
+    expect(retired.refund).toEqual({ gold: 4400 + 6000, crystals: { ice: 8 } });
+  });
+
   it("gives nothing that reaches further: no upgrade adds range", () => {
     for (const kind of HERO_KINDS) {
       for (const u of heroTree(kind)) {
@@ -207,14 +218,12 @@ describe("hero trees", () => {
       expect(mods.damage, kind).toBeLessThan(2.6);
       expect(mods.reload, kind).toBeGreaterThan(0.25);
       expect(mods.reload, kind).toBeLessThan(0.8);
-      expect(mods.speed, kind).toBeLessThan(1.7);
     }
     const rifle = heroMods(
       "rifleman",
       heroTree("rifleman").map((u) => u.id),
     );
     expect(rifle.shots).toBe(1);
-    expect(rifle.fireSpeed).toBe(0.4);
     expect(rifle.lastStand).toBe(true);
     expect(rifle.unload).toBeLessThan(1);
     // The Heavy's gun gets 15% less from what makes guns stronger.

@@ -1,6 +1,6 @@
 // The world: one endless sea of islands, the same for every crew, laid out in regions from a seed.
-// Each region holds a loose scatter of enemy islands, and the further from home the harder they
-// are, with no end to it. Cloud covers all of it but a splotch of clear sky round home: every few
+// Each region holds a loose scatter of enemy islands. Their headquarters follow the crew's, from
+// easy to impossible, and the further from home the likelier a hard one, up to headquarters 50. Cloud covers all of it but a splotch of clear sky round home: every few
 // islands won clears another, small one, over the nearest hidden island on whichever side has seen
 // the least, so the crew's world grows outward evenly and more slowly than they conquer it. Plenty
 // of the sea stays empty, so the map never crowds. Islands a crew has taken stay theirs until
@@ -9,13 +9,12 @@
 import { BUILDINGS, type BuildingType } from "./buildings";
 import type { PlacedBuilding } from "./crewIsland";
 import { type CrystalKind, islandCrystal } from "./crystals";
-import { allowedCount, MAX_HQ_LEVEL } from "./economy";
+import { type Difficulty, difficultyOf, hqInBand, rollBand } from "./difficulty";
+import { allowedCount, MAX_HQ_LEVEL, type Purse } from "./economy";
 import { type RaidReward, raidReward } from "./heroProgress";
 import { ARCHETYPES, type Archetype, archetypeFor } from "./islandShapes";
 import { type Puzzle, puzzleDefenses, puzzleFor } from "./puzzles";
 import { createRng } from "./rng";
-
-export type Difficulty = "Easy" | "Fair" | "Hard" | "Deadly";
 
 /** Another crew's base, standing on a player island of the map. */
 export interface Rival {
@@ -61,6 +60,8 @@ export interface MapIsland {
   rival: Rival | null;
   /** What it pays each day while the crew holds it. */
   tribute: number;
+  /** A raider ship's own base, struck back at: what its raid took, won back along with it. */
+  revenge?: Partial<Purse>;
 }
 
 /** What a crew has done to the map. */
@@ -258,13 +259,6 @@ export function islandTier(hq: number): number {
   return 1 + Math.floor(hq / 4);
 }
 
-function difficultyOf(hq: number, yourHq: number): Difficulty {
-  const gap = hq - yourHq;
-  if (gap <= 0) return "Easy";
-  if (gap === 1) return "Fair";
-  return gap <= 3 ? "Hard" : "Deadly";
-}
-
 interface Charted {
   id: string;
   name: string;
@@ -273,7 +267,7 @@ interface Charted {
   y: number;
   size: number;
   seed: number;
-  /** Its headquarters level before anyone has touched it. */
+  /** How far out it is, in headquarters levels: further out, a hard base is likelier. */
   hq: number;
   /** Kept for another crew to live on. */
   player: boolean;
@@ -343,10 +337,21 @@ function chartRegion(column: number, row: number): Charted[] {
   return islands;
 }
 
+/**
+ * A raider base's headquarters before it's been retaken, by the crew's and its own luck, and the
+ * band it was rolled in: a base can't go below headquarters 1, so an easy one is easy by its roll.
+ */
+function raiderBase(island: Charted, yourHq: number): { hq: number; band: Difficulty } {
+  const rng = createRng(island.seed ^ 0xd1ff);
+  const band = rollBand(rng(), (island.hq - 3) * 0.05);
+  return { hq: hqInBand(band, yourHq, rng()), band };
+}
+
 function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland {
   const rival = island.player ? (world.rivals[island.id] ?? standIn(island, yourHq)) : null;
   const raised = rival ? undefined : world.retaken[island.id];
-  const hq = rival?.hq ?? raised ?? island.hq;
+  const fresh = rival || raised !== undefined ? null : raiderBase(island, yourHq);
+  const hq = rival?.hq ?? raised ?? fresh?.hq ?? 1;
   const tier = islandTier(hq);
   const rated = Math.min(hq, MAX_HQ_LEVEL);
   // A rebuilt base is a new layout, not the old one with its levels raised.
@@ -357,7 +362,7 @@ function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland
     hq,
     seed,
     tier,
-    difficulty: difficultyOf(hq, yourHq),
+    difficulty: fresh?.band ?? difficultyOf(hq, yourHq),
     defenses: puzzle
       ? puzzleDefenses(puzzle, rated)
       : DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
@@ -369,6 +374,42 @@ function dress(island: Charted, world: WorldProgress, yourHq: number): MapIsland
     crystal: islandCrystal(seed),
     rival,
     tribute: rival ? tributeFor(hq) : 0,
+  };
+}
+
+/**
+ * The base a raider ship sailed from, for striking back after its raid got through. It isn't on
+ * the map and can't be held: winning there wins back what the raid took.
+ */
+export function raiderHome(
+  ship: { hq: number; difficulty: Difficulty; crew: string; homeSeed: number },
+  day: number,
+  stolen: Partial<Purse>,
+): MapIsland {
+  const { hq, homeSeed: seed } = ship;
+  const tier = islandTier(hq);
+  const rated = Math.min(hq, MAX_HQ_LEVEL);
+  return {
+    id: `raiders:${day}`,
+    name: `${ship.crew}' hideout`,
+    x: 0,
+    y: 0,
+    size: 1,
+    region: "",
+    seed,
+    hq,
+    tier,
+    difficulty: ship.difficulty,
+    defenses: DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
+    reward: raidReward(true, 100, tier),
+    taken: false,
+    retaken: false,
+    archetype: archetypeFor(seed, hq),
+    puzzle: null,
+    crystal: islandCrystal(seed),
+    rival: null,
+    tribute: 0,
+    revenge: stolen,
   };
 }
 
@@ -410,13 +451,32 @@ export function beatRival(world: WorldProgress, rival: Rival): WorldProgress {
   return { ...world, beaten: [rival.code, ...world.beaten].slice(0, MOST_BEATEN) };
 }
 
-/** A day's gold from the player islands the crew holds. */
-export function dailyTribute(world: WorldProgress): number {
-  return world.taken.reduce((sum, id) => {
-    const rival = world.rivals[id];
+/** What a raider island the crew holds turns out each day, by its headquarters level. */
+const CARGO_BASE = 40;
+const CARGO_PER_HQ = 15;
+
+/**
+ * A day's cargo from the islands the crew holds, which the supply ship brings each morning: gold
+ * from the crews on player islands, and materials from the raider islands.
+ */
+export function dailyCargo(world: WorldProgress, yourHq: number): Partial<Purse> {
+  const cargo = { gold: 0, timber: 0, stone: 0, scrap: 0 };
+  for (const id of world.taken) {
     const island = chartedIsland(id);
-    return island?.player ? sum + tributeFor(rival?.hq ?? island.hq) : sum;
-  }, 0);
+    if (!island) continue;
+    if (island.player) {
+      cargo.gold += tributeFor(world.rivals[id]?.hq ?? island.hq);
+      continue;
+    }
+    const base = CARGO_BASE + CARGO_PER_HQ * raiderBase(island, yourHq).hq;
+    cargo.gold += base;
+    cargo.timber += base;
+    cargo.stone += Math.round(base * 0.6);
+    cargo.scrap += Math.round(base * 0.3);
+  }
+  const out: Partial<Purse> = {};
+  for (const [r, n] of Object.entries(cargo) as [keyof Purse, number][]) if (n > 0) out[r] = n;
+  return out;
 }
 
 /** Where an island lies, from its id. */
@@ -512,6 +572,36 @@ export function worldIslands(world: WorldProgress, yourHq: number): MapIsland[] 
     .map((island) => dress(island, world, yourHq));
 }
 
+/** Kept clear round an island, or home, by the raider ship lying at anchor, in map units. */
+const SHIP_CLEAR = 6;
+
+/**
+ * Where a raider ship lies on the map: somewhere in open water the crew can see, clear of the
+ * islands, picked by its seed so every phone puts it in the same place.
+ */
+export function shipSpot(
+  world: WorldProgress,
+  islands: readonly MapIsland[],
+  seed: number,
+): { x: number; y: number } {
+  const rng = createRng(seed);
+  const sky = clearSky(world);
+  const clear = (x: number, y: number) =>
+    Math.hypot(x, y) > HOME_CLEAR + SHIP_CLEAR &&
+    islands.every((i) => Math.hypot(i.x - x, i.y - y) > islandRadius(i.size) + SHIP_CLEAR) &&
+    sky.some((h) => Math.hypot(h.x - x, h.y - y) < h.radius - SHIP_CLEAR);
+  for (let tries = 0; tries < 200; tries++) {
+    const hole = sky[Math.floor(rng() * sky.length)];
+    if (!hole) break;
+    const angle = rng() * Math.PI * 2;
+    const reach = Math.sqrt(rng()) * hole.radius;
+    const x = hole.x + Math.cos(angle) * reach;
+    const y = hole.y + Math.sin(angle) * reach;
+    if (clear(x, y)) return { x, y };
+  }
+  return { x: HOME_CLEAR + SHIP_CLEAR, y: -HOME_CLEAR };
+}
+
 /** How many more islands to win before the next splotch of cloud lifts. */
 export function islandsToNextCloud(world: WorldProgress): number {
   return ISLANDS_PER_CLOUD - world.progress;
@@ -587,12 +677,12 @@ function regionsToSplotches(world: WorldProgress): WorldProgress {
   return regions > 0 ? liftCloud({ ...world, opened }, regions) : world;
 }
 
-/** The share of a crew's islands taken back each day, at least and at most. */
-const RETAKEN_SHARE = [0.22, 0.28] as const;
+/** The share of a crew's islands taken back each night. */
+const RETAKEN_SHARE = 0.2;
 
 /**
- * The night's move: raiders and rival crews take back about a quarter of the crew's islands, a part
- * of an island being a chance of a whole one. Each comes back with a stronger headquarters, built
+ * The night's move: raiders and rival crews take back a fifth of the crew's islands, a part of an
+ * island being a chance of a whole one. Each comes back with a stronger headquarters, built
  * up to everything that level allows.
  */
 export function retakeIslands(
@@ -601,8 +691,7 @@ export function retakeIslands(
   yourHq: number,
 ): { world: WorldProgress; lost: string[] } {
   const rng = createRng(Math.imul(night, 6151) + 97);
-  const [least, most] = RETAKEN_SHARE;
-  const share = (least + rng() * (most - least)) * world.taken.length;
+  const share = RETAKEN_SHARE * world.taken.length;
   const count = Math.floor(share) + (rng() < share % 1 ? 1 : 0);
   const taken = [...world.taken];
   const retaken = { ...world.retaken };
@@ -618,7 +707,7 @@ export function retakeIslands(
       delete rivals[id];
       continue;
     }
-    const before = world.retaken[id] ?? island.hq;
+    const before = world.retaken[id] ?? raiderBase(island, yourHq).hq;
     retaken[id] = Math.max(before + 1, yourHq) + Math.floor(rng() * 2);
   }
   return { world: { ...world, taken, retaken, rivals }, lost };

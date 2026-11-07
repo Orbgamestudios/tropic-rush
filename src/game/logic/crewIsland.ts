@@ -21,6 +21,7 @@ import {
   PRODUCERS,
   PROGRESSION,
   type Purse,
+  producerHold,
   productionPerHour,
   RESOURCES,
   START_RESOURCES,
@@ -187,6 +188,8 @@ export interface CrewLayout {
   builds: BuildJob[];
   /** The crew's shared stock, as of `stamp`. */
   resources: Purse;
+  /** What each producer has made and nobody has collected yet, by building id. */
+  held: Record<string, number>;
   /** When `resources` was last brought up to date (server time, milliseconds). */
   stamp: number;
   /** Blueprints won on raids. */
@@ -249,6 +252,8 @@ export type LayoutOp =
   | { kind: "toolUp"; tool: Tool }
   /** Materials brought home from a raid. */
   | { kind: "loot"; purse: Partial<Purse> }
+  /** What a producer has made, into the stock, as much as there's room for. */
+  | { kind: "collect"; id: string }
   /** A blueprint won on a raid, ready for the laboratory. */
   | { kind: "blueprint"; type: Blueprint }
   /** The laboratory works a blueprint up into the real thing. */
@@ -264,8 +269,8 @@ export type LayoutOp =
   | { kind: "restore"; statue: CrystalKind }
   /** The island's gold for a crystal trade; the crystals are whoever's trading's own. */
   | { kind: "crystalSwap" }
-  /** Last night's raid: what the raiders took, and the gold for holding them off. */
-  | { kind: "night"; night: number; stolen: Partial<Purse>; reward: number };
+  /** Last night's raid: what the raiders took, and what holding them off paid (older phones: gold). */
+  | { kind: "night"; night: number; stolen: Partial<Purse>; reward: Partial<Purse> | number };
 
 export function footprint(type: BuildingType, rotated: boolean): { w: number; h: number } {
   const f = FOOTPRINTS[type];
@@ -784,22 +789,34 @@ function finishBuilds(layout: CrewLayout, now: number): CrewLayout {
   };
 }
 
-/** Brings the stock up to date: producers fill it until it reaches what storage can hold. */
+/** What each producer makes in an hour, with the statues' help. */
+function producerRate(layout: Pick<CrewLayout, "statues">, b: PlacedBuilding): number {
+  return b.level > 0 && PRODUCERS[b.type]
+    ? productionPerHour(b.level) * statueBuffs(layout.statues).production
+    : 0;
+}
+
+/**
+ * Brings the island up to date: each producer fills up with what it makes, until it holds what it
+ * can, and waits there for a crewmate to collect it.
+ */
 export function settle(current: CrewLayout, now: number): CrewLayout {
   if (now <= current.stamp) return current;
   const layout = finishStatues(finishBuilds(current, now), now);
   const hours = Math.min(MAX_IDLE_MS, now - layout.stamp) / 3_600_000;
-  const rate = production(layout);
   const cap = capacity(layout);
   const resources = { ...layout.resources };
-  for (const r of RESOURCES) {
-    if (resources[r] < cap[r]) resources[r] = Math.min(cap[r], resources[r] + rate[r] * hours);
+  const held: Record<string, number> = {};
+  for (const b of layout.buildings) {
+    const rate = producerRate(layout, b);
+    if (rate <= 0) continue;
+    held[b.id] = Math.min(producerHold(b.level), (layout.held[b.id] ?? 0) + rate * hours);
   }
   // Finished clearing: the patch is gone and pays out, and loose brush touching it comes away
   // too, so nobody has to tap every tile.
   const finished = layout.jobs.filter((j) => j.doneAt <= now);
   if (finished.length === 0) {
-    return { ...layout, ...payOwed(resources, layout.owed, cap), stamp: now };
+    return { ...layout, ...payOwed(resources, layout.owed, cap), held, stamp: now };
   }
   const cleared = [...layout.cleared];
   const done = new Set(cleared);
@@ -822,7 +839,15 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
     }
   }
   const jobs = layout.jobs.filter((j) => j.doneAt > now);
-  return { ...layout, ...payOwed(resources, layout.owed, cap), cleared, jobs, statues, stamp: now };
+  return {
+    ...layout,
+    ...payOwed(resources, layout.owed, cap),
+    held,
+    cleared,
+    jobs,
+    statues,
+    stamp: now,
+  };
 }
 
 /** Why a building can't be built right now, or null if it can (ignoring where it goes). */
@@ -1029,11 +1054,30 @@ export function tryOp(
       const existing = layout.buildings.find((b) => b.id === op.id);
       if (!existing) return { error: "That building is gone" };
       if (existing.type === "headquarters") return { error: "The headquarters stays" };
+      const held = { ...layout.held };
+      delete held[op.id];
       return {
         layout: {
           ...layout,
+          held,
           buildings: layout.buildings.filter((b) => b.id !== op.id),
           builds: layout.builds.filter((j) => j !== buildJobOn(layout, op.id)),
+        },
+      };
+    }
+    case "collect": {
+      const existing = layout.buildings.find((b) => b.id === op.id);
+      const r = existing && PRODUCERS[existing.type];
+      const ready = layout.held[op.id] ?? 0;
+      if (!existing || !r || ready < 1) return { error: "Nothing to collect" };
+      const room = Math.max(0, capacity(layout)[r] - layout.resources[r]);
+      const moved = Math.min(ready, room);
+      if (moved < 1) return { error: "Storage full" };
+      return {
+        layout: {
+          ...layout,
+          resources: { ...layout.resources, [r]: layout.resources[r] + moved },
+          held: { ...layout.held, [op.id]: ready - moved },
         },
       };
     }
@@ -1176,8 +1220,12 @@ export function tryOp(
         if (typeof taken !== "number" || !Number.isFinite(taken) || taken <= 0) continue;
         resources[r] = Math.max(0, resources[r] - taken);
       }
-      const reward = Number.isFinite(op.reward) ? Math.max(0, Math.min(op.reward, MOST_LOOT)) : 0;
-      resources.gold = Math.min(cap.gold, resources.gold + reward);
+      const paid = typeof op.reward === "number" ? { gold: op.reward } : (op.reward ?? {});
+      for (const r of RESOURCES) {
+        const amount = paid[r];
+        if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) continue;
+        resources[r] = Math.min(cap[r], resources[r] + Math.min(amount, MOST_LOOT));
+      }
       return { layout: { ...layout, resources, lastNight: op.night } };
     }
   }
@@ -1280,6 +1328,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     builds: [],
     buildings: [spot],
     resources: { ...START_RESOURCES },
+    held: {},
     stamp: now,
     blueprints: [],
     researched: [],
@@ -1365,6 +1414,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     jobs?: unknown;
     builds?: unknown;
     resources?: unknown;
+    held?: unknown;
     stamp?: unknown;
     blueprints?: unknown;
     researched?: unknown;
@@ -1446,6 +1496,14 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     }
   }
   for (const r of RESOURCES) resources[r] = Math.max(0, Math.min(cap[r], resources[r]));
+  // Only producers hold anything, and no more than they can.
+  const rawHeld = (data?.held ?? {}) as Record<string, unknown>;
+  const held: Record<string, number> = {};
+  for (const b of buildings) {
+    const v = rawHeld[b.id];
+    if (!PRODUCERS[b.type] || typeof v !== "number" || !Number.isFinite(v)) continue;
+    held[b.id] = Math.max(0, Math.min(producerHold(b.level), v));
+  }
   const stamp =
     typeof data?.stamp === "number" && Number.isFinite(data.stamp) && data.stamp <= now
       ? data.stamp
@@ -1504,6 +1562,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     jobs,
     builds,
     resources: paying.resources,
+    held,
     stamp,
     blueprints,
     researched,

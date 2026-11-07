@@ -49,7 +49,7 @@ import {
   weaponUpBlocker,
   workerCount,
 } from "../logic/crewIsland";
-import { CRYSTAL_KINDS, type CrystalKind } from "../logic/crystals";
+import { addCrystals, CRYSTAL_KINDS, type CrystalKind } from "../logic/crystals";
 import {
   allowedCount,
   buildTime,
@@ -73,8 +73,8 @@ import {
 } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
-import { randomSeed } from "../logic/island";
-import { type NightRaid, nextRaidTime, nightNumber, runNightRaid } from "../logic/nightRaid";
+import { type NightRaid, raidingShip, runNightRaid } from "../logic/nightRaid";
+import { nextShip, raiderShip, shipDay } from "../logic/raiderShip";
 import {
   type Blueprint,
   blueprintName,
@@ -84,7 +84,7 @@ import {
 } from "../logic/spoils";
 import { STATUE_CRYSTALS, STATUE_STONE, STATUES, statueBefore } from "../logic/statues";
 import { distance, vec } from "../logic/vec";
-import { dailyTribute, retakeIslands } from "../logic/worldMap";
+import { dailyCargo, retakeIslands } from "../logic/worldMap";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
 import {
   CREW_CODE_PATTERN,
@@ -145,6 +145,8 @@ export interface CrewModeHost {
   /** Sends a change to the crew's server, while the island isn't open to do it. */
   sendOp(op: LayoutOp): void;
   onReplay(raid: NightRaid): void;
+  /** Takes the fight to the base a raid that got through came from. */
+  onStrikeBack(raid: NightRaid): void;
 }
 
 export class CrewMode {
@@ -167,6 +169,8 @@ export class CrewMode {
   private refreshIn = 0;
   /** A night's raid is waiting to run, as soon as the crew's real island is here. */
   private nightDue = false;
+  /** The island as of the last refresh, for how much each producer holds. */
+  private liveHeld: Pick<CrewLayout, "buildings" | "held"> = { buildings: [], held: {} };
 
   constructor(
     private readonly stage: Stage,
@@ -195,11 +199,17 @@ export class CrewMode {
       onClearCancel: () => this.showClearing(null),
       onToolsPanel: () => this.showToolsPanel(),
       onToolUp: (tool) => this.upgradeTool(tool),
-      onNightPanel: () => this.showNightPanel(),
-      onNightRaidNow: () => this.raidNow(),
       onNightReplay: () => {
         const raid = this.host.save().nightRaid;
         if (raid) host.onReplay(raid);
+      },
+      onCollect: (id) => this.collect(id),
+      onUnload: () => this.unload(),
+      onStrikeBack: () => {
+        const raid = this.host.save().nightRaid;
+        if (!raid) return;
+        this.ui.hideNight();
+        host.onStrikeBack(raid);
       },
       onStatuesPanel: () => this.showStatues(),
       onStatueGive: (kind) => this.giveCrystals(kind),
@@ -292,6 +302,7 @@ export class CrewMode {
     else this.status = "solo";
     this.refreshTop();
     this.nightDue = true;
+    this.loadCargo();
     if (this.status === "solo") {
       this.bankLoot();
       this.runDueRaid();
@@ -300,38 +311,107 @@ export class CrewMode {
   }
 
   /**
-   * If a raid night has passed since this phone last looked, that raid happens now. With a crew it
+   * If a raider ship has struck since this phone last looked, that raid happens now. With a crew it
    * waits for the crew's island to arrive, since that's what the raiders land on, and whichever
-   * crewmate's phone gets there first is the one whose report counts.
+   * crewmate's phone gets there first is the one whose report counts. Only the latest ship lands:
+   * any before it while nobody looked sailed on.
    */
   private runDueRaid(): void {
     if (!this.nightDue) return;
     this.nightDue = false;
     const save = this.host.save();
-    const night = nightNumber(Date.now());
-    if (save.nightChecked === night) return;
-    // A brand new phone starts counting tonight rather than being raided on arrival.
+    const now = Date.now();
+    const hq = hqLevel(this.layout);
+    const today = shipDay(now);
+    const struck = now >= raiderShip(today, hq).at ? today : today - 1;
+    if (save.nightChecked >= struck) return;
+    // A brand new phone starts counting from here rather than being raided on arrival.
     if (save.nightChecked === 0) {
-      this.host.updateSave({ nightChecked: night });
+      this.host.updateSave({ nightChecked: struck });
       return;
     }
-    const nightRaid = runNightRaid(settle(this.layout, this.now()), night, night * 31 + 7);
-    this.host.updateSave({ nightChecked: night, nightRaid });
-    const { stolen, reward } = nightRaid.report;
-    this.commit({ kind: "night", night, stolen, reward });
+    const ship = raiderShip(struck, hq);
+    const nightRaid = runNightRaid(
+      settle(this.layout, this.now()),
+      struck,
+      ship.seed,
+      raidingShip(ship),
+    );
+    const { stolen, reward, crystals } = nightRaid.report;
+    this.host.updateSave({
+      nightChecked: struck,
+      nightRaid,
+      crystals: addCrystals(save.crystals, crystals),
+    });
+    this.commit({ kind: "night", night: struck, stolen, reward });
     this.showNightPanel();
-    this.payTribute(save.nightChecked, night);
-    this.loseIslands(save.nightChecked, night);
+    this.loseIslands(save.nightChecked, struck);
   }
 
-  /** The player islands the crew holds pay a little gold for each day that's passed. */
-  private payTribute(from: number, to: number): void {
-    const days = Math.min(MOST_NIGHTS, to - from);
-    const gold = dailyTribute(this.host.save().world) * days;
-    if (gold <= 0) return;
-    const { loot } = this.host.save();
-    this.host.updateSave({ loot: { ...loot, gold: (loot.gold ?? 0) + gold } });
-    this.bankLoot();
+  /**
+   * Each morning the supply ship comes in from the islands the crew holds, a day's cargo for each
+   * day since it last called, and waits at the beach to be unloaded. A brand new phone starts
+   * counting today.
+   */
+  private loadCargo(): void {
+    const save = this.host.save();
+    const today = shipDay(Date.now());
+    if (save.cargoDay >= today) return;
+    const days = save.cargoDay === 0 ? 0 : Math.min(MOST_NIGHTS, today - save.cargoDay);
+    const daily = dailyCargo(save.world, hqLevel(this.layout));
+    const cargo = { ...save.cargo };
+    for (const r of RESOURCES) {
+      const more = (daily[r] ?? 0) * days;
+      if (more > 0) cargo[r] = (cargo[r] ?? 0) + more;
+    }
+    this.host.updateSave({ cargo, cargoDay: today });
+  }
+
+  /** The supply ship's cargo comes ashore, as much as storage takes; the rest stays aboard. */
+  private unload(): void {
+    const current = settle(this.layout, this.now());
+    const cap = capacity(current);
+    const { cargo } = this.host.save();
+    const ashore: Partial<Purse> = {};
+    const left: Partial<Purse> = {};
+    for (const r of RESOURCES) {
+      const aboard = Math.floor(cargo[r] ?? 0);
+      if (aboard <= 0) continue;
+      const room = Math.max(0, Math.floor(cap[r] - current.resources[r]));
+      const moved = Math.min(aboard, room);
+      if (moved > 0) ashore[r] = moved;
+      if (aboard > moved) left[r] = aboard - moved;
+    }
+    if (Object.keys(ashore).length === 0) {
+      this.ui.flash("Storage full: build more storage to unload");
+      sfx.error();
+      return;
+    }
+    if (!this.commit({ kind: "loot", purse: ashore })) return;
+    this.host.updateSave({ cargo: left });
+    sfx.coin();
+    this.ui.flowResources("supply", ashore);
+    if (Object.keys(left).length > 0) this.ui.flash("Storage full: the rest stays aboard");
+  }
+
+  /** A producer's tab: what it's made goes into the stock, flying up to the bar. */
+  private collect(id: string): void {
+    const before = settle(this.layout, this.now());
+    const result = tryOp(before, { kind: "collect", id }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      sfx.error();
+      return;
+    }
+    const gained: Partial<Purse> = {};
+    for (const r of RESOURCES) {
+      const more = Math.floor(result.layout.resources[r] - before.resources[r]);
+      if (more > 0) gained[r] = more;
+    }
+    this.ui.flowResources(id, gained);
+    this.commit({ kind: "collect", id });
+    sfx.coin();
+    this.refreshEconomy();
   }
 
   /**
@@ -431,7 +511,8 @@ export class CrewMode {
 
   private showNightPanel(): void {
     const { raidLog } = this.layout;
-    this.ui.showNight(this.host.save().nightRaid, nextRaidTime(Date.now()), raidLog);
+    const next = nextShip(Date.now(), hqLevel(this.layout));
+    this.ui.showNight(this.host.save().nightRaid, next, raidLog);
   }
 
   /** Opens the statues panel, or brings it up to date. */
@@ -500,18 +581,6 @@ export class CrewMode {
     this.showStatues();
   }
 
-  /** Runs a raid on the island as it stands, and goes straight to watching it. */
-  private raidNow(): void {
-    const nightRaid = runNightRaid(
-      settle(this.layout, this.now()),
-      nightNumber(Date.now()),
-      randomSeed(),
-    );
-    this.host.updateSave({ nightRaid });
-    this.ui.hideNight();
-    this.host.onReplay(nightRaid);
-  }
-
   /** Back from a replay: shows how it went. */
   showNightResult(): void {
     this.showNightPanel();
@@ -547,6 +616,10 @@ export class CrewMode {
     this.view.showSelection(this.drag ? null : (selected ?? null));
     this.view.update(dt, time);
     this.ui.placeJobPins(this.view.jobPins(this.layout, this.now()));
+    this.ui.placeCollectPins(this.view.collectPins(this.liveHeld));
+    const aboard = Object.keys(save.cargo).length > 0;
+    this.view.showSupply(aboard);
+    this.ui.placeSupply(aboard ? this.view.supplyPin() : null, save.cargo);
     this.refreshIn -= dt;
     if (this.refreshIn <= 0) {
       this.refreshIn = 0.25;
@@ -562,6 +635,7 @@ export class CrewMode {
   /** Updates the resource bar, the build buttons' costs and limits, and the upgrade button. */
   private refreshEconomy(): void {
     const current = settle(this.layout, this.now());
+    this.liveHeld = current;
     if (current.builds.length !== this.layout.builds.length) this.finishedBuilding(current);
     this.noticeStatues(current);
     // Finished clearing: the patch comes away with a burst of leaves or chips.

@@ -171,6 +171,21 @@ A plain bot with no upgrades can't tell much above headquarters 4, ordinary isla
 show one outlier: it fights from 12 m, just outside a flamethrower's reach, so it cleared a bare flame
 gauntlet. That's why the gauntlet has mortars and guns behind it now.
 
+## Raider ships, cargo and collecting (2026-11-07)
+
+`logic/raiderShip.ts` makes each day's ship from the day number alone (`shipDay`, which ticks
+over at 5 am local time), so every phone agrees: its difficulty band, headquarters, strike time,
+plan, army, crew name, home base seed and reward. `nightRaid.ts` runs the raid with the ship it
+was given, and the saved `NightRaid` keeps the ship (`RaidingShip`) so the replay and Strike back
+work later. `save.nightChecked` now counts ship days. Raids saved before the ships have no ship:
+their raiders come from `raiderForce`, and the AI's new tactics (`RaidState.tactics`) stay off for
+them, so they replay as they ran.
+
+Producers keep what they make in `CrewLayout.held`, by building id, up to `producerHold`; the
+`collect` op moves it into the stock. The supply ship's cargo is the player's, in
+`save.cargo`/`save.cargoDay`, and unloads through the ordinary `loot` op, a little at a time if
+storage is full. `worldMap.dailyCargo` is what the held islands turn out in a day.
+
 ## One-off changes to old islands
 
 `LAYOUT_VERSION` in `crewIsland.ts` says which one-off changes an island has had: `sanitizeLayout`

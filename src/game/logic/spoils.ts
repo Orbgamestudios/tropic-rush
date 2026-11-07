@@ -5,9 +5,9 @@
 
 import { BUILDINGS, type BuildingType } from "./buildings";
 import type { CrystalCost, CrystalKind } from "./crystals";
+import type { Difficulty } from "./difficulty";
 import { ABILITIES, ABILITY_ORDER, type Ability, STARTING_WEAPONS } from "./gunboat";
 import { createRng } from "./rng";
-import type { Difficulty } from "./worldMap";
 
 export type Blueprint = BuildingType | Ability;
 
@@ -47,9 +47,10 @@ export function nextWeapon(known: readonly Blueprint[]): Ability | null {
 /** Crystals on a win: always the low number, and the odds of each one past it. */
 const CRYSTALS: Record<Difficulty, { least: number; extra: readonly number[] }> = {
   Easy: { least: 0, extra: [0.5] },
-  Fair: { least: 1, extra: [] },
+  Medium: { least: 1, extra: [] },
   Hard: { least: 1, extra: [0.5] },
-  Deadly: { least: 1, extra: [0.6, 0.35] },
+  Extreme: { least: 1, extra: [0.6, 0.35] },
+  Impossible: { least: 2, extra: [0.6, 0.4] },
 };
 
 const BLUEPRINT_CHANCE = 0.35;

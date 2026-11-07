@@ -326,6 +326,9 @@ export class WorldMapView {
   private readonly clouds = new MapClouds();
   private readonly shallows = new MapShallows();
   private readonly boat = new GunboatScenery();
+  /** The day's raider ship, lying off wherever it's chosen. */
+  private readonly raiders = new GunboatScenery(false);
+  private raiderSpot: { x: number; y: number } | null = null;
   private readonly lights = new LightPool();
   /** One per step of the rising loop, so each puff can fade as it goes. */
   private readonly smokeMaterials: THREE.SpriteMaterial[] = [];
@@ -378,6 +381,9 @@ export class WorldMapView {
     this.root.add(buildBatch(home));
     this.boat.root.scale.setScalar(0.5);
     this.root.add(this.boat.root);
+    this.raiders.root.scale.setScalar(0.5);
+    this.raiders.root.visible = false;
+    this.root.add(this.raiders.root);
 
     const puff = cloudTexture();
     for (let i = 0; i < SMOKE_STEPS; i++) {
@@ -387,6 +393,12 @@ export class WorldMapView {
     }
     this.root.visible = false;
     stage.scene.add(this.root);
+  }
+
+  /** Puts the day's raider ship on the map, or takes it off with null. */
+  setRaiders(spot: { x: number; y: number } | null): void {
+    this.raiderSpot = spot;
+    this.raiders.root.visible = spot !== null;
   }
 
   /** Lays the world out as it stands. With `lifting`, the newest cloud lifts as you watch. */
@@ -530,6 +542,13 @@ export class WorldMapView {
     this.boat.refresh();
     this.boat.root.position.set(Math.sin(time * 0.1) * 1.5 + 9, 0.1, 6.5);
     this.boat.root.rotation.y = 0.5;
+    const ship = this.raiderSpot;
+    if (ship) {
+      this.raiders.refresh();
+      // Rides at anchor: a slow swing round, and a little rise and fall on the swell.
+      this.raiders.root.position.set(ship.x, 0.1 + Math.sin(time * 0.9) * 0.05, ship.y);
+      this.raiders.root.rotation.y = 2.4 + Math.sin(time * 0.15) * 0.3;
+    }
     for (const s of this.smoke) {
       const t = (time * 0.18 + s.phase) % 1;
       s.puff.position.set(s.x + 0.5 + t * 2, 1 + t * 6, s.z - 0.4);

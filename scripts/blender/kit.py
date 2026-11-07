@@ -46,6 +46,10 @@ MATERIALS = [
     "glass",
     "hazard",
     "pipe",
+    # Added after the rest, so every square before them stays where it was.
+    "ore",
+    "stone",
+    "dirt",
 ]
 
 PAINT = {
@@ -192,6 +196,17 @@ def paint_cell(rng, name, size, side):
         return out
     if name == "pipe":
         return plated(rng, size, (0.3, 0.3, 0.31), 0.5, rivets=False)
+    if name == "ore":
+        # Gold in lumps: bright faces, dark gaps between them.
+        lumps = blotches(rng, size, size / 6, 2)
+        light = 0.7 + lumps * 0.55 - np.clip((0.35 - lumps) * 3, 0, 1) * 0.5
+        return tint((0.9, 0.68, 0.22), light)
+    if name == "stone":
+        # Rough rock: big soft patches and fine grit.
+        light = 0.82 + (blotches(rng, size, size / 3, 4) - 0.5) * 0.5
+        return tint((0.55, 0.52, 0.47), light)
+    if name == "dirt":
+        return tint((0.47, 0.35, 0.23), 0.9 + (blotches(rng, size, size / 4, 4) - 0.5) * 0.4)
     raise ValueError(name)
 
 

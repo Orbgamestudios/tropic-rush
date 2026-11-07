@@ -1,5 +1,5 @@
-// The night raid replay's overlay: a moonlit tint over the island, what's happening, the playback
-// speed, and a way to skip to the report.
+// The night raid replay's bar: what's happening, the playback speed, and a way to skip to the
+// report. The island shows under the sky as it was when the raiders came, so nothing tints it.
 
 import { destructionPercent, type RaidState } from "../logic/raid";
 import { button, el } from "./kit/dom";
@@ -43,7 +43,7 @@ export class ReplayBar {
       button({ label: "Skip", variant: "gold", size: "sm", onClick: () => handlers.onSkip() }),
     );
     bar.append(controls);
-    this.root.append(el("div", "replay-tint"), bar);
+    this.root.append(bar);
     this.root.style.display = "none";
     parent.append(this.root);
   }

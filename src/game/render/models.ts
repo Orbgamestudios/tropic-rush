@@ -52,6 +52,9 @@ function paintCrew(root: THREE.Object3D): void {
   });
 }
 
+/** How far a modeled flamethrower's flame reaches past its nozzle, in meters. */
+const KIT_FLAME = 9;
+
 function flameCone(length: number): THREE.Mesh {
   const geometry = new THREE.ConeGeometry(length * 0.22, length, 14, 1, true);
   geometry.rotateZ(Math.PI / 2);
@@ -111,7 +114,13 @@ export function buildingModel(
   plain = false,
 ): BuildingModel {
   const kit = plain ? null : kitBuilding(type, level, crew);
-  if (kit) return { ...kit, flame: null };
+  if (kit) {
+    // A modeled flamethrower's flame comes out of its nozzle.
+    const nozzle = type === "flamethrower" ? kit.muzzles[0] : undefined;
+    const flame = nozzle ? flameCone(KIT_FLAME) : null;
+    if (flame) nozzle?.add(flame);
+    return { ...kit, flame };
+  }
   const key = `${type}|${crew}`;
   let template = templates.get(key);
   if (!template) {
@@ -487,8 +496,9 @@ export interface GunboatModel {
 }
 
 /** The crew's gunboat: the Blender model if it's arrived, or else one built from primitives. */
-export function gunboatModel(): GunboatModel {
-  const boat = kitPiece("boat");
+/** The gunboat, in crew paint, or a raider's in theirs. */
+export function gunboatModel(crew = true): GunboatModel {
+  const boat = kitPiece("boat", crew);
   if (boat) {
     const root = new THREE.Group();
     root.add(boat);
@@ -542,12 +552,14 @@ export class GunboatScenery {
   readonly root = new THREE.Group();
   private shown = -1;
 
+  constructor(private readonly crew = true) {}
+
   /** Call every frame; it only does anything once, when the models land. */
   refresh(): void {
     if (this.shown === kitVersion()) return;
     this.shown = kitVersion();
     this.root.clear();
-    this.root.add(gunboatModel().root);
+    this.root.add(gunboatModel(this.crew).root);
   }
 }
 

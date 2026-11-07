@@ -10,12 +10,13 @@
 import { avatarUrl } from "../logic/avatars";
 import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import type { RivalRaid, Tool } from "../logic/crewIsland";
-import type { CrystalKind } from "../logic/crystals";
+import { CRYSTAL_KINDS, type CrystalKind } from "../logic/crystals";
 import { costText, formatAmount, type Purse, RESOURCES, type Resource } from "../logic/economy";
 import type { Ability } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES } from "../logic/heroProgress";
 import type { NightRaid } from "../logic/nightRaid";
+import type { RaiderShip } from "../logic/raiderShip";
 import { type Blueprint, isWeapon } from "../logic/spoils";
 import type { Member } from "../net/protocol";
 import { buildingIcon, heroPortrait } from "../render/thumbnails";
@@ -39,6 +40,7 @@ import {
 } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
+import { armyText, shipDetails } from "./raiderShipCard";
 
 export interface CrewUiHandlers {
   /** The pause menu (settings). */
@@ -60,9 +62,12 @@ export interface CrewUiHandlers {
   onClearCancel(): void;
   onToolsPanel(): void;
   onToolUp(tool: Tool): void;
-  onNightPanel(): void;
-  onNightRaidNow(): void;
   onNightReplay(): void;
+  onStrikeBack(): void;
+  /** A producer's tab was tapped: what it's made goes into the stock. */
+  onCollect(id: string): void;
+  /** The supply ship's tab was tapped: its cargo comes ashore. */
+  onUnload(): void;
   onStatuesPanel(): void;
   /** Gives a statue all the crystals of its kind the player can spare. */
   onStatueGive(kind: CrystalKind): void;
@@ -132,6 +137,17 @@ export interface ToolInfo {
   blocker: string | null;
   /** How long its next level takes, or how long is left. */
   time: string;
+}
+
+/** A tab over a producer holding enough to collect. */
+export interface CollectPin {
+  id: string;
+  x: number;
+  y: number;
+  visible: boolean;
+  resource: Resource;
+  /** It holds all it can, and has stopped. */
+  full: boolean;
 }
 
 /** A countdown over a patch being cleared. */
@@ -217,15 +233,19 @@ export class CrewUi {
   private readonly toolRows = el("div", "crew-tool-rows");
   private readonly toolWorkers = el("div", "crew-night-stats crew-tools-note");
   private readonly pinLayer = el("div", "crew-pin-layer");
+  private readonly collectTabs = new Map<string, HTMLButtonElement>();
+  private readonly supplyTab = el("button", "crew-collect crew-supply");
+  private supplyKey = "";
   private readonly pins = new Map<string, HTMLElement>();
   private readonly clearButton: HTMLButtonElement;
   private readonly night = el("div", "crew-join crew-night");
-  private readonly nightNext = el("p", "crew-join-text");
+  private readonly nightShip = el("div", "crew-night-ship");
   private readonly nightResult = el("div", "crew-night-result");
   private readonly nightStats = el("div", "crew-night-stats");
   private readonly nightLoot = el("div", "crew-night-loot");
   private readonly nightLog = el("div", "crew-night-log");
   private readonly nightReplay: HTMLButtonElement;
+  private readonly strikeBack: HTMLButtonElement;
   private readonly statuesPanel = el("div", "crew-join crew-statues");
   private readonly statueRows = el("div", "crew-statue-rows");
   private lastStatuesKey = "";
@@ -275,6 +295,9 @@ export class CrewUi {
     parent: HTMLElement,
     private readonly handlers: CrewUiHandlers,
   ) {
+    this.supplyTab.setAttribute("aria-label", "Unload the supply ship");
+    this.supplyTab.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.supplyTab.addEventListener("click", () => handlers.onUnload());
     // Top bar: back, crew card, resources and island progress.
     const top = el("div", "crew-top");
     const card = el("button", "crew-card");
@@ -300,18 +323,8 @@ export class CrewUi {
       resources.append(item);
       this.resourceItems.set(r, { amount, fill, root: item, rate });
     }
-    const night = button({
-      label: "Night raid",
-      icon: "skull",
-      variant: "steel",
-      size: "sm",
-      className: "crew-night-button",
-      onClick: () => handlers.onNightPanel(),
-    });
     const right = el("div", "crew-top-right");
-    const topButtons = el("div", "crew-top-buttons");
-    topButtons.append(night);
-    right.append(resources, topButtons);
+    right.append(resources);
     const menu = button({
       icon: "pause",
       aria: "Menu",
@@ -555,7 +568,7 @@ export class CrewUi {
     );
     this.labPanel.append(labCard.root);
 
-    // The nightly raid: when the next one lands, how the last went, and its replay.
+    // The nightly raid: how the last went, its replay and a way to strike back, and the next ship.
     const nightCard = panel("Night raid", "crew-night-card");
     this.nightReplay = button({
       label: "Watch replay",
@@ -564,24 +577,22 @@ export class CrewUi {
       size: "md",
       onClick: () => handlers.onNightReplay(),
     });
+    this.strikeBack = button({
+      label: "Strike back",
+      icon: "sword2",
+      variant: "red",
+      size: "md",
+      onClick: () => handlers.onStrikeBack(),
+    });
     const nightButtons = el("div", "crew-night-row");
-    nightButtons.append(
-      button({
-        label: "Raid now",
-        icon: "skull",
-        variant: "red",
-        size: "md",
-        onClick: () => handlers.onNightRaidNow(),
-      }),
-      this.nightReplay,
-    );
+    nightButtons.append(this.nightReplay, this.strikeBack);
     nightCard.body.append(
-      this.nightNext,
       this.nightResult,
       this.nightStats,
       this.nightLoot,
-      this.nightLog,
       nightButtons,
+      this.nightShip,
+      this.nightLog,
     );
     nightCard.root.append(
       button({
@@ -804,38 +815,51 @@ export class CrewUi {
   }
 
   /**
-   * Opens the night raid panel: when the next raid lands, how the last one went, what it cost or
-   * paid, and any rival crews who've tried their luck.
+   * Opens the night raid panel: how the last raid went, what it cost or paid, its replay and a way
+   * to strike back if it got through, the next ship coming, and any rival crews who've tried their
+   * luck.
    */
-  showNight(last: NightRaid | null, nextAt: number, log: readonly RivalRaid[] = []): void {
-    const hours = Math.max(0, nextAt - Date.now()) / 3_600_000;
-    const h = Math.floor(hours);
-    const m = Math.floor((hours - h) * 60);
-    this.nightNext.textContent = `Raiders land every night. Next raid in ${h}h ${m}m.`;
-    this.nightReplay.disabled = last === null;
+  showNight(last: NightRaid | null, next: RaiderShip, log: readonly RivalRaid[] = []): void {
     const r = last?.report;
+    const ship = last?.ship;
+    this.nightReplay.style.display = last ? "" : "none";
+    this.strikeBack.style.display = r && !r.survived && ship && !last.avenged ? "" : "none";
     this.nightResult.textContent = r ? (r.survived ? "Island held!" : "Island overrun!") : "";
     this.nightResult.classList.toggle("lost", r?.survived === false);
     this.nightStats.textContent = r
-      ? `${r.destroyedPercent}% destroyed · ${r.raidersDown} of ${r.raiders} raiders down`
-      : "No raids yet. Tap Raid now to test your defenses.";
+      ? [
+          ship ? `${ship.crew} (${ship.difficulty}): ${armyText(ship.kinds)}` : "",
+          `${r.destroyedPercent}% destroyed · ${r.raidersDown} of ${r.raiders} raiders down`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "No raids yet: a raider ship turns up every morning.";
     this.nightLoot.replaceChildren();
     if (r) {
       const stolen = Object.keys(r.stolen).length > 0;
+      const paid = Object.keys(r.reward).length > 0;
       if (stolen) {
         this.nightLoot.append(
           el("span", "crew-night-lost", "Raiders took"),
           costChips(costText(r.stolen)),
         );
       }
-      if (r.reward > 0) {
+      if (paid) {
         this.nightLoot.append(
           el("span", "crew-night-won", "For holding the island"),
-          costChips(costText({ gold: r.reward })),
+          ...CRYSTAL_KINDS.flatMap((k) => {
+            const n = r.crystals[k];
+            return n ? [crystalChip(k, n)] : [];
+          }),
+          costChips(costText(r.reward)),
         );
       }
-      if (!stolen && r.reward === 0) this.nightLoot.append(el("span", "", "Nothing was taken."));
+      if (!stolen && !paid) this.nightLoot.append(el("span", "", "Nothing was taken."));
     }
+    this.nightShip.replaceChildren(
+      el("div", "crew-night-ship-title", `Next: ${next.crew}`),
+      shipDetails(next),
+    );
     this.nightLog.replaceChildren(
       ...log.slice(0, 3).map((raid) => {
         const row = el("div", "crew-night-rival");
@@ -1062,6 +1086,110 @@ export class CrewUi {
 
   hideTools(): void {
     closeSoftly(this.toolsPanel);
+  }
+
+  /** Places the tabs over the producers worth collecting from; call every frame. */
+  placeCollectPins(pins: readonly CollectPin[]): void {
+    const live = new Set<string>();
+    const place = pins.length > 0 ? layerPlacer(this.pinLayer) : null;
+    for (const pin of pins) {
+      live.add(pin.id);
+      let tab = this.collectTabs.get(pin.id);
+      if (!tab) {
+        tab = el("button", "crew-collect");
+        tab.setAttribute("aria-label", `Collect ${pin.resource}`);
+        tab.append(icon(RESOURCE_ICON[pin.resource], "crew-collect-icon"));
+        tab.addEventListener("pointerdown", (e) => e.stopPropagation());
+        tab.addEventListener("click", () => this.handlers.onCollect(pin.id));
+        this.pinLayer.append(tab);
+        this.collectTabs.set(pin.id, tab);
+      }
+      tab.classList.toggle("full", pin.full);
+      tab.style.display = pin.visible ? "flex" : "none";
+      const spot = place?.(pin.x, pin.y) ?? pin;
+      tab.style.transform = `translate(${spot.x.toFixed(1)}px, ${spot.y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+    for (const [id, tab] of this.collectTabs) {
+      if (live.has(id)) continue;
+      tab.remove();
+      this.collectTabs.delete(id);
+    }
+  }
+
+  /** Puts the supply ship's tab over it while it has cargo aboard, or takes it away. */
+  placeSupply(
+    spot: { x: number; y: number; visible: boolean } | null,
+    cargo: Partial<Purse>,
+  ): void {
+    if (!spot) {
+      this.supplyTab.remove();
+      this.supplyKey = "";
+      return;
+    }
+    const key = JSON.stringify(cargo);
+    if (key !== this.supplyKey) {
+      this.supplyKey = key;
+      this.supplyTab.replaceChildren(
+        el("span", "crew-supply-title", "Supplies"),
+        ...RESOURCES.filter((r) => (cargo[r] ?? 0) > 0).map((r) =>
+          icon(RESOURCE_ICON[r], "crew-collect-icon"),
+        ),
+      );
+    }
+    if (!this.supplyTab.isConnected) this.pinLayer.append(this.supplyTab);
+    // Off screen, it waits at the nearest edge, so cargo never goes unnoticed.
+    const x = Math.min(0.94, Math.max(0.06, spot.x));
+    const y = Math.min(0.92, Math.max(0.2, spot.y));
+    this.supplyTab.classList.toggle("edge", !spot.visible);
+    const at = layerPlacer(this.pinLayer)(x, y);
+    this.supplyTab.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px) translate(-50%, -100%)`;
+  }
+
+  /**
+   * Resources flying from a producer's tab, or the supply ship's, up into their pills in the top
+   * bar, a few icons for each, and the pill giving a little bump as they land.
+   */
+  flowResources(from: string, gains: Partial<Purse>): void {
+    const source = from === "supply" ? this.supplyTab : this.collectTabs.get(from);
+    const start = source?.getBoundingClientRect();
+    if (!start) return;
+    let delay = 0;
+    for (const r of RESOURCES) {
+      const amount = gains[r] ?? 0;
+      const target = this.resourceItems.get(r)?.root;
+      if (amount < 1 || !target) continue;
+      const end = target.querySelector(".crew-resource-icon")?.getBoundingClientRect();
+      if (!end) continue;
+      const count = Math.min(8, 3 + Math.floor(Math.log10(amount)));
+      for (let i = 0; i < count; i++) {
+        const coin = icon(RESOURCE_ICON[r], "crew-flow-icon");
+        document.body.append(coin);
+        const x0 = start.left + start.width / 2 + (Math.random() - 0.5) * 30;
+        const y0 = start.top + start.height / 2 + (Math.random() - 0.5) * 20;
+        const x1 = end.left + end.width / 2;
+        const y1 = end.top + end.height / 2;
+        const flight = coin.animate(
+          [
+            { transform: `translate(${x0}px, ${y0}px) scale(0.6)`, opacity: 0 },
+            { transform: `translate(${x0}px, ${y0 - 30}px) scale(1.1)`, opacity: 1, offset: 0.25 },
+            { transform: `translate(${x1}px, ${y1}px) scale(0.7)`, opacity: 1 },
+          ],
+          {
+            duration: 750,
+            delay: delay + i * 70,
+            easing: "cubic-bezier(0.55, 0, 0.75, 0.3)",
+            fill: "both",
+          },
+        );
+        flight.onfinish = () => {
+          coin.remove();
+          target.classList.remove("bump");
+          void target.offsetWidth;
+          target.classList.add("bump");
+        };
+      }
+      delay += 120;
+    }
   }
 
   /** Places the countdowns over the patches being cleared; call every frame. */
