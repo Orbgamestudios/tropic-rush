@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUILDINGS, type BuildingType } from "./buildings";
 import { footprint, GRID_ORIGIN, TILE } from "./crewIsland";
-import { allowedCount } from "./economy";
+import { allowedCount, MAX_HQ_LEVEL } from "./economy";
 import { forestCover, generateIsland } from "./enemyBase";
 import { HEROES } from "./heroes";
 import type { IslandLayout } from "./island";
@@ -21,7 +21,7 @@ function everyIsland(
   run: (island: IslandLayout, kind: Archetype, hq: number, seed: number) => void,
 ): void {
   for (const kind of KINDS) {
-    for (const hq of [1, 2, 4, 6, 9, 13, 20, 26]) {
+    for (const hq of [1, 2, 4, 6, 9, 13, 20, 26, 38, 50]) {
       const seed = seedFor(kind, hq);
       if (seed !== null) run(generateIsland(seed, hq), kind, hq, seed);
     }
@@ -139,13 +139,13 @@ describe("island shapes", () => {
       expect(island.spawn.x, kind).toBeLessThan(0);
       expect(island.spawn.y, kind).toBeGreaterThan(0);
     });
-  });
+  }, 20_000);
 
   it("fits every required building on every island, on its own tiles", () => {
     everyIsland((island, kind, hq, seed) => {
       const shape = island.shape;
       if (!shape) throw new Error("no shape");
-      const rated = Math.min(hq, 20);
+      const rated = Math.min(hq, MAX_HQ_LEVEL);
       const types = Object.keys(BUILDINGS) as BuildingType[];
       // A puzzle island has its own defenses; everything else is as usual.
       const puzzle = puzzleFor(seed, hq);
@@ -170,7 +170,7 @@ describe("island shapes", () => {
         expect(shape.lava(b.pos.x, b.pos.y)).toBe(0);
       }
     });
-  });
+  }, 20_000);
 
   it("never walls a hero out: every building can be reached from the beach", () => {
     everyIsland((island, kind, hq) => {

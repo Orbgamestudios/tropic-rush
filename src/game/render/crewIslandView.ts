@@ -27,7 +27,7 @@ import { statueBefore } from "../logic/statues";
 import { tideTurn } from "../logic/tides";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { CollectPin, JobPin } from "../ui/crewUi";
-import { kitVersion, stageFor } from "./buildingKit";
+import { kitVersion, levelSize, stageFor } from "./buildingKit";
 import { type CloudView, homeClouds } from "./clouds";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
@@ -57,7 +57,12 @@ function crewBuildingModel(type: BuildingType, rotated: boolean, level: number):
     template = makeCrewBuilding(type, rotated, level);
     crewModels.set(key, template);
   }
-  return template.clone(true);
+  // Sized for its level inside a group of its own, so scaffolding round it keeps the tiles' size.
+  const model = template.clone(true);
+  model.scale.setScalar(levelSize(type, level));
+  const g = new THREE.Group();
+  g.add(model);
+  return g;
 }
 
 const crewModels = new Map<string, THREE.Group>();
@@ -67,6 +72,11 @@ const SPIN = 1.6;
 /** Tells one look of a building from another: a new stage, or the models arriving, is a new one. */
 function crewModelKey(type: BuildingType, rotated: boolean, level: number): string {
   return `${type}|${rotated}|${stageFor(type, level)}|${kitVersion()}`;
+}
+
+/** The same, and its size: each level stands it a little bigger. */
+function crewBlockKey(type: BuildingType, rotated: boolean, level: number): string {
+  return `${crewModelKey(type, rotated, level)}|${levelSize(type, level)}`;
 }
 
 /** What a mesh wore before it was picked up, to put back when it's set down. */
@@ -475,7 +485,7 @@ export class CrewIslandView {
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
-      const key = crewModelKey(b.type, b.rotated, b.level);
+      const key = crewBlockKey(b.type, b.rotated, b.level);
       let entry = this.blocks.get(b.id);
       if (!entry || entry.key !== key) {
         if (entry) this.root.remove(entry.group);
@@ -641,7 +651,7 @@ export class CrewIslandView {
       return;
     }
     const b = preview.building;
-    const key = crewModelKey(b.type, b.rotated, b.level);
+    const key = crewBlockKey(b.type, b.rotated, b.level);
     if (key !== this.previewKey) {
       this.previewGroup.clear();
       const ghost = crewBuildingModel(b.type, b.rotated, b.level);

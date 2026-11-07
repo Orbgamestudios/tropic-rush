@@ -31,22 +31,31 @@ import {
   settle,
   starterLayout,
   TILE,
+  TOOL_ORDER,
   tileAt,
   toolBlocker,
+  toolCost,
+  toolHq,
+  toolTime,
   touchesOpenGround,
   tryOp,
   upgradeBlocker,
 } from "./crewIsland";
 import {
+  allowedCount,
   buildingPower,
   buildTime,
   costFor,
   holdHours,
+  hqCapacity,
   levelCap,
   MAX_HQ_LEVEL,
   nextLevelGain,
+  PROGRESSION,
   producerHold,
+  RESOURCES,
   START_RESOURCES,
+  storageCapacity,
 } from "./economy";
 import { heroTree } from "./heroTrees";
 import { isOnGrass } from "./island";
@@ -345,8 +354,39 @@ describe("crew island ground", () => {
   });
 
   it("takes months to clear the whole island, even with every worker busy", () => {
-    const hours = obstacles().reduce((sum, o) => sum + clearTime(o, MAX_TOOL_LEVEL), 0) / 3.6e6;
-    expect(hours / 4 / 24).toBeGreaterThan(60);
+    const days = (tool: number) =>
+      obstacles().reduce((sum, o) => sum + clearTime(o, Math.max(tool, o.tier)), 0) /
+      3.6e6 /
+      4 /
+      24;
+    expect(days(5)).toBeGreaterThan(60);
+    // The levels after that only go a little quicker each.
+    expect(days(MAX_TOOL_LEVEL)).toBeGreaterThan(40);
+    expect(days(MAX_TOOL_LEVEL)).toBeLessThan(days(20));
+  });
+
+  it("keeps the old tool levels where they were, and spreads the rest out to HQ 50", () => {
+    expect([0, 1, 2, 3, 4].map((level) => toolHq("axe", level))).toEqual([1, 4, 7, 10, 13]);
+    expect([0, 1, 2, 3, 4].map((level) => toolHq("dynamite", level))).toEqual([5, 9, 13, 17, 21]);
+    for (const tool of TOOL_ORDER) {
+      expect(toolHq(tool, MAX_TOOL_LEVEL - 1)).toBe(MAX_HQ_LEVEL);
+      for (let level = 1; level < MAX_TOOL_LEVEL; level++) {
+        expect(toolHq(tool, level)).toBeGreaterThanOrEqual(toolHq(tool, level - 1));
+        expect(toolTime(level)).toBeGreaterThanOrEqual(toolTime(level - 1));
+        expect(toolCost(tool, level).gold ?? 0).toBeGreaterThan(
+          toolCost(tool, level - 1).gold ?? 0,
+        );
+      }
+    }
+    expect(toolTime(MAX_TOOL_LEVEL - 1)).toBe(2 * 24 * 3_600_000);
+    const top = {
+      ...island(MAX_HQ_LEVEL),
+      tools: { axe: 39, pickaxe: 0, chainsaw: 0, dynamite: 0 },
+    };
+    expect(toolBlocker(top, "axe")).toBeNull();
+    const best = { ...top, tools: { ...top.tools, axe: MAX_TOOL_LEVEL } };
+    expect(toolBlocker(best, "axe")).toMatch(/best/);
+    expect(toolBlocker({ ...island(MAX_HQ_LEVEL - 1), tools: top.tools }, "axe")).toMatch(/HQ 50/);
   });
 
   it("refuses buildings that poke off the grass", () => {
@@ -458,21 +498,36 @@ describe("crew island progression", () => {
     }
   });
 
-  it("caps upgrades by the headquarters' level, and storages at level 8", () => {
+  it("caps upgrades by the headquarters' level, and storages at level 20", () => {
     let layout = finishWork(place(island(3), building("v", "goldVault", at(0, 0))));
     const now = () => layout.stamp;
     const upgrade = (l: CrewLayout) => tryOp(l, { kind: "upgrade", id: "v" }, now());
-    expect(upgrade(layout)).toEqual({ error: "Upgrade the headquarters first" });
-    layout = {
-      ...layout,
-      buildings: layout.buildings.map((b) => (b.type === "headquarters" ? { ...b, level: 20 } : b)),
+    const raise = (hq: number) => {
+      layout = {
+        ...layout,
+        buildings: layout.buildings.map((b) =>
+          b.type === "headquarters" ? { ...b, level: hq } : b,
+        ),
+      };
     };
-    for (let level = 2; level <= 8; level++) {
-      const result = upgrade(layout);
-      if (!("layout" in result)) throw new Error(result.error);
-      layout = finishWork(result.layout);
-    }
-    expect(layout.buildings.find((b) => b.id === "v")?.level).toBe(8);
+    const upTo = (level: number) => {
+      for (
+        let at = (layout.buildings.find((b) => b.id === "v")?.level ?? 0) + 1;
+        at <= level;
+        at++
+      ) {
+        const result = upgrade(layout);
+        if (!("layout" in result)) throw new Error(result.error);
+        layout = finishWork(result.layout);
+      }
+      expect(layout.buildings.find((b) => b.id === "v")?.level).toBe(level);
+    };
+    expect(upgrade(layout)).toEqual({ error: "Upgrade the headquarters first" });
+    raise(10);
+    upTo(8);
+    expect(upgrade(layout)).toEqual({ error: "Upgrade the headquarters first" });
+    raise(MAX_HQ_LEVEL);
+    upTo(20);
     expect(upgrade(layout)).toEqual({ error: "Already at its highest level" });
   });
 
@@ -528,12 +583,12 @@ describe("crew island progression", () => {
     expect(tryOp(poor, { kind: "crystalSwap" }, NOW)).toEqual({ error: "Not enough gold" });
   });
 
-  it("upgrades the headquarters up to level 20", () => {
-    let layout = ready(island(19), 20);
+  it("upgrades the headquarters up to level 50", () => {
+    let layout = ready(island(MAX_HQ_LEVEL - 1), MAX_HQ_LEVEL);
     const result = tryOp(layout, { kind: "upgrade", id: "hq" }, NOW);
     if (!("layout" in result)) throw new Error(result.error);
     layout = finishWork(result.layout);
-    expect(hqLevel(layout)).toBe(20);
+    expect(hqLevel(layout)).toBe(MAX_HQ_LEVEL);
     expect(tryOp(layout, { kind: "upgrade", id: "hq" }, layout.stamp)).toEqual({
       error: "Already at its highest level",
     });
@@ -555,9 +610,14 @@ describe("crew island progression", () => {
     for (let level = 3; level <= 10; level++) {
       expect(minutes("mortar", level)).toBeGreaterThan(minutes("mortar", level - 1));
     }
-    for (let level = 3; level <= 20; level++) {
+    for (let level = 3; level <= MAX_HQ_LEVEL; level++) {
       expect(minutes("headquarters", level)).toBeGreaterThan(minutes("headquarters", level - 1));
     }
+    // A week for the last headquarters level, and an hour more each for a building's late levels.
+    expect(minutes("headquarters", MAX_HQ_LEVEL)).toBe(7 * 24 * 60);
+    expect(minutes("mortar", 11)).toBe(minutes("mortar", 10) + 60);
+    expect(minutes("mortar", 25)).toBe(minutes("mortar", 10) + 15 * 60);
+    expect(minutes("gunTurret", 50)).toBe(minutes("gunTurret", 30) + 20 * 60);
   });
 
   it("charges up front, but only raises the level when the work is done", () => {
@@ -737,13 +797,49 @@ describe("crew island progression", () => {
     expect(capped.buildings.find((b) => b.id === "t")?.level).toBe(6);
   });
 
-  it("gives a gun turret thirty levels, all of them only at the top headquarters level", () => {
-    expect([1, 2, 4, 10, 19, 20].map((hq) => levelCap("gunTurret", hq))).toEqual([
-      1, 3, 6, 15, 28, 30,
+  it("gives a gun turret fifty levels, thirty by HQ 20 and the rest by HQ 50", () => {
+    expect([1, 2, 4, 10, 19, 20, 35, 49, 50].map((hq) => levelCap("gunTurret", hq))).toEqual([
+      1, 3, 6, 15, 28, 30, 40, 49, 50,
     ]);
     expect(levelCap("mortar", 4)).toBe(4);
     expect(buildingPower(30, "gunTurret")).toBeCloseTo(1 + 0.06 * 29);
     expect(buildingPower(10, "mortar")).toBeCloseTo(2.08);
+  });
+
+  it("tops every building out at HQ 50, the late levels a few headquarters levels apart", () => {
+    for (const type of Object.keys(PROGRESSION) as BuildingType[]) {
+      if (type === "storehouse") continue;
+      const { maxLevel } = PROGRESSION[type];
+      expect(levelCap(type, MAX_HQ_LEVEL), type).toBe(maxLevel);
+      if (type === "headquarters") continue;
+      expect(levelCap(type, MAX_HQ_LEVEL - 1), type).toBeLessThanOrEqual(maxLevel);
+      for (let hq = 2; hq <= MAX_HQ_LEVEL; hq++) {
+        expect(levelCap(type, hq), `${type} at ${hq}`).toBeGreaterThanOrEqual(
+          levelCap(type, hq - 1),
+        );
+      }
+    }
+    // A mine's early levels come one a headquarters level, the rest every few.
+    expect([1, 5, 10, 20, 30, 40, 50].map((hq) => levelCap("goldMine", hq))).toEqual([
+      1, 5, 10, 13, 17, 21, 25,
+    ]);
+    const gains = (type: BuildingType) =>
+      Array.from({ length: MAX_HQ_LEVEL - 20 }, (_, i) => i + 21).filter(
+        (hq) => levelCap(type, hq) > levelCap(type, hq - 1),
+      );
+    expect(gains("goldMine").length).toBeLessThan(MAX_HQ_LEVEL - 20);
+    expect(gains("goldMine")).not.toEqual(gains("goldVault"));
+  });
+
+  it("lets a full set of storages pay for every headquarters level", () => {
+    for (let hq = 2; hq <= MAX_HQ_LEVEL; hq++) {
+      const below = hq - 1;
+      const stores =
+        allowedCount("goldVault", below) * storageCapacity(levelCap("goldVault", below));
+      const room = hqCapacity(below) + stores;
+      const cost = costFor("headquarters", hq);
+      for (const r of RESOURCES) expect(cost[r] ?? 0, `HQ ${hq} ${r}`).toBeLessThan(room);
+    }
   });
 
   it("cleans up untrusted layout data, dropping what the headquarters doesn't allow", () => {

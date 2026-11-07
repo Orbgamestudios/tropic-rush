@@ -34,6 +34,20 @@ export function stageFor(type: BuildingType, level: number): number {
   return Math.min(STAGES, Math.max(1, Math.ceil((level / most) * STAGES)));
 }
 
+/** Smallest a building stands at its first level, against its full size at its top one. */
+const FIRST_SIZE = 0.9;
+
+/**
+ * How big a building stands at a level, as a share of its full fitted size: a little bigger with
+ * every level, so it keeps growing between one look and the next.
+ */
+export function levelSize(type: BuildingType, level: number): number {
+  const most = PROGRESSION[type].maxLevel;
+  if (most <= 1) return 1;
+  const along = Math.min(1, Math.max(0, (level - 1) / (most - 1)));
+  return FIRST_SIZE + (1 - FIRST_SIZE) * along;
+}
+
 /** Goes up whenever more models arrive, so whatever was drawn without them can be drawn again. */
 export function kitVersion(): number {
   return version;

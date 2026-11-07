@@ -114,7 +114,7 @@ describe("enemy base layout", () => {
 
   it("builds a retaken base with everything allowed, at full level", () => {
     for (const seed of SEEDS) {
-      for (const hq of [4, 9, 15, 20]) {
+      for (const hq of [4, 9, 15, 20, 35, 50]) {
         const base = enemyBase(seed, hq, { maxed: true });
         for (const type of RAIDER_BUILDINGS) {
           const found = base.filter((b) => b.type === type);
@@ -126,12 +126,13 @@ describe("enemy base layout", () => {
     }
   });
 
-  it("keeps growing stronger past the highest headquarters level", () => {
-    const top = enemyBase(1, 20, { maxed: true });
-    const past = enemyBase(1, 26, { maxed: true });
-    expect(past).toHaveLength(top.length);
+  it("keeps growing bigger and stronger all the way to headquarters 50", () => {
+    const old = enemyBase(1, 20, { maxed: true });
+    const top = enemyBase(1, 50, { maxed: true });
+    expect(top.length).toBeGreaterThan(old.length);
     const turret = (base: typeof top) => base.find((b) => b.type === "gunTurret")?.level ?? 0;
-    expect(turret(past)).toBe(turret(top) + 6);
+    expect(turret(old)).toBe(30);
+    expect(turret(top)).toBe(50);
   });
 });
 

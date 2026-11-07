@@ -15,6 +15,7 @@ import {
   buildTime,
   canAfford,
   costFor,
+  EARLY_TOP,
   hqCapacity,
   levelCap,
   MAX_HQ_LEVEL,
@@ -334,7 +335,12 @@ function overlaps(
 export type Tool = "axe" | "pickaxe" | "chainsaw" | "dynamite";
 
 /** A tool's best level. Every patch needs a tool at its tier or better. */
-export const MAX_TOOL_LEVEL = 5;
+export const MAX_TOOL_LEVEL = 40;
+/**
+ * The levels that open patches come on the old schedule; past them, a tool's levels spread out over
+ * the headquarters' climb to 50, each only clearing a little faster than the last.
+ */
+const EARLY_TOOL_LEVEL = 5;
 
 /**
  * Tools, in the order they come. `hq` is the headquarters level for level 1, `step` how many
@@ -634,12 +640,17 @@ export function toolJob(layout: Pick<CrewLayout, "builds">, tool: Tool): BuildJo
   return layout.builds.find((j) => "tool" in j.target && j.target.tool === tool);
 }
 
-/** Minutes to bring a tool to each level. */
+/** Minutes to bring a tool to each of its early levels; after that, an hour more each, to two days. */
 const TOOL_MINUTES = [2, 10, 60, 480, 1440] as const;
+const LATE_TOOL_MINUTES = 60;
+const MOST_TOOL_MINUTES = 2880;
 
 /** Milliseconds of work on a tool's next level. */
 export function toolTime(level: number): number {
-  return (TOOL_MINUTES[Math.min(level, TOOL_MINUTES.length - 1)] ?? 0) * 60_000;
+  const last = TOOL_MINUTES.length - 1;
+  const minutes =
+    (TOOL_MINUTES[Math.min(level, last)] ?? 0) + LATE_TOOL_MINUTES * Math.max(0, level - last);
+  return Math.min(MOST_TOOL_MINUTES, minutes) * 60_000;
 }
 
 /** How many patches can be worked on at once. */
@@ -680,7 +691,9 @@ function nearBaseMinutes(o: Obstacle): number {
 
 /** Milliseconds to clear a patch; a tool better than the patch needs goes quicker. */
 export function clearTime(o: Obstacle, toolLevel = o.tier): number {
-  const speed = 1 + 0.25 * Math.max(0, toolLevel - o.tier);
+  // A quarter quicker for each early level past the patch's, and a fiftieth for each level after.
+  const early = Math.max(0, Math.min(toolLevel, EARLY_TOOL_LEVEL) - o.tier);
+  const speed = 1 + 0.25 * early + 0.02 * Math.max(0, toolLevel - EARLY_TOOL_LEVEL);
   if (o.tier === 1) return Math.round((nearBaseMinutes(o) * 60_000) / speed);
   const hours = (CLEAR_HOURS[o.kind] * (TIER_TIME[o.tier - 1] ?? 1)) / speed;
   return Math.round(hours * 3_600_000);
@@ -702,14 +715,22 @@ export function clearBlocker(layout: CrewLayout, o: Obstacle): string | null {
   return null;
 }
 
-/** The price of a tool's next level. */
+/** The price of a tool's next level: twice as much and more for the early ones, 10% more after. */
 export function toolCost(tool: Tool, level: number): Partial<Purse> {
-  return scaled(TOOLS[tool].cost, 2.1 ** level);
+  const early = EARLY_TOOL_LEVEL - 1;
+  return scaled(
+    TOOLS[tool].cost,
+    2.1 ** Math.min(level, early) * 1.1 ** Math.max(0, level - early),
+  );
 }
 
-/** The headquarters level a tool's next level needs. */
+/** The headquarters level a tool's next level needs: the last of them at headquarters 50. */
 export function toolHq(tool: Tool, level: number): number {
-  return TOOLS[tool].hq + level * TOOLS[tool].step;
+  const { hq, step } = TOOLS[tool];
+  if (level < EARLY_TOOL_LEVEL) return hq + level * step;
+  const early = hq + (EARLY_TOOL_LEVEL - 1) * step;
+  const past = level + 1 - EARLY_TOOL_LEVEL;
+  return early + Math.ceil((past * (MAX_HQ_LEVEL - early)) / (MAX_TOOL_LEVEL - EARLY_TOOL_LEVEL));
 }
 
 /** Why a tool can't be upgraded right now, or null if it can. */
@@ -949,7 +970,10 @@ const HQ_NEEDS: readonly { type: BuildingType; from: number; behind: number }[] 
   { type: "timberShed", from: 7, behind: 5 },
   { type: "stoneYard", from: 8, behind: 5 },
 ];
-/** Hero upgrades the crew needs for each headquarters level past the second. */
+/**
+ * Hero upgrades the crew needs for each headquarters level past the second, and one a level past
+ * the twentieth: the trees stop opening new tiers there, so the rest fill out more heroes.
+ */
 const HERO_UPGRADES_PER_HQ = 2;
 
 export interface HqNeed {
@@ -965,14 +989,15 @@ export function hqNeeds(
   level: number,
 ): HqNeed[] {
   const needs = HQ_NEEDS.filter((n) => level >= n.from).map(({ type, behind }) => {
-    // A building with more, smaller levels is asked for whatever it could reach back then.
-    const need = PROGRESSION[type].stretch
-      ? Math.max(1, levelCap(type, level - behind))
-      : Math.max(1, Math.min(PROGRESSION[type].maxLevel, level - behind));
+    // A building with more, smaller levels is asked for whatever it could reach back then, and
+    // never more than one short of the most it can have now.
+    const back = PROGRESSION[type].stretch ? levelCap(type, level - behind) : level - behind;
+    const need = Math.max(1, Math.min(back, levelCap(type, level - 1) - 1));
     const levels = layout.buildings.filter((b) => b.type === type).map((b) => b.level);
     return { text: `${BUILDINGS[type].label} level ${need}`, have: Math.max(0, ...levels), need };
   });
-  const upgrades = (level - 2) * HERO_UPGRADES_PER_HQ;
+  const upgrades =
+    (Math.min(level, EARLY_TOP) - 2) * HERO_UPGRADES_PER_HQ + Math.max(0, level - EARLY_TOP);
   if (upgrades > 0) {
     const have = Object.values(layout.upgrades).reduce((sum, owned) => sum + owned.length, 0);
     needs.push({ text: `${upgrades} hero upgrades`, have, need: upgrades });

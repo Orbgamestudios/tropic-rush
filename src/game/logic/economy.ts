@@ -1,5 +1,9 @@
 // Crew island progression: the four resources, what each building costs, how many of each the
 // headquarters' level allows, how far each can be upgraded, and how resources build up over time.
+// The headquarters goes to level 50. Every building gets its first levels at the pace it always
+// did up to headquarters 20 (EARLY_TOP), and the rest spread thinly over the climb to 50, a level
+// every few headquarters levels, so each tops out exactly at headquarters 50. Past a building's
+// first levels, each one costs, takes and gives a little less more than the one before.
 // A new island starts with just its headquarters and a little of each resource. Producers (one of
 // each) fill the crew's shared stock passively, up to what the headquarters and storages can hold.
 // Draft numbers, not balanced yet. Plain rules with no engine imports, shared with the server.
@@ -17,7 +21,9 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   scrap: "Scrap",
 };
 
-export const MAX_HQ_LEVEL = 20;
+export const MAX_HQ_LEVEL = 50;
+/** Where everything used to stop: up to here, each building's levels come at their old pace. */
+export const EARLY_TOP = 20;
 
 /** What a brand-new island starts with. */
 export const START_RESOURCES: Purse = { gold: 600, timber: 600, stone: 300, scrap: 100 };
@@ -41,8 +47,10 @@ export const STORAGES: Partial<Record<BuildingType, Resource>> = {
 interface Progression {
   /** The headquarters level that first allows this building. */
   unlockHq: number;
-  /** Its highest level. */
+  /** Its highest level, reached at headquarters 50. */
   maxLevel: number;
+  /** Its first levels, which come at the old pace: one a headquarters level unless stretched. */
+  early: number;
   /**
    * Levels for each one of an ordinary building's, for a building that grows in more, smaller
    * steps: it reaches its last level only at the top headquarters level, and each level costs
@@ -59,33 +67,61 @@ interface Progression {
 
 const storage = (cost: Partial<Purse>): Progression => ({
   unlockHq: 3,
-  maxLevel: 8,
-  // One of each storage at HQ 3, two at HQ 7, three at HQ 20.
+  maxLevel: 20,
+  early: 8,
+  // One of each storage at HQ 3, two at HQ 7, three at HQ 20, four at HQ 35.
   counts: [
     [3, 1],
     [7, 2],
     [20, 3],
+    [35, 4],
   ],
   cost,
 });
 
 export const PROGRESSION: Record<BuildingType, Progression> = {
-  headquarters: { unlockHq: 1, maxLevel: MAX_HQ_LEVEL, counts: [[1, 1]], cost: {} },
-  goldMine: { unlockHq: 1, maxLevel: 10, counts: [[1, 1]], cost: { timber: 150, stone: 50 } },
-  lumberCamp: { unlockHq: 1, maxLevel: 10, counts: [[1, 1]], cost: { gold: 150, stone: 50 } },
-  quarry: { unlockHq: 1, maxLevel: 10, counts: [[1, 1]], cost: { gold: 150, timber: 100 } },
+  headquarters: {
+    unlockHq: 1,
+    maxLevel: MAX_HQ_LEVEL,
+    early: EARLY_TOP,
+    counts: [[1, 1]],
+    cost: {},
+  },
+  goldMine: {
+    unlockHq: 1,
+    maxLevel: 25,
+    early: 10,
+    counts: [[1, 1]],
+    cost: { timber: 150, stone: 50 },
+  },
+  lumberCamp: {
+    unlockHq: 1,
+    maxLevel: 25,
+    early: 10,
+    counts: [[1, 1]],
+    cost: { gold: 150, stone: 50 },
+  },
+  quarry: {
+    unlockHq: 1,
+    maxLevel: 25,
+    early: 10,
+    counts: [[1, 1]],
+    cost: { gold: 150, timber: 100 },
+  },
   scrapYard: {
     unlockHq: 2,
-    maxLevel: 10,
+    maxLevel: 25,
+    early: 10,
     counts: [[2, 1]],
     cost: { gold: 250, timber: 150, stone: 100 },
   },
   gunTurret: {
     unlockHq: 1,
-    maxLevel: 30,
+    maxLevel: 50,
+    early: 30,
     stretch: 3,
     // Half the usual step: by level 15, where a headquarters 10 has it, it's about where a
-    // level 10 turret was, and the twenty levels after keep it growing.
+    // level 10 turret was, and the levels after keep it growing.
     powerPerLevel: 0.06,
     counts: [
       [1, 1],
@@ -94,52 +130,67 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
       [8, 4],
       [12, 5],
       [16, 6],
+      [26, 7],
+      [38, 8],
     ],
     cost: { gold: 250, stone: 100 },
   },
   mortar: {
     unlockHq: 1,
-    maxLevel: 10,
+    maxLevel: 25,
+    early: 10,
     counts: [
       [1, 1],
       [6, 2],
       [12, 3],
       [18, 4],
+      [30, 5],
+      [44, 6],
     ],
     cost: { gold: 350, timber: 100, stone: 150 },
   },
   harpoon: {
     unlockHq: 4,
-    maxLevel: 10,
+    maxLevel: 25,
+    early: 10,
     counts: [
       [4, 1],
       [9, 2],
       [15, 3],
+      [28, 4],
+      [42, 5],
     ],
     cost: { gold: 600, timber: 300, scrap: 150 },
   },
   flamethrower: {
     unlockHq: 5,
-    maxLevel: 10,
+    maxLevel: 25,
+    early: 10,
     counts: [
       [5, 1],
       [10, 2],
       [16, 3],
+      [30, 4],
+      [45, 5],
     ],
     cost: { gold: 800, scrap: 300 },
   },
   watchtower: {
     unlockHq: 3,
-    maxLevel: 5,
+    maxLevel: 15,
+    early: 5,
     counts: [
       [3, 1],
       [11, 2],
+      [24, 3],
+      [40, 4],
     ],
     cost: { timber: 400, stone: 200 },
   },
   landmine: {
     unlockHq: 2,
     maxLevel: 1,
+    early: 1,
     counts: [
       [2, 2],
       [4, 4],
@@ -147,6 +198,9 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
       [10, 8],
       [14, 10],
       [18, 12],
+      [26, 14],
+      [34, 16],
+      [44, 18],
     ],
     cost: { gold: 80, stone: 30 },
   },
@@ -156,18 +210,23 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
   scrapBin: storage({ gold: 400, stone: 200 }),
   refinery: {
     unlockHq: 8,
-    maxLevel: 5,
-    counts: [[8, 1]],
+    maxLevel: 15,
+    early: 5,
+    counts: [
+      [8, 1],
+      [32, 2],
+    ],
     cost: { gold: 2000, timber: 1500, stone: 1500 },
   },
   laboratory: {
     unlockHq: 1,
     maxLevel: 1,
+    early: 1,
     counts: [[1, 1]],
     cost: { gold: 300, timber: 200, stone: 100 },
   },
   // The raid's old shared storehouse: not built on crew islands.
-  storehouse: { unlockHq: MAX_HQ_LEVEL + 1, maxLevel: 1, counts: [], cost: {} },
+  storehouse: { unlockHq: MAX_HQ_LEVEL + 1, maxLevel: 1, early: 1, counts: [], cost: {} },
 };
 
 /** How many of a building the headquarters' level allows. */
@@ -185,18 +244,43 @@ export function buildingPower(level: number, type?: BuildingType): number {
   return 1 + step * (Math.max(1, level) - 1);
 }
 
-/** The highest level a building can reach at this headquarters level. */
+/** The headquarters level a building has all its early levels by. */
+function earlyDone(p: Progression): number {
+  return p.stretch ? EARLY_TOP : Math.min(EARLY_TOP, p.unlockHq + p.early - 1);
+}
+
+/**
+ * The highest level a building can reach at this headquarters level: its early levels at their old
+ * pace (one a headquarters level, or spread over the first twenty if stretched), then the rest
+ * spread evenly over the climb to headquarters 50, so not every level of the headquarters adds one.
+ */
 export function levelCap(type: BuildingType, hqLevel: number): number {
   const p = PROGRESSION[type];
   if (type === "headquarters") return p.maxLevel;
   const reached = hqLevel - p.unlockHq + 1;
   if (reached <= 0) return 0;
-  // A stretched building gets all its levels by the top headquarters level, not one per level.
-  if (p.stretch) {
-    const span = MAX_HQ_LEVEL - p.unlockHq + 1;
-    return Math.min(p.maxLevel, Math.max(1, Math.floor((reached * p.maxLevel) / span)));
+  const done = earlyDone(p);
+  if (hqLevel < done) {
+    const early = p.stretch
+      ? Math.floor((reached * p.early) / (EARLY_TOP - p.unlockHq + 1))
+      : reached;
+    return Math.min(p.early, Math.max(1, early));
   }
-  return Math.min(p.maxLevel, reached);
+  const late = Math.floor(((hqLevel - done) * (p.maxLevel - p.early)) / (MAX_HQ_LEVEL - done));
+  return Math.min(p.maxLevel, p.early + late);
+}
+
+/** Levels past a building's early ones cost this much more each than the last... */
+const LATE_COST = 1.08;
+/** ...and take an hour longer. */
+const LATE_MINUTES = 60;
+/** Past headquarters 20, each headquarters level costs this much more than the last. */
+const LATE_HQ_COST = 1.07;
+
+/** How far up its early levels a level is, in ordinary levels: a stretched building's count less. */
+function rung(type: BuildingType, level: number): number {
+  const p = PROGRESSION[type];
+  return 1 + (Math.min(level, p.early) - 1) / stretchOf(type);
 }
 
 const scale = (cost: Partial<Purse>, factor: number): Partial<Purse> => {
@@ -226,30 +310,45 @@ export function nextLevelGain(type: BuildingType, level: number): string {
 export function costFor(type: BuildingType, level: number): Partial<Purse> {
   if (type === "headquarters") {
     if (level <= 1) return {};
-    const cost = scale({ gold: 400, timber: 400, stone: 250 }, 1.32 ** (level - 2));
+    // Past headquarters 20 each level costs only a little more than the one before.
+    const late = LATE_HQ_COST ** Math.max(0, level - EARLY_TOP);
+    const early = Math.min(level, EARLY_TOP);
+    const cost = scale({ gold: 400, timber: 400, stone: 250 }, 1.32 ** (early - 2) * late);
     // Scrap joins the bill from HQ 3, once the scrap yard (HQ 2) has had time to produce.
-    if (level >= 3) cost.scrap = Math.round((120 * 1.32 ** (level - 3)) / 10) * 10;
+    if (level >= 3) cost.scrap = Math.round((120 * 1.32 ** (early - 3) * late) / 10) * 10;
     return cost;
   }
-  return scale(PROGRESSION[type].cost, 1.45 ** ((level - 1) / stretchOf(type)));
+  const late = LATE_COST ** Math.max(0, level - PROGRESSION[type].early);
+  return scale(PROGRESSION[type].cost, 1.45 ** (rung(type, level) - 1) * late);
 }
 
 /** Minutes of work to bring a building to a level, from 1 upward; level 1 is building it. */
 const BUILD_MINUTES = [0.5, 1, 2, 3, 5, 15, 60, 240, 480, 720] as const;
-/** The same for the headquarters: minutes at first, hours from level 7, days by the end. */
+/** The same for the headquarters: minutes at first, hours from level 7, days by level 20... */
 const HQ_MINUTES = [
   0, 2, 5, 10, 20, 30, 60, 120, 240, 480, 720, 1200, 1440, 1800, 2160, 2520, 2880, 3240, 3600, 4320,
 ] as const;
+/** ...and from there a few hours more each level, to a week at level 50. */
+const LATE_HQ_MINUTES = 192;
 
 const MINUTE_MS = 60_000;
 
 /** Milliseconds of work to bring a building to `level`. */
 export function buildTime(type: BuildingType, level: number): number {
-  const table = type === "headquarters" ? HQ_MINUTES : BUILD_MINUTES;
-  // A stretched building's levels take as long as the ordinary level they're a share of.
-  const step = Math.ceil(level / stretchOf(type));
-  const minutes = table[Math.max(0, Math.min(table.length, step) - 1)] ?? 0;
-  return minutes * MINUTE_MS;
+  if (type === "headquarters") {
+    const last = HQ_MINUTES[HQ_MINUTES.length - 1] ?? 0;
+    const minutes =
+      level <= HQ_MINUTES.length
+        ? (HQ_MINUTES[Math.max(0, level - 1)] ?? 0)
+        : last + LATE_HQ_MINUTES * (level - HQ_MINUTES.length);
+    return minutes * MINUTE_MS;
+  }
+  // A stretched building's levels take as long as the ordinary level they're a share of, and the
+  // levels past its early ones an hour more each.
+  const step = Math.ceil(Math.min(level, PROGRESSION[type].early) / stretchOf(type));
+  const early = BUILD_MINUTES[Math.max(0, Math.min(BUILD_MINUTES.length, step) - 1)] ?? 0;
+  const past = Math.max(0, level - PROGRESSION[type].early);
+  return (early + LATE_MINUTES * past) * MINUTE_MS;
 }
 
 /** What breaking a mill pays, and how many times that a full storage pays. */
@@ -262,7 +361,8 @@ export function lootFor(type: BuildingType, level: number): Partial<Purse> {
   const store = STORAGES[type];
   const resource = mill ?? store;
   if (!resource) return {};
-  const amount = LOOT_PER_MILL * 1.3 ** (Math.max(1, level) - 1) * (store ? STORAGE_LOOT : 1);
+  const grown = productionPerHour(Math.max(1, level)) / productionPerHour(1);
+  const amount = LOOT_PER_MILL * grown * (store ? STORAGE_LOOT : 1);
   return { [resource]: Math.round(amount / 5) * 5 };
 }
 
@@ -274,14 +374,16 @@ export function hqCapacity(hqLevel: number): number {
   return 700 + 200 * (hqLevel - 1);
 }
 
-/** What one storage holds at a level. */
+/** What one storage holds at a level: half again each of its first eight, then 10% more each. */
 export function storageCapacity(level: number): number {
-  return Math.round(2500 * 1.5 ** (level - 1));
+  const early = Math.min(level, 8);
+  return Math.round(2500 * 1.5 ** (early - 1) * 1.1 ** Math.max(0, level - 8));
 }
 
-/** How much a producer makes per hour at a level. */
+/** How much a producer makes per hour at a level: 30% more each of its first ten, then 8% more. */
 export function productionPerHour(level: number): number {
-  return Math.round(150 * 1.3 ** (level - 1));
+  const early = Math.min(level, 10);
+  return Math.round(150 * 1.3 ** (early - 1) * 1.08 ** Math.max(0, level - 10));
 }
 
 /** Hours of work a producer holds until it's collected: a day at level 1, three days by level 10. */

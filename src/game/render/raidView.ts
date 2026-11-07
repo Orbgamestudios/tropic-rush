@@ -25,7 +25,7 @@ import type { Spoils } from "../logic/spoils";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
-import { kitPiece, type Piece } from "./buildingKit";
+import { kitPiece, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
 import { DefenseReach } from "./defenseReach";
@@ -358,7 +358,7 @@ export class RaidView {
       // Square on its tiles, the same as on the crew's island.
       const rotated = layout.buildings[i]?.rotated ?? false;
       const baseRotation = tileRotation(rotated);
-      model.root.scale.setScalar(tileFit(b.type, rotated, model.root));
+      model.root.scale.setScalar(tileFit(b.type, rotated, model.root) * levelSize(b.type, b.level));
       model.root.position.set(b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y);
       model.root.rotation.y = baseRotation;
       this.root.add(model.root);

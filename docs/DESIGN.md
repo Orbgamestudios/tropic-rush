@@ -77,6 +77,41 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
 
+## Added 2026-11-07, second batch (owner's requests)
+
+**Decided** unless a line says otherwise. The numbers are first passes.
+
+- **Headquarters to 50:** the headquarters goes up to level 50, from 20, and every other building
+  reaches its top level exactly at headquarters 50. Up to headquarters 20 a building's levels come
+  as they always did; the rest are spread evenly over the climb from there to 50, a level every one
+  and a half to four headquarters levels depending on the building. So not every headquarters level adds a
+  level to every building, and different buildings gain at different ones.
+- **Top levels:** gun turret 50 (30 by headquarters 20); gold mine, lumber mill, quarry and scrap
+  yard 25 (10 by headquarters 10); mortar, harpoon and flamethrower 25; storages 20 (8 by
+  headquarters 10); watchtower 15; refinery 15. Land mines and the laboratory stay at 1.
+- **More of them:** a 7th gun turret at headquarters 26 and an 8th at 38; mortars 5 at 30 and 6
+  at 44; harpoons 4 at 28 and 5 at 42; flamethrowers 4 at 30 and 5 at 45; watchtowers 3 at 24 and
+  4 at 40; a 4th of each storage at 35; a second refinery at 32; 14, 16 and 18 land mines at 26,
+  34 and 44.
+- **Late levels grow gently:** past a building's early levels each costs 8% more than the one
+  before (45% before that), takes an hour longer (a level 25 mortar takes 27 hours), a mill makes
+  8% more an hour (30% before) and a storage holds 10% more (50% before). Past headquarters 20,
+  each headquarters level costs 7% more than the last and takes 3.2 hours longer, to a week for
+  level 50. A test checks a full set of storages can always pay for the next headquarters level.
+  What a raid takes from a broken mill or storage follows its production.
+- **What the headquarters asks:** a mill, turret or storage at most one level short of the most it
+  could have, and hero upgrades two a level to headquarters 20, then one a level: 66 at 50. The hero
+  trees still open their last tier at headquarters 19.
+- **Tools to 40:** levels 1 to 5 come at the same headquarters levels as before and still open the
+  patches; levels 6 to 40 spread out to headquarters 50. Each late level costs 10% more, takes an
+  hour longer, up to two days, and clears 2% faster. With every tool at 40 and 4 workers, clearing
+  the whole island still takes about 44 days (70 with tools at 5).
+- **Buildings grow with their level:** on top of the ten looks (every fifth level on a 50-level
+  building), each level stands a building a little bigger: 90% of its full size at level 1, full
+  size at its top level.
+- **Enemy bases** follow the same table, so a headquarters 50 base has headquarters 50's buildings
+  and levels, rather than headquarters 20's with levels piled on.
+
 ## Added 2026-11-07 (owner's requests)
 
 **Decided** unless a line says otherwise. The numbers are first passes.
@@ -161,7 +196,8 @@ These were explicitly left out to keep the first version to a basic structure:
   twenty levels after keep it growing. Costs and build times are spread the same way: level 30
   costs and takes what level 10 did. It fires 30% faster, every 0.23 s, for 32 a bullet, about 10%
   more damage a second at the same level; 32 rather than 38 keeps the first islands winnable.
-  Turrets on islands from before moved up to where their level now sits.
+  Turrets on islands from before moved up to where their level now sits. (Since 2026-11-07: 50
+  levels, the last twenty spread over headquarters 21 to 50.)
 - **Hero trees rebuilt:** twice as long, branching four ways from the first upgrade, one branch
   for each crystal, and no upgrade adds range any more. Each tier opens at a headquarters level, so
   a hero is only as strong as the islands the crew can reach. Everything bought on the old trees
@@ -538,8 +574,9 @@ Starting size ratios, in hero heights:
   (mills and the like) make resources passively. At the start you can also build a gun turret and
   a mortar.
   - One of each producer.
-  - Storages unlock at HQ 3: one per resource at HQ 3, two each at HQ 7, three each at HQ 20.
-  - Storages upgrade to level 8 at most.
+  - Storages unlock at HQ 3: one per resource at HQ 3, two each at HQ 7, three each at HQ 20,
+    four each at HQ 35.
+  - Storages upgrade to level 20 at most, 8 of them by HQ 10.
   - Every building's level is capped by the headquarters' level.
 
 **Built:**
@@ -550,8 +587,9 @@ Starting size ratios, in hero heights:
 - **Clearing (Decided 2026-10-30, replacing the 4 unlockable zones):** clearing the whole island
   is the work of months. A new island is overgrown. Only an 18 m clearing round the HQ and the
   trail are open; the rest of the grass is covered in patches the crew clears to make room:
-  - Four tools come with HQ levels and each upgrades through 5 levels: Axe (HQ 1), Pickaxe (HQ 2),
-    Chainsaw (HQ 3) and Dynamite (HQ 5). The Tools button buys and upgrades them.
+  - Four tools come with HQ levels and each upgrades through 40 levels: Axe (HQ 1), Pickaxe (HQ 2),
+    Chainsaw (HQ 3) and Dynamite (HQ 5). The Tools button buys and upgrades them. The first 5
+    levels open patches; the rest only work a little faster.
   - Brush, thickets and palm groves take the Axe, rocks the Pickaxe, dense jungle the Chainsaw and
     boulders Dynamite.
   - Each patch has a tier from 1 to 5 by its distance from the HQ, and a tool must reach that
@@ -572,8 +610,8 @@ Starting size ratios, in hero heights:
   - Storages: the Gold vault, Timber shed, Stone yard and Scrap bin.
   - Defenses start with one gun turret and one mortar. More of them, and the harpoon, flamethrower
     and watchtower, unlock at higher HQ levels.
-  - The HQ goes up to level 20. A building's level cap is HQ level minus its unlock level plus 1,
-    up to its maximum.
+  - The HQ goes up to level 50. A building's early levels come one an HQ level from the one it
+    unlocks at; the rest spread out to HQ 50.
   - Resources build up over time, from the server's clock, up to what the HQ and storages hold.
   - Building and upgrading are instant and cost resources.
 - **Sync:** each crew has its own server on Cloudflare. It checks every change, costs included,
@@ -814,8 +852,8 @@ everything beyond. **Proposed:** the Lookout Tower's level sets how far the clou
   region they'd opened becomes one splotch. Clear sky is drawn as one joined stretch with a smooth
   shore, so no strands of cloud are left between islands, and the shallows of islands close together
   run into each other.
-- Islands get harder with distance, past the top headquarters level and on forever: beyond HQ 20 a
-  base can't grow, so its buildings keep gaining levels instead.
+- Islands get harder with distance, up to headquarters 50. (Before 2026-11-07, beyond HQ 20 a base
+  couldn't grow, so its buildings kept gaining levels instead.)
 - A beaten island is yours until raiders retake it. Each night they retake 0, 1 or 2 of your
   islands. It comes back stronger than it was and at least as strong as your own HQ, with every
   building its headquarters allows, all at full level.
