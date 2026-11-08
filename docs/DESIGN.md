@@ -165,6 +165,10 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Heroes wave:** tapping a hero strolling on the crew's island stops them, turns them to the camera
   and has them wave for a couple of seconds, rather than opening the heroes screen; the Heroes button
   does that.
+- **Flamethrowers:** no cone. Burning fuel leaves the nozzle as a tight, fast, yellow-white stream
+  that sags as it goes and breaks up into rolling orange flame that slows, swells and climbs, under
+  dark smoke at the far end. Fuel splashes and burns where it lands, embers fly off it, and it throws
+  firelight on the ground after dark.
 - **Collecting:** a producer being upgraded shows no collect tab, and tapping anywhere on a producer
   whose tab is up collects from it.
 - **Smoke gives you away:** firing from inside smoke lets the defenses in reach see the hero 0.6

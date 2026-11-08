@@ -23,8 +23,6 @@ export interface BuildingModel {
   root: THREE.Group;
   /** Turns to face the defense's target. */
   head: THREE.Object3D | null;
-  /** Shown while a flamethrower is firing. */
-  flame: THREE.Object3D | null;
   /** Kicks back when it fires. */
   guns?: THREE.Object3D | null;
   /** Where each barrel's shot leaves it, taking turns. */
@@ -50,26 +48,6 @@ function paintCrew(root: THREE.Object3D): void {
     const paint = CREW_PAINT.get((o.material as THREE.MeshLambertMaterial).color?.getHex());
     if (paint !== undefined) o.material = material(paint);
   });
-}
-
-/** How far a modeled flamethrower's flame reaches past its nozzle, in meters. */
-const KIT_FLAME = 9;
-
-function flameCone(length: number): THREE.Mesh {
-  const geometry = new THREE.ConeGeometry(length * 0.22, length, 14, 1, true);
-  geometry.rotateZ(Math.PI / 2);
-  geometry.translate(length / 2, 0, 0);
-  const m = new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      color: 0xffa23a,
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-    }),
-  );
-  m.visible = false;
-  return m;
 }
 
 /** Widens a model to its footprint, and how much of that height it takes on: [across, up]. */
@@ -114,13 +92,7 @@ export function buildingModel(
   plain = false,
 ): BuildingModel {
   const kit = plain ? null : kitBuilding(type, level, crew);
-  if (kit) {
-    // A modeled flamethrower's flame comes out of its nozzle.
-    const nozzle = type === "flamethrower" ? kit.muzzles[0] : undefined;
-    const flame = nozzle ? flameCone(KIT_FLAME) : null;
-    if (flame) nozzle?.add(flame);
-    return { ...kit, flame };
-  }
+  if (kit) return kit;
   const key = `${type}|${crew}`;
   let template = templates.get(key);
   if (!template) {
@@ -129,21 +101,19 @@ export function buildingModel(
     if (stretched) stretch(template.root, stretched[0], stretched[1]);
     if (crew) paintCrew(template.root);
     flatten(template.root, template.head);
-    if (template.head) flatten(template.head, template.flame);
+    if (template.head) flatten(template.head);
     templates.set(key, template);
   }
   const root = template.root.clone(true);
   return {
     root,
     head: root.getObjectByName("head") ?? null,
-    flame: root.getObjectByName("flame") ?? null,
   };
 }
 
 function makeBuilding(type: BuildingType): BuildingModel {
   const root = new THREE.Group();
   let head: THREE.Object3D | null = null;
-  let flame: THREE.Object3D | null = null;
   switch (type) {
     case "headquarters": {
       root.add(at(rbox(7.4, 3.2, 7.4, C.enemyDark), 0, 1.6, 0));
@@ -222,8 +192,6 @@ function makeBuilding(type: BuildingType): BuildingModel {
       root.add(at(ball(0.95, C.enemyRust), 0, 3.4, 0));
       head = at(new THREE.Group(), 0, 2.9, 0);
       head.add(at(barrel(0.18, 1.7, C.darkMetal), 0.4, 0, 0));
-      flame = at(flameCone(7.6), 2.1, 0, 0);
-      head.add(flame);
       root.add(head);
       break;
     }
@@ -452,8 +420,7 @@ function makeBuilding(type: BuildingType): BuildingModel {
     }
   }
   if (head) head.name = "head";
-  if (flame) flame.name = "flame";
-  return { root, head, flame };
+  return { root, head };
 }
 
 export function rubbleModel(radius: number): THREE.Group {

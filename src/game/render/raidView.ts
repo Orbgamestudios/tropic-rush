@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { SIM_STEP } from "../config";
-import { BUILDINGS, type BuildingType } from "../logic/buildings";
+import { BUILDINGS, type BuildingSpec, type BuildingType } from "../logic/buildings";
 import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse } from "../logic/economy";
@@ -738,7 +738,7 @@ export class RaidView {
         const aim = view.alert > 0 ? -b.aim - view.baseRotation : null;
         view.model.head.rotation.y = view.lookout.update(time, dt, aim);
       }
-      if (view.model.flame) view.model.flame.visible = b.firing;
+      if (b.firing && spec.attack?.kind === "flame") this.flameJet(view, b, spec, dt);
       const { guns, spinner, bolt } = view.model;
       if (bolt) {
         view.sinceShot += dt;
@@ -754,6 +754,18 @@ export class RaidView {
       }
       if (spinner) spinner.rotation.y += dt * SPIN;
     }
+  }
+
+  /** A flamethrower going: fire pouring out of its nozzle the way it's aimed. */
+  private flameJet(view: BuildingView, b: RaidBuilding, spec: BuildingSpec, dt: number): void {
+    const { attack } = spec;
+    if (attack?.kind !== "flame") return;
+    const nozzle = view.model.muzzles?.[0];
+    const from = nozzle
+      ? nozzle.getWorldPosition(new THREE.Vector3())
+      : this.at(b.pos, spec.height * 0.6);
+    const dir = new THREE.Vector3(Math.cos(b.aim), 0, Math.sin(b.aim));
+    this.effects.flameJet(from, dir, attack.range * 0.9, attack.coneHalfAngle, dt);
   }
 
   private aimSights(view: BuildingView, b: RaidBuilding): void {

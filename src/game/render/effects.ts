@@ -628,8 +628,9 @@ export class Effects {
   readonly root = new THREE.Group();
   /** Where the land is, so blasts can leave their mark on it. */
   private readonly groundAt: (x: number, z: number) => number;
-  private readonly solid = new Layer(340, THREE.NormalBlending, 1, 5, SKY.unlit);
-  private readonly glow = new Layer(460, THREE.AdditiveBlending, 0, 6);
+  private readonly solid = new Layer(480, THREE.NormalBlending, 1, 5, SKY.unlit);
+  // Room for a few flamethrowers going at once on top of everything else.
+  private readonly glow = new Layer(900, THREE.AdditiveBlending, 0, 6);
   private readonly marks = new Layer(36, THREE.NormalBlending, 0, ON_GROUND_ORDER, SKY.unlit, true);
   private readonly ripples = new Layer(
     16,
@@ -904,6 +905,94 @@ export class Effects {
         cell: STREAK,
         ramp: ZAP,
       });
+    }
+  }
+
+  /**
+   * A flamethrower's spray, for one frame of it. Burning fuel leaves the nozzle as a tight, fast,
+   * yellow-white stream that sags as it goes, and breaks up into rolling orange flame that slows,
+   * swells and climbs, under dark smoke at the far end. Fuel splashes and burns where it comes
+   * down, embers fly off it, and it throws firelight after dark.
+   */
+  flameJet(
+    from: THREE.Vector3,
+    dir: THREE.Vector3,
+    reach: number,
+    halfAngle: number,
+    dt: number,
+  ): void {
+    const drag = 2.6;
+    const life = 0.5;
+    // Fast enough to carry to the end of its reach as it slows and dies.
+    const speed = (reach * drag) / (1 - Math.exp(-drag * life));
+    const launch = (
+      layer: Layer,
+      ramp: Ramp,
+      o: { spread: number; size: [number, number]; opacity: number; gravity: number },
+    ) => {
+      const yaw = between(-halfAngle, halfAngle) * o.spread;
+      const c = Math.cos(yaw);
+      const s = Math.sin(yaw);
+      const go = speed * between(0.9, 1.05);
+      layer.add({
+        ...from,
+        vx: (dir.x * c - dir.z * s) * go,
+        vy: between(-0.02, 0.06) * go,
+        vz: (dir.x * s + dir.z * c) * go,
+        gravity: o.gravity,
+        drag,
+        life: life * between(0.8, 1.15),
+        from: o.size[0],
+        to: o.size[1] * between(0.8, 1.2),
+        spin: between(-2.5, 2.5),
+        cell: pick(FLAME),
+        ramp,
+        opacity: o.opacity,
+        rise: 0.08,
+      });
+    };
+    // The stream of burning fuel: tight, hot, and sagging under its own weight.
+    const stream = Math.floor(dt * 45 + Math.random());
+    for (let i = 0; i < stream; i++) {
+      launch(this.solid, FIRE, { spread: 0.25, size: [0.12, 0.7], opacity: 0.9, gravity: 4 });
+    }
+    // The flame it breaks up into: wider, swelling as it slows, and climbing as hot air does.
+    const flames = Math.floor(dt * 70 + Math.random());
+    for (let i = 0; i < flames; i++) {
+      launch(this.glow, HEAT, { spread: 0.7, size: [0.3, 2], opacity: 0.8, gravity: -3 });
+    }
+    this.glow.add({ ...from, life: 0.05, from: 0.35, to: 0.5, cell: STAR, ramp: FLASH });
+    if (Math.random() < dt * 12) {
+      const yaw = between(-halfAngle, halfAngle);
+      const go = speed * between(0.3, 0.6);
+      this.glow.add({
+        ...from,
+        vx: (dir.x * Math.cos(yaw) - dir.z * Math.sin(yaw)) * go,
+        vy: between(1, 4),
+        vz: (dir.x * Math.sin(yaw) + dir.z * Math.cos(yaw)) * go,
+        gravity: 5,
+        drag: 0.8,
+        life: between(0.5, 0.9),
+        from: 0.08,
+        to: 0.04,
+        cell: GLOW,
+        ramp: SPARK,
+      });
+    }
+    // Smoke rolling up off the far end of it.
+    if (Math.random() < dt * 9) {
+      spot.copy(from).addScaledVector(dir, reach * between(0.7, 1));
+      spot.y += between(0.6, 1.6);
+      this.rise(spot, SOOT, 0.9, 2.6, 0.5);
+    }
+    // Fuel splashing down and burning where the stream lands.
+    if (Math.random() < dt * 7) {
+      spot.copy(from).addScaledVector(dir, reach * between(0.8, 1));
+      spot.y = this.groundAt(spot.x, spot.z);
+      this.burn(spot, 1.2);
+    }
+    if (Math.random() < dt * 12) {
+      this.light(from.clone().addScaledVector(dir, reach * 0.5), 0xff7a30, reach, 2.2, 0.15);
     }
   }
 
