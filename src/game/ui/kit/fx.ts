@@ -76,14 +76,18 @@ function tone(
 
 function noise(
   duration: number,
-  options: { gain?: number; freq?: number; delay?: number } = {},
+  /** `swell` grows to its end instead of dying away from its start. */
+  options: { gain?: number; freq?: number; delay?: number; swell?: boolean } = {},
 ): void {
   const a = audio();
   if (!a || !effects) return;
   const t0 = a.currentTime + (options.delay ?? 0);
   const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * duration), a.sampleRate);
   const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  for (let i = 0; i < data.length; i++) {
+    const along = i / data.length;
+    data[i] = (Math.random() * 2 - 1) * (options.swell ? along * along : 1 - along);
+  }
   const src = a.createBufferSource();
   src.buffer = buffer;
   const filter = a.createBiquadFilter();
@@ -108,6 +112,29 @@ export const sfx = {
   coin(): void {
     tone(988, 0.09, { type: "square", gain: 0.12 });
     tone(1319, 0.22, { type: "square", gain: 0.12, delay: 0.08 });
+  },
+  /**
+   * A star flying into its slot and locking there: it whooshes in, lands with a thud and a click,
+   * and rings like struck metal, a little higher for each star.
+   */
+  starLock(index: number): void {
+    const lands = 0.13;
+    const up = 2 ** ((index * 3) / 12);
+    noise(lands, { freq: 2400, gain: 0.16, swell: true });
+    tone(160, 0.18, { type: "sine", to: 55, gain: 0.6, delay: lands });
+    noise(0.025, { freq: 5200, gain: 0.45, delay: lands });
+    // A struck plate's partials, which aren't whole multiples of each other: that's what makes it
+    // sound like metal and not a note.
+    const partials = [
+      [1, 0.55, 0.2],
+      [2.76, 0.4, 0.12],
+      [5.4, 0.26, 0.07],
+      [8.93, 0.16, 0.045],
+    ] as const;
+    for (const [ratio, length, gain] of partials) {
+      tone(560 * up * ratio, length, { type: "sine", gain, delay: lands });
+    }
+    noise(0.4, { freq: 8000, gain: 0.05, delay: lands + 0.02 });
   },
   levelUp(): void {
     [523, 659, 784, 1047].forEach((f, i) => {

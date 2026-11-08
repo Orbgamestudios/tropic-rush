@@ -20,4 +20,4 @@ rest was made for this game by `scripts/make-music.mjs`, and is CC0 too.
   https://opengameart.org/content/tense-bass-boost-drum-loop-140-bpm
 - `scout`: made for this game from `heroes`, muffled, and a field drum cadence.
 - `night`: "Massive Battle" by eldritch-grim: https://opengameart.org/content/massive-battle
-- `win`: made for this game, a bugle and drum fanfare.
+- `win`: made for this game, a drum riff.

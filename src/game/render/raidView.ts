@@ -287,6 +287,8 @@ export class RaidView {
   private readonly buildings = new Map<number, BuildingView>();
   private readonly heroes = new Map<number, HeroView>();
   private readonly projectiles = new Map<number, THREE.Object3D>();
+  /** How high a defense's shot set off, and how far it has to drop to whoever it's at. */
+  private readonly shotStarts = new Map<number, { height: number; drop: number }>();
   private readonly pool = new Map<string, THREE.Object3D[]>();
   private readonly telegraphs = new Map<number, { ring: THREE.Mesh; fill: THREE.Mesh }>();
   private readonly zones = new Map<number, THREE.Object3D>();
@@ -822,9 +824,6 @@ export class RaidView {
       view.facing += turned;
       view.turn = dt > 0 ? turned / dt : 0;
       model.root.rotation.y = -view.facing;
-      if (this.lights.active) {
-        this.lights.follow(h.pos.x, this.ground(h.pos.x, h.pos.y), h.pos.y, 8, 2.2, 0xffe8c8);
-      }
 
       if (h.moving) {
         view.stepTimer -= dt;
@@ -906,6 +905,8 @@ export class RaidView {
       if (!obj) {
         obj = this.takeFromPool(p.kind, p.team, p.leaves?.kind ?? "");
         this.projectiles.set(p.id, obj);
+        const start = this.shotStart(p, state);
+        if (start) this.shotStarts.set(p.id, start);
       }
       this.placeProjectile(p, obj);
       if (p.lob && (p.kind === "mortar" || p.kind === "artillery" || p.kind === "lava")) {
@@ -924,6 +925,7 @@ export class RaidView {
       if (live.has(id)) continue;
       this.returnToPool(obj);
       this.projectiles.delete(id);
+      this.shotStarts.delete(id);
     }
     for (const [id, t] of this.telegraphs) {
       if (live.has(id)) continue;
@@ -959,8 +961,34 @@ export class RaidView {
     }
     const x = p.pos.x - p.vel.x * behind;
     const y = p.pos.y - p.vel.y * behind;
-    obj.position.set(x, this.ground(x, y) + BULLET_HEIGHT, y);
-    obj.rotation.y = -Math.atan2(p.vel.y, p.vel.x);
+    // A defense's shot leaves its gun up on the building and comes down to whoever it's aimed at.
+    const start = this.shotStarts.get(p.id);
+    const above = start ? start.height - BULLET_HEIGHT : 0;
+    const left = start ? Math.max(0, 1 - p.traveled / start.drop) : 0;
+    obj.position.set(x, this.ground(x, y) + BULLET_HEIGHT + above * left, y);
+    obj.rotation.set(
+      0,
+      -Math.atan2(p.vel.y, p.vel.x),
+      start && left > 0 ? -Math.atan2(above, start.drop) : 0,
+    );
+  }
+
+  /** Where a defense's shot sets off from: its gun's muzzle, so not low down by its base. */
+  private shotStart(p: Projectile, state: RaidState): { height: number; drop: number } | null {
+    if (p.lob || p.team !== "enemy") return null;
+    const view = this.buildings.get(p.ownerId);
+    const building = state.buildings.find((b) => b.id === p.ownerId);
+    if (!view || !building) return null;
+    const muzzle = view.model.muzzles?.[0];
+    const height = muzzle
+      ? muzzle.getWorldPosition(new THREE.Vector3()).y - this.ground(building.pos.x, building.pos.y)
+      : BUILDINGS[building.type].height * 0.7;
+    if (height <= BULLET_HEIGHT) return null;
+    const target = state.heroes.reduce(
+      (nearest, h) => (h.alive ? Math.min(nearest, distance(h.pos, p.pos)) : nearest),
+      p.maxDistance,
+    );
+    return { height, drop: Math.max(3, target) };
   }
 
   private placeTelegraph(p: Projectile): void {

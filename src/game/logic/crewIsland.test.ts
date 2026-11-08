@@ -436,6 +436,35 @@ describe("crew island layout", () => {
     ).toBeNull();
   });
 
+  it("swaps two buildings dragged one onto the other, each centered where the other stood", () => {
+    let layout = place(island(), building("v", "goldVault", at(0, 0)));
+    layout = place(layout, turret("t", at(4, 0).x, at(4, 0).y));
+    const spot = (l: CrewLayout | null, id: string) => {
+      const b = l?.buildings.find((o) => o.id === id);
+      return b && { x: b.x, y: b.y };
+    };
+    const same = applyOp(layout, { kind: "swap", id: "v", other: "t" }, NOW);
+    expect(spot(same, "v")).toEqual(at(4, 0));
+    expect(spot(same, "t")).toEqual(at(0, 0));
+
+    // A 4x4 mine and a 3x3 turret trade, each centered on the other's old spot.
+    let sizes = place(island(), building("m", "goldMine", at(0, 1)));
+    sizes = place(sizes, turret("t", at(5, 1).x, at(5, 1).y));
+    const traded = applyOp(sizes, { kind: "swap", id: "m", other: "t" }, NOW);
+    expect(spot(traded, "m")).toEqual(at(4, 0));
+    expect(spot(traded, "t")).toEqual(at(0, 1));
+
+    // Not if one of them won't fit in the other's place.
+    let blocked = place(island(), building("m", "goldMine", at(0, 0)));
+    blocked = place(blocked, building("v", "goldVault", at(5, 0)));
+    blocked = place(blocked, turret("t", at(5, 3).x, at(5, 3).y));
+    expect(tryOp(blocked, { kind: "swap", id: "m", other: "t" }, NOW)).toEqual({
+      error: "Those two won't fit in each other's places",
+    });
+    expect(applyOp(layout, { kind: "swap", id: "v", other: "v" }, NOW)).toBeNull();
+    expect(applyOp(layout, { kind: "swap", id: "v", other: "missing" }, NOW)).toBeNull();
+  });
+
   it("removes buildings but never the headquarters", () => {
     let layout = place(island(), turret("t", at(0, 0).x, at(0, 0).y));
     layout = applyOp(layout, { kind: "remove", id: "t" }, NOW) ?? layout;

@@ -115,7 +115,7 @@ export class ResultsScreen {
         setTimeout(
           () => {
             s.classList.add("earned");
-            sfx.coin();
+            sfx.starLock(i);
             sparkleAt(this.fx, s, { count: 14, spread: 70 });
           },
           500 + i * 420,

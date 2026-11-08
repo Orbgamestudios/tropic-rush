@@ -37,7 +37,7 @@ import { Lookout } from "./lookout";
 import { buildingModel, GunboatScenery } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
-import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, updateWind } from "./props";
+import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, solidPlants, updateWind } from "./props";
 import { CRYSTAL_COLORS, disposeGlint, glintSprite, type StatueModel, statueModel } from "./relics";
 import { SandMask } from "./sandPatches";
 import { homeScenery } from "./scenery";
@@ -340,11 +340,18 @@ export class CrewIslandView {
   private readonly sand = new SandMask();
   private readonly fireflies = new Fireflies(7, (x, z) => Math.max(0, homeHeight(x, z)));
   /** What sync() last drew, so a frame where nothing changed costs nothing. */
-  private drawn: { layout: CrewLayout | null; hidden: string | null; held: string; kit: number } = {
+  private drawn: {
+    layout: CrewLayout | null;
+    hidden: string | null;
+    held: string;
+    kit: number;
+    plants: boolean;
+  } = {
     layout: null,
     hidden: null,
     held: "",
     kit: -1,
+    plants: false,
   };
   /** Radar dishes and the like, turning all the while. */
   private spinners: THREE.Object3D[] = [];
@@ -473,14 +480,16 @@ export class CrewIslandView {
     const held = holders.map((h) => h.buildingId).join();
     const { drawn } = this;
     const kit = kitVersion();
+    const plants = solidPlants();
     if (
+      drawn.plants === plants &&
       drawn.layout === layout &&
       drawn.hidden === hiddenId &&
       drawn.held === held &&
       drawn.kit === kit
     )
       return;
-    this.drawn = { layout, hidden: hiddenId, held, kit };
+    this.drawn = { layout, hidden: hiddenId, held, kit, plants };
     this.overgrowth.sync(layout);
     this.sand.paint(
       layout.buildings.map((b) => {

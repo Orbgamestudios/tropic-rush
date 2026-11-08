@@ -41,13 +41,28 @@ describe("enemy base layout", () => {
         const hq = hqOf(island);
         if (!hq) throw new Error("no headquarters");
         const defenses = island.buildings.filter((b) => BUILDINGS[b.type].attack);
-        const near = defenses.filter((b) => distance(b.pos, hq.pos) < 28);
+        // The rings are round the middle of the base, and the headquarters is set back from it.
+        const near = defenses.filter((b) => distance(b.pos, hq.pos) < 34);
         // A narrow island can't fit a full ring: what doesn't fit goes on along the coast.
         expect(near.length / defenses.length).toBeGreaterThan(0.5);
         const sides = new Set(
           near.map((b) => Math.floor(Math.atan2(b.pos.y - hq.pos.y, b.pos.x - hq.pos.x) / 1.6)),
         );
         expect(sides.size).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it("sets its headquarters back from the landing, behind most of its defenses", () => {
+    for (const seed of SEEDS) {
+      for (const level of [6, 12, 20]) {
+        const island = generateIsland(seed, level);
+        const hq = hqOf(island);
+        if (!hq) throw new Error("no headquarters");
+        const toHq = distance(hq.pos, island.spawn);
+        const defenses = island.buildings.filter((b) => BUILDINGS[b.type].attack);
+        const nearer = defenses.filter((b) => distance(b.pos, island.spawn) < toHq);
+        expect(nearer.length / defenses.length, `seed ${seed} at ${level}`).toBeGreaterThan(0.5);
       }
     }
   });

@@ -12,8 +12,11 @@ import { LIGHT_DISTANCE, Sky } from "./sky";
 /** How sharp a fight is at each step of quality: any more only costs battery on a phone. */
 const PIXEL_RATIOS = [1.5, 1.3, 1.15, 1.15];
 /** The steps of quality a fixed graphics setting sits at, the last of them dropping to 1. */
-const FIXED_QUALITY = { high: 0, medium: 2, low: 3 } as const;
+const FIXED_QUALITY = { ultra: 0, high: 0, medium: 2, low: 3 } as const;
 const LOW_PIXEL_RATIO = 1;
+/** Ultra: as sharp as a light screen everywhere, with bigger shadows redrawn every frame. */
+const ULTRA_PIXEL_RATIO = 2;
+const ULTRA_SHADOW_MAP = 2048;
 /** A screen with little on it, that mostly sits still, can afford to be sharper. */
 const LIGHT_PIXEL_RATIO = 2;
 /**
@@ -148,13 +151,14 @@ export class Stage {
   /** Each step down: resolution, then a smaller shadow map drawn less often, then no shadows. */
   private setQuality(quality: number): void {
     this.quality = quality;
-    const shadowSize = quality >= 2 ? 1024 : 1536;
+    const ultra = this.graphics === "ultra";
+    const shadowSize = ultra ? ULTRA_SHADOW_MAP : quality >= 2 ? 1024 : 1536;
     if (this.sun.shadow.mapSize.x !== shadowSize) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
     }
-    this.shadowEvery = quality >= 2 ? 4 : 3;
+    this.shadowEvery = ultra ? 1 : quality >= 2 ? 4 : 3;
     this.sun.castShadow = quality < 3;
     this.shadowsStale = true;
     this.setPixelRatio();
@@ -168,12 +172,14 @@ export class Stage {
   }
 
   private setPixelRatio(): void {
-    const low = this.graphics === "low";
-    const ratio = low
-      ? LOW_PIXEL_RATIO
-      : this.light
-        ? LIGHT_PIXEL_RATIO
-        : (PIXEL_RATIOS[this.quality] ?? 1);
+    const ratio =
+      this.graphics === "low"
+        ? LOW_PIXEL_RATIO
+        : this.graphics === "ultra"
+          ? ULTRA_PIXEL_RATIO
+          : this.light
+            ? LIGHT_PIXEL_RATIO
+            : (PIXEL_RATIOS[this.quality] ?? 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ratio));
     this.resize();
   }

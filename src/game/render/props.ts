@@ -16,6 +16,7 @@ import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
 import { merge, painted, vertexColored } from "./shapes";
 import { SKY } from "./sky";
+import { plantPicture } from "./thumbnails";
 
 // ---------------------------------------------------------------------------------------------
 // Wind
@@ -95,6 +96,85 @@ export function updateWind(time: number, hero: THREE.Vector3 | null): void {
   wind.value = time;
   if (hero) focus.value.copy(hero);
   else focus.value.set(0, -100, 0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Small plants drawn flat: each kind is drawn once into a picture, and every plant of that kind is
+// a card with it on, turned to face the camera and swaying in the wind. Two triangles a plant
+// rather than dozens, with thousands of them on an island. The Ultra graphics setting keeps them
+// solid.
+
+let solid = false;
+
+/** Keeps the small plants solid (Ultra) or draws them as cards. Islands drawn after this follow it. */
+export function setSolidPlants(on: boolean): void {
+  solid = on;
+}
+
+export function solidPlants(): boolean {
+  return solid;
+}
+
+/** How far the camera looks down, in radians: the cards are drawn as seen from about here. */
+const CARD_PITCH = 0.95;
+
+const cards = new Map<string, { geometry: THREE.BufferGeometry; material: THREE.Material }>();
+
+function card(name: string, plant: () => THREE.BufferGeometry) {
+  let made = cards.get(name);
+  if (made) return made;
+  const picture = plantPicture(plant(), CARD_PITCH);
+  const map = new THREE.CanvasTexture(picture.canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const geometry = new THREE.PlaneGeometry(
+    picture.right - picture.left,
+    picture.top - picture.bottom,
+  );
+  geometry.translate((picture.left + picture.right) / 2, (picture.bottom + picture.top) / 2, 0);
+  // Lit as the ground is, from above, whichever way the card turns.
+  const normals = geometry.getAttribute("normal");
+  for (let i = 0; i < normals.count; i++) normals.setXYZ(i, 0, 1, 0);
+  const material = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
+  material.color = SKY.forest.value;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uWind = wind;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform float uWind;")
+      .replace(
+        "#include <project_vertex>",
+        /* glsl */ `
+        // Stood upright on its root and turned square to the camera, flipped for some of them so
+        // they don't all lean the same way, its top swaying in the wind.
+        vec4 root = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        vec3 rootWorld = instanceMatrix[3].xyz;
+        float size = length(instanceMatrix[0].xyz);
+        float flip = instanceMatrix[0].x < 0.0 ? -1.0 : 1.0;
+        float lift = max(transformed.y, 0.0) * size;
+        float phase = uWind * 1.4 + rootWorld.x * 0.21 + rootWorld.z * 0.17;
+        float gust = 0.6 + 0.4 * sin(uWind * 0.37 + rootWorld.x * 0.03);
+        vec4 mvPosition = root + vec4(transformed.x * size * flip, transformed.y * size, 0.0, 0.0);
+        mvPosition.x += sin(phase) * lift * lift * 0.05 * gust;
+        gl_Position = projectionMatrix * mvPosition;`,
+      );
+  };
+  material.customProgramCacheKey = () => "tropic-plant-card";
+  made = { geometry, material };
+  cards.set(name, made);
+  return made;
+}
+
+/** A kind of small plant over the island: solid on Ultra, otherwise cards. */
+export function smallPlants(
+  name: string,
+  plant: () => THREE.BufferGeometry,
+  items: readonly PropInstance[],
+  material: THREE.Material,
+  ground: (x: number, y: number) => number,
+  blend = false,
+): THREE.Group {
+  if (solid) return chunked(plant(), items, false, material, ground, blend);
+  const { geometry, material: flat } = card(name, plant);
+  return chunked(geometry, items, false, flat, ground, blend);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -692,11 +772,11 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     instanced(cliffGeometry(), cliffs, true, swaying(true, true), ground),
     instanced(pebblesGeometry(), pebbles, true, vertexColored(), ground),
     instanced(bushGeometry(), bushes, true, low, ground, true),
-    chunked(fernGeometry(), ferns, false, low, ground, true),
-    chunked(flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], false, low, ground),
-    chunked(flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], false, low, ground),
-    chunked(flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], false, low, ground),
-    chunked(tuftGeometry(), tufts, false, low, ground, true),
+    smallPlants("fern", fernGeometry, ferns, low, ground, true),
+    smallPlants("red", () => flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], low, ground),
+    smallPlants("yellow", () => flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], low, ground),
+    smallPlants("white", () => flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], low, ground),
+    smallPlants("tuft", tuftGeometry, tufts, low, ground, true),
     buildShore(layout.seed, map, layout.spawn, ground, 5, shape),
   );
   return root;

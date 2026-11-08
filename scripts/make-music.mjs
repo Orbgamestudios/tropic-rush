@@ -1,5 +1,5 @@
 // Writes the music the game makes for itself: riffs on the crew island's song for the world map,
-// scouting and raids, and a bugle and drum fanfare for winning. The song is exactly 32 bars at 90
+// scouting and raids, and a drum riff for winning. The song is exactly 32 bars at 90
 // beats a minute and starts on a beat, so anything can be locked to it. The map is the song out in
 // front with barely a drum under it, and a half-time breakdown in the middle: the theme at half
 // speed, soft and dark. Scouting is the song muffled behind an unhurried field drum corps. A raid
@@ -33,8 +33,6 @@ const SONG_BEHIND_DRUMS = 1.25;
 const SCOUT_DRUMS = 0.62;
 /** How loud a raid's drum loop sits. */
 const RAID_DRUMS = 0.56;
-/** How hard the victory fanfare's drums hit, against its brass. */
-const FANFARE_DRUMS = 0.6;
 /** What's left of the drum loop's top end on each sixteenth of a bar: a hi-hat just before the turn. */
 const TOP_END = [0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0.2, 0];
 /** Where the drums' top end starts, in Hz. */
@@ -56,7 +54,6 @@ function rng(seed) {
   };
 }
 
-const hz = (midi) => 440 * 2 ** ((midi - 69) / 12);
 const samples = (seconds) => new Float32Array(Math.ceil(seconds * SR));
 
 function lowpass(input, cutoff) {
@@ -173,34 +170,6 @@ const TOMS = {
   low: tomHit(123.5),
   timpani: tomHit(61.7, 0.42),
 };
-
-// ---------------------------------------------------------------------------------------------
-// Tuned instruments
-
-/** A brass player: bright on the attack, a scoop up to the note, and vibrato if it's held. */
-function brassNote(midi, seconds, bright, seed) {
-  const random = rng(seed);
-  const out = samples(seconds + 0.22);
-  const f = hz(midi) * (1 + (random() - 0.5) * 0.004);
-  const most = Math.min(20, Math.floor(SR / 2.2 / f));
-  let phase = random() * 6;
-  const wobble = 5 + random();
-  for (let i = 0; i < out.length; i++) {
-    const t = i / SR;
-    const attack = Math.min(1, t / 0.022);
-    const release = t > seconds ? Math.max(0, 1 - (t - seconds) / 0.09) : 1;
-    const held = Math.min(1, Math.max(0, (t - 0.28) / 0.3));
-    const pitch =
-      f * (1 - 0.018 * Math.exp(-t / 0.016)) * (1 + 0.0035 * held * Math.sin(6.283 * wobble * t));
-    phase += (2 * Math.PI * pitch) / SR;
-    const blast = bright * (0.72 + 0.55 * Math.exp(-t / 0.07)) * attack ** 0.5;
-    const tilt = 2.35 - 1.55 * Math.min(1, blast);
-    let sum = 0;
-    for (let k = 1; k <= most; k++) sum += Math.sin(phase * k) * k ** -tilt;
-    out[i] = sum * attack * release * (0.86 + 0.14 * Math.exp(-t / 0.12));
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------------------------------------
 // Putting it together
@@ -531,77 +500,37 @@ async function mapTrack() {
 // ---------------------------------------------------------------------------------------------
 // Victory: bugles and drums, brass all the way, in B flat
 
+/**
+ * Winning: a drum riff at 120. A fill down the toms crashes into a bar of groove, a roll takes it
+ * down the toms again, and it ends on one big hit left to ring.
+ */
 function winTrack() {
-  const beat = 0.48;
-  const mix = new Mix(beat * 15 + 2.4, false);
-  mix.drums = FANFARE_DRUMS;
-  const note = (midi, at, length, gain, pan, bright, seed) => {
-    mix.put(brassNote(midi, length * beat, bright, seed), at * beat, gain, pan, 0.28);
-  };
-  // The bugles' tune, with the two parts under it a third and a fifth or so below.
-  const tune = [
-    [2, 1 / 3, 70, 65, 62],
-    [2 + 1 / 3, 1 / 3, 70, 65, 62],
-    [2 + 2 / 3, 1 / 3, 70, 65, 62],
-    [3, 1, 77, 74, 70],
-    [4, 1 / 3, 74, 70, 65],
-    [4 + 1 / 3, 1 / 3, 74, 70, 65],
-    [4 + 2 / 3, 1 / 3, 74, 70, 65],
-    [5, 1, 82, 77, 74],
-    [6, 0.5, 82, 77, 74],
-    [6.5, 0.25, 82, 77, 74],
-    [6.75, 0.25, 82, 77, 74],
-    [7, 0.5, 84, 81, 77],
-    [7.5, 0.5, 82, 77, 74],
-    [8, 0.5, 77, 74, 70],
-    [8.5, 0.5, 82, 77, 74],
-    [9, 0.25, 86, 82, 77],
-    [9.25, 0.25, 86, 82, 77],
-    [9.5, 0.5, 86, 82, 77],
-    [10, 3.6, 82, 77, 74],
-  ];
-  tune.forEach(([at, length, top, middle, low], i) => {
-    note(top, at, length * 0.92, 0.5, -0.1, 0.95, 100 + i);
-    note(top, at + 0.008, length * 0.92, 0.32, 0.12, 0.9, 200 + i);
-    note(middle, at, length * 0.92, 0.36, 0.28, 0.82, 300 + i);
-    note(low, at, length * 0.92, 0.32, -0.3, 0.76, 400 + i);
+  const beat = 60 / 120;
+  const step = beat / 4;
+  const bar = beat * 4;
+  const mix = new Mix(bar * 3 + 2.6, false);
+  drumBar(mix, 0, step, {
+    snare: "R.R.x.x.........",
+    bass: "B.......B.......",
+    tenor: "........hhmmllll",
   });
-  // Trombones and tubas under it, on the chords.
-  const chords = [
-    [2, 2, [46, 53, 58, 62]],
-    [4, 2, [51, 55, 58, 63]],
-    [6, 2, [53, 57, 60, 65]],
-    [8, 1, [46, 53, 58, 62]],
-    [9, 1, [53, 57, 60, 65]],
-    [10, 3.6, [46, 53, 58, 62]],
-  ];
-  chords.forEach(([at, length, voices], c) => {
-    voices.forEach((midi, v) => {
-      note(midi, at, length * 0.94, v === 0 ? 0.55 : 0.34, (v - 1.5) * 0.2, 0.58, 500 + c * 8 + v);
-    });
+  mix.hit(CRASH, bar, 0.6, -0.2, 0.3);
+  drumBar(mix, bar, step, {
+    snare: "....A..x.x..A..x",
+    bass: "B.....B.B.....B.",
   });
-  // A roll to bring it in, the corps marching under the tune, and a roll through the last chord.
-  for (let i = 0; i < 2 * 8; i++) mix.snare((i * beat) / 8, 0.25 + (i / 16) * 0.55);
-  const pattern = "f.x.x.f.x.xxf.x.";
-  for (let bar = 0; bar < 2; bar++) {
-    [...pattern].forEach((c, i) => {
-      const at = (2 + bar * 4 + i / 4) * beat;
-      if (c === "f") {
-        mix.snare(at - 0.03, 0.3);
-        mix.snare(at, 0.85, true);
-      } else if (c === "x") mix.snare(at, 0.42);
-    });
-  }
-  for (let i = 0; i < 3.5 * 8; i++) mix.snare((10 + i / 8) * beat, 0.4 + (i / 28) * 0.3);
-  for (const at of [2, 4, 6, 8, 9]) mix.hit(BASS, at * beat, 0.95, 0, 0.3);
-  for (const at of [3, 5, 7, 8.5, 9.5]) mix.hit(BASS, at * beat, 0.6, 0, 0.3);
-  mix.hit(CRASH, 2 * beat, 0.55, 0, 0.3);
-  mix.hit(CRASH, 10 * beat, 0.7, 0, 0.3);
-  // The last hit, all together, and the cut-off.
-  mix.hit(BASS, 13.6 * beat, 1.1, 0, 0.3);
-  mix.snare(13.6 * beat, 1.1, true);
-  mix.hit(CRASH, 13.6 * beat, 0.75, 0, 0.3);
-  const [left, right] = finish(mix, { decay: 1.3, wet: 0.5 });
+  drumBar(mix, bar * 2, step, {
+    snare: "....A..xR.R.....",
+    bass: "B.....B.B.......",
+    tenor: "............hmll",
+  });
+  // The last hit, all together, and the cymbal left to ring.
+  const end = bar * 3;
+  mix.hit(BASS, end, 1.1, 0, 0.3);
+  mix.snare(end, 1.05, true);
+  mix.hit(CRASH, end, 0.8, 0.15, 0.35);
+  mix.hit(TOMS.timpani, end, 0.8, -0.12, 0.35);
+  const [left, right] = finish(mix, { decay: 1.1, wet: 0.4 });
   encode(left, right, "win");
 }
 

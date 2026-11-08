@@ -42,6 +42,69 @@ function setup(): { renderer: THREE.WebGLRenderer; scene: THREE.Scene } {
   return { renderer, scene };
 }
 
+/** A small plant drawn for a card, and the card's edges in meters from the plant's root. */
+export interface PlantPicture {
+  canvas: HTMLCanvasElement;
+  left: number;
+  right: number;
+  bottom: number;
+  top: number;
+}
+
+const PLANT_TEXELS = 128;
+
+/**
+ * Draws a small plant as the game's camera sees it, looking down at `pitch` radians, for a card
+ * that stands in for it. Unlit, so the scene's own light falls on the card as it would the plant.
+ */
+export function plantPicture(geometry: THREE.BufferGeometry, pitch: number): PlantPicture {
+  const { renderer } = setup();
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const plant = new THREE.Scene().add(new THREE.Mesh(geometry, material));
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -50, 50);
+  camera.position.set(0, Math.sin(pitch), Math.cos(pitch));
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox ?? new THREE.Box3();
+  const corner = new THREE.Vector3();
+  const seen = new THREE.Box2();
+  for (let i = 0; i < 8; i++) {
+    corner
+      .set(
+        i & 1 ? box.max.x : box.min.x,
+        i & 2 ? box.max.y : box.min.y,
+        i & 4 ? box.max.z : box.min.z,
+      )
+      .applyMatrix4(camera.matrixWorldInverse);
+    seen.expandByPoint(new THREE.Vector2(corner.x, corner.y));
+  }
+  const root = new THREE.Vector3().applyMatrix4(camera.matrixWorldInverse);
+  camera.left = seen.min.x;
+  camera.right = seen.max.x;
+  camera.bottom = seen.min.y;
+  camera.top = seen.max.y;
+  camera.updateProjectionMatrix();
+  const toneMapping = renderer.toneMapping;
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.setSize(PLANT_TEXELS, PLANT_TEXELS, false);
+  renderer.render(plant, camera);
+  const canvas = document.createElement("canvas");
+  canvas.width = PLANT_TEXELS;
+  canvas.height = PLANT_TEXELS;
+  canvas.getContext("2d")?.drawImage(renderer.domElement, 0, 0);
+  renderer.setSize(SIZE, SIZE, false);
+  renderer.toneMapping = toneMapping;
+  material.dispose();
+  return {
+    canvas,
+    left: seen.min.x - root.x,
+    right: seen.max.x - root.x,
+    bottom: seen.min.y - root.y,
+    top: seen.max.y - root.y,
+  };
+}
+
 function snapshot(object: THREE.Object3D, camera: THREE.PerspectiveCamera): string {
   const { renderer, scene } = setup();
   scene.add(object);

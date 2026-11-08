@@ -133,6 +133,32 @@ These were explicitly left out to keep the first version to a basic structure:
   corners, stopping about a third of a meter short of the edge of its tiles, on the crew's island
   and on raider bases alike, faintly mottled, with a fine grain and the odd pebble close up and a
   touch darker where it meets the grass. Land mines get none, so they stay hidden.
+- **Swapping buildings:** on the crew island, dragging a building on top of another makes them
+  trade places, each set down in the middle of where the other stood and turned as it was. Not if
+  either won't fit in the other's place, or a crewmate is moving one of them.
+- **No light round the hero** at night: the glow that went everywhere with them is gone.
+- **Shots from the gun:** a defense's bullets and harpoons leave its muzzle up on the building and
+  come down to whoever they're aimed at, rather than flying low from its base.
+- **Buildings sharp at night:** a building's light falls round it and leaves the building itself out,
+  so it isn't washed over and stays easy to make out, with only its own lamps and windows lit.
+- **Flat small plants, and an Ultra setting:** ferns, grass tufts and flowers are flat cards turned to
+  the camera, swaying, two triangles each instead of dozens, which takes a fifth off what the home
+  island draws. Graphics: ultra is the best the game looks: solid small plants at any distance, up
+  to twice the screen's resolution, and a bigger shadow map redrawn every frame.
+- **Shorter shadows:** shadows are cast as if the sun or moon were never lower than 38 degrees, so a
+  palm's shadow keeps its crown near it instead of being a long bar of trunk across the island.
+- **Headquarters set back:** a raider base's headquarters stands 10 meters back from the middle of the
+  base (less on small camps), away from the landing, so most of its defenses stand between it and
+  whoever comes ashore. A puzzle base lays itself out round wherever the headquarters ends up.
+- **Fewer stalls:** a new screen builds its shaders in the background before drawing (on phones that
+  can, as iPhones can) instead of freezing while it does; building icons are drawn one a frame after
+  a screen opens; and landing on the island just scouted doesn't lay it out again.
+- **Music carries on between screens:** the crew island, map, scouting and raid tracks are all one
+  song, so going from one to another picks it up at the bar it had got to instead of starting it
+  over with its opening every time. The song waits where it was while anything else plays.
+- **Winning:** a drum riff (a fill down the toms into a groove, a roll, one big hit left to ring)
+  instead of the bugle fanfare, and each star locks into its slot with a whoosh, a thud and the ring
+  of struck metal, higher for each one, instead of a beep.
 
 ## Added 2026-11-07 (owner's requests)
 

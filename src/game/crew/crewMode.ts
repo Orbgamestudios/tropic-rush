@@ -36,6 +36,7 @@ import {
   sanitizeLayout,
   settle,
   statueAtTile,
+  swapped,
   TOOL_ORDER,
   TOOLS,
   type Tool,
@@ -107,6 +108,8 @@ interface Drag {
   overIsland: boolean;
   /** Tile offset from the building's corner to where it was grabbed. */
   grab: { x: number; y: number };
+  /** The building it's over, which it'll trade places with if dropped there. */
+  swapWith: string | null;
 }
 
 type Gesture =
@@ -1113,6 +1116,7 @@ export class CrewMode {
       valid: false,
       overIsland: false,
       grab: { x: 0, y: 0 },
+      swapWith: null,
     };
   }
 
@@ -1136,10 +1140,24 @@ export class CrewMode {
       corner.y = tile.y - drag.grab.y;
     }
     drag.building = { ...drag.building, x: corner.x, y: corner.y };
+    drag.swapWith = null;
     drag.valid =
       drag.kind === "place"
         ? applyOp(this.layout, { kind: "place", building: drag.building }, this.now()) !== null
         : fits(this.layout, drag.building);
+    // Dropped on top of another building, the two trade places.
+    const under =
+      drag.kind === "move" && !drag.valid ? buildingAtTile(this.layout, tileAt(ground)) : undefined;
+    const spots =
+      under && under.id !== drag.building.id && !this.heldByOther(under.id)
+        ? swapped(this.layout, drag.building.id, under.id)
+        : null;
+    if (under && spots) {
+      drag.swapWith = under.id;
+      drag.valid = true;
+      this.view.showPreview({ building: spots.moved, valid: true });
+      return;
+    }
     this.view.showPreview({ building: drag.building, valid: drag.valid });
   }
 
@@ -1152,7 +1170,9 @@ export class CrewMode {
       this.client?.hold(null);
       const original = this.layout.buildings.find((b) => b.id === drag.building.id);
       const moved = original && (original.x !== drag.building.x || original.y !== drag.building.y);
-      if (drag.overIsland && drag.valid && moved) {
+      if (drag.overIsland && drag.swapWith) {
+        this.commit({ kind: "swap", id: drag.building.id, other: drag.swapWith });
+      } else if (drag.overIsland && drag.valid && moved) {
         this.commit({
           kind: "move",
           id: drag.building.id,
@@ -1225,6 +1245,7 @@ export class CrewMode {
         valid: true,
         overIsland: true,
         grab: { x: tile.x - hit.x, y: tile.y - hit.y },
+        swapWith: null,
       };
       this.client?.hold(hit.id);
       this.view.showPreview({ building: hit, valid: true });

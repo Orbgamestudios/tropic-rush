@@ -247,6 +247,8 @@ export interface BuildJob {
 export type LayoutOp =
   | { kind: "place"; building: PlacedBuilding }
   | { kind: "move"; id: string; x: number; y: number; rotated: boolean }
+  /** Two buildings trade places: one dragged on top of the other. */
+  | { kind: "swap"; id: string; other: string }
   | { kind: "remove"; id: string }
   | { kind: "upgrade"; id: string }
   | { kind: "clear"; id: string }
@@ -317,6 +319,35 @@ export function fits(
       b.y + o.h <= candidate.y
     );
   });
+}
+
+/**
+ * Where two buildings stand once they've traded places: each in the middle of where the other
+ * stood, turned the way it was. Null if either won't fit there.
+ */
+export function swapped(
+  layout: Pick<CrewLayout, "buildings" | "cleared"> & Partial<Pick<CrewLayout, "relicSeed">>,
+  id: string,
+  otherId: string,
+): { moved: PlacedBuilding; other: PlacedBuilding } | null {
+  const a = layout.buildings.find((b) => b.id === id);
+  const b = layout.buildings.find((o) => o.id === otherId);
+  if (!a || !b || a === b) return null;
+  const into = (moving: PlacedBuilding, spot: PlacedBuilding): PlacedBuilding => {
+    const from = footprint(moving.type, moving.rotated);
+    const to = footprint(spot.type, spot.rotated);
+    return {
+      ...moving,
+      x: spot.x + Math.floor((to.w - from.w) / 2),
+      y: spot.y + Math.floor((to.h - from.h) / 2),
+    };
+  };
+  const moved = into(a, b);
+  const other = into(b, a);
+  const rest = layout.buildings.filter((o) => o !== a && o !== b);
+  if (!fits({ ...layout, buildings: rest }, moved)) return null;
+  if (!fits({ ...layout, buildings: [...rest, moved] }, other)) return null;
+  return { moved, other };
 }
 
 function overlaps(
@@ -1073,6 +1104,19 @@ export function tryOp(
       if (!fits(layout, moved)) return { error: "That doesn't fit there" };
       return {
         layout: { ...layout, buildings: layout.buildings.map((b) => (b.id === op.id ? moved : b)) },
+      };
+    }
+    case "swap": {
+      const spots = swapped(layout, op.id, op.other);
+      if (!spots) return { error: "Those two won't fit in each other's places" };
+      const { moved, other } = spots;
+      return {
+        layout: {
+          ...layout,
+          buildings: layout.buildings.map((b) =>
+            b.id === moved.id ? moved : b.id === other.id ? other : b,
+          ),
+        },
       };
     }
     case "remove": {

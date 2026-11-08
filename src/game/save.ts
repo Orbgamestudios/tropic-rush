@@ -98,7 +98,7 @@ export interface Settings {
   rev: number;
 }
 
-export const GRAPHICS = ["auto", "high", "medium", "low"] as const;
+export const GRAPHICS = ["auto", "ultra", "high", "medium", "low"] as const;
 export type Graphics = (typeof GRAPHICS)[number];
 export const FRAME_RATES = [120, 60, 30] as const;
 export type FrameRate = (typeof FRAME_RATES)[number];

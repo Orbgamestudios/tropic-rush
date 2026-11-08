@@ -71,6 +71,11 @@ const RINGS: Partial<Record<BuildingType, readonly [number, number]>> = {
 };
 /** The mills lie furthest out, where they're first to fall. */
 const OUTER_RING = [30, 40] as const;
+/**
+ * How far back from the middle of a raider base its headquarters stands, away from the landing, in
+ * meters: whoever comes ashore has to fight through the front of the base to reach it.
+ */
+const HQ_SET_BACK = 10;
 
 export interface BaseOptions {
   /** Every building at the top of what its headquarters allows, for bases retaken in the night. */
@@ -145,6 +150,7 @@ export function enemyBase(
   const home = shape === HOME_SHAPE;
   const anchor = home ? homeBaseAnchor(rated, beach) : shape.base;
   const center = add(anchor, vec(between(rng, -3, 3), between(rng, -3, 3)));
+  const back = home ? vec(0, 0) : normalize(sub(center, shape.spawn));
   const buildings: TileBuilding[] = [];
   const clearance = (c: TileBuilding, gap: number) => {
     const a = footprint(c.type, c.rotated);
@@ -192,15 +198,15 @@ export function enemyBase(
   // A puzzle lays its own defenses, and the first of the storages where it wants them.
   const puzzle = options.puzzle && !home ? puzzlePlan(options.puzzle, rated) : null;
   const laid = new Map<BuildingType, number>();
-  const layPuzzle = () => {
+  const layPuzzle = (hq: Vec2) => {
     if (!puzzle) return;
-    const forward = normalize(sub(shape.spawn, center));
+    const forward = normalize(sub(shape.spawn, hq));
     const across = vec(-forward.y, forward.x);
     const storages = STORAGES.flatMap((t) => Array<BuildingType>(allowedCount(t, rated)).fill(t));
     for (const spot of puzzle) {
       const type = spot.type === "storage" ? storages.shift() : spot.type;
       if (!type) continue;
-      const pos = add(center, add(scale(forward, spot.forward), scale(across, spot.across)));
+      const pos = add(hq, add(scale(forward, spot.forward), scale(across, spot.across)));
       const placed = placeNear(type, pos, level(type));
       if (!placed) continue;
       buildings.push(placed);
@@ -211,6 +217,7 @@ export function enemyBase(
   const defenses = defensesOf(rated);
   const step = Math.PI * 2 * 0.382;
   const tight = Math.min(1, home ? 0.5 + rated * 0.03 : 0.68 + rated * 0.022);
+  const setBack = HQ_SET_BACK * tight;
   let turn = rng() * Math.PI * 2;
   for (const type of BUILD_ORDER) {
     // A puzzle's defenses are all its own.
@@ -227,7 +234,8 @@ export function enemyBase(
         const loose = attempt >= 500;
         const pos =
           type === "headquarters"
-            ? center
+            ? // Set back from the middle, or as near that as the island allows.
+              add(center, scale(back, setBack * Math.max(0, 1 - attempt / 40)))
             : BUILDINGS[type].attack && !loose
               ? add(
                   center,
@@ -248,7 +256,7 @@ export function enemyBase(
         (c) => clearance(c, 1),
       );
       if (placed) buildings.push(placed);
-      if (placed && type === "headquarters") layPuzzle();
+      if (placed && type === "headquarters") layPuzzle(buildingCenter(placed));
     }
   }
   return buildings;

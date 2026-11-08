@@ -12,8 +12,11 @@ import { clamp, lerp } from "../logic/vec";
 const LOOK_SECONDS = 8;
 /** Below this the directional light is the moon. It's almost off there, so the swap can't show. */
 const MOON_BELOW = -1.5;
-/** The light stays this high at sunset, for long shadows that still fit the shadow map. */
-const LOWEST_LIGHT = 16;
+/**
+ * Shadows are cast as if the light were never lower than this, in degrees: any lower and a palm's
+ * shadow is a long bar of trunk across the island, with none of its crown.
+ */
+const LOWEST_LIGHT = 38;
 /** Shadows fade out over these sun heights in degrees, and aren't drawn at all under them. */
 const SHADOWS_FROM = [0.5, 6] as const;
 /** Lamps come on over these sun heights, in degrees. */

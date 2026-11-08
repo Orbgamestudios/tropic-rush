@@ -18,6 +18,18 @@ const LOOPS: Partial<Record<Track, number>> = {
   raid: 64,
 };
 const LOOP_PADDING = 0.25;
+/**
+ * The tracks that are all the crew island's song, 32 bars long, and how long a bar lasts in each.
+ * Going from one to another picks the song up at the bar it had got to, rather than starting it
+ * over, and its opening, every time.
+ */
+const SONG_BAR_SECONDS: Partial<Record<Track, number>> = {
+  heroes: (60 / 90) * 4,
+  map: (60 / 90) * 4,
+  scout: (60 / 90) * 4,
+  raid: (60 / 120) * 4,
+};
+const SONG_BARS = 32;
 
 interface Player {
   track: Track;
@@ -31,6 +43,8 @@ class Music {
   private wanted: Track | null = null;
   private current: Player | null = null;
   private loading: { track: Track; buffer: Promise<AudioBuffer> } | null = null;
+  /** Where the song had got to, in bars, at a moment, and how fast it's going on from there. */
+  private song = { bar: 0, at: 0, barSeconds: Number.POSITIVE_INFINITY };
 
   constructor() {
     // Nothing should keep playing with the phone locked or the game in the background.
@@ -81,7 +95,19 @@ class Music {
     if (this.current?.track === target) return;
     if (this.current) this.fadeOut(this.current);
     this.current = null;
+    // Something else, or nothing, is playing now: the song waits where it was.
+    if (!target || !SONG_BAR_SECONDS[target]) this.holdSong(audioContext()?.currentTime ?? 0);
     if (target) void this.start(target);
+  }
+
+  /** The bar the song has got to, counting fractions of one. */
+  private songBar(now: number): number {
+    const { bar, at, barSeconds } = this.song;
+    return (bar + Math.max(0, now - at) / barSeconds) % SONG_BARS;
+  }
+
+  private holdSong(now: number): void {
+    this.song = { bar: this.songBar(now), at: now, barSeconds: Number.POSITIVE_INFINITY };
   }
 
   private fadeOut({ source, gain }: Player): void {
@@ -119,7 +145,14 @@ class Music {
     gain.gain.setValueAtTime(0, t);
     gain.gain.linearRampToValueAtTime(LEVEL * this.volume, t + FADE_SECONDS);
     source.connect(gain).connect(destination);
-    source.start(t, loop ? LOOP_PADDING : 0);
+    let from = loop ? LOOP_PADDING : 0;
+    const barSeconds = SONG_BAR_SECONDS[track];
+    if (barSeconds) {
+      const bar = this.songBar(t);
+      from += bar * barSeconds;
+      this.song = { bar, at: t, barSeconds };
+    }
+    source.start(t, from);
     this.current = { track, source, gain };
   }
 }

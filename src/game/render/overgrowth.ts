@@ -29,6 +29,8 @@ import {
   palmGeometry,
   pebblesGeometry,
   rockGeometry,
+  smallPlants,
+  solidPlants,
   swaying,
   tuftGeometry,
 } from "./props";
@@ -188,7 +190,7 @@ export class OvergrowthView {
   /** Redraws the plants and shade when obstacles are cleared or buildings change. */
   sync(layout: Pick<CrewLayout, "cleared" | "buildings">): void {
     const { cleared, buildings } = layout;
-    const key = `${cleared.length}:${cleared[cleared.length - 1] ?? ""}:${buildings
+    const key = `${solidPlants()}:${cleared.length}:${cleared[cleared.length - 1] ?? ""}:${buildings
       .map((b) => `${b.id}${b.x}.${b.y}.${b.rotated}`)
       .join()}`;
     if (key === this.key) return;
@@ -238,17 +240,15 @@ export class OvergrowthView {
     add("ear", false, sway);
     add("bush", false, sway);
     add("rock", false, still);
-    add("fern", false, sway, true);
     add("pebbles", false, still, true);
-    add("tuft", false, sway, true);
-    add("red", false, sway, true);
-    add("yellow", false, sway, true);
-    add("white", false, sway, true);
+    for (const kind of ["fern", "tuft", "red", "yellow", "white"] as const) {
+      this.detail.add(smallPlants(kind, () => g[kind], out[kind], sway, homeHeight, true));
+    }
   }
 
-  /** Leaves out the smallest plants once the camera is this far back. */
+  /** Leaves out the smallest plants once the camera is this far back, except on Ultra. */
   setDistance(distance: number): void {
-    this.detail.visible = distance < DETAIL_DISTANCE;
+    this.detail.visible = solidPlants() || distance < DETAIL_DISTANCE;
   }
 
   private paintShade(tx: number, ty: number, channel: number, amount: number): void {

@@ -68,7 +68,7 @@ import { CameraRig } from "./render/cameraRig";
 import { DangerMap } from "./render/dangerMap";
 import { AT_EASE, type HeroMove } from "./render/heroAnimator";
 import { heroModel } from "./render/models";
-import { updateWind } from "./render/props";
+import { setSolidPlants, updateWind } from "./render/props";
 import { RaidView } from "./render/raidView";
 import { loadRigs } from "./render/riggedHeroes";
 import { Showcase } from "./render/showcase";
@@ -665,6 +665,7 @@ export class Game {
     music.setVolume(s.musicVolume);
     setHaptics(s.haptics);
     this.stage.setGraphics(s.graphics);
+    setSolidPlants(s.graphics === "ultra");
   }
 
   /** The track for wherever the player is now. */
