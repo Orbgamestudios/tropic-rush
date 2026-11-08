@@ -77,6 +77,13 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
 
+## Added 2026-11-08 (owner's requests)
+
+- **Heavy:** 3,717 health, 18% more than 3,150. **Decided.**
+- **The story's script** is written: every scene of dialogue from the first landing to the end,
+  both endings and what comes after, all of it voiced. **Planned, not playing yet:** see
+  `docs/STORY.md`.
+
 ## Added 2026-11-07, second batch (owner's requests)
 
 **Decided** unless a line says otherwise. The numbers are first passes.
@@ -134,8 +141,10 @@ These were explicitly left out to keep the first version to a basic structure:
   and on raider bases alike, faintly mottled, with a fine grain and the odd pebble close up and a
   touch darker where it meets the grass. Land mines get none, so they stay hidden.
 - **Swapping buildings:** on the crew island, dragging a building on top of another makes them
-  trade places, each set down in the middle of where the other stood and turned as it was. Not if
-  either won't fit in the other's place, or a crewmate is moving one of them.
+  trade places, each set down in the middle of where the other stood and turned as it was. Where
+  that doesn't fit, a bigger one can go off-center, anywhere it still covers the smaller one's spot,
+  and a smaller one anywhere inside the bigger one's, nearest the middle first (2026-11-08). Not if
+  there's no room for both that way, or a crewmate is moving one of them.
 - **No light round the hero** at night: the glow that went everywhere with them is gone.
 - **Shots from the gun:** a defense's bullets and harpoons leave its muzzle up on the building and
   come down to whoever they're aimed at, rather than flying low from its base.
@@ -169,6 +178,8 @@ These were explicitly left out to keep the first version to a basic structure:
   that sags as it goes and breaks up into rolling orange flame that slows, swells and climbs, under
   dark smoke at the far end. Fuel splashes and burns where it lands, embers fly off it, and it throws
   firelight on the ground after dark.
+- **Clouds round the crew's island:** they come in closer (from 4 meters past the shore, thick by
+  28) and wrap down both sides of the island, kept off only the beach in front of the camera.
 - **Collecting:** a producer being upgraded shows no collect tab, and tapping anywhere on a producer
   whose tab is up collects from it.
 - **Smoke gives you away:** firing from inside smoke lets the defenses in reach see the hero 0.6

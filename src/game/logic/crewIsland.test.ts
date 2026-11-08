@@ -454,10 +454,19 @@ describe("crew island layout", () => {
     expect(spot(traded, "m")).toEqual(at(4, 0));
     expect(spot(traded, "t")).toEqual(at(0, 1));
 
-    // Not if one of them won't fit in the other's place.
-    let blocked = place(island(), building("m", "goldMine", at(0, 0)));
-    blocked = place(blocked, building("v", "goldVault", at(5, 0)));
-    blocked = place(blocked, turret("t", at(5, 3).x, at(5, 3).y));
+    // A bigger one goes off the middle of a smaller one's spot when that's where there's room,
+    // as long as it still takes the whole spot up.
+    let tight = place(island(), building("m", "goldMine", at(4, 0)));
+    tight = place(tight, turret("t", at(1, 2).x, at(1, 2).y));
+    tight = place(tight, building("mine1", "landmine", at(0, 3)));
+    const shifted = applyOp(tight, { kind: "swap", id: "m", other: "t" }, NOW);
+    expect(spot(shifted, "m")).toEqual(at(1, 1));
+    const t = shifted?.buildings.find((b) => b.id === "t");
+    expect(t && t.x >= at(4, 0).x && t.x + 3 <= at(8, 0).x && t.y >= at(0, 0).y).toBe(true);
+    expect(t && t.y + 3 <= at(0, 4).y).toBe(true);
+
+    // Not if there's no such room.
+    const blocked = place(tight, building("mine2", "landmine", at(4, 4)));
     expect(tryOp(blocked, { kind: "swap", id: "m", other: "t" }, NOW)).toEqual({
       error: "Those two won't fit in each other's places",
     });

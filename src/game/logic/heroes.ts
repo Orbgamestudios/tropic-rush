@@ -160,7 +160,7 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
   heavy: {
     name: "Heavy",
     role: "Front-line protector",
-    hp: 3150,
+    hp: 3717,
     speed: 4.3,
     radius: 0.75,
     attack: {

@@ -322,8 +322,10 @@ export function fits(
 }
 
 /**
- * Where two buildings stand once they've traded places: each in the middle of where the other
- * stood, turned the way it was. Null if either won't fit there.
+ * Where two buildings stand once they've traded places, each turned the way it was: in the middle
+ * of where the other stood if it fits there, or else anywhere that still takes up the other's spot
+ * (a bigger one round it, a smaller one inside it), nearest the middle first. Null if there's no
+ * room for both.
  */
 export function swapped(
   layout: Pick<CrewLayout, "buildings" | "cleared"> & Partial<Pick<CrewLayout, "relicSeed">>,
@@ -333,21 +335,31 @@ export function swapped(
   const a = layout.buildings.find((b) => b.id === id);
   const b = layout.buildings.find((o) => o.id === otherId);
   if (!a || !b || a === b) return null;
-  const into = (moving: PlacedBuilding, spot: PlacedBuilding): PlacedBuilding => {
-    const from = footprint(moving.type, moving.rotated);
-    const to = footprint(spot.type, spot.rotated);
-    return {
-      ...moving,
-      x: spot.x + Math.floor((to.w - from.w) / 2),
-      y: spot.y + Math.floor((to.h - from.h) / 2),
-    };
-  };
-  const moved = into(a, b);
-  const other = into(b, a);
   const rest = layout.buildings.filter((o) => o !== a && o !== b);
-  if (!fits({ ...layout, buildings: rest }, moved)) return null;
-  if (!fits({ ...layout, buildings: [...rest, moved] }, other)) return null;
-  return { moved, other };
+  for (const moved of placesIn(a, b)) {
+    if (!fits({ ...layout, buildings: rest }, moved)) continue;
+    for (const other of placesIn(b, a)) {
+      if (fits({ ...layout, buildings: [...rest, moved] }, other)) return { moved, other };
+    }
+  }
+  return null;
+}
+
+/** Every way `moving` can take up `spot`'s place, nearest its middle first. */
+function placesIn(moving: PlacedBuilding, spot: PlacedBuilding): PlacedBuilding[] {
+  const from = footprint(moving.type, moving.rotated);
+  const to = footprint(spot.type, spot.rotated);
+  const along = (start: number, give: number) =>
+    Array.from({ length: Math.abs(give) + 1 }, (_, i) => start + Math.min(0, give) + i);
+  const middle = { x: spot.x + (to.w - from.w) / 2, y: spot.y + (to.h - from.h) / 2 };
+  const places = along(spot.x, to.w - from.w).flatMap((x) =>
+    along(spot.y, to.h - from.h).map((y) => ({ ...moving, x, y })),
+  );
+  // A stable sort: of two as near the middle, the one further up and left comes first.
+  return places.sort(
+    (p, q) =>
+      Math.hypot(p.x - middle.x, p.y - middle.y) - Math.hypot(q.x - middle.x, q.y - middle.y),
+  );
 }
 
 function overlaps(

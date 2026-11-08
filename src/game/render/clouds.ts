@@ -3,7 +3,7 @@
 // never hide the gunboat. Every puff is a quad tilted towards the camera, all merged into one
 // mesh: one draw call for the lot. The crew's own island has a sheet instead (homeClouds): the
 // world map's clouds seen close up, clear over the island and reaching out to the edges of the
-// view, but never along its bottom, on the camera's side.
+// view and wrapping round its sides, but kept off the beach in front of the camera.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -114,10 +114,15 @@ export function buildClouds(seed: number, shape: IslandShape = HOME_SHAPE): Clou
 /** The sheet over the crew's island, in meters: wide enough to reach past any view of it. */
 const HOME_SHEET = { size: 1400, height: 9 } as const;
 /** Clear this far past the coast, solid this far out: the beach and the gunboat stay in the open. */
-const CLEAR_PAST = 9;
-const SOLID_PAST = 46;
-/** How much further out the cloud keeps on the camera's side, so it never covers the bottom of the screen. */
+const CLEAR_PAST = 4;
+const SOLID_PAST = 28;
+/** How much further out the cloud keeps off the beach in front of the camera, at the bottom of the screen. */
 const CAMERA_SIDE_CLEAR = 600;
+/**
+ * How square on to the camera a way out from the island has to be to count as the beach in front:
+ * the cloud fades out over this, as the cosine of the angle between them.
+ */
+const BEACH_CLEAR = [0.5, 0.8] as const;
 /** The furthest coast the bake of the island's outline can hold, in meters. */
 const OUTLINE_REACH = 220;
 
@@ -150,8 +155,9 @@ const HOME_FRAGMENT = /* glsl */ `
     float angle = atan(p.y, p.x) / 6.2831853 + 0.5;
     float coast = texture2D(uCoast, vec2(angle, 0.5)).r * ${OUTLINE_REACH}.0;
     float out_ = length(p) + (flow.x + flow.y) * 34.0 - coast;
-    // Nothing on the camera's side of the island, which is the bottom of the screen.
-    out_ -= smoothstep(-0.3, 0.3, dot(normalize(p), uToCamera)) * ${CAMERA_SIDE_CLEAR}.0;
+    // Nothing off the beach in front of the camera, at the bottom of the screen; round the sides
+    // it comes in as close as anywhere else.
+    out_ -= smoothstep(${BEACH_CLEAR[0]}, ${BEACH_CLEAR[1]}, dot(normalize(p), uToCamera)) * ${CAMERA_SIDE_CLEAR}.0;
     float cover = smoothstep(${CLEAR_PAST}.0, ${SOLID_PAST}.0, out_);
     // Deep in the bank it's solid, and towards the clear sky only the thickest puffs stay.
     float edge = 1.02 - cover * 1.5;
