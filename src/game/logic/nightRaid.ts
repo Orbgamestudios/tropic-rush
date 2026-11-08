@@ -50,6 +50,11 @@ export interface RaidingShip {
   homeSeed: number;
   /** When it struck, in milliseconds. */
   at: number;
+  /**
+   * Its raiders dodge what's coming and back off when hurt (2026-11-08). Raids from before then
+   * replay with the raiders as they were, so a replay still matches what happened.
+   */
+  dodges?: boolean;
 }
 
 /** A raid that happened, with what's needed to replay it. */
@@ -113,6 +118,7 @@ export function raidingShip(ship: RaiderShip): RaidingShip {
     crew: ship.crew,
     homeSeed: ship.homeSeed,
     at: ship.at,
+    dodges: true,
   };
 }
 
@@ -126,7 +132,7 @@ export function startNightRaid(
   const arsenal = ship ? raiderArsenal(ship.hq) : FULL_ARSENAL;
   const state = createRaid(nightIsland(crew, seed), kinds, powers, [], arsenal);
   state.hitAndRun = true;
-  state.tactics = ship ? { bombards: ship.bombards } : null;
+  state.tactics = ship ? { bombards: ship.bombards, dodges: ship.dodges === true } : null;
   return state;
 }
 

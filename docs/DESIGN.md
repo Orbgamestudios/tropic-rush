@@ -161,6 +161,17 @@ These were explicitly left out to keep the first version to a basic structure:
   middle, with a channel left open there; dark crust plates ride slower on top, closing in from the
   banks, with glowing cracks between them. The flow swells up in the middle, an orange glow spills
   onto the ground beside it, and embers drift up off it.
+- **Raiders who dodge:** raiders off tonight's ships stop shooting to get out of the way: they
+  step across the line of a bullet or harpoon that will pass close, run clear of where a mortar
+  shell is about to land, and step aside from a sniper's sights holding on them. Badly hurt, with
+  no medic along, they back out of the defenses' reach. The one on the gunboat's radio steps out of
+  reach before calling it in, since it can't move while calling, and the gunboat fires more
+  readily: smoke over raiders pinned down and hurting, and a shell whenever one's affordable (a
+  little saved first for a crew that bombards). Over a dozen test raids on the same base they broke
+  85% of it against 73%, and took about a quarter of the damage. Raids from before replay as they
+  ran.
+- **Snipers shoot over small rocks:** a watchtower's shot clears the small rocks; cliffs still stop
+  it.
 - **Full screen on load:** the game always reaches the bottom of the screen, where an iPhone could
   start a home-screen app a strip short in landscape.
 

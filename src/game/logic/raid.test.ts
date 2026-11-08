@@ -1331,3 +1331,25 @@ function enemyShot(state: RaidState): RaidState["projectiles"][number] {
     leaves: null,
   };
 }
+
+describe("sniper towers", () => {
+  it("shoot over a small rock, but not through a cliff", () => {
+    const hurt = (kind: "rock" | "cliff") => {
+      const cover = {
+        kind,
+        pos: vec(0, -14),
+        radius: 1.6,
+        blocksShots: true,
+        scale: 1.6,
+        rotation: 0,
+      };
+      const state = raid([{ type: "watchtower", pos: vec(0, -28) }], ["rifleman"], {
+        obstacles: [cover],
+      });
+      run(state, 8);
+      return hero(state).hp < hero(state).maxHp;
+    };
+    expect(hurt("rock")).toBe(true);
+    expect(hurt("cliff")).toBe(false);
+  });
+});

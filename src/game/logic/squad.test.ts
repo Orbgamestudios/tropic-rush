@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { BUILDINGS } from "./buildings";
 import { generateIsland } from "./enemyBase";
-import { createRaid, IDLE_INPUT, type RaidHero, type RaidState, stepRaid } from "./raid";
-import { squadInput } from "./squad";
-import { add, distance, normalize, scale, sub, vec } from "./vec";
+import type { IslandLayout, PlacedBuilding } from "./island";
+import {
+  createRaid,
+  IDLE_INPUT,
+  type Projectile,
+  type RaidHero,
+  type RaidState,
+  stepRaid,
+} from "./raid";
+import { dodge, squadInput } from "./squad";
+import { add, distance, length, normalize, scale, sub, type Vec2, vec } from "./vec";
 
 const DT = 1 / 60;
 
@@ -104,5 +112,117 @@ describe("raiders", () => {
     };
     expect(moved(false)).toBeLessThan(0.1);
     expect(moved(true)).toBeGreaterThan(1);
+  });
+});
+
+function layout(buildings: PlacedBuilding[]): IslandLayout {
+  return {
+    seed: 3,
+    level: 1,
+    buildings,
+    obstacles: [],
+    decor: [],
+    mines: [],
+    spawn: vec(0, 0),
+    boat: vec(0, 6),
+  };
+}
+
+/** A rifleman raider off a ship, a gun turret 12 meters north. */
+function raid(dodges = true): RaidState {
+  const state = createRaid(layout([{ type: "gunTurret", pos: vec(0, -12) }]), ["rifleman"]);
+  state.tactics = { bombards: false, dodges };
+  return state;
+}
+
+function shot(from: Vec2, vel: Vec2, lob: Projectile["lob"] = null): Projectile {
+  return {
+    id: 999,
+    kind: lob ? "mortar" : "bullet",
+    team: "enemy",
+    ownerId: 0,
+    pos: from,
+    vel,
+    damage: 40,
+    splash: lob ? 2.5 : 0,
+    buildingBonus: 1,
+    heavyBonus: 1,
+    traveled: 0,
+    maxDistance: 30,
+    lob,
+    charges: 0,
+    homing: null,
+    leaves: null,
+  };
+}
+
+const dot = (a: Vec2, b: Vec2) => a.x * b.x + a.y * b.y;
+
+describe("raiders who dodge", () => {
+  it("stop shooting to step across a bullet coming at them", () => {
+    const state = raid();
+    const hero = state.heroes[0];
+    if (!hero) throw new Error("no raider");
+    state.projectiles.push(shot(vec(0, -8), vec(0, 30)));
+    const input = squadInput(state, 0);
+    expect(input.aim).toBeNull();
+    expect(length(input.move)).toBeGreaterThan(0.5);
+    // Across the bullet's line, not along it.
+    expect(Math.abs(dot(normalize(input.move), vec(0, 1)))).toBeLessThan(0.5);
+  });
+
+  it("let a bullet that'll miss go by", () => {
+    const state = raid();
+    state.projectiles.push(shot(vec(6, -8), vec(0, 30)));
+    expect(dodge(state, state.heroes[0] as never)).toBeNull();
+  });
+
+  it("run clear of where a mortar shell is about to land", () => {
+    const state = raid();
+    const landing = vec(0.8, 0.2);
+    state.projectiles.push(
+      shot(vec(0, -6), vec(0, 0), {
+        from: vec(0, -12),
+        to: landing,
+        t: 1.2,
+        duration: 1.8,
+        peak: 9,
+      }),
+    );
+    const input = squadInput(state, 0);
+    // Away from the landing spot.
+    expect(dot(input.move, vec(-landing.x, -landing.y))).toBeGreaterThan(0);
+    expect(input.aim).toBeNull();
+  });
+
+  it("step out of a sniper's sights holding on them", () => {
+    const state = raid();
+    const tower = state.buildings[0];
+    if (!tower) throw new Error("no defense");
+    tower.sights = vec(0, 0);
+    expect(dodge(state, state.heroes[0] as never)).not.toBeNull();
+  });
+
+  it("raiders from before stand and shoot, so old raids replay as they ran", () => {
+    const state = raid(false);
+    state.energy = 0;
+    state.projectiles.push(shot(vec(0, -8), vec(0, 30)));
+    // In reach of the turret: an old raider keeps firing.
+    const hero = state.heroes[0];
+    if (!hero) throw new Error("no raider");
+    hero.pos = vec(0, -3);
+    expect(squadInput(state, 0).aim).not.toBeNull();
+  });
+
+  it("won't call the gunboat while standing in a defense's reach", () => {
+    const state = raid();
+    state.energy = 30;
+    const hero = state.heroes[0];
+    if (!hero) throw new Error("no raider");
+    hero.pos = vec(0, -4);
+    const input = squadInput(state, 0);
+    expect(input.toggleBoat).toBe(false);
+    // Backing off, away from the turret to the north.
+    expect(input.move.y).toBeGreaterThan(0);
   });
 });

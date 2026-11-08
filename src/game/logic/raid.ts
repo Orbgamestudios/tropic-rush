@@ -451,7 +451,7 @@ export interface RaidState {
    * AI raiders off a raider ship: they strafe the defenses and work the gunboat, saving its energy
    * for big strikes if they bombard. Null for raids from before the ships, which replay as they ran.
    */
-  tactics: { bombards: boolean } | null;
+  tactics: { bombards: boolean; dodges?: boolean } | null;
   /**
    * The time power running, crew-wide, and who used it. A record is `replaying` once time has
    * gone back and the copy is playing it out.
@@ -2235,7 +2235,8 @@ function stepProjectile(state: RaidState, p: Projectile, dt: number): boolean {
   // A guided rocket curves up and round whatever's in its way.
   if (p.homing === null) {
     for (const o of state.obstacles) {
-      if (o.blocksShots && distance(p.pos, o.pos) <= o.radius) return impact(state, p);
+      if (!o.blocksShots || (p.kind === "sniper" && o.kind === "rock")) continue;
+      if (distance(p.pos, o.pos) <= o.radius) return impact(state, p);
     }
   }
   if (p.team === "crew") {

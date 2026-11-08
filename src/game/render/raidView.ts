@@ -656,7 +656,7 @@ export class RaidView {
     );
     updateWind(time, watched && !watched.inBoat && this.showBars ? this.focus : null);
     this.effects.update(dt);
-    this.reach?.update(this.showBars && state.conquest === null ? leader : undefined);
+    this.reach?.update(state, this.showBars && state.conquest === null ? leader : undefined);
     const aiming = this.showBars && !this.defending ? leader : undefined;
     this.aimView.update(state, aiming, this.aim, this.ground, time);
     this.overgrowth?.update(dt);

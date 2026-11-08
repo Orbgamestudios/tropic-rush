@@ -3,10 +3,13 @@
 // leader is down, the rest keep pushing on their own. Raiders off a raider ship fight smarter: they
 // strafe a defense rather than stand in front of it, go for whatever pays the gunboat's energy while
 // they're short of it, and one of them works the gunboat's radio, stunning a nest of defenses and
-// then shelling it, or dropping a medkit on hurt raiders bunched together.
+// then shelling it, or dropping a medkit on hurt raiders bunched together. Since 2026-11-08 they
+// also stop shooting to get out of the way of what's coming at them: sidestepping bullets and
+// harpoons, running clear of where a mortar shell will land, stepping out of a sniper's sights,
+// backing off when badly hurt, and stepping out of the defenses' reach before calling the gunboat.
 
 import { BUILDINGS } from "./buildings";
-import { type Ability, HEAL, SHOCK } from "./gunboat";
+import { type Ability, HEAL, SHOCK, SMOKE } from "./gunboat";
 import { HEROES } from "./heroes";
 import {
   type HeroInput,
@@ -40,8 +43,18 @@ const BOAT_REACH = 26;
 /** Raiders this hurt, two or more within a medkit's circle, get one. */
 const BOAT_HEAL_AT = 0.45;
 
+/** A raider sidesteps a direct shot that will pass this close within this many seconds... */
+const SHOT_MISS = 0.9;
+const SHOT_SEEN = 0.75;
+/** ...and runs from a mortar shell landing within its splash this soon. */
+const SHELL_SEEN = 1.5;
+/** Below this share of their health, a raider backs out of the defenses' reach for a while. */
+const BACK_OFF = 0.28;
+
 /** Where each squadmate stands relative to the leader when nothing is in reach (behind, fanned). */
 const SLOTS: readonly Vec2[] = [vec(-2.6, 2.4), vec(2.6, 2.4), vec(0, 3.8), vec(-4, 4.2)];
+
+const dot = (a: Vec2, b: Vec2) => a.x * b.x + a.y * b.y;
 
 function shotBlocked(state: RaidState, from: Vec2, to: Vec2): boolean {
   const d = sub(to, from);
@@ -113,6 +126,65 @@ function strafe(state: RaidState, hero: RaidHero, index: number, target: RaidBui
   return normalize(add(across, scaleVec(to, inOut)));
 }
 
+/**
+ * Which way to step to get out of the way of what's coming, or null if nothing is: across the
+ * line of a bullet or harpoon that will pass close, out of where a mortar shell will land, and to
+ * one side of a sniper's sights holding on them.
+ */
+export function dodge(state: RaidState, hero: RaidHero): Vec2 | null {
+  const r = HEROES[hero.kind].radius;
+  let away = vec(0, 0);
+  for (const p of state.projectiles) {
+    if (p.team !== "enemy") continue;
+    if (p.lob) {
+      const left = p.lob.duration - p.lob.t;
+      if (left > SHELL_SEEN) continue;
+      const gap = distance(p.lob.to, hero.pos);
+      if (gap > p.splash + r + 0.8) continue;
+      // Straight out from where it'll land, harder the nearer the middle.
+      const out = gap > 0.01 ? normalize(sub(hero.pos, p.lob.to)) : fromAngle(hero.facing + 1.6);
+      away = add(away, scaleVec(out, 2 - gap / (p.splash + r + 0.8)));
+      continue;
+    }
+    const toHero = sub(hero.pos, p.pos);
+    const speed2 = dot(p.vel, p.vel);
+    const ahead = dot(toHero, p.vel);
+    if (speed2 < 1e-6 || ahead <= 0) continue;
+    const t = Math.min(SHOT_SEEN, ahead / speed2);
+    const closest = add(p.pos, scaleVec(p.vel, t));
+    if (distance(closest, hero.pos) > r + SHOT_MISS || t >= SHOT_SEEN) continue;
+    // Across the shot's line, to whichever side they're already on.
+    const across = normalize(vec(-p.vel.y, p.vel.x));
+    const side = dot(sub(hero.pos, closest), across) >= 0 ? 1 : -1;
+    away = add(away, scaleVec(across, side));
+  }
+  for (const b of state.buildings) {
+    if (!b.sights || b.destroyed || distance(b.sights, hero.pos) > r + 1.6) continue;
+    const line = normalize(sub(hero.pos, b.pos));
+    const side = Math.floor(state.time * 0.7 + b.id) % 2 === 0 ? 1 : -1;
+    away = add(away, vec(-line.y * side, line.x * side));
+  }
+  return length(away) > 0.01 ? normalize(add(away, scaleVec(spacing(state, hero), 0.3))) : null;
+}
+
+/** The defenses that can reach a spot, with a little to spare. */
+function underFire(state: RaidState, pos: Vec2, spare = 1.5): RaidBuilding[] {
+  return state.buildings.filter((b) => {
+    const attack = BUILDINGS[b.type].attack;
+    return (
+      !b.destroyed && attack && !shocked(state, b) && distance(b.pos, pos) < attack.range + spare
+    );
+  });
+}
+
+/** Straight away from the nearest of these defenses. */
+function awayFrom(hero: RaidHero, threats: readonly RaidBuilding[]): Vec2 {
+  const nearest = threats.reduce((a, b) =>
+    distance(b.pos, hero.pos) < distance(a.pos, hero.pos) ? b : a,
+  );
+  return normalize(sub(hero.pos, nearest.pos));
+}
+
 /** Who works the gunboat's radio: the last raider standing who isn't the leader or a medic. */
 function radioman(state: RaidState): RaidHero | null {
   for (let i = state.heroes.length - 1; i > 0; i--) {
@@ -153,6 +225,15 @@ function boatOrder(state: RaidState): { ability: Ability; target: Vec2 } | null 
       raiders.some((h) => distance(h.pos, b.pos) < BOAT_REACH),
   );
   if (threats.length === 0) return null;
+  // Raiders pinned down and hurting, together: hide them in smoke.
+  if (tactics.dodges && afford("smoke") && !state.zones.some((z) => z.kind === "smoke")) {
+    const pinned = raiders.filter(
+      (h) => h.hp / h.maxHp < 0.6 && underFire(state, h.pos, 0).length >= 2,
+    );
+    const spot = middle(pinned.map((h) => h.pos));
+    if (pinned.length >= 2 && pinned.every((h) => distance(h.pos, spot) < SMOKE.radius * 0.8))
+      return { ability: "smoke", target: spot };
+  }
   // The densest knot of them, by how many stand within a shock's circle of each.
   let nest: RaidBuilding[] = [];
   for (const b of threats) {
@@ -166,7 +247,8 @@ function boatOrder(state: RaidState): { ability: Ability; target: Vec2 } | null 
     if (afford("barrage") && (stunned || !tactics.bombards))
       return { ability: "barrage", target: spot };
   }
-  const saved = tactics.bombards ? BOMBARD_SAVINGS : 0;
+  // Those that dodge don't hoard: a shell whenever one's affordable, or a little saved to bombard.
+  const saved = tactics.bombards ? (tactics.dodges ? 8 : BOMBARD_SAVINGS) : 0;
   if (!afford("artillery") || state.energy < saved) return null;
   const toughest = threats.reduce((a, b) => (b.hp > a.hp ? b : a));
   return { ability: "artillery", target: toughest.pos };
@@ -179,6 +261,19 @@ export function squadInput(state: RaidState, index: number): HeroInput {
   if (!hero || !hero.alive) return IDLE_INPUT;
   const spec = HEROES[hero.kind];
 
+  // Raiders who dodge stop shooting to get out of the way of what's coming, and back off when
+  // they're badly hurt, unless a medic is on them.
+  // Out of the way first, unless already on the radio.
+  if (state.tactics?.dodges && !hero.inBoat) {
+    const out = dodge(state, hero);
+    if (out) return { ...IDLE_INPUT, move: out };
+    const tended = state.heroes.some(
+      (h) => h.alive && h !== hero && HEROES[h.kind].attack.kind === "heal",
+    );
+    const threats = underFire(state, hero.pos, 0);
+    if (hero.hp / hero.maxHp < BACK_OFF && !tended && threats.length > 0)
+      return { ...IDLE_INPUT, move: awayFrom(hero, threats) };
+  }
   // The radio: on to the gunboat when there's something worth firing, and off again after.
   if (state.tactics && hero === radioman(state)) {
     const order = boatOrder(state);
@@ -188,7 +283,12 @@ export function squadInput(state: RaidState, index: number): HeroInput {
       if (!waiting) return { ...IDLE_INPUT, toggleBoat: true };
       return IDLE_INPUT;
     }
-    if (order) return { ...IDLE_INPUT, toggleBoat: true };
+    if (order) {
+      // On the radio they can't move: get out of the defenses' reach before calling it in.
+      const threats = state.tactics.dodges ? underFire(state, hero.pos) : [];
+      if (threats.length === 0) return { ...IDLE_INPUT, toggleBoat: true };
+      return { ...IDLE_INPUT, move: awayFrom(hero, threats) };
+    }
   }
   const anchor = leader && leader !== hero && leader.alive ? leader.pos : null;
 

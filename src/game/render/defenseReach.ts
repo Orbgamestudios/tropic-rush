@@ -55,7 +55,8 @@ const FRAGMENT = /* glsl */ `
 `;
 
 interface Reach {
-  building: RaidBuilding;
+  id: number;
+  pos: { x: number; y: number };
   range: number;
   /** Where its vertices are, to rub it out when it falls. */
   from: number;
@@ -105,7 +106,8 @@ export class DefenseReach {
       // A mortar can't hit anything inside its blind spot, which has an edge of its own.
       if (attack.kind === "mortar") ring(b, attack.minRange, attack.range, sniper);
       this.reaches.push({
-        building: b,
+        id: b.id,
+        pos: { ...b.pos },
         range: attack.range,
         from,
         to: positions.length / 3,
@@ -139,17 +141,19 @@ export class DefenseReach {
     this.mesh.visible = false;
   }
 
-  update(hero: RaidHero | undefined): void {
+  update(state: RaidState, hero: RaidHero | undefined): void {
     let near = false;
     this.dim.value = overlayOpacity();
+    const byId = new Map(state.buildings.map((b) => [b.id, b]));
     for (const reach of this.reaches) {
-      if (reach.standing && reach.building.destroyed) {
-        reach.standing = false;
-        (this.standing.array as Float32Array).fill(0, reach.from, reach.to);
+      const standing = byId.get(reach.id)?.destroyed === false;
+      if (standing !== reach.standing) {
+        reach.standing = standing;
+        (this.standing.array as Float32Array).fill(standing ? 1 : 0, reach.from, reach.to);
         this.standing.needsUpdate = true;
       }
       if (!hero || !reach.standing) continue;
-      near ||= distance(hero.pos, reach.building.pos) - reach.range < FADE_DISTANCE;
+      near ||= distance(hero.pos, reach.pos) - reach.range < FADE_DISTANCE;
     }
     if (hero) this.hero.set(hero.pos.x, hero.pos.y);
     this.mesh.visible = near && (hero?.alive ?? false);
