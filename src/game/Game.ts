@@ -555,6 +555,7 @@ export class Game {
       crewAhead: (ms: number) => this.crew.skipForTest(ms),
       /** Brings a statue to light, without months of clearing first. */
       findStatue: (kind: CrystalKind) => this.crew.findForTest(kind),
+      findHourglass: (mended = false) => this.crew.findHourglassForTest(mended),
       /** Points the home island's camera at a spot. */
       crewLook: (x: number, y: number, distance: number) => this.crew.lookForTest(x, y, distance),
       /** Scouts any island there is, for looking at how it comes out. */

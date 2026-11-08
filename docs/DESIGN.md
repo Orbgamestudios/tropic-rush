@@ -100,10 +100,13 @@ These were explicitly left out to keep the first version to a basic structure:
   - **Retries** go off by themselves when a hero falls, after the Medic's guardian angel, taking
     them back about 3 seconds with at least 30% of their health.
   - **On screen:** a round button for each power brought sits under the energy and loot, with its
-    count and a ring of the time left; a red heart pill counts the crew's retries. While a power
-    runs the picture is washed in its color (slow yellow, pause blue, fast forward orange, record
-    green, rewind purple), and a retry flashes red; the HUD keeps its own colors. The power's name
-    and seconds left sit small under the timer.
+    count and a ring of the time left. The crew's retries are small red crystals under the hero's
+    health, one for each left. While a power runs the picture is washed in its color (slow
+    yellow, pause blue, fast forward orange, record green, rewind purple), and a retry flashes
+    red; the HUD keeps its own colors. The power's name and seconds left sit small under the
+    timer. Fast forward's barrier is a glowing orange bubble round each hero, fainter as it's worn
+    down, and an orange stripe on the health bar. A hero being recorded is solid bright green,
+    still lit and casting a shadow.
   - **Picking:** the hero screen shows the shards a player owns; tap up to three powers to take
     (the first three owned if none are picked). Retries always go.
   - **The Hourglass:** a ruin hidden in deep jungle (tier 3, where the chainsaw goes) on every

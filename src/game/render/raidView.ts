@@ -21,6 +21,7 @@ import type {
   Zone,
 } from "../logic/raid";
 import type { Spoils } from "../logic/spoils";
+import { FAST_BARRIER } from "../logic/timeShards";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
@@ -100,6 +101,8 @@ interface HeroView {
   ring: THREE.Mesh;
   /** Their own materials, put by while they're drawn solid green for a record. */
   greened: Map<THREE.Mesh, THREE.Material | THREE.Material[]> | null;
+  /** Fast forward's barrier round them, made the first time they have one. */
+  bubble: THREE.Mesh | null;
 }
 
 /**
@@ -711,9 +714,39 @@ export class RaidView {
       turn: 0,
       ring,
       greened: null,
+      bubble: null,
     };
     this.heroes.set(h.id, view);
     return view;
+  }
+
+  /** Fast forward's barrier: a bubble round the hero, fainter the more of it's been used up. */
+  private showBarrier(view: HeroView, h: RaidHero, pos: Vec2): void {
+    if (h.barrier <= 0) {
+      if (view.bubble) view.bubble.visible = false;
+      return;
+    }
+    if (!view.bubble) {
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xff8a1f,
+        transparent: true,
+        opacity: 0.3,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      view.bubble = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), material);
+      view.bubble.renderOrder = 3;
+      this.root.add(view.bubble);
+    }
+    const bubble = view.bubble;
+    const size = HEROES[h.kind].radius * 2.2 + 0.4;
+    const left = Math.min(1, h.barrier / (h.maxHp * FAST_BARRIER));
+    bubble.visible = true;
+    bubble.position.set(pos.x, this.ground(pos.x, pos.y) + size * 0.55, pos.y);
+    bubble.scale.set(size, size * 1.1, size);
+    if (bubble.material instanceof THREE.MeshBasicMaterial) {
+      bubble.material.opacity = 0.1 + 0.25 * left + Math.sin(this.ringPulse * 6) * 0.04;
+    }
   }
 
   /** Turns a hero solid green while they're recorded, and back again after. */
@@ -891,6 +924,7 @@ export class RaidView {
       ring.position.set(pos.x, this.ground(pos.x, pos.y) + 0.06, pos.y);
       this.layOnSlope(ring, pos.x, pos.y);
       ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
+      this.showBarrier(view, h, pos);
       // Turn smoothly rather than snapping.
       const turned = angleDiff(h.facing, view.facing) * Math.min(1, dt * 18);
       view.facing += turned;

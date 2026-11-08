@@ -45,6 +45,7 @@ export class HourglassPanel {
   ) {
     const card = panel("The Hourglass", "crew-night-card");
     this.body = card.body;
+    this.body.classList.add("crew-hourglass-body");
     card.root.append(
       button({
         icon: "close",

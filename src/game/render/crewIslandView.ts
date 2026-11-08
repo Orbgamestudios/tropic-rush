@@ -937,6 +937,15 @@ export class CrewIslandView {
     );
   }
 
+  lookAtHourglass(layout: Pick<CrewLayout, "relicSeed">): void {
+    const site = hourglassSite(layout.relicSeed);
+    if (!site) return;
+    this.camera.lookAt(
+      GRID_ORIGIN.x + (site.x + site.w / 2) * TILE,
+      GRID_ORIGIN.y + (site.y + site.h / 2) * TILE,
+    );
+  }
+
   /** Leaves or stone chips flying off a cleared obstacle. */
   burst(o: Obstacle): void {
     this.overgrowth.burst(o);

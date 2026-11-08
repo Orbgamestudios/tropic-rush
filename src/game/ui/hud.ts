@@ -55,6 +55,8 @@ export class Hud {
   private readonly name = el("div", "hud-name");
   private readonly hpFill = el("div", "hud-bar-fill");
   private readonly hpLag = el("div", "hud-bar-lag");
+  /** Fast forward's barrier, over the end of the health bar. */
+  private readonly hpBarrier = el("div", "hud-bar-barrier");
   private readonly hpText = el("span", "hud-bar-text");
   private readonly timer = el("span", "hud-objective-time");
   private readonly destroyed = el("span", "hud-objective-pct");
@@ -81,7 +83,9 @@ export class Hud {
     TimePower,
     { button: HTMLButtonElement; count: HTMLElement }
   >();
-  private readonly retryPill = el("div", "hud-retries");
+  /** The crew's retry crystals, one for each retry left, under the hero's health. */
+  private readonly retryRow = el("div", "hud-retries");
+  private shownRetries = -1;
   /** The time power running, named small under the timer. */
   private readonly timeLabel = el("div", "hud-time-label");
   private shownTime = "";
@@ -113,10 +117,12 @@ export class Hud {
     frame.append(this.portrait, this.level);
     const bars = el("div", "hud-bars");
     const hp = el("div", "hud-bar hud-bar-hp");
-    hp.append(this.hpLag, this.hpFill, this.hpText);
+    hp.append(this.hpLag, this.hpFill, this.hpBarrier, this.hpText);
     const hpRow = el("div", "hud-bar-row");
     hpRow.append(icon("heart", "hud-bar-icon"), hp);
-    bars.append(this.name, hpRow);
+    this.retryRow.style.setProperty("--tint", TIME_POWER_SPECS.retry.color);
+    this.retryRow.title = TIME_POWER_SPECS.retry.text;
+    bars.append(this.name, hpRow, this.retryRow);
     card.append(frame, bars);
 
     // Objective.
@@ -168,9 +174,6 @@ export class Hud {
       this.shardBox.append(b);
       this.shardButtons.set(power, { button: b, count });
     }
-    this.retryPill.style.setProperty("--tint", TIME_POWER_SPECS.retry.color);
-    this.retryPill.title = TIME_POWER_SPECS.retry.text;
-    this.shardBox.append(this.retryPill);
     right.append(mapRow, pills, this.materials, this.shardBox);
 
     // The gunboat button.
@@ -231,6 +234,7 @@ export class Hud {
     this.level.replaceChildren(levelBadge(upgrades));
     this.lastHp = -1;
     this.retriesSeen = -1;
+    this.shownRetries = -1;
     // A new island, so a new map of it.
     this.mapBase = null;
   }
@@ -288,6 +292,9 @@ export class Hud {
     this.hpLag.style.width = `${this.lagHp * 100}%`;
     this.hpText.textContent = `${formatNumber(Math.ceil(hero.hp))} / ${formatNumber(hero.maxHp)}`;
     this.hpFill.classList.toggle("low", hpFraction < 0.3);
+    const barrier = Math.min(1, hero.barrier / hero.maxHp);
+    this.hpBarrier.style.width = `${barrier * 100}%`;
+    this.hpBarrier.style.left = `${Math.max(0, hpFraction - barrier) * 100}%`;
 
     const percent = destructionPercent(state);
     this.timer.textContent = formatTime(state.timeLimit - state.time);
@@ -349,8 +356,15 @@ export class Hud {
       this.timeLabel.classList.toggle("on", named !== null);
       if (named) this.timeLabel.style.setProperty("--tint", TIME_POWER_SPECS[named].color);
     }
-    this.retryPill.style.display = state.retries > 0 ? "" : "none";
-    this.retryPill.textContent = `${TIME_POWER_SPECS.retry.glyph} ×${state.retries}`;
+    if (state.retries !== this.shownRetries) {
+      this.shownRetries = state.retries;
+      const gems = Array.from({ length: Math.min(state.retries, 6) }, () =>
+        el("span", "hud-retry-gem"),
+      );
+      if (state.retries > 6) gems.push(el("span", "hud-retry-more", `×${state.retries}`));
+      this.retryRow.replaceChildren(...gems);
+      this.root.classList.toggle("retrying", state.retries > 0);
+    }
 
     // Crewmates' portraits.
     for (const mate of this.squad) {

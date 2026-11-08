@@ -22,6 +22,7 @@ import {
   fits,
   gunboatWeapons,
   hourglassAtTile,
+  hourglassSite,
   hqLevel,
   hqNeeds,
   type LayoutOp,
@@ -278,6 +279,19 @@ export class CrewMode {
   /** Makes a change to the island from a test, straight through the usual rules. */
   applyForTest(op: LayoutOp): boolean {
     return this.commit(op);
+  }
+
+  /** Brings the Hourglass to light from a test, mended if asked, with its panel open. */
+  findHourglassForTest(mended: boolean): void {
+    const site = hourglassSite(this.layout.relicSeed);
+    this.layout = {
+      ...this.layout,
+      cleared: site ? [...this.layout.cleared, site.id] : this.layout.cleared,
+      hourglass: { found: true, doneAt: mended ? 0 : null, mended },
+    };
+    this.view?.lookAtHourglass(this.layout);
+    if (this.view) this.view.camera.distance = 34;
+    this.showHourglass(this.layout);
   }
 
   /** Brings a statue to light from a test, and looks at it. */

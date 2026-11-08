@@ -2000,3 +2000,54 @@
   line-height: 16px;
   text-align: center;
 }
+
+/* The Hourglass panel on the crew's island. */
+.crew-hourglass .ui-panel {
+  max-width: min(440px, 92vw);
+}
+
+.crew-hourglass-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.crew-hourglass-text {
+  max-width: 300px;
+  padding: 0 14px;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--cream);
+}
+
+.crew-hourglass-label {
+  font-family: var(--display);
+  font-size: 15px;
+  text-transform: uppercase;
+  color: var(--gold-text);
+  text-shadow: var(--outline);
+}
+
+.crew-hourglass-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.crew-hourglass-cost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--cream);
+}
+
+.crew-hourglass-result {
+  font-family: var(--display);
+  font-size: 14px;
+  color: var(--gold-text);
+  text-shadow: var(--outline);
+}
