@@ -41,6 +41,14 @@ import {
 } from "./gunboat";
 import { HERO_KINDS, type HeroKind } from "./heroes";
 import { heroTree, lockedBy, noUpgrades, trimUpgrades } from "./heroTrees";
+import {
+  HOURGLASS_COST,
+  HOURGLASS_MS,
+  type HourglassState,
+  hourglassSpot,
+  newHourglass,
+  readHourglass,
+} from "./hourglass";
 import { isOnGrass, landingPoints, trailPoints } from "./island";
 import { createRng } from "./rng";
 import { BLUEPRINT_TYPES, type Blueprint, isWeapon, needsBlueprint } from "./spoils";
@@ -203,6 +211,8 @@ export interface CrewLayout {
   upgrades: Record<HeroKind, string[]>;
   /** The island's ancient statues. */
   statues: Statues;
+  /** The ruin where crystals break into time shards. */
+  hourglass: HourglassState;
   /** Decides which patches hide the statues, so every crew's island hides them differently. */
   relicSeed: number;
   /** The last night's raid taken off the books, so several phones can't count it twice. */
@@ -270,6 +280,8 @@ export type LayoutOp =
   | { kind: "offer"; statue: CrystalKind; crystals: number }
   /** Starts a statue's restoration, once it has its crystals. */
   | { kind: "restore"; statue: CrystalKind }
+  /** Starts mending the Hourglass, once it's found. */
+  | { kind: "mendHourglass" }
   /** The island's gold for a crystal trade; the crystals are whoever's trading's own. */
   | { kind: "crystalSwap" }
   /** Last night's raid: what the raiders took, and what holding them off paid (older phones: gold). */
@@ -604,6 +616,37 @@ export function statueSites(relicSeed: number): readonly StatueSite[] {
   return sites;
 }
 
+const hourglassCache = new Map<number, Obstacle | null>();
+
+/** The patch of jungle hiding the Hourglass. */
+export function hourglassSite(relicSeed: number): Obstacle | null {
+  let site = hourglassCache.get(relicSeed);
+  if (site === undefined) {
+    const taken = statueSites(relicSeed).map((s) => s.patch.id);
+    site = obstacleById(hourglassSpot(relicSeed, obstacles(), taken) ?? "") ?? null;
+    hourglassCache.set(relicSeed, site);
+  }
+  return site;
+}
+
+export function hourglassAtTile(
+  layout: Pick<CrewLayout, "relicSeed">,
+  tile: { x: number; y: number },
+): boolean {
+  const site = hourglassSite(layout.relicSeed);
+  return site !== null && overlaps(tile.x, tile.y, 1, 1, site);
+}
+
+/** Why the Hourglass can't start being mended, or null if it can. */
+export function mendBlocker(layout: Pick<CrewLayout, "hourglass" | "resources">): string | null {
+  const h = layout.hourglass;
+  if (!h.found) return "Not found yet";
+  if (h.mended) return "Already mended";
+  if (h.doneAt !== null) return "Being mended";
+  if (!canAfford(layout.resources, HOURGLASS_COST)) return "Not enough resources";
+  return null;
+}
+
 /** The statue on a tile, if there is one. */
 export function statueAtTile(
   layout: Pick<CrewLayout, "relicSeed">,
@@ -829,10 +872,12 @@ function finishStatues(layout: CrewLayout, now: number): CrewLayout {
     const { doneAt, restored } = layout.statues[k];
     return !restored && doneAt !== null && doneAt <= now;
   });
-  if (due.length === 0) return layout;
+  const h = layout.hourglass;
+  const mended = !h.mended && h.doneAt !== null && h.doneAt <= now;
+  if (due.length === 0 && !mended) return layout;
   const statues = { ...layout.statues };
   for (const k of due) statues[k] = { ...statues[k], restored: true };
-  return { ...layout, statues };
+  return { ...layout, statues, hourglass: mended ? { ...h, mended: true } : h };
 }
 
 /** Finished building work: new buildings open, upgrades take effect, tools improve. */
@@ -884,7 +929,8 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
   }
   const cleared = [...layout.cleared];
   const done = new Set(cleared);
-  let { statues } = layout;
+  let { statues, hourglass } = layout;
+  const hidingHourglass = hourglassSite(layout.relicSeed)?.id;
   for (const job of finished) {
     const o = obstacleById(job.id);
     if (!o || done.has(o.id)) continue;
@@ -892,6 +938,7 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
     done.add(o.id);
     const site = statueSites(layout.relicSeed).find((s) => s.patch.id === o.id);
     if (site) statues = { ...statues, [site.statue]: { ...statues[site.statue], found: true } };
+    if (o.id === hidingHourglass) hourglass = { ...hourglass, found: true };
     const gives = clearGives(o);
     for (const r of RESOURCES) resources[r] = Math.min(cap[r], resources[r] + (gives[r] ?? 0));
     for (const b of obstacles()) {
@@ -910,6 +957,7 @@ export function settle(current: CrewLayout, now: number): CrewLayout {
     cleared,
     jobs,
     statues,
+    hourglass,
     stamp: now,
   };
 }
@@ -1283,6 +1331,17 @@ export function tryOp(
         },
       };
     }
+    case "mendHourglass": {
+      const blocker = mendBlocker(layout);
+      if (blocker) return { error: blocker };
+      return {
+        layout: {
+          ...layout,
+          resources: spend(layout.resources, HOURGLASS_COST),
+          hourglass: { ...layout.hourglass, doneAt: now + HOURGLASS_MS },
+        },
+      };
+    }
     case "crystalSwap": {
       if (layout.resources.gold < CRYSTAL_SWAP.gold) return { error: "Not enough gold" };
       return {
@@ -1416,6 +1475,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     weaponLevels: {},
     upgrades: noUpgrades(),
     statues: newStatues(),
+    hourglass: newHourglass(),
     relicSeed: Math.floor(now / 1000) % 2 ** 31,
     lastNight: 0,
     raidLog: [],
@@ -1502,6 +1562,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     weaponLevels?: Partial<Record<Ability, unknown>>;
     upgrades?: Partial<Record<HeroKind, unknown>>;
     statues?: unknown;
+    hourglass?: unknown;
     relicSeed?: unknown;
     lastNight?: unknown;
     raidLog?: unknown;
@@ -1650,6 +1711,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     weaponLevels,
     upgrades: heroes.upgrades,
     statues: readStatues(data?.statues),
+    hourglass: readHourglass(data?.hourglass),
     relicSeed,
     lastNight,
     raidLog: readRaidLog(data?.raidLog),

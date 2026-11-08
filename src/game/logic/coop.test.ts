@@ -135,3 +135,28 @@ describe("raiding together", () => {
     expect(guestHero.pos.y).toBeLessThan(y);
   });
 });
+
+describe("time shards together", () => {
+  it("pools a retry from each crewmate who brings one, and shows everyone the power running", () => {
+    const layout = generateIsland(5, 2);
+    const seats: Seat[] = [
+      { ...(SEATS[0] as Seat), shards: { slow: 1, retry: 3 } },
+      { ...(SEATS[1] as Seat), shards: { pause: 2, retry: 1 } },
+    ];
+    const host = createCoopRaid(layout, seats);
+    const guest = createCoopRaid(layout, seats);
+    expect(host.retries).toBe(2);
+    stepRaid(host, [IDLE_INPUT, { ...IDLE_INPUT, timePower: "pause" }], DT);
+    const targets: HeroTargets = [];
+    applySnapshot(guest, JSON.parse(JSON.stringify(takeSnapshot(host, [], new Map()))), 0, targets);
+    expect(guest.timePower).toMatchObject({ power: "pause", heroId: host.heroes[1]?.id });
+    expect(guest.heroes[1]?.shards.pause).toBe(1);
+    expect(guest.retries).toBe(2);
+  });
+
+  it("never loses a shard press between two steps", () => {
+    const held = holdInput({ ...IDLE_INPUT, timePower: "slow" }, IDLE_INPUT);
+    expect(held.timePower).toBe("slow");
+    expect(afterStep(held).timePower).toBeNull();
+  });
+});

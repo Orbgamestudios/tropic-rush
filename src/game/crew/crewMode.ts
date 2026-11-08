@@ -21,10 +21,12 @@ import {
   firstHqAllowing,
   fits,
   gunboatWeapons,
+  hourglassAtTile,
   hqLevel,
   hqNeeds,
   type LayoutOp,
   MAX_TOOL_LEVEL,
+  mendBlocker,
   OBSTACLE_KINDS,
   obstacleAtTile,
   obstacleById,
@@ -74,6 +76,7 @@ import {
 } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
+import { breakBlocker, breakCrystal } from "../logic/hourglass";
 import { type NightRaid, raidingShip, runNightRaid } from "../logic/nightRaid";
 import { nextShip, raiderShip, shipDay } from "../logic/raiderShip";
 import {
@@ -84,6 +87,7 @@ import {
   needsBlueprint,
 } from "../logic/spoils";
 import { STATUE_CRYSTALS, STATUE_STONE, STATUES, statueBefore } from "../logic/statues";
+import type { TimePower } from "../logic/timeShards";
 import { distance, vec } from "../logic/vec";
 import { dailyCargo, retakeIslands } from "../logic/worldMap";
 import { type ConnectionStatus, CrewClient, requestCrewCode } from "../net/crewClient";
@@ -98,6 +102,7 @@ import { CrewIslandView } from "../render/crewIslandView";
 import type { Stage } from "../render/stage";
 import { loadLocalLayout, type SaveData, writeLocalLayout } from "../save";
 import { CrewUi, type ResearchRow } from "../ui/crewUi";
+import { HourglassPanel } from "../ui/hourglassPanel";
 import { sfx } from "../ui/kit/fx";
 
 interface Drag {
@@ -121,6 +126,7 @@ type Gesture =
       obstacleId: string | null;
       hero: HeroKind | null;
       statue: boolean;
+      hourglass: boolean;
     }
   | { kind: "pan" }
   | { kind: "pinch"; distance: number; midX: number; midY: number };
@@ -166,6 +172,7 @@ export class CrewMode {
   private gesture: Gesture | null = null;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private readonly ui: CrewUi;
+  private readonly hourglassPanel: HourglassPanel;
   /** Server clock minus this phone's clock (milliseconds), from the last state message. */
   private clockOffset = 0;
   /** Seconds until the resource readouts refresh. */
@@ -219,6 +226,7 @@ export class CrewMode {
         host.onStrikeBack(raid);
       },
       onStatuesPanel: () => this.showStatues(),
+      onHourglassPanel: () => this.showHourglass(),
       onStatueGive: (kind) => this.giveCrystals(kind),
       onStatueRestore: (kind) => this.restoreStatue(kind),
       onLabPanel: () => this.showLabPanel(),
@@ -228,6 +236,10 @@ export class CrewMode {
         this.ui.hideLab();
         host.onTree(kind);
       },
+    });
+    this.hourglassPanel = new HourglassPanel(uiLayer, {
+      onMend: () => this.mendHourglass(),
+      onBreak: (kind, power) => this.breakForShards(kind, power),
     });
     surface.addEventListener("pointerdown", (e) => this.onDown(e));
     surface.addEventListener("pointermove", (e) => this.onMove(e));
@@ -593,6 +605,46 @@ export class CrewMode {
     this.showStatues();
   }
 
+  /** Opens the Hourglass panel, or brings it up to date. */
+  private showHourglass(current = settle(this.layout, this.now())): void {
+    const { crystals, shards } = this.host.save();
+    this.hourglassPanel.show({
+      hourglass: current.hourglass,
+      now: this.now(),
+      blocker: mendBlocker(current),
+      crystals,
+      shards,
+    });
+  }
+
+  private mendHourglass(): void {
+    const result = tryOp(this.layout, { kind: "mendHourglass" }, this.now());
+    if ("error" in result) {
+      this.ui.flash(result.error);
+      return;
+    }
+    this.commit({ kind: "mendHourglass" });
+    this.ui.flash("The Hourglass: the work has begun");
+    this.ui.celebrate();
+    this.showHourglass();
+  }
+
+  /** Breaks one of the player's own crystals into shards of the power they chose. */
+  private breakForShards(kind: CrystalKind, power: TimePower): void {
+    const save = this.host.save();
+    const current = settle(this.layout, this.now());
+    const blocker = breakBlocker(current.hourglass, save.crystals, kind);
+    if (blocker) {
+      this.ui.flash(blocker);
+      return;
+    }
+    const { crystals, shards, made } = breakCrystal(save.crystals, save.shards, kind, power);
+    this.host.updateSave({ crystals, shards });
+    sfx.timePower(power);
+    this.hourglassPanel.broke(kind, power, made);
+    this.showHourglass(current);
+  }
+
   /** Back from a replay: shows how it went. */
   showNightResult(): void {
     this.showNightPanel();
@@ -664,6 +716,7 @@ export class CrewMode {
     if (this.ui.toolsOpen) this.showToolsPanel(current);
     if (this.ui.labOpen) this.showLabPanel(current);
     if (this.ui.statuesOpen) this.showStatues(current);
+    if (this.hourglassPanel.open) this.showHourglass(current);
     this.ui.setResources(current.resources, capacity(current), production(current));
     const hq = hqLevel(current);
     this.ui.setChips((type) => {
@@ -696,8 +749,18 @@ export class CrewMode {
     );
   }
 
-  /** The big moments: a statue comes to light, or finishes being restored. */
+  /** The big moments: a statue or the Hourglass comes to light, or is whole again. */
   private noticeStatues(current: CrewLayout): void {
+    const glass = { was: this.layout.hourglass, now: current.hourglass };
+    if ((glass.now.found && !glass.was.found) || (glass.now.mended && !glass.was.mended)) {
+      this.ui.flash(
+        glass.now.mended ? "The Hourglass is whole again!" : "You found the Hourglass!",
+      );
+      this.ui.celebrate();
+      this.layout = current;
+      writeLocalLayout(current);
+      this.showHourglass(current);
+    }
     for (const kind of CRYSTAL_KINDS) {
       const was = this.layout.statues[kind];
       const now = current.statues[kind];
@@ -1261,6 +1324,11 @@ export class CrewMode {
     }
     const obstacle = ground && !hit ? obstacleAtTile(this.layout, tileAt(ground)) : undefined;
     const statue = ground && !hit && !obstacle ? statueAtTile(this.layout, tileAt(ground)) : null;
+    const hourglass =
+      Boolean(ground && !hit && !obstacle) &&
+      this.layout.hourglass.found &&
+      ground !== null &&
+      hourglassAtTile(this.layout, tileAt(ground));
     const rect = this.stage.renderer.domElement.getBoundingClientRect();
     this.gesture = {
       kind: "pending",
@@ -1270,6 +1338,7 @@ export class CrewMode {
       obstacleId: obstacle?.id ?? null,
       hero: this.view.heroAt(e.clientX - rect.left, e.clientY - rect.top),
       statue: Boolean(statue && this.layout.statues[statue].found),
+      hourglass,
     };
   }
 
@@ -1312,6 +1381,7 @@ export class CrewMode {
     if (gesture?.kind === "pending" && this.pointers.size === 1 && e.type === "pointerup") {
       if (gesture.hero) this.view?.waveHero(gesture.hero);
       else if (gesture.statue) this.showStatues();
+      else if (gesture.hourglass) this.showHourglass();
       else if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
       // A producer with its tab up collects when it's tapped anywhere, not just on the tab.
       else if (gesture.hitId && this.collectable(gesture.hitId)) this.collect(gesture.hitId);

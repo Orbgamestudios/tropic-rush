@@ -13,6 +13,7 @@ import {
   footprint,
   GRID_ORIGIN,
   HOME_START,
+  hourglassSite,
   type Obstacle,
   obstacleById,
   type PlacedBuilding,
@@ -38,7 +39,15 @@ import { buildingModel, GunboatScenery } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
 import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, solidPlants, updateWind } from "./props";
-import { CRYSTAL_COLORS, disposeGlint, glintSprite, type StatueModel, statueModel } from "./relics";
+import {
+  CRYSTAL_COLORS,
+  disposeGlint,
+  glintSprite,
+  type HourglassModel,
+  hourglassModel,
+  type StatueModel,
+  statueModel,
+} from "./relics";
 import { SandMask } from "./sandPatches";
 import { homeScenery } from "./scenery";
 import { at, barrel, cyl, flatten, rbox, vertexColored } from "./shapes";
@@ -387,6 +396,9 @@ export class CrewIslandView {
   private readonly overgrowth: OvergrowthView;
   private readonly heroes: HomeHeroes;
   private readonly statues = new Map<CrystalKind, StatueView>();
+  /** The Hourglass, once it's found, and how it looks. */
+  private hourglass: { model: HourglassModel; mended: boolean } | null = null;
+  private hourglassLamps: Lamp[] = [];
   private buildingLampList: Lamp[] = [];
   private statueLampList: Lamp[] = [];
   /** The next statue to find, which glints now and then in the overgrowth. */
@@ -498,6 +510,7 @@ export class CrewIslandView {
       }),
     );
     this.syncStatues(layout);
+    this.syncHourglass(layout);
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
@@ -544,7 +557,11 @@ export class CrewIslandView {
       const group = this.blocks.get(b.id)?.group;
       return buildingLamps(b.type, x, groundFor(b), y, group ? lampSpots(group) : []);
     });
-    this.lights.setLamps([...this.buildingLampList, ...this.statueLampList]);
+    this.lights.setLamps([
+      ...this.buildingLampList,
+      ...this.statueLampList,
+      ...this.hourglassLamps,
+    ]);
     this.spinners = [];
     this.heads = [];
     for (const { group } of this.blocks.values()) {
@@ -554,6 +571,52 @@ export class CrewIslandView {
       });
     }
     if (holders.length === 0) this.placeTags(layout, holders);
+  }
+
+  /** The Hourglass stands where its jungle was once that's cleared: broken, then mended. */
+  private syncHourglass(layout: CrewLayout): void {
+    const site = hourglassSite(layout.relicSeed);
+    const h = layout.hourglass;
+    this.hourglassLamps = [];
+    if (!site || !h.found) {
+      if (this.hourglass) this.root.remove(this.hourglass.model.root);
+      this.hourglass = null;
+      return;
+    }
+    const x = GRID_ORIGIN.x + (site.x + site.w / 2) * TILE;
+    const y = GRID_ORIGIN.y + (site.y + site.h / 2) * TILE;
+    const ground = Math.max(0, homeHeight(x, y));
+    const scale = Math.min(0.95, (Math.min(site.w, site.h) * TILE) / 4.4);
+    if (!this.hourglass || this.hourglass.mended !== h.mended) {
+      if (this.hourglass) this.root.remove(this.hourglass.model.root);
+      const model = hourglassModel(h.mended);
+      model.root.scale.setScalar(scale);
+      model.root.position.set(x, ground, y);
+      this.root.add(model.root);
+      this.hourglass = { model, mended: h.mended };
+    }
+    const root = this.hourglass.model.root;
+    const working = !h.mended && h.doneAt !== null;
+    const scaffolded = root.getObjectByName("hourglass-scaffold");
+    if (working && !scaffolded) {
+      const frame = scaffold("watchtower", false);
+      frame.name = "hourglass-scaffold";
+      frame.scale.setScalar(0.9);
+      root.add(frame);
+    } else if (!working && scaffolded) root.remove(scaffolded);
+    if (h.mended) {
+      this.hourglassLamps.push({
+        x,
+        y: ground,
+        z: y,
+        reach: 14,
+        power: 2.6,
+        color: 0xffd98a,
+        halo: 1,
+        height: 3.4 * scale,
+        flicker: false,
+      });
+    }
   }
 
   /** Lost statues sit half-buried and mossy; found ones stand, and restored ones shine. */
@@ -627,6 +690,9 @@ export class CrewIslandView {
 
   /** Statues rising out of the ground, crystals turning, and the odd glint in the leaves. */
   private updateStatues(dt: number, time: number): void {
+    if (this.hourglass?.mended) {
+      this.hourglass.model.core.scale.setScalar(1 + Math.sin(time * 2.4) * 0.25);
+    }
     for (const view of this.statues.values()) {
       view.rise += (view.wanted - view.rise) * Math.min(1, dt * 1.6);
       const { root, gem } = view.model;

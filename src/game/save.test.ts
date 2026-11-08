@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { noCrystals } from "./logic/crystals";
 import { noUpgrades } from "./logic/heroTrees";
+import { STARTER_SHARDS } from "./logic/timeShards";
 import { NEW_WORLD } from "./logic/worldMap";
 import {
   clearPhone,
@@ -41,6 +42,8 @@ const DEFAULTS: SaveData = {
   memberId: "",
   gold: 0,
   crystals: noCrystals(),
+  shards: STARTER_SHARDS,
+  shardPicks: [],
   upgrades: noUpgrades(),
   blueprints: [],
   blueprintDrought: 0,
@@ -228,6 +231,8 @@ describe("save", () => {
       memberId: "m-1",
       gold: 1234,
       crystals: { nature: 1, fire: 2, ice: 3, dark: 4 },
+      shards: { slow: 2, retry: 1 },
+      shardPicks: ["slow", "rewind"],
       upgrades: { ...noUpgrades(), grenadier: ["grenadier/bigger-charge"] },
       blueprints: ["mortar"],
       blueprintDrought: 2,

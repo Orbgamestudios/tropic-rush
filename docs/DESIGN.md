@@ -83,6 +83,39 @@ These were explicitly left out to keep the first version to a basic structure:
 - **The story's script** is written: every scene of dialogue from the first landing to the end,
   both endings and what comes after, all of it voiced. **Planned, not playing yet:** see
   `docs/STORY.md`.
+- **Time shards on raids:** all six powers work as `docs/STORY.md` has them, one at a time for the
+  whole crew. First-pass lengths: slow 8 seconds, pause 5, fast forward 10, record 8 (and 8 more
+  for its copy), rewind 5.
+  - **Pause** holds back buildings brought to nothing until it ends. **Fast forward** ends when the
+    barrier round whoever used it breaks.
+  - **Record:** nothing can hurt the hero while it records. When it runs out, the whole world goes
+    back to where it began (heroes, buildings, shots, energy and loot; the clock, retries and
+    shards used don't), and a copy of the hero, in a pale ring, plays out what they did while the
+    defenses see only the copy. The copy never works the gunboat, and if it falls the record ends.
+  - **Rewind:** the world runs back through the last 5 seconds (or less, early in a raid).
+    Buildings get back the damage done before it and stand up again if they fell, though they
+    never pay their energy or loot twice; damage done while it runs stays. Enemy shots fly back
+    the way they came, hurting any hero in their path, and into the guns that fired them. Defenses
+    don't fire while it runs. Heroes never get health back from it.
+  - **Retries** go off by themselves when a hero falls, after the Medic's guardian angel, taking
+    them back about 3 seconds with at least 30% of their health.
+  - **On screen:** a round button for each power brought sits under the energy and loot, with its
+    count and a ring of the time left; a red heart pill counts the crew's retries. While a power
+    runs the picture is washed in its color (slow yellow, pause blue, fast forward orange, record
+    green, rewind purple), and a retry flashes red; the HUD keeps its own colors. The power's name
+    and seconds left sit small under the timer.
+  - **Picking:** the hero screen shows the shards a player owns; tap up to three powers to take
+    (the first three owned if none are picked). Retries always go.
+  - **The Hourglass:** a ruin hidden in deep jungle (tier 3, where the chainsaw goes) on every
+    crew's island, never under a statue. Clearing that patch finds it; the crew mends it for 6,000
+    stone and 3,000 gold over a day. Once it's whole, each player taps it (or Hourglass in the
+    build menu) to break their own crystals: pick a power, tap a crystal, and it breaks into 1 to
+    5 shards of it (2 to 4 most of the time).
+  - **Starter shards:** every player starts with 2 of each power and 2 retries, to try them.
+- **The gunboat costs more as it's used:** each use of a weapon costs about 1.45 to 1.6 times the
+  one before (artillery 3, 4, 6, 9, 13; barrage 6, 10, 15, 25, 39), where it used to go up by 1 or
+  2 each time. **Less energy from mills and storages:** 1 each (the refinery 2), down from 3, so
+  the gunboat is fed mostly by breaking defenses (still 4 or 5 each).
 
 ## Added 2026-11-07, second batch (owner's requests)
 
@@ -1098,7 +1131,7 @@ Choices made while building the draft. All are **Proposed**:
 - **Cover:** rocks block shots both ways. Sandbags are gone from the game (Decided 2026-11-01).
 - **Non-attacking buildings:** the headquarters doesn't attack. The watchtower is a sniper (**Decided 2026-11-02**, owner's request): the longest reach of any direct-fire defense, one hard shot at a time, after holding its aim for a moment with a red beam and a ring on the ground that anyone can see. Stepping aside once the beam stops moving dodges it.
 - **Starting energy:** the crew starts with 10 gunboat energy. Defenses give 4–5 when destroyed,
-  other buildings 3.
+  mills and storages 1 (the refinery 2, since 2026-11-08), other buildings 3.
 - **Firing:** holding the aim fires continuously, and a quick tap fires at the nearest building
   for a moment.
 - **The Medic's bottles (Decided 2026-11-01):** she locks onto crewmates, not buildings: drag to

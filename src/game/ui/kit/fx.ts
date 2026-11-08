@@ -136,6 +136,31 @@ export const sfx = {
     }
     noise(0.4, { freq: 8000, gain: 0.05, delay: lands + 0.02 });
   },
+  /** Time bending as a shard is used: down for slow, a frozen ring for pause, up for fast forward. */
+  timePower(power: string): void {
+    noise(0.35, { freq: 1600, gain: 0.18, swell: true });
+    if (power === "slow") tone(620, 0.7, { type: "sine", to: 180, gain: 0.35, delay: 0.3 });
+    else if (power === "pause") {
+      for (const [f, gain] of [
+        [1480, 0.18],
+        [2217, 0.1],
+        [3320, 0.06],
+      ] as const) {
+        tone(f, 0.9, { type: "sine", gain, delay: 0.3 });
+      }
+      noise(0.05, { freq: 6000, gain: 0.3, delay: 0.3 });
+    } else if (power === "fastForward") {
+      tone(180, 0.5, { type: "sawtooth", to: 900, gain: 0.12, delay: 0.3 });
+    } else if (power === "retry") {
+      tone(240, 0.45, { type: "triangle", to: 720, gain: 0.3 });
+      tone(960, 0.4, { type: "sine", gain: 0.15, delay: 0.35 });
+    } else tone(440, 0.5, { type: "sine", to: 330, gain: 0.25, delay: 0.3 });
+  },
+  /** Time going back to its own pace. */
+  timeEnd(): void {
+    tone(300, 0.35, { type: "sine", to: 520, gain: 0.18 });
+    noise(0.25, { freq: 1200, gain: 0.1 });
+  },
   levelUp(): void {
     [523, 659, 784, 1047].forEach((f, i) => {
       tone(f, 0.22, { type: "triangle", gain: 0.3, delay: i * 0.08 });

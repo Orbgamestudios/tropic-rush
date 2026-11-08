@@ -32,6 +32,7 @@ import {
   type HeroInput,
   IDLE_INPUT,
   type RaidBuilding,
+  type RaidEvent,
   type RaidHero,
   type RaidState,
   stepRaid,
@@ -47,6 +48,7 @@ import {
 } from "./logic/spoils";
 import { statueBuffs } from "./logic/statues";
 import type { Place } from "./logic/sun";
+import { packShards, readShards, type Shards, type TimePower } from "./logic/timeShards";
 import { angleOf, distance, lerp, vec } from "./logic/vec";
 import {
   beatRival,
@@ -105,6 +107,7 @@ import { ReplayBar } from "./ui/replayBar";
 import { ResultsScreen } from "./ui/results";
 import { ScoutScreen } from "./ui/scoutScreen";
 import { SkyCard } from "./ui/skyCard";
+import { TimeTint } from "./ui/timeTint";
 import { UpgradeTree } from "./ui/upgradeTree";
 import { type CrewRaid, WorldMapScreen } from "./ui/worldMapScreen";
 
@@ -178,6 +181,7 @@ function layer(parent: HTMLElement, className: string): HTMLDivElement {
 
 export class Game {
   private readonly stage: Stage;
+  private readonly tint: TimeTint;
   private readonly rig: CameraRig;
   private readonly labels: WorldLabels;
   private readonly controls: Controls;
@@ -275,6 +279,7 @@ export class Game {
 
   constructor(private readonly container: HTMLElement) {
     this.stage = new Stage(container);
+    this.tint = new TimeTint(container);
     this.rig = new CameraRig(this.stage);
     this.labels = new WorldLabels(layer(container, "labels"));
     this.controls = new Controls(
@@ -286,6 +291,7 @@ export class Game {
       onBoat: () => this.controls.pressBoat(),
       onAbility: (ability) => this.controls.selectAbility(ability),
       onPause: () => this.setPaused(true),
+      onShard: (power) => this.controls.pressTimePower(power),
     });
     const screens = layer(container, "screens");
     this.showcase = new Showcase(this.stage);
@@ -693,6 +699,22 @@ export class Game {
     this.applySettings();
   }
 
+  /** Takes the time shards this player used, and their retries the crew used, off their stash. */
+  private spendShards(events: readonly RaidEvent[]): void {
+    const me = this.player()?.id;
+    if (me === undefined || this.phase !== "raid") return;
+    let shards: Shards | null = null;
+    const spend = (power: TimePower) => {
+      shards ??= { ...this.save.shards };
+      shards[power] = Math.max(0, (shards[power] ?? 0) - 1);
+    };
+    for (const e of events) {
+      if (e.type === "timePower" && e.heroId === me) spend(e.power);
+      if (e.type === "retried" && e.spentFrom === me) spend("retry");
+    }
+    if (shards) this.updateSave({ shards });
+  }
+
   private updateSave(changes: Partial<SaveData>): void {
     this.save = { ...this.save, ...changes };
     if (!this.leaving) writeSave(this.save);
@@ -940,8 +962,14 @@ export class Game {
   }
 
   private mySeat(hero: HeroKind): Seat {
-    const { memberId, nickname, upgrades } = this.save;
-    return { member: memberId, name: nickname, hero, upgrades: upgrades[hero] };
+    const { memberId, nickname, upgrades, shards, shardPicks } = this.save;
+    return {
+      member: memberId,
+      name: nickname,
+      hero,
+      upgrades: upgrades[hero],
+      shards: packShards(shards, shardPicks),
+    };
   }
 
   private lobbyBlocker(seats: readonly Seat[]): string | null {
@@ -1164,8 +1192,8 @@ export class Game {
   private sayJoin(seat: Seat): void {
     const { lobby } = this;
     if (!lobby) return;
-    const { name, hero, upgrades } = seat;
-    this.link?.relay({ k: "join", raidId: lobby.raidId, name, hero, upgrades }, lobby.host);
+    const { name, hero, upgrades, shards } = seat;
+    this.link?.relay({ k: "join", raidId: lobby.raidId, name, hero, upgrades, shards }, lobby.host);
   }
 
   /** A crewmate waiting in the lobby swaps heroes. */
@@ -1251,7 +1279,13 @@ export class Game {
         if (!lobby) this.ownLobby(this.phase === "scout" ? this.scouting : null);
         const party = this.lobby;
         if (!party) return;
-        const seat = { member: from, name: data.name, hero: data.hero, upgrades: data.upgrades };
+        const seat = {
+          member: from,
+          name: data.name,
+          hero: data.hero,
+          upgrades: data.upgrades,
+          shards: readShards(data.shards),
+        };
         const known = party.seats.findIndex((s) => s.member === from);
         if (known >= 0) party.seats[known] = seat;
         else if (party.seats.length < MAX_SEATS) party.seats.push(seat);
@@ -1298,6 +1332,7 @@ export class Game {
         const events = coop.receive(state, data.snap);
         view.handleEvents(events, state);
         playRaidEvents(events, state, this.player());
+        this.spendShards(events);
         return;
       }
     }
@@ -1475,7 +1510,15 @@ export class Game {
     const weapons = gunboatWeapons(this.crew.snapshot().layout);
     const state = team
       ? createCoopRaid(layout, team.seats, weapons)
-      : createRaid(layout, [hero], [], [heroMods(hero, this.save.upgrades[hero])], weapons);
+      : createRaid(
+          layout,
+          [hero],
+          [],
+          [heroMods(hero, this.save.upgrades[hero])],
+          weapons,
+          [packShards(this.save.shards, this.save.shardPicks)],
+          Math.max(1, this.crewMembers.length),
+        );
     this.controls.selectAbility("artillery");
     this.seat = team?.seat ?? 0;
     this.state = state;
@@ -1724,6 +1767,7 @@ export class Game {
       updateWind(this.time, null);
     } else if (this.phase === "scout") this.scoutFrame(dt);
     else this.raidFrame(dt, now);
+    this.tint.update(this.phase === "raid" ? this.state : null);
     this.stage.render();
   };
 
@@ -1752,6 +1796,7 @@ export class Game {
         stepRaid(state, this.inputs(input), SIM_STEP);
         view.handleEvents(state.events, state);
         playRaidEvents(state.events, state, this.player());
+        this.spendShards(state.events);
         coop?.collect(state.events);
         this.accumulator -= SIM_STEP;
       }

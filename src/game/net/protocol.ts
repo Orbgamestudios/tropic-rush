@@ -8,6 +8,7 @@ import type { CrewLayout, LayoutOp, PlacedBuilding } from "../logic/crewIsland";
 import type { Purse } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
 import type { HeroInput } from "../logic/raid";
+import type { Shards } from "../logic/timeShards";
 import type { MapIsland } from "../logic/worldMap";
 
 export const MAX_CREW = 5;
@@ -61,7 +62,14 @@ export type RaidMessage =
       raiding: boolean;
     }
   | { k: "cancel"; raidId: string }
-  | { k: "join"; raidId: string; name: string; hero: HeroKind; upgrades: string[] }
+  | {
+      k: "join";
+      raidId: string;
+      name: string;
+      hero: HeroKind;
+      upgrades: string[];
+      shards?: Shards;
+    }
   | { k: "seats"; raidId: string; seats: Seat[]; ready: string[]; island: MapIsland | null }
   /** A crewmate has scouted the island and is good to go, or has thought better of it. */
   | { k: "ready"; raidId: string; ready: boolean }

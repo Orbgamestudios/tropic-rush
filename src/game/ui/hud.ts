@@ -11,7 +11,14 @@ import { costText, RESOURCES } from "../logic/economy";
 import { ABILITIES, ABILITY_ORDER, type Ability } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, raidReward } from "../logic/heroProgress";
-import { destructionPercent, nextAbilityCost, type RaidHero, type RaidState } from "../logic/raid";
+import {
+  canUseShard,
+  destructionPercent,
+  nextAbilityCost,
+  type RaidHero,
+  type RaidState,
+} from "../logic/raid";
+import { TIME_POWER_SPECS, TIME_POWERS, type TimePower } from "../logic/timeShards";
 import { CurrencyPill, costChips, el, formatNumber, levelBadge } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
@@ -20,6 +27,7 @@ export interface HudHandlers {
   onBoat(): void;
   onAbility(ability: Ability): void;
   onPause(): void;
+  onShard(power: TimePower): void;
 }
 
 export const ABILITY_ICONS: Record<Ability, IconName> = {
@@ -68,6 +76,17 @@ export class Hud {
     Ability,
     { button: HTMLButtonElement; cost: HTMLElement }
   >();
+  private readonly shardBox = el("div", "hud-shards");
+  private readonly shardButtons = new Map<
+    TimePower,
+    { button: HTMLButtonElement; count: HTMLElement }
+  >();
+  private readonly retryPill = el("div", "hud-retries");
+  /** The time power running, named small under the timer. */
+  private readonly timeLabel = el("div", "hud-time-label");
+  private shownTime = "";
+  private retriesSeen = -1;
+  private retryShown = 0;
   private readonly flashText = el("div", "hud-flash");
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
   private lastHp = -1;
@@ -111,7 +130,7 @@ export class Hud {
     );
     const objTrack = el("div", "hud-objective-track");
     objTrack.append(this.objectiveFill);
-    objective.append(objRow, objTrack);
+    objective.append(objRow, objTrack, this.timeLabel);
 
     // Top-right: pause, minimap, pills.
     const right = el("div", "hud-right");
@@ -131,7 +150,28 @@ export class Hud {
     mapRow.append(pause, minimap);
     const pills = el("div", "hud-pills");
     pills.append(this.energy.root, this.loot.root);
-    right.append(mapRow, pills, this.materials);
+    // Time shards: one button for each power the player brought, and the crew's retries.
+    for (const power of TIME_POWERS) {
+      if (power === "retry") continue;
+      const spec = TIME_POWER_SPECS[power];
+      const b = el("button", "hud-shard");
+      b.setAttribute("aria-label", spec.name);
+      b.title = spec.text;
+      b.style.setProperty("--tint", spec.color);
+      const count = el("span", "hud-shard-count");
+      b.append(el("span", "hud-shard-glyph", spec.glyph), count);
+      b.addEventListener("click", () => {
+        sfx.press();
+        handlers.onShard(power);
+      });
+      hapticOnTap(b);
+      this.shardBox.append(b);
+      this.shardButtons.set(power, { button: b, count });
+    }
+    this.retryPill.style.setProperty("--tint", TIME_POWER_SPECS.retry.color);
+    this.retryPill.title = TIME_POWER_SPECS.retry.text;
+    this.shardBox.append(this.retryPill);
+    right.append(mapRow, pills, this.materials, this.shardBox);
 
     // The gunboat button.
     this.boatButton.setAttribute("aria-label", "Gunboat");
@@ -190,6 +230,7 @@ export class Hud {
     });
     this.level.replaceChildren(levelBadge(upgrades));
     this.lastHp = -1;
+    this.retriesSeen = -1;
     // A new island, so a new map of it.
     this.mapBase = null;
   }
@@ -281,6 +322,35 @@ export class Hud {
       button.classList.toggle("selected", hero.inBoat && ability === selected);
       button.classList.toggle("unaffordable", price > state.energy);
     }
+
+    // Time shards: dim while another power runs, with the running one counting down.
+    const running = state.timePower;
+    for (const [power, { button, count }] of this.shardButtons) {
+      const left = hero.shards[power] ?? 0;
+      const mine = running?.power === power;
+      button.style.display = left > 0 || mine ? "" : "none";
+      count.textContent = String(left);
+      button.classList.toggle("running", mine);
+      button.classList.toggle("unusable", !mine && !canUseShard(state, hero, power));
+      const share = mine && running ? running.left / TIME_POWER_SPECS[power].seconds : 0;
+      button.style.setProperty("--left", share.toFixed(3));
+    }
+    // Named under the timer while it runs, and a retry for a moment when one's used.
+    if (this.retriesSeen >= 0 && state.retries < this.retriesSeen) this.retryShown = 1.6;
+    this.retriesSeen = state.retries;
+    this.retryShown = Math.max(0, this.retryShown - dt);
+    const named: TimePower | null = running?.power ?? (this.retryShown > 0 ? "retry" : null);
+    const label = named
+      ? `${TIME_POWER_SPECS[named].name}${running ? ` ${Math.ceil(running.left)}` : ""}`
+      : "";
+    if (label !== this.shownTime) {
+      this.shownTime = label;
+      this.timeLabel.textContent = label;
+      this.timeLabel.classList.toggle("on", named !== null);
+      if (named) this.timeLabel.style.setProperty("--tint", TIME_POWER_SPECS[named].color);
+    }
+    this.retryPill.style.display = state.retries > 0 ? "" : "none";
+    this.retryPill.textContent = `${TIME_POWER_SPECS.retry.glyph} ×${state.retries}`;
 
     // Crewmates' portraits.
     for (const mate of this.squad) {

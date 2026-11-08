@@ -14,6 +14,13 @@ import {
   treeProgress,
 } from "../logic/heroProgress";
 import { capstones, UPGRADES_PER_HERO } from "../logic/heroTrees";
+import {
+  packShards,
+  TIME_POWER_SPECS,
+  TIME_POWERS,
+  type TimePower,
+  togglePick,
+} from "../logic/timeShards";
 import type { Showcase } from "../render/showcase";
 import { heroPortrait } from "../render/thumbnails";
 import type { SaveData } from "../save";
@@ -71,6 +78,9 @@ export class HeroSelect {
   private readonly upgrades: HTMLButtonElement;
   private readonly upgradeCount = el("span", "heroes-cost");
   private readonly start: HTMLButtonElement;
+  /** The time shards to take: tap up to three powers. */
+  private readonly shards = el("div", "heroes-shards");
+  private readonly shardButtons = new Map<TimePower, HTMLButtonElement>();
   private readonly hint = el("div", "heroes-spin-hint", "Drag to spin");
   private hero: HeroKind = "rifleman";
   /** An island's been picked, and this is the last look at who's going. */
@@ -169,8 +179,32 @@ export class HeroSelect {
       className: "heroes-start",
       onClick: () => this.go(),
     });
+    this.shards.append(el("div", "heroes-shards-title", "Time shards"));
+    const shardRow = el("div", "heroes-shards-row");
+    for (const power of TIME_POWERS) {
+      const spec = TIME_POWER_SPECS[power];
+      const b = el("button", "heroes-shard");
+      b.style.setProperty("--tint", spec.color);
+      b.title = `${spec.name}: ${spec.text}`;
+      b.setAttribute("aria-label", spec.name);
+      b.append(el("span", "heroes-shard-glyph", spec.glyph), el("span", "heroes-shard-count"));
+      if (power !== "retry") {
+        b.addEventListener("click", () => {
+          sfx.press();
+          const save = host.save();
+          const picks = Object.keys(packShards(save.shards, save.shardPicks)).filter(
+            (p): p is TimePower => p !== "retry",
+          );
+          host.update({ shardPicks: togglePick(picks, power) });
+          this.refreshShards();
+        });
+      }
+      shardRow.append(b);
+      this.shardButtons.set(power, b);
+    }
+    this.shards.append(shardRow);
     const actions = el("div", "heroes-actions");
-    actions.append(this.upgrades, this.start);
+    actions.append(this.shards, this.upgrades, this.start);
 
     this.root.append(top, roster.root, stageArea, info.root, actions);
     this.root.style.display = "none";
@@ -246,6 +280,23 @@ export class HeroSelect {
     setLabel(this.start, this.attacking ? "Attack" : "Raid");
     this.gold.set(this.host.gold());
     this.crystals.set(save.crystals);
+    this.refreshShards();
+  }
+
+  /** The shards they own, with the ones they'll take lit up. */
+  private refreshShards(): void {
+    const { shards, shardPicks } = this.host.save();
+    const taking = packShards(shards, shardPicks);
+    let any = false;
+    for (const [power, b] of this.shardButtons) {
+      const owned = shards[power] ?? 0;
+      any ||= owned > 0;
+      b.style.display = owned > 0 ? "" : "none";
+      b.classList.toggle("taking", taking[power] !== undefined);
+      const count = b.querySelector(".heroes-shard-count");
+      if (count) count.textContent = String(owned);
+    }
+    this.shards.style.display = any ? "" : "none";
   }
 
   /** The hero's capstones, one at the end of each branch: tap one to read about it. */

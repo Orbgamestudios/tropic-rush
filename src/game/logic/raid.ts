@@ -25,6 +25,16 @@ import { type HeroMods, NO_MODS } from "./heroTrees";
 import { HOME_SHAPE, type IslandLayout, type IslandShape, type ObstacleKind } from "./island";
 import { createRng, type Rng } from "./rng";
 import {
+  FAST_BARRIER,
+  FAST_FORWARD,
+  RETRY_BACK,
+  retrySlots,
+  type Shards,
+  SLOW_WORLD,
+  TIME_POWER_SPECS,
+  type TimePower,
+} from "./timeShards";
+import {
   add,
   angleDiff,
   angleOf,
@@ -220,6 +230,15 @@ export interface RaidHero {
   /** Seconds until the next pocket turret and decoy drone. */
   pocketIn: number;
   droneIn: number;
+  /** The time shards this hero's player brought, less those used. */
+  shards: Shards;
+  /** What's left of fast forward's barrier round them. */
+  barrier: number;
+  /** Where they were and how they stood a moment ago, every so often: what a retry goes back to. */
+  trail: { pos: Vec2; hp: number }[];
+  trailIn: number;
+  /** A recorded copy plays out what this hero did; null for a hero in their own right. */
+  copyOf: number | null;
 }
 
 export interface RaidBuilding {
@@ -243,6 +262,10 @@ export interface RaidBuilding {
   /** Where a sniper last saw its target, and how it reckons that's moving. */
   tracked: Vec2 | null;
   trackedVel: Vec2;
+  /** Brought to nothing while time stood still: it falls, to this hero, when time goes on. */
+  fallsTo: number | null;
+  /** It's paid out its energy and loot: coming back on a rewind, it doesn't pay again. */
+  paid: boolean;
 }
 
 export type ProjectileKind =
@@ -360,9 +383,36 @@ export type RaidEvent =
   | { type: "mineTriggered"; id: number; pos: Vec2 }
   /** A hero's rage or last stand has just come on. */
   | { type: "enrage"; pos: Vec2 }
-  | { type: "eruption"; pos: Vec2 };
+  | { type: "eruption"; pos: Vec2 }
+  | { type: "timePower"; power: TimePower; heroId: number }
+  | { type: "timeEnd"; power: TimePower }
+  /** A fallen hero taken back a few seconds, on a retry shard the given hero brought. */
+  | { type: "retried"; heroId: number; spentFrom: number; pos: Vec2 };
 
 export type RaidStatus = "playing" | "won" | "lost";
+
+/** One step of the past: each building's health, whether it was down and its aim, and the shots. */
+export interface PastFrame {
+  time: number;
+  buildings: [id: number, hp: number, down: number, aim: number][];
+  shots: Projectile[];
+}
+
+/** What goes back when a record ends. The clock, the retries and the shards used don't. */
+interface RecordedWorld {
+  heroes: RaidHero[];
+  buildings: RaidBuilding[];
+  projectiles: Projectile[];
+  mines: Mine[];
+  zones: Zone[];
+  turrets: CrewTurret[];
+  boat: RaidState["boat"];
+  energy: number;
+  loot: Purse;
+  abilityUses: Record<Ability, number>;
+  conquest: number | null;
+  eruptionIn: number;
+}
 
 export interface RaidState {
   time: number;
@@ -400,6 +450,20 @@ export interface RaidState {
    * for big strikes if they bombard. Null for raids from before the ships, which replay as they ran.
    */
   tactics: { bombards: boolean } | null;
+  /**
+   * The time power running, crew-wide, and who used it. A record is `replaying` once time has
+   * gone back and the copy is playing it out.
+   */
+  timePower: { power: TimePower; heroId: number; left: number; replaying?: boolean } | null;
+  /** The world step by step over the last few seconds, for a rewind: kept while one's to hand. */
+  past: PastFrame[];
+  /** Damage done to each building while a rewind runs, which stays, and shots that hit on it. */
+  rewound: { hurt: Record<number, number>; hit: string[] } | null;
+  /** A record: the world as it began, and what its hero has done since, step by step. */
+  recording: { world: RecordedWorld; inputs: HeroInput[]; step: number } | null;
+  /** Retries left in the crew's pool, and whose shard each one is, in the order they'll go. */
+  retries: number;
+  retryFrom: number[];
 }
 
 export interface HeroInput {
@@ -416,6 +480,8 @@ export interface HeroInput {
   /** Open the gunboat's view, or go back to the hero. */
   toggleBoat: boolean;
   boatAbility: { ability: Ability; target: Vec2 } | null;
+  /** Use a time shard. */
+  timePower: TimePower | null;
 }
 
 export const IDLE_INPUT: HeroInput = {
@@ -426,11 +492,26 @@ export const IDLE_INPUT: HeroInput = {
   autoAim: false,
   toggleBoat: false,
   boatAbility: null,
+  timePower: null,
 };
+
+/** What's left of an input once a step has used its one-off presses. */
+export function afterStep(input: HeroInput): HeroInput {
+  return {
+    ...input,
+    lockAt: null,
+    autoAim: false,
+    toggleBoat: false,
+    boatAbility: null,
+    timePower: null,
+  };
+}
 
 /**
  * `powers` are how strong each hero is sent in (night raiders start well below a player's heroes)
- * and `mods` what their upgrades add (see heroMods); missing ones change nothing.
+ * and `mods` what their upgrades add (see heroMods); missing ones change nothing. `shards` are the
+ * time shards each hero's player brings, and `crewSize` how many are in the crew of someone going
+ * alone, for their retries.
  */
 export function createRaid(
   layout: IslandLayout,
@@ -438,6 +519,8 @@ export function createRaid(
   powers: readonly number[] = [],
   mods: readonly HeroMods[] = [],
   gunboat: Arsenal = FULL_ARSENAL,
+  shards: readonly Shards[] = [],
+  crewSize = 1,
 ): RaidState {
   const rng = createRng(layout.seed ^ 0x5bd1e995);
   const buffs = layout.buffs ?? { health: 1, damage: 1 };
@@ -486,8 +569,20 @@ export function createRaid(
       droneIn: GADGET_SECONDS,
       targetId: null,
       patientId: null,
+      shards: { ...shards[i] },
+      barrier: 0,
+      trail: [],
+      trailIn: 0,
+      copyOf: null,
     };
   });
+  const brought = heroes.map((h) => h.shards.retry ?? 0);
+  const retries = retrySlots(brought, crewSize);
+  // Alone, every retry is the one player's; together, each crewmate's fills one slot.
+  const retryFrom =
+    heroes.length === 1
+      ? Array.from({ length: retries }, () => heroes[0]?.id ?? 0)
+      : heroes.filter((_, i) => (brought[i] ?? 0) > 0).map((h) => h.id);
   const buildings = layout.buildings.map((b): RaidBuilding => {
     const spec = BUILDINGS[b.type];
     const level = b.level ?? 1;
@@ -510,6 +605,8 @@ export function createRaid(
       aiming: 0,
       tracked: null,
       trackedVel: vec(0, 0),
+      fallsTo: null,
+      paid: false,
     };
   });
   const obstacles = layout.obstacles.map(
@@ -543,6 +640,12 @@ export function createRaid(
     conquest: null,
     hitAndRun: false,
     tactics: null,
+    timePower: null,
+    retries,
+    retryFrom,
+    past: [],
+    rewound: null,
+    recording: null,
   };
 }
 
@@ -555,16 +658,32 @@ export function stepRaid(
   state.events.length = 0;
   if (state.status !== "playing") return;
   state.time += dt;
-  state.heroes.forEach((hero, i) => {
-    updateHero(state, hero, inputs[i] ?? IDLE_INPUT, dt);
-  });
-  updateBuildings(state, dt);
-  updateCrewTurrets(state, dt);
-  updateProjectiles(state, dt);
-  updateMines(state, dt);
-  updateZones(state, dt);
-  updateLava(state, dt);
-  stepConquest(state, dt);
+  startTimePower(state, inputs);
+  const power = state.timePower?.power;
+  // Fast forward runs everything twice over in the same time; slow and pause hold the world back
+  // while the heroes and their shots go on as they were.
+  const passes = power === "fastForward" ? FAST_FORWARD : 1;
+  // While a rewind runs the world goes back through the past instead of on.
+  const world = power === "pause" || power === "rewind" ? 0 : power === "slow" ? SLOW_WORLD : 1;
+  for (let pass = 0; pass < passes; pass++) {
+    state.heroes.forEach((hero, i) => {
+      const input = hero.copyOf === null ? (inputs[i] ?? IDLE_INPUT) : echoInput(state);
+      if (pass === 0) record(state, hero, input);
+      updateHero(state, hero, pass === 0 ? input : afterStep(input), dt);
+    });
+    if (power === "rewind") runBack(state);
+    if (world > 0) updateBuildings(state, dt * world);
+    else for (const b of state.buildings) b.firing = false;
+    updateCrewTurrets(state, dt);
+    updateProjectiles(state, dt, dt * world);
+    updateMines(state, dt * world);
+    updateZones(state, dt);
+    updateLava(state, dt * world);
+    stepConquest(state, dt * world);
+  }
+  keepTrails(state, dt);
+  keepPast(state);
+  tickTimePower(state, dt);
   if (state.status === "playing" && state.conquest === null) {
     if (state.heroes.every((h) => !h.alive)) {
       state.status = "lost";
@@ -592,9 +711,267 @@ export function nextAbilityCost(state: RaidState, ability: Ability): number {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Time shards
+
+/** Whether a hero can use one of their shards now: one power runs at a time, for everyone. */
+export function canUseShard(state: RaidState, hero: RaidHero, power: TimePower): boolean {
+  return (
+    state.timePower === null &&
+    hero.alive &&
+    power !== "retry" &&
+    hero.copyOf === null &&
+    (hero.shards[power] ?? 0) > 0
+  );
+}
+
+function startTimePower(state: RaidState, inputs: readonly (HeroInput | undefined)[]): void {
+  state.heroes.forEach((hero, i) => {
+    const power = inputs[i]?.timePower;
+    if (!power || !canUseShard(state, hero, power)) return;
+    hero.shards[power] = (hero.shards[power] ?? 1) - 1;
+    state.timePower = { power, heroId: hero.id, left: TIME_POWER_SPECS[power].seconds };
+    if (power === "fastForward") {
+      for (const h of state.heroes) h.barrier = h.alive ? h.maxHp * FAST_BARRIER : 0;
+    }
+    if (power === "rewind") {
+      // It runs back as far as there's past to go back through, up to its full length.
+      const first = state.past[0];
+      const reach = first ? state.time - first.time : 0;
+      state.timePower.left = Math.min(state.timePower.left, reach);
+      state.rewound = { hurt: {}, hit: [] };
+    }
+    if (power === "record") state.recording = { world: recordWorld(state), inputs: [], step: 0 };
+    state.events.push({ type: "timePower", power, heroId: hero.id });
+  });
+}
+
+function tickTimePower(state: RaidState, dt: number): void {
+  const running = state.timePower;
+  if (!running) return;
+  running.left -= dt;
+  if (running.left > 0) return;
+  if (running.power === "record" && !running.replaying) replay(state, running);
+  else endTimePower(state);
+}
+
+function endTimePower(state: RaidState): void {
+  const running = state.timePower;
+  if (!running) return;
+  state.timePower = null;
+  state.events.push({ type: "timeEnd", power: running.power });
+  for (const h of state.heroes) h.barrier = 0;
+  // A rewind has used up the past it ran back through; a record's copy is gone.
+  if (running.power === "rewind") {
+    state.past = [];
+    state.rewound = null;
+  }
+  if (running.power === "record") {
+    state.heroes = state.heroes.filter((h) => h.copyOf === null);
+    state.recording = null;
+  }
+  // Whatever was brought to nothing while time stood still comes down now.
+  for (const b of state.buildings) {
+    if (b.fallsTo !== null && !b.destroyed) knockDown(state, b, b.fallsTo);
+    b.fallsTo = null;
+  }
+}
+
+/** Keeps the last few seconds of the world, while anyone in the crew could rewind it. */
+function keepPast(state: RaidState): void {
+  if (state.timePower?.power === "rewind") return;
+  if (!state.heroes.some((h) => h.alive && (h.shards.rewind ?? 0) > 0)) {
+    state.past.length = 0;
+    return;
+  }
+  state.past.push({
+    time: state.time,
+    buildings: state.buildings.map((b) => [b.id, b.hp, b.destroyed ? 1 : 0, b.aim]),
+    shots: state.projectiles.filter((p) => p.team === "enemy").map(copyProjectile),
+  });
+  const reach = TIME_POWER_SPECS.rewind.seconds;
+  while ((state.past[0]?.time ?? state.time) < state.time - reach) state.past.shift();
+}
+
+function copyProjectile(p: Projectile): Projectile {
+  return {
+    ...p,
+    pos: { ...p.pos },
+    vel: { ...p.vel },
+    lob: p.lob && { ...p.lob, from: { ...p.lob.from }, to: { ...p.lob.to } },
+    leaves: p.leaves && { ...p.leaves },
+  };
+}
+
+/**
+ * One step of a rewind: the world goes back one step through the past. Buildings get back the
+ * damage done to them before it began, though not what's done while it runs, and come back up if
+ * they'd fallen. Enemy shots fly back the way they came, catching any hero in their path, and into
+ * the guns that fired them.
+ */
+function runBack(state: RaidState): void {
+  const frame = state.past.pop();
+  const rewound = state.rewound;
+  if (!frame || !rewound) {
+    endTimePower(state);
+    return;
+  }
+  const byId = new Map(state.buildings.map((b) => [b.id, b]));
+  const earlier = new Set(frame.shots.map((p) => p.id));
+  for (const p of state.projectiles) {
+    if (p.team !== "enemy" || earlier.has(p.id)) continue;
+    const gun = byId.get(p.ownerId);
+    if (gun && !gun.destroyed) hurtBack(state, gun, p.damage);
+  }
+  for (const [id, hp, down, aim] of frame.buildings) {
+    const b = byId.get(id);
+    if (!b) continue;
+    const left = hp - (rewound.hurt[id] ?? 0);
+    if (left <= 0) {
+      if (!b.destroyed) knockDown(state, b, 0);
+      continue;
+    }
+    if (b.destroyed && down === 0) b.destroyed = false;
+    if (b.destroyed) continue;
+    b.hp = Math.min(b.maxHp, left);
+    b.aim = aim;
+    b.firing = false;
+  }
+  state.projectiles = state.projectiles.filter((p) => p.team !== "enemy").concat(frame.shots);
+  for (const p of frame.shots) {
+    if (p.lob) continue;
+    for (const hero of state.heroes) {
+      if (!hero.alive) continue;
+      const key = `${p.id}:${hero.id}`;
+      if (distance(p.pos, hero.pos) > HEROES[hero.kind].radius + 0.3) continue;
+      if (rewound.hit.includes(key)) continue;
+      rewound.hit.push(key);
+      damageHero(state, hero, p.damage, p.heavyBonus);
+    }
+  }
+}
+
+/** A shot flying home into its own gun. */
+function hurtBack(state: RaidState, gun: RaidBuilding, amount: number): void {
+  const rewound = state.rewound;
+  if (rewound) rewound.hurt[gun.id] = (rewound.hurt[gun.id] ?? 0) + amount;
+  gun.hp -= amount;
+  state.events.push({ type: "hit", pos: { ...gun.pos } });
+  if (gun.hp <= 0) knockDown(state, gun, 0);
+}
+
+function recordWorld(state: RaidState): RecordedWorld {
+  return structuredClone({
+    heroes: state.heroes,
+    buildings: state.buildings,
+    projectiles: state.projectiles,
+    mines: state.mines,
+    zones: state.zones,
+    turrets: state.turrets,
+    boat: state.boat,
+    energy: state.energy,
+    loot: state.loot,
+    abilityUses: state.abilityUses,
+    conquest: state.conquest,
+    eruptionIn: state.eruptionIn,
+  });
+}
+
+/** While a record runs, notes what its hero does each step. */
+function record(state: RaidState, hero: RaidHero, input: HeroInput): void {
+  const running = state.timePower;
+  if (running?.power !== "record" || running.replaying || running.heroId !== hero.id) return;
+  state.recording?.inputs.push(structuredClone(input));
+}
+
+/** What a recorded copy does this step: what its hero did, though never on the gunboat. */
+function echoInput(state: RaidState): HeroInput {
+  const rec = state.recording;
+  const input = rec?.inputs[rec.step] ?? IDLE_INPUT;
+  return { ...input, toggleBoat: false, boatAbility: null, timePower: null };
+}
+
+/** The record runs out: the world goes back to where it began, and the copy sets off. */
+function replay(state: RaidState, running: NonNullable<RaidState["timePower"]>): void {
+  const rec = state.recording;
+  if (!rec) {
+    endTimePower(state);
+    return;
+  }
+  const world = structuredClone(rec.world);
+  const shards = new Map(state.heroes.map((h) => [h.id, h.shards]));
+  for (const h of world.heroes) h.shards = shards.get(h.id) ?? h.shards;
+  const recorder = world.heroes.find((h) => h.id === running.heroId);
+  Object.assign(state, {
+    heroes: world.heroes,
+    buildings: world.buildings,
+    projectiles: world.projectiles,
+    mines: world.mines,
+    zones: world.zones,
+    turrets: world.turrets,
+    boat: world.boat,
+    energy: world.energy,
+    loot: world.loot,
+    abilityUses: world.abilityUses,
+    conquest: world.conquest,
+    eruptionIn: world.eruptionIn,
+  });
+  if (recorder?.alive) {
+    const copy: RaidHero = {
+      ...structuredClone(recorder),
+      id: state.nextId++,
+      copyOf: recorder.id,
+      inBoat: false,
+      shards: {},
+      trail: [],
+    };
+    state.heroes.push(copy);
+  }
+  running.replaying = true;
+  running.left = TIME_POWER_SPECS.record.seconds;
+  state.events.push({ type: "timePower", power: "record", heroId: running.heroId });
+}
+
+/** The hero a record's copy is playing for: unseen by the defenses while the copy is out. */
+function hiddenByCopy(state: RaidState, hero: RaidHero): boolean {
+  const running = state.timePower;
+  return running?.power === "record" && running.replaying === true && running.heroId === hero.id;
+}
+
+const TRAIL_EVERY = 0.25;
+/** A retry never brings a hero back with less than this share of their health. */
+const RETRY_LEAST = 0.3;
+
+function keepTrails(state: RaidState, dt: number): void {
+  if (state.retries <= 0) return;
+  for (const hero of state.heroes) {
+    if (!hero.alive) continue;
+    hero.trailIn -= dt;
+    if (hero.trailIn > 0) continue;
+    hero.trailIn = TRAIL_EVERY;
+    hero.trail.push({ pos: { ...hero.pos }, hp: hero.hp });
+    if (hero.trail.length > RETRY_BACK / TRAIL_EVERY + 1) hero.trail.shift();
+  }
+}
+
+/** Takes a falling hero back to a few seconds ago, if the crew has a retry left. */
+function retry(state: RaidState, hero: RaidHero): boolean {
+  if (state.retries <= 0) return false;
+  const then = hero.trail[0] ?? { pos: hero.pos, hp: hero.maxHp };
+  state.retries--;
+  const spentFrom = state.retryFrom.shift() ?? hero.id;
+  hero.pos = { ...then.pos };
+  hero.hp = Math.max(then.hp, hero.maxHp * RETRY_LEAST);
+  hero.trail = [];
+  hero.trailIn = 0;
+  state.events.push({ type: "retried", heroId: hero.id, spentFrom, pos: { ...hero.pos } });
+  return true;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Heroes
 
 function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: number): void {
+  if (hero.copyOf !== null && state.recording) state.recording.step++;
   if (!hero.alive) return;
   // A minigun keeps the part of a step it was owed, or every round would wait for a whole step and
   // anything that speeds it up a little would never show.
@@ -667,6 +1044,7 @@ function givenAway(state: RaidState, hero: RaidHero): void {
 
 /** Whether defenses can see a hero, smoke or no smoke. */
 function seen(state: RaidState, hero: RaidHero): boolean {
+  if (hiddenByCopy(state, hero)) return false;
   if (!inSmoke(state, hero.pos)) return true;
   return state.time >= hero.revealFrom && state.time < hero.revealUntil;
 }
@@ -1064,9 +1442,22 @@ function damageHero(
   blast = false,
 ): void {
   if (!hero.alive || state.conquest !== null) return;
+  // Nothing touches a hero while they're being recorded.
+  const running = state.timePower;
+  if (running?.power === "record" && !running.replaying && running.heroId === hero.id) return;
   const m = hero.mods;
   const wasStanding = hero.hp >= hero.maxHp * TRICKS.lastStandAt;
   let taken = damageTaken(hero, amount, heavyBonus, blast);
+  if (hero.barrier > 0) {
+    const held = Math.min(hero.barrier, taken);
+    hero.barrier -= held;
+    taken -= held;
+    // Fast forward lasts as long as the barrier round whoever used it.
+    const running = state.timePower;
+    if (hero.barrier <= 0 && running?.power === "fastForward" && running.heroId === hero.id) {
+      endTimePower(state);
+    }
+  }
   const soaked = Math.min(hero.shield, taken);
   hero.shield -= soaked;
   taken -= soaked;
@@ -1084,7 +1475,8 @@ function damageHero(
   if (m.lastStand && wasStanding && hero.hp > 0 && hero.hp < hero.maxHp * TRICKS.lastStandAt) {
     state.events.push({ type: "enrage", pos: { ...hero.pos } });
   }
-  if (hero.hp <= 0 && !guardianAngel(state, hero)) {
+  const copy = hero.copyOf !== null;
+  if (hero.hp <= 0 && (copy || (!guardianAngel(state, hero) && !retry(state, hero)))) {
     hero.hp = 0;
     hero.alive = false;
     hero.firing = false;
@@ -1092,6 +1484,8 @@ function damageHero(
     if (hero.inBoat) state.boat.occupant = null;
     hero.inBoat = false;
     state.events.push({ type: "heroDown", id: hero.id, pos: { ...hero.pos } });
+    // A copy that falls ends the record it was playing out.
+    if (copy) endTimePower(state);
   }
 }
 
@@ -1588,9 +1982,21 @@ function damageBuilding(state: RaidState, b: RaidBuilding, amount: number, owner
   if (b.destroyed || state.status !== "playing" || state.conquest !== null) return;
   const owner = state.heroes.find((h) => h.id === ownerId);
   const m = owner?.mods;
-  b.hp -=
+  const dealt =
     amount * (m?.buildingDamage ?? 1) * (BUILDINGS[b.type].attack ? (m?.defenseDamage ?? 1) : 1);
+  b.hp -= dealt;
+  if (state.rewound) state.rewound.hurt[b.id] = (state.rewound.hurt[b.id] ?? 0) + dealt;
   if (b.hp > 0) return;
+  if (state.timePower?.power === "pause") {
+    b.hp = 0;
+    b.fallsTo ??= ownerId;
+    return;
+  }
+  knockDown(state, b, ownerId);
+}
+
+function knockDown(state: RaidState, b: RaidBuilding, ownerId: number): void {
+  const owner = state.heroes.find((h) => h.id === ownerId);
   fell(state, b);
   if (b.type === "headquarters") takeBase(state);
   else if (!state.hitAndRun) chipHeadquarters(state);
@@ -1602,8 +2008,10 @@ function fell(state: RaidState, b: RaidBuilding): void {
   b.hp = 0;
   b.destroyed = true;
   b.firing = false;
-  state.energy += BUILDINGS[b.type].energy;
   state.events.push({ type: "destroyed", id: b.id, pos: { ...b.pos }, buildingType: b.type });
+  if (b.paid) return;
+  b.paid = true;
+  state.energy += BUILDINGS[b.type].energy;
   const loot = lootFor(b.type, b.level);
   if (Object.keys(loot).length > 0) {
     for (const r of RESOURCES) state.loot[r] += loot[r] ?? 0;
@@ -1780,11 +2188,15 @@ function spawnLob(
   return lob;
 }
 
-function updateProjectiles(state: RaidState, dt: number): void {
+/** `worldDt` is how far enemy shots go: less under slow, and none at all while time stands still. */
+function updateProjectiles(state: RaidState, dt: number, worldDt = dt): void {
   // Hits can spawn new projectiles (ricochets, bomblets, skips): they land in the fresh list.
   const moving = state.projectiles;
   state.projectiles = [];
-  const kept = moving.filter((p) => stepProjectile(state, p, dt));
+  const kept = moving.filter((p) => {
+    if (p.team !== "enemy") return stepProjectile(state, p, dt);
+    return worldDt <= 0 || stepProjectile(state, p, worldDt);
+  });
   state.projectiles = kept.concat(state.projectiles);
 }
 

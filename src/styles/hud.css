@@ -943,3 +943,163 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* ---------- Time shards (right, under the pills) ---------- */
+
+.hud-shards {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 4px 14px 0 0;
+}
+
+.hud-shard {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  background:
+    linear-gradient(150deg, rgb(255 255 255 / 0.6), rgb(255 255 255 / 0) 48%),
+    linear-gradient(330deg, rgb(0 0 0 / 0.28), rgb(0 0 0 / 0) 50%), var(--tint);
+  box-shadow:
+    0 0 0 3px var(--ink),
+    0 4px 0 3px rgb(0 0 0 / 0.35),
+    0 0 14px var(--tint);
+}
+
+.hud-shard-glyph {
+  font-family: var(--display);
+  font-size: 19px;
+  line-height: 1;
+  text-shadow: var(--outline);
+}
+
+.hud-shard-count {
+  position: absolute;
+  right: -8px;
+  bottom: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--ink);
+  font-family: var(--display);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.hud-shard.unusable {
+  filter: grayscale(0.75) brightness(0.7);
+  box-shadow:
+    0 0 0 3px var(--ink),
+    0 4px 0 3px rgb(0 0 0 / 0.35);
+}
+
+/* The one running shows a ring of the time it has left. */
+.hud-shard.running::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: conic-gradient(var(--tint) calc(var(--left, 0) * 1turn), rgb(0 0 0 / 0.4) 0);
+  -webkit-mask: radial-gradient(closest-side, transparent 80%, #000 82%);
+  mask: radial-gradient(closest-side, transparent 80%, #000 82%);
+}
+
+.hud-retries {
+  padding: 2px 8px;
+  border: 2px solid var(--tint);
+  border-radius: 10px;
+  background: rgb(10 22 40 / 0.72);
+  color: var(--tint);
+  font-family: var(--display);
+  font-size: 14px;
+}
+
+/* ---------- Time powers: the picture washed in the power's color ---------- */
+
+.time-tint,
+.time-tint-edge,
+.time-tint-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.4s ease,
+    visibility 0s linear 0.4s;
+}
+
+/* Takes on the color while keeping each place's light and shade. */
+.time-tint,
+.time-tint-flash {
+  background: var(--tint);
+  mix-blend-mode: color;
+}
+
+.time-tint-edge {
+  background: radial-gradient(
+    85% 100% at 50% 50%,
+    transparent 50%,
+    color-mix(in srgb, var(--tint) 50%, transparent) 100%
+  );
+}
+
+.time-tint.on,
+.time-tint-edge.on {
+  visibility: visible;
+  transition: opacity 0.3s ease;
+}
+
+.time-tint.on {
+  opacity: 0.62;
+}
+
+.time-tint-edge.on {
+  opacity: 1;
+}
+
+.time-tint-flash.on {
+  animation: time-flash 0.9s ease-out forwards;
+}
+
+@keyframes time-flash {
+  from {
+    opacity: 0.85;
+    visibility: visible;
+  }
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* The time power running, under the timer: small, in its color, with the seconds it has left. */
+.hud-time-label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--tint);
+  text-shadow: var(--outline);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.hud-time-label.on {
+  opacity: 1;
+}

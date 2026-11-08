@@ -69,6 +69,7 @@ export interface CrewUiHandlers {
   /** The supply ship's tab was tapped: its cargo comes ashore. */
   onUnload(): void;
   onStatuesPanel(): void;
+  onHourglassPanel(): void;
   /** Gives a statue all the crystals of its kind the player can spare. */
   onStatueGive(kind: CrystalKind): void;
   onStatueRestore(kind: CrystalKind): void;
@@ -361,6 +362,7 @@ export class CrewUi {
     for (const [label, tabIcon, open] of [
       ["Tools", "gear", handlers.onToolsPanel],
       ["Statues", "star", handlers.onStatuesPanel],
+      ["Hourglass", "clock", handlers.onHourglassPanel],
     ] as const) {
       const tab = el("button", "crew-tab");
       tab.setAttribute("aria-label", label);

@@ -12,6 +12,7 @@
 import type { Ability } from "./logic/gunboat";
 import { ABILITY_ORDER } from "./logic/gunboat";
 import type { HeroInput } from "./logic/raid";
+import type { TimePower } from "./logic/timeShards";
 import { clampLength, length, normalize, sub, type Vec2, vec } from "./logic/vec";
 import type { CameraRig } from "./render/cameraRig";
 import { type ControlLayout, DEFAULT_CONTROLS } from "./save";
@@ -89,6 +90,7 @@ export class Controls {
   private pendingBoat = false;
   private heldMove = vec(0, 0);
   private pendingAbility: { ability: Ability; target: Vec2 } | null = null;
+  private pendingTime: TimePower | null = null;
   private readonly leftVisual: { base: HTMLElement; knob: HTMLElement };
   private readonly rightVisual: { base: HTMLElement; knob: HTMLElement };
 
@@ -137,6 +139,10 @@ export class Controls {
 
   selectAbility(ability: Ability): void {
     this.selectedAbility = ability;
+  }
+
+  pressTimePower(power: TimePower): void {
+    this.pendingTime = power;
   }
 
   /** Where the player is aiming right now (dragging), as a stick vector; null if not. */
@@ -193,11 +199,13 @@ export class Controls {
       autoAim: this.pendingAutoAim,
       toggleBoat: this.pendingBoat,
       boatAbility: this.pendingAbility,
+      timePower: this.pendingTime,
     };
     this.pendingAutoAim = false;
     this.pendingLock = null;
     this.pendingBoat = false;
     this.pendingAbility = null;
+    this.pendingTime = null;
     return input;
   }
 

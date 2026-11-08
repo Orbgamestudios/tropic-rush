@@ -118,16 +118,17 @@ export const BUILDINGS: Record<BuildingType, BuildingSpec> = {
   },
   // Not a building in a raid: it goes down as a hidden mine, which nothing can target.
   landmine: { label: "Land mine", radius: 0.5, height: 0.3, hp: 1, energy: 0 },
-  goldMine: { label: "Gold mine", radius: 3.7, height: 3.9, hp: 450, energy: 3 },
-  lumberCamp: { label: "Lumber mill", radius: 3.7, height: 3.6, hp: 450, energy: 3 },
-  quarry: { label: "Stone quarry", radius: 3.7, height: 3.3, hp: 450, energy: 3 },
-  scrapYard: { label: "Scrap yard", radius: 3.7, height: 3.3, hp: 400, energy: 3 },
-  storehouse: { label: "Storehouse", radius: 2.9, height: 3.6, hp: 600, energy: 3 },
-  goldVault: { label: "Gold vault", radius: 2.9, height: 3.2, hp: 600, energy: 3 },
-  timberShed: { label: "Timber shed", radius: 2.9, height: 3.4, hp: 550, energy: 3 },
-  stoneYard: { label: "Stone yard", radius: 2.9, height: 2.6, hp: 650, energy: 3 },
-  scrapBin: { label: "Scrap bin", radius: 2.9, height: 3, hp: 550, energy: 3 },
-  refinery: { label: "Refinery", radius: 3.7, height: 6.5, hp: 650, energy: 4 },
+  // Mills and storages give the gunboat little: its energy comes from breaking the defenses.
+  goldMine: { label: "Gold mine", radius: 3.7, height: 3.9, hp: 450, energy: 1 },
+  lumberCamp: { label: "Lumber mill", radius: 3.7, height: 3.6, hp: 450, energy: 1 },
+  quarry: { label: "Stone quarry", radius: 3.7, height: 3.3, hp: 450, energy: 1 },
+  scrapYard: { label: "Scrap yard", radius: 3.7, height: 3.3, hp: 400, energy: 1 },
+  storehouse: { label: "Storehouse", radius: 2.9, height: 3.6, hp: 600, energy: 1 },
+  goldVault: { label: "Gold vault", radius: 2.9, height: 3.2, hp: 600, energy: 1 },
+  timberShed: { label: "Timber shed", radius: 2.9, height: 3.4, hp: 550, energy: 1 },
+  stoneYard: { label: "Stone yard", radius: 2.9, height: 2.6, hp: 650, energy: 1 },
+  scrapBin: { label: "Scrap bin", radius: 2.9, height: 3, hp: 550, energy: 1 },
+  refinery: { label: "Refinery", radius: 3.7, height: 6.5, hp: 650, energy: 2 },
   laboratory: { label: "Laboratory", radius: 2.9, height: 5.4, hp: 550, energy: 3 },
 };
 

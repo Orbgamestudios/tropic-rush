@@ -8,6 +8,7 @@ import type { HeroKind } from "./heroes";
 import { heroMods } from "./heroTrees";
 import type { IslandLayout } from "./island";
 import {
+  afterStep,
   createRaid,
   type HeroInput,
   moveByInput,
@@ -18,7 +19,10 @@ import {
   type Team,
   type Zone,
 } from "./raid";
+import { FAST_FORWARD, type Shards, SLOW_WORLD } from "./timeShards";
 import { distance, lerp, type Vec2 } from "./vec";
+
+export { afterStep };
 
 export const MAX_SEATS = 5;
 
@@ -29,6 +33,8 @@ export interface Seat {
   hero: HeroKind;
   /** The upgrades they own for that hero, so everyone's phone agrees what the hero can do. */
   upgrades: string[];
+  /** The time shards they're bringing. */
+  shards?: Shards;
 }
 
 export function createCoopRaid(
@@ -42,6 +48,8 @@ export function createCoopRaid(
     [],
     seats.map((s) => heroMods(s.hero, s.upgrades)),
     gunboat,
+    seats.map((s) => s.shards ?? {}),
+    seats.length,
   );
 }
 
@@ -53,17 +61,7 @@ export function holdInput(held: HeroInput, next: HeroInput): HeroInput {
     autoAim: held.autoAim || next.autoAim,
     toggleBoat: held.toggleBoat || next.toggleBoat,
     boatAbility: next.boatAbility ?? held.boatAbility,
-  };
-}
-
-/** What's left of an input once a step has used its one-off presses. */
-export function afterStep(input: HeroInput): HeroInput {
-  return {
-    ...input,
-    lockAt: null,
-    autoAim: false,
-    toggleBoat: false,
-    boatAbility: null,
+    timePower: next.timePower ?? held.timePower,
   };
 }
 
@@ -79,6 +77,9 @@ interface HeroSnap {
   target: number | null;
   /** Seconds left of the boosts that change how fast a guest's own hero walks. */
   rage: number;
+  /** Fast forward's barrier, and the time shards they've still got. */
+  barrier: number;
+  shards: Shards;
 }
 
 type ProjectileSnap = [
@@ -115,6 +116,10 @@ export interface RaidSnapshot {
   zones: Zone[];
   turrets: RaidState["turrets"];
   events: RaidEvent[];
+  timePower: RaidState["timePower"];
+  retries: number;
+  /** A record's copies, at the end of the heroes: their ids, and whose copy each is. */
+  copies: [id: number, of: number][];
 }
 
 function projectileSnap(p: Projectile): ProjectileSnap {
@@ -171,6 +176,8 @@ export function takeSnapshot(
       unsteady: h.unsteady,
       target: h.targetId,
       rage: h.rage,
+      barrier: h.barrier,
+      shards: h.shards,
     })),
     buildings,
     sights,
@@ -179,6 +186,9 @@ export function takeSnapshot(
     zones: state.zones,
     turrets: state.turrets,
     events: [...events],
+    timePower: state.timePower && { ...state.timePower },
+    retries: state.retries,
+    copies: state.heroes.flatMap((h) => (h.copyOf === null ? [] : [[h.id, h.copyOf]])),
   };
 }
 
@@ -233,6 +243,9 @@ export function applySnapshot(
   state.abilityUses = snap.uses;
   state.boat.occupant = snap.occupant;
   state.loot = snap.loot;
+  state.timePower = snap.timePower;
+  state.retries = snap.retries;
+  matchCopies(state, snap.copies ?? []);
   snap.heroes.forEach((s, i) => {
     const h = state.heroes[i];
     if (!h) return;
@@ -244,6 +257,8 @@ export function applySnapshot(
     h.unsteady = s.unsteady;
     h.targetId = s.target;
     h.rage = s.rage;
+    h.barrier = s.barrier;
+    h.shards = s.shards;
     targets[i] = { x: s.x, y: s.y, facing: s.f };
     if (i === seat) {
       if (distance(h.pos, s) > SNAP_BACK) h.pos = { x: s.x, y: s.y };
@@ -278,6 +293,19 @@ export function applySnapshot(
   state.turrets = snap.turrets;
 }
 
+/** Adds a record's copy when the host has one, made from the hero it copies, and drops it after. */
+function matchCopies(state: RaidState, copies: RaidSnapshot["copies"]): void {
+  state.heroes = state.heroes.filter(
+    (h) => h.copyOf === null || copies.some(([id]) => id === h.id),
+  );
+  for (const [id, of] of copies) {
+    if (state.heroes.some((h) => h.id === id)) continue;
+    const source = state.heroes.find((h) => h.id === of);
+    if (source)
+      state.heroes.push({ ...structuredClone(source), id, copyOf: of, shards: {}, trail: [] });
+  }
+}
+
 /** A guest's phone between snapshots: their own hero answers at once, the rest slide along. */
 export function predict(
   state: RaidState,
@@ -286,10 +314,14 @@ export function predict(
   targets: HeroTargets,
   dt: number,
 ): void {
+  // Time runs as the host's time power has it: the crew's way, and the world's.
+  const power = state.timePower?.power;
+  const crew = power === "fastForward" ? FAST_FORWARD : 1;
+  const world = power === "pause" || power === "rewind" ? 0 : power === "slow" ? SLOW_WORLD : crew;
   state.heroes.forEach((h, i) => {
     const target = targets[i];
     if (i === seat) {
-      if (h.alive && !h.inBoat) moveByInput(state, h, input, dt);
+      if (h.alive && !h.inBoat) moveByInput(state, h, input, dt * crew);
       if (target) {
         h.pos.x = lerp(h.pos.x, target.x, Math.min(1, dt * 1.5));
         h.pos.y = lerp(h.pos.y, target.y, Math.min(1, dt * 1.5));
@@ -302,12 +334,13 @@ export function predict(
     h.facing = target.facing;
   });
   for (const p of state.projectiles) {
+    const step = dt * (p.team === "enemy" ? world : crew);
     if (p.lob) {
-      p.lob.t += dt;
+      p.lob.t += step;
       const t = Math.max(0, Math.min(1, p.lob.t / p.lob.duration));
       p.pos = { x: lerp(p.lob.from.x, p.lob.to.x, t), y: lerp(p.lob.from.y, p.lob.to.y, t) };
     } else {
-      p.pos = { x: p.pos.x + p.vel.x * dt, y: p.pos.y + p.vel.y * dt };
+      p.pos = { x: p.pos.x + p.vel.x * step, y: p.pos.y + p.vel.y * step };
     }
   }
 }

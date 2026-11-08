@@ -7,6 +7,13 @@ import { noUpgrades, trimUpgrades } from "./logic/heroTrees";
 import type { NightRaid } from "./logic/nightRaid";
 import { BLUEPRINT_TYPES, type Blueprint } from "./logic/spoils";
 import type { Place } from "./logic/sun";
+import {
+  readPicks,
+  readShards,
+  type Shards,
+  STARTER_SHARDS,
+  type TimePower,
+} from "./logic/timeShards";
 import { NEW_WORLD, sanitizeWorld, type WorldProgress } from "./logic/worldMap";
 
 // Bump the version suffix if the shape of SaveData changes incompatibly.
@@ -30,6 +37,10 @@ export interface SaveData {
   gold: number;
   /** Personal crystals, won from enemy headquarters. */
   crystals: Crystals;
+  /** Personal time shards, by power. */
+  shards: Shards;
+  /** The powers to take on raids, up to three; none means the first three they have. */
+  shardPicks: TimePower[];
   /** The upgrades each hero owns (see heroTrees.ts). */
   upgrades: Record<HeroKind, string[]>;
   /** Blueprints won that haven't reached the crew's island yet. */
@@ -181,6 +192,8 @@ const DEFAULT_SAVE: SaveData = {
   memberId: "",
   gold: 0,
   crystals: noCrystals(),
+  shards: STARTER_SHARDS,
+  shardPicks: [],
   upgrades: noUpgrades(),
   blueprints: [],
   blueprintDrought: 0,
@@ -224,6 +237,7 @@ function readLoot(value: unknown): Partial<Purse> {
 const fresh = (): SaveData => ({
   ...DEFAULT_SAVE,
   crystals: noCrystals(),
+  shards: { ...STARTER_SHARDS },
   upgrades: noUpgrades(),
   unlocked: starters(),
   settings: { ...DEFAULT_SETTINGS, controls: readControls(null) },
@@ -276,6 +290,9 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       memberId: text(parsed.memberId, 64),
       gold: (parsed.gold === undefined ? DEFAULT_SAVE.gold : count(parsed.gold)) + refund,
       crystals,
+      // Saves from before time shards get the starter set too.
+      shards: parsed.shards === undefined ? { ...STARTER_SHARDS } : readShards(parsed.shards),
+      shardPicks: readPicks(parsed.shardPicks),
       upgrades,
       blueprints: BLUEPRINT_TYPES.filter((t) => rawPrints.includes(t)),
       blueprintDrought: count(parsed.blueprintDrought, 99),

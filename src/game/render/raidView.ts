@@ -98,10 +98,18 @@ interface HeroView {
   /** How fast they're turning, in radians a second. */
   turn: number;
   ring: THREE.Mesh;
+  /** Their own materials, put by while they're drawn solid green for a record. */
+  greened: Map<THREE.Mesh, THREE.Material | THREE.Material[]> | null;
 }
 
+/**
+ * A hero being recorded is drawn solid bright green: lit and shaded, casting their shadow as ever,
+ * but every part of them the one color.
+ */
+const RECORDING = new THREE.MeshLambertMaterial({ color: 0x3dff6e, emissive: 0x0d7a2a });
+
 /** A glowing ring on the ground under a hero: bright green for you, blue for crewmates. */
-function heroRing(radius: number, leader: boolean): THREE.Mesh {
+function heroRing(radius: number, leader: boolean, rgb?: string): THREE.Mesh {
   const size = 128;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -109,7 +117,7 @@ function heroRing(radius: number, leader: boolean): THREE.Mesh {
   const g = canvas.getContext("2d");
   if (g) {
     const c = size / 2;
-    const color = leader ? "70, 235, 110" : "80, 175, 255";
+    const color = rgb ?? (leader ? "70, 235, 110" : "80, 175, 255");
     // A crisp ring with a soft glow either side, clear in the middle.
     const glow = g.createRadialGradient(c, c, c * 0.5, c, c, c);
     glow.addColorStop(0, `rgba(${color}, 0)`);
@@ -405,21 +413,7 @@ export class RaidView {
     this.lightBuildings(state);
 
     state.heroes.forEach((h, i) => {
-      const model = heroModel(h.kind);
-      const ring = heroRing(HEROES[h.kind].radius * 2 + (i === seat ? 0.5 : 0.2), i === seat);
-      this.root.add(model.root, ring);
-      this.heroes.set(h.id, {
-        model,
-        animator: model.rig && new HeroAnimator(model.rig),
-        last: { ...h.pos },
-        lastHp: h.hp,
-        speed: 0,
-        stepTimer: 0,
-        walk: 0,
-        facing: h.facing,
-        turn: 0,
-        ring,
-      });
+      this.addHero(h, i === seat);
     });
 
     for (const m of state.mines) {
@@ -699,6 +693,46 @@ export class RaidView {
     ]);
   }
 
+  private addHero(h: RaidHero, mine: boolean): HeroView {
+    const model = heroModel(h.kind);
+    // A record's copy stands in a pale ring, a ghost of the hero it's playing for.
+    const ghost = h.copyOf !== null ? "215, 255, 230" : undefined;
+    const ring = heroRing(HEROES[h.kind].radius * 2 + (mine ? 0.5 : 0.2), mine, ghost);
+    this.root.add(model.root, ring);
+    const view: HeroView = {
+      model,
+      animator: model.rig && new HeroAnimator(model.rig),
+      last: { ...h.pos },
+      lastHp: h.hp,
+      speed: 0,
+      stepTimer: 0,
+      walk: 0,
+      facing: h.facing,
+      turn: 0,
+      ring,
+      greened: null,
+    };
+    this.heroes.set(h.id, view);
+    return view;
+  }
+
+  /** Turns a hero solid green while they're recorded, and back again after. */
+  private greenFor(view: HeroView, on: boolean): void {
+    if (on === (view.greened !== null)) return;
+    if (on) {
+      const kept = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+      view.model.root.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        kept.set(o, o.material);
+        o.material = RECORDING;
+      });
+      view.greened = kept;
+      return;
+    }
+    for (const [mesh, material] of view.greened ?? []) mesh.material = material;
+    view.greened = null;
+  }
+
   /** A building's gun goes off: from the next barrel's muzzle, kicking the guns back. */
   private fireFrom(view: BuildingView, lobbed: boolean): void {
     const muzzles = view.model.muzzles ?? [];
@@ -724,6 +758,7 @@ export class RaidView {
         this.collapse(view, spec.height, dt);
         continue;
       }
+      if (view.collapse !== null) this.standUp(view, state);
       // A badly hurt building burns, harder the closer it is to falling.
       const health = b.hp / b.maxHp;
       if (health < 0.5 && Math.random() < dt * (health < 0.25 ? 9 : 4)) {
@@ -796,6 +831,19 @@ export class RaidView {
     if (t >= 1) root.visible = false;
   }
 
+  /** Time went back to before it fell. */
+  private standUp(view: BuildingView, state: RaidState): void {
+    view.collapse = null;
+    const { root } = view.model;
+    root.position.y = view.baseY;
+    root.rotation.z = 0;
+    root.rotation.x = 0;
+    root.visible = true;
+    if (view.rubble) this.root.remove(view.rubble);
+    view.rubble = null;
+    this.lightBuildings(state);
+  }
+
   /** Notes where every hero stands, just before the rules take a step. */
   remember(state: RaidState): void {
     for (const h of state.heroes) {
@@ -817,9 +865,19 @@ export class RaidView {
 
   private updateHeroes(state: RaidState, dt: number): void {
     this.ringPulse += dt;
+    // A record's copy comes and goes.
+    for (const [id, view] of this.heroes) {
+      if (state.heroes.some((h) => h.id === id)) continue;
+      view.model.root.visible = false;
+      view.ring.visible = false;
+    }
     for (const h of state.heroes) {
-      const view = this.heroes.get(h.id);
-      if (!view) continue;
+      const view = this.heroes.get(h.id) ?? this.addHero(h, false);
+      const running = state.timePower;
+      this.greenFor(
+        view,
+        running?.power === "record" && !running.replaying && running.heroId === h.id,
+      );
       const { model, ring } = view;
       // Nobody lies about: a fallen hero has gone up in smoke.
       model.root.visible = h.alive;

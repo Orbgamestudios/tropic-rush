@@ -16,8 +16,8 @@ export interface AbilitySpec {
   name: string;
   text: string;
   baseCost: number;
-  /** Each use makes the next one cost this much more energy. */
-  costStep: number;
+  /** Each use makes the next one cost this many times as much energy. */
+  costGrowth: number;
 }
 
 export const ABILITIES: Record<Ability, AbilitySpec> = {
@@ -26,35 +26,35 @@ export const ABILITIES: Record<Ability, AbilitySpec> = {
     name: "Artillery",
     text: "One big shell, anywhere on the island.",
     baseCost: 3,
-    costStep: 1,
+    costGrowth: 1.45,
   },
   heal: {
     label: "Medkit",
     name: "Medkit",
     text: "Heals everyone in a circle.",
     baseCost: 4,
-    costStep: 1,
+    costGrowth: 1.5,
   },
   shock: {
     label: "Shock",
     name: "Shock Grenade",
     text: "Stuns every defense in a wide circle for 4 seconds.",
     baseCost: 5,
-    costStep: 2,
+    costGrowth: 1.6,
   },
   barrage: {
     label: "Barrage",
     name: "Barrage",
     text: "Six shells across an area.",
     baseCost: 6,
-    costStep: 2,
+    costGrowth: 1.6,
   },
   smoke: {
     label: "Smoke",
     name: "Smokescreen",
     text: "Hides heroes in a wide circle for 10 seconds.",
     baseCost: 4,
-    costStep: 2,
+    costGrowth: 1.6,
   },
 };
 
@@ -104,9 +104,10 @@ export function smokeSeconds(level: number): number {
   return SMOKE.seconds + 1.5 * (level - 1);
 }
 
+/** What the next use costs: each one costs more than the last, and more again the more it's used. */
 export function abilityCost(ability: Ability, uses: number): number {
   const spec = ABILITIES[ability];
-  return spec.baseCost + spec.costStep * uses;
+  return Math.round(spec.baseCost * spec.costGrowth ** uses);
 }
 
 /** Seconds a boat shell takes to reach its target. */
