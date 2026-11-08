@@ -37,10 +37,12 @@ export interface Seat {
   shards?: Shards;
 }
 
+/** `raiders` is how many the island calls for, which sets the retries. */
 export function createCoopRaid(
   layout: IslandLayout,
   seats: readonly Seat[],
   gunboat?: Arsenal,
+  raiders = seats.length,
 ): RaidState {
   return createRaid(
     layout,
@@ -49,7 +51,7 @@ export function createCoopRaid(
     seats.map((s) => heroMods(s.hero, s.upgrades)),
     gunboat,
     seats.map((s) => s.shards ?? {}),
-    seats.length,
+    raiders,
   );
 }
 

@@ -14,6 +14,7 @@ import {
   GRID_ORIGIN,
   HOME_START,
   hourglassSite,
+  hqLevel,
   type Obstacle,
   obstacleById,
   type PlacedBuilding,
@@ -23,6 +24,7 @@ import {
 import type { CrystalKind } from "../logic/crystals";
 import { formatDuration, PRODUCERS, producerHold } from "../logic/economy";
 import type { HeroKind } from "../logic/heroes";
+import { hourglassKnown } from "../logic/hourglass";
 import { HOME_SHAPE, homeHeight, landingPoints, supplyDock } from "../logic/island";
 import { statueBefore } from "../logic/statues";
 import { tideTurn } from "../logic/tides";
@@ -397,7 +399,7 @@ export class CrewIslandView {
   private readonly heroes: HomeHeroes;
   private readonly statues = new Map<CrystalKind, StatueView>();
   /** The Hourglass, once it's found, and how it looks. */
-  private hourglass: { model: HourglassModel; mended: boolean } | null = null;
+  private hourglass: { model: HourglassModel; mended: boolean; overgrown: boolean } | null = null;
   private hourglassLamps: Lamp[] = [];
   private buildingLampList: Lamp[] = [];
   private statueLampList: Lamp[] = [];
@@ -587,14 +589,17 @@ export class CrewIslandView {
     const y = GRID_ORIGIN.y + (site.y + site.h / 2) * TILE;
     const ground = Math.max(0, homeHeight(x, y));
     const scale = Math.min(0.95, (Math.min(site.w, site.h) * TILE) / 4.4);
-    if (!this.hourglass || this.hourglass.mended !== h.mended) {
-      if (this.hourglass) this.root.remove(this.hourglass.model.root);
-      const model = hourglassModel(h.mended);
+    const overgrown = !hourglassKnown(hqLevel(layout));
+    const look = this.hourglass;
+    if (!look || look.mended !== h.mended || look.overgrown !== overgrown) {
+      if (look) this.root.remove(look.model.root);
+      const model = hourglassModel(h.mended, overgrown);
       model.root.scale.setScalar(scale);
       model.root.position.set(x, ground, y);
       this.root.add(model.root);
-      this.hourglass = { model, mended: h.mended };
+      this.hourglass = { model, mended: h.mended, overgrown };
     }
+    if (!this.hourglass) return;
     const root = this.hourglass.model.root;
     const working = !h.mended && h.doneAt !== null;
     const scaffolded = root.getObjectByName("hourglass-scaffold");

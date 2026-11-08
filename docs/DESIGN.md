@@ -80,45 +80,80 @@ These were explicitly left out to keep the first version to a basic structure:
 ## Added 2026-11-08 (owner's requests)
 
 - **Heavy:** 3,717 health, 18% more than 3,150. **Decided.**
+- **Night raid, any time:** a small skull under the resources on the crew's island opens the night
+  raid panel, with its replay and the next ship. Until now it only came up once, when the raid was
+  found, so a closed panel left no way back to the replay. A red dot on it means last night's raid
+  hasn't been looked at yet (its panel opened from the skull, or its replay watched).
+- **Upgrades a rising share of storage:** every level of every building costs at least a share of
+  what a full set of storages holds at the headquarters level that level opens at, in the
+  building's own mix of resources. The share starts at a tenth for a building's first level and
+  rises steeply, level by level, to 80% for its last; the headquarters' own levels rise from a
+  quarter to 90% of what the level below can store. Early levels keep their old prices where those
+  were higher (building upgrades from the 3rd level also cost one and a half to two times what they
+  did). So a turret's middle levels take about 15–30% of storage and its top ones 60–77%. A test
+  checks no level costs more than 92% of the storage it opens with, and that a building's top level
+  takes much more of it than its middle ones.
+- **The build menu** is one list of every building, scrolling sideways: its tabs light up as the
+  list passes their part and still jump to it when tapped. Statues and the Hourglass open from the
+  island itself, not from here. A red dot on Build means something could be built right now.
 - **The story's script** is written: every scene of dialogue from the first landing to the end,
   both endings and what comes after, all of it voiced. **Planned, not playing yet:** see
   `docs/STORY.md`.
-- **Time shards on raids:** all six powers work as `docs/STORY.md` has them, one at a time for the
-  whole crew. First-pass lengths: slow 8 seconds, pause 5, fast forward 10, record 8 (and 8 more
-  for its copy), rewind 5.
-  - **Pause** holds back buildings brought to nothing until it ends. **Fast forward** ends when the
-    barrier round whoever used it breaks.
-  - **Record:** nothing can hurt the hero while it records. When it runs out, the whole world goes
-    back to where it began (heroes, buildings, shots, energy and loot; the clock, retries and
-    shards used don't), and a copy of the hero, in a pale ring, plays out what they did while the
-    defenses see only the copy. The copy never works the gunboat, and if it falls the record ends.
-  - **Rewind:** the world runs back through the last 5 seconds (or less, early in a raid).
+- **Time crystals on raids:** all six powers work as `docs/STORY.md` has them, one at a time for the
+  whole crew. Each lasts 10 seconds (record 10, and 10 more for its copy).
+  - **Pause** holds back buildings brought to nothing until it ends. **Fast forward** puts a
+    barrier worth half each hero's health round them, and ends when the one round whoever used it
+    breaks.
+  - **Record:** nothing can hurt the hero while it records, or while their copy plays it out. When
+    it runs out, the whole world goes back to where it began (heroes, buildings, shots, energy and
+    loot; the clock, retries and crystals used don't), the hero running back along the way they
+    came, and a copy of the hero, in a pale ring, plays out what they did while the defenses see
+    only the copy. The copy never works the gunboat, and if it falls the record ends.
+  - **Rewind:** the world runs back through the last 10 seconds (or less, early in a raid).
     Buildings get back the damage done before it and stand up again if they fell, though they
     never pay their energy or loot twice; damage done while it runs stays. Enemy shots fly back
     the way they came, hurting any hero in their path, and into the guns that fired them. Defenses
     don't fire while it runs. Heroes never get health back from it.
   - **Retries** go off by themselves when a hero falls, after the Medic's guardian angel, taking
-    them back about 3 seconds with at least 30% of their health.
-  - **On screen:** a round button for each power brought sits under the energy and loot, with its
-    count and a ring of the time left. The crew's retries are small red crystals under the hero's
+    them back about 3 seconds with at least 30% of their health; the hero runs back along the way
+    they came, under streaks and a rewind sign. A raid has a retry for each raider the island
+    calls for beyond those going (Easy islands call for 1, Medium 2, Hard 3, Extreme 4, Impossible
+    5, shown on the island's card), each filled with a retry crystal one of them brings, one from
+    each in turn. One person on a one-person island gets none; alone on a three-person island, two.
+  - **On screen:** a crystal button for each power brought sits under the energy and loot, with
+    its count and a ring of the time left, and works on the touch even while the other thumbs are
+    moving and shooting. Crystals are drawn gems in their power's color with its sign on them, not
+    typed symbols. The crew's retries are small red crystals under the hero's
     health, one for each left. While a power runs the picture is washed in its color (slow
     yellow, pause blue, fast forward orange, record green, rewind purple), and a retry flashes
     red; the HUD keeps its own colors. The power's name and seconds left sit small under the
     timer. Fast forward's barrier is a glowing orange bubble round each hero, fainter as it's worn
     down, and an orange stripe on the health bar. A hero being recorded is solid bright green,
     still lit and casting a shadow.
-  - **Picking:** the hero screen shows the shards a player owns; tap up to three powers to take
-    (the first three owned if none are picked). Retries always go.
+  - **Taking them:** a player takes three crystals on a raid, any mix of those they own (three
+    pauses, if they have three). The hero screen's specs panel shows the three slots and the
+    crystals owned below: tap one to fill a slot, tap a slot to empty it. With none chosen it's one
+    of each kind first. Retry crystals sit apart, on a line of their own. The capstone box and its
+    row of locks are gone from that panel to make room.
   - **The Hourglass:** a ruin hidden in deep jungle (tier 3, where the chainsaw goes) on every
-    crew's island, never under a statue. Clearing that patch finds it; the crew mends it for 6,000
-    stone and 3,000 gold over a day. Once it's whole, each player taps it (or Hourglass in the
-    build menu) to break their own crystals: pick a power, tap a crystal, and it breaks into 1 to
-    5 shards of it (2 to 4 most of the time).
+    crew's island, never under a statue. Clearing that patch finds it, but it's covered in vines
+    and nobody knows how to use it until the Shaman tells the crew about it (for now, at
+    headquarters 6, when the first of Terror's islands would turn up). Then the crew mends it for
+    6,000 stone and 3,000 gold over a day. Once it's whole, each player taps it to break their own
+    crystals: pick a power, tap a crystal, and it breaks into 1 to 5 of it (2 to 4 most of the
+    time).
   - **Starter shards:** every player starts with 2 of each power and 2 retries, to try them.
 - **The gunboat costs more as it's used:** each use of a weapon costs about 1.45 to 1.6 times the
   one before (artillery 3, 4, 6, 9, 13; barrage 6, 10, 15, 25, 39), where it used to go up by 1 or
   2 each time. **Less energy from mills and storages:** 1 each (the refinery 2), down from 3, so
   the gunboat is fed mostly by breaking defenses (still 4 or 5 each).
+- **The map:** an island's card shows the crystal its headquarters holds and how many a win is
+  likely to bring, and how many raiders it calls for. The raider ship can't be culled away up close.
+  **The snowy north:** from about a region and a half north of home, islands turn snowy, with pines
+  in place of palms, and icebergs drift in the sea between them, more the further north. On the
+  map only for now: raids there still look tropical.
+- **Full screen on load:** the game always reaches the bottom of the screen, where an iPhone could
+  start a home-screen app a strip short in landscape.
 
 ## Added 2026-11-07, second batch (owner's requests)
 

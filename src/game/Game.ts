@@ -16,6 +16,7 @@ import { BUILDINGS, type BuildingType } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
 import { gunboatWeapons, hqLevel, type LayoutOp } from "./logic/crewIsland";
 import { addCrystals, type CrystalKind, payCrystals, swapCrystals } from "./logic/crystals";
+import { RAIDERS } from "./logic/difficulty";
 import { allowedCount, emptyPurse, PROGRESSION, type Purse, RESOURCES } from "./logic/economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
 import { HERO_KINDS, type HeroKind } from "./logic/heroes";
@@ -963,13 +964,13 @@ export class Game {
   }
 
   private mySeat(hero: HeroKind): Seat {
-    const { memberId, nickname, upgrades, shards, shardPicks } = this.save;
+    const { memberId, nickname, upgrades, shards, shardLoadout } = this.save;
     return {
       member: memberId,
       name: nickname,
       hero,
       upgrades: upgrades[hero],
-      shards: packShards(shards, shardPicks),
+      shards: packShards(shards, shardLoadout),
     };
   }
 
@@ -1510,15 +1511,15 @@ export class Game {
     const layout = this.islandFor(target);
     const weapons = gunboatWeapons(this.crew.snapshot().layout);
     const state = team
-      ? createCoopRaid(layout, team.seats, weapons)
+      ? createCoopRaid(layout, team.seats, weapons, RAIDERS[target.difficulty])
       : createRaid(
           layout,
           [hero],
           [],
           [heroMods(hero, this.save.upgrades[hero])],
           weapons,
-          [packShards(this.save.shards, this.save.shardPicks)],
-          Math.max(1, this.crewMembers.length),
+          [packShards(this.save.shards, this.save.shardLoadout)],
+          RAIDERS[target.difficulty],
         );
     this.controls.selectAbility("artillery");
     this.seat = team?.seat ?? 0;

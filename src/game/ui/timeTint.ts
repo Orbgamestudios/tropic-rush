@@ -6,18 +6,23 @@ import type { RaidState } from "../logic/raid";
 import { TIME_POWER_SPECS, type TimePower } from "../logic/timeShards";
 import { el } from "./kit/dom";
 import { sfx } from "./kit/fx";
+import { timeSign } from "./kit/timeIcons";
 
 export class TimeTint {
   private readonly wash = el("div", "time-tint");
   private readonly edge = el("div", "time-tint-edge");
   private readonly flash = el("div", "time-tint-flash");
+  /** Streaks across the picture and a rewind sign, while time runs back. */
+  private readonly rewind = el("div", "time-rewind");
+  private replaying = false;
   private shown: TimePower | null = null;
   private state: RaidState | null = null;
   private retries = 0;
 
   /** Goes straight after the canvas, so it washes the picture and nothing laid over it. */
   constructor(container: HTMLElement) {
-    container.append(this.wash, this.edge, this.flash);
+    this.rewind.append(timeSign("rewind", "time-rewind-sign"));
+    container.append(this.wash, this.edge, this.flash, this.rewind);
   }
 
   /** Follows the raid's time power; null away from a raid. */
@@ -30,6 +35,10 @@ export class TimeTint {
     if (power !== this.shown) this.show(power);
     if (state && state.retries < this.retries) this.retried();
     this.retries = state?.retries ?? 0;
+    // A record's first half is over: time runs back to where it began.
+    const replaying = state?.timePower?.replaying === true;
+    if (replaying && !this.replaying) this.runBack();
+    this.replaying = replaying;
   }
 
   private show(power: TimePower | null): void {
@@ -48,7 +57,12 @@ export class TimeTint {
   private retried(): void {
     this.flash.style.setProperty("--tint", TIME_POWER_SPECS.retry.color);
     replay(this.flash, "on");
-    sfx.timePower("retry");
+    this.runBack();
+  }
+
+  private runBack(): void {
+    replay(this.rewind, "on");
+    sfx.rewindSweep();
   }
 }
 

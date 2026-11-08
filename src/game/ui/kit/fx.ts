@@ -156,6 +156,13 @@ export const sfx = {
       tone(960, 0.4, { type: "sine", gain: 0.15, delay: 0.35 });
     } else tone(440, 0.5, { type: "sine", to: 330, gain: 0.25, delay: 0.3 });
   },
+  /** Time running backwards: a whirr winding down fast, then a click as it catches. */
+  rewindSweep(): void {
+    tone(1400, 0.6, { type: "sawtooth", to: 160, gain: 0.08 });
+    tone(900, 0.6, { type: "triangle", to: 110, gain: 0.18 });
+    noise(0.55, { freq: 2600, gain: 0.14 });
+    noise(0.03, { freq: 5000, gain: 0.35, delay: 0.62 });
+  },
   /** Time going back to its own pace. */
   timeEnd(): void {
     tone(300, 0.35, { type: "sine", to: 520, gain: 0.18 });

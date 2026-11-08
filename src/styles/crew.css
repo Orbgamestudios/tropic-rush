@@ -105,6 +105,20 @@
   gap: 8px;
 }
 
+.crew-night-open {
+  margin-right: 4px;
+}
+
+.crew-night-open .ui-btn-face {
+  width: 30px;
+  height: 30px;
+}
+
+.crew-night-open .ui-btn-icon {
+  width: 17px;
+  height: 17px;
+}
+
 .crew-resources {
   display: flex;
   gap: 13px;
@@ -1145,4 +1159,9 @@
   color: #ffd9d0;
   background: rgb(160 40 30 / 0.55);
   white-space: nowrap;
+}
+
+/* In the one build list, each category's first card starts a little apart from the last. */
+.crew-chip-first:not(:first-child) {
+  margin-left: 14px;
 }

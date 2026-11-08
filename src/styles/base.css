@@ -96,6 +96,12 @@ body {
 #game {
   position: fixed;
   inset: 0;
+  /*
+   * A home-screen app can start a strip short of the screen in landscape on iPhones, until it's
+   * turned, leaving the page's background showing along the bottom. The large viewport is the
+   * whole screen, so the game always reaches it.
+   */
+  min-height: 100lvh;
   overflow: hidden;
   /* How far the safe area is from the edge of the screen, in the UI layers' own scaled pixels. */
   --bleed-top: calc(var(--safe-top) / var(--ui-scale, 1));

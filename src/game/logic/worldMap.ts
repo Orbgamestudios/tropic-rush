@@ -124,6 +124,18 @@ const HOME_CLEAR = 14;
 /** How far from home (map units) one more headquarters level is. */
 const UNITS_PER_LEVEL = 34;
 
+/**
+ * How snowy the sea is at a spot, 0 to 1: none round home, then colder the further north, snow
+ * on the islands and icebergs in the water from about a region and a half up.
+ */
+export function snowAt(y: number): number {
+  const t = Math.min(1, Math.max(0, (-y - SNOW_FROM) / (SNOW_FULL - SNOW_FROM)));
+  return t * t * (3 - 2 * t);
+}
+
+const SNOW_FROM = 60;
+const SNOW_FULL = 120;
+
 export function regionKey(column: number, row: number): string {
   return `${column},${row}`;
 }

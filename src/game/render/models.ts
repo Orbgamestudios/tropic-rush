@@ -526,7 +526,13 @@ export class GunboatScenery {
     if (this.shown === kitVersion()) return;
     this.shown = kitVersion();
     this.root.clear();
-    this.root.add(gunboatModel(this.crew).root);
+    const boat = gunboatModel(this.crew).root;
+    // Always drawn: the kit's boat can carry bounds that don't match it, which had the map's
+    // raider ship vanish when looked at up close. It's one small model.
+    boat.traverse((o) => {
+      o.frustumCulled = false;
+    });
+    this.root.add(boat);
   }
 }
 

@@ -77,7 +77,7 @@ import {
 } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
 import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
-import { breakBlocker, breakCrystal } from "../logic/hourglass";
+import { breakBlocker, breakCrystal, hourglassKnown } from "../logic/hourglass";
 import { type NightRaid, raidingShip, runNightRaid } from "../logic/nightRaid";
 import { nextShip, raiderShip, shipDay } from "../logic/raiderShip";
 import {
@@ -214,8 +214,13 @@ export class CrewMode {
       onClearCancel: () => this.showClearing(null),
       onToolsPanel: () => this.showToolsPanel(),
       onToolUp: (tool) => this.upgradeTool(tool),
+      onNight: () => {
+        this.seeNight();
+        this.showNightPanel();
+      },
       onNightReplay: () => {
         const raid = this.host.save().nightRaid;
+        this.seeNight();
         if (raid) host.onReplay(raid);
       },
       onCollect: (id) => this.collect(id),
@@ -226,8 +231,6 @@ export class CrewMode {
         this.ui.hideNight();
         host.onStrikeBack(raid);
       },
-      onStatuesPanel: () => this.showStatues(),
-      onHourglassPanel: () => this.showHourglass(),
       onStatueGive: (kind) => this.giveCrystals(kind),
       onStatueRestore: (kind) => this.restoreStatue(kind),
       onLabPanel: () => this.showLabPanel(),
@@ -547,6 +550,15 @@ export class CrewMode {
     );
   }
 
+  /** Last night's raid has been looked at: the red dot on its button goes. */
+  private seeNight(): void {
+    const raid = this.host.save().nightRaid;
+    if (raid && raid.night > this.host.save().nightSeen) {
+      this.host.updateSave({ nightSeen: raid.night });
+    }
+    this.ui.setNightNews(false);
+  }
+
   private showNightPanel(): void {
     const { raidLog } = this.layout;
     const next = nextShip(Date.now(), hqLevel(this.layout));
@@ -624,6 +636,7 @@ export class CrewMode {
     const { crystals, shards } = this.host.save();
     this.hourglassPanel.show({
       hourglass: current.hourglass,
+      known: hourglassKnown(hqLevel(current)),
       now: this.now(),
       blocker: mendBlocker(current),
       crystals,
@@ -713,6 +726,8 @@ export class CrewMode {
   /** Updates the resource bar, the build buttons' costs and limits, and the upgrade button. */
   private refreshEconomy(): void {
     const current = settle(this.layout, this.now());
+    const { nightRaid, nightSeen } = this.host.save();
+    this.ui.setNightNews(nightRaid !== null && nightRaid.night > nightSeen);
     this.liveHeld = current;
     if (current.builds.length !== this.layout.builds.length) this.finishedBuilding(current);
     this.noticeStatues(current);

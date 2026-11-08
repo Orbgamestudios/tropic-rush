@@ -45,6 +45,7 @@ import {
   HOURGLASS_COST,
   HOURGLASS_MS,
   type HourglassState,
+  hourglassKnown,
   hourglassSpot,
   newHourglass,
   readHourglass,
@@ -638,9 +639,12 @@ export function hourglassAtTile(
 }
 
 /** Why the Hourglass can't start being mended, or null if it can. */
-export function mendBlocker(layout: Pick<CrewLayout, "hourglass" | "resources">): string | null {
+export function mendBlocker(
+  layout: Pick<CrewLayout, "hourglass" | "resources" | "buildings">,
+): string | null {
   const h = layout.hourglass;
   if (!h.found) return "Not found yet";
+  if (!hourglassKnown(hqLevel(layout))) return "Nobody knows how to use it yet";
   if (h.mended) return "Already mended";
   if (h.doneAt !== null) return "Being mended";
   if (!canAfford(layout.resources, HOURGLASS_COST)) return "Not enough resources";

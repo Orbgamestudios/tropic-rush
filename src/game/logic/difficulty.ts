@@ -6,6 +6,15 @@
 export const DIFFICULTIES = ["Easy", "Medium", "Hard", "Extreme", "Impossible"] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];
 
+/** How many raiders each band calls for: one for an easy island, the whole crew of five at worst. */
+export const RAIDERS: Record<Difficulty, number> = {
+  Easy: 1,
+  Medium: 2,
+  Hard: 3,
+  Extreme: 4,
+  Impossible: 5,
+};
+
 /** The strongest an enemy headquarters gets. */
 export const MAX_ENEMY_HQ = 50;
 

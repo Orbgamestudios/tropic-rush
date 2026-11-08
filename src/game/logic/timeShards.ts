@@ -21,7 +21,6 @@ export interface TimePowerSpec {
   name: string;
   /** What the whole screen is washed with while it runs. */
   color: string;
-  glyph: string;
   text: string;
   /** How long it runs, in seconds of the raid's clock. */
   seconds: number;
@@ -31,42 +30,36 @@ export const TIME_POWER_SPECS: Record<TimePower, TimePowerSpec> = {
   slow: {
     name: "Slow",
     color: "#ffd21f",
-    glyph: "▶|",
     text: "The world runs at half speed. Your heroes and their shots don't.",
-    seconds: 8,
+    seconds: 10,
   },
   pause: {
     name: "Pause",
     color: "#3d8bff",
-    glyph: "⏸",
     text: "Time stops. Shots hang in the air and defenses can't turn or fall, but they still take damage.",
-    seconds: 5,
+    seconds: 10,
   },
   fastForward: {
     name: "Fast forward",
     color: "#ff8a1f",
-    glyph: "⏩",
     text: "Everything runs at double speed, behind a barrier worth a fifth of each hero's health.",
     seconds: 10,
   },
   record: {
     name: "Record",
     color: "#2fd36b",
-    glyph: "⏺",
     text: "Nothing can hurt you while you're recorded. Then time goes back, and a copy of you plays it out.",
-    seconds: 8,
+    seconds: 10,
   },
   rewind: {
     name: "Rewind",
     color: "#a64dff",
-    glyph: "⏪",
     text: "The world runs backwards. Enemy shots fly home, and what you broke before mends itself.",
-    seconds: 5,
+    seconds: 10,
   },
   retry: {
     name: "Retry",
     color: "#ff3b4a",
-    glyph: "♥",
     text: "A fallen hero is taken back to a few seconds before they fell.",
     seconds: 0,
   },
@@ -77,7 +70,7 @@ export const SLOW_WORLD = 0.5;
 /** Under fast forward, everything runs this many times as fast. */
 export const FAST_FORWARD = 2;
 /** The barrier fast forward puts round each hero, as a share of their health. */
-export const FAST_BARRIER = 0.2;
+export const FAST_BARRIER = 0.5;
 /** How far back a retry takes a fallen hero, in seconds. */
 export const RETRY_BACK = 3;
 
@@ -94,42 +87,92 @@ export const STARTER_SHARDS: Shards = {
   retry: 2,
 };
 
-/** The most kinds of power a player takes on a raid, retries aside. */
-export const SHARD_PICKS = 3;
+/**
+ * How many time crystals a player takes on a raid, retries aside: three uses in all, any mix of
+ * the ones they own, three of the same if they like.
+ */
+export const LOADOUT_SLOTS = 3;
+
+/** The powers a player can put in a loadout: everything but retries, which go by themselves. */
+export const LOADOUT_POWERS: readonly TimePower[] = TIME_POWERS.filter((p) => p !== "retry");
 
 /**
- * What a player takes on a raid: the powers they picked that they still have (or, if none, the
- * first three they have), up to three, and all their retries.
+ * The loadout as it stands with what's owned now: each slot needs a crystal of its own, so a
+ * slot whose crystal has been used up drops away. With no loadout chosen, it's filled from what
+ * they own, one of each kind before any twice.
  */
-export function packShards(owned: Shards, picks: readonly TimePower[] = []): Shards {
-  const have = (p: TimePower) => p !== "retry" && (owned[p] ?? 0) > 0;
-  const picked = picks.filter(have);
-  const powers = picked.length > 0 ? picked : TIME_POWERS.filter(have);
+export function fitLoadout(owned: Shards, loadout: readonly TimePower[] | null): TimePower[] {
+  const left: Shards = { ...owned };
+  const take = (p: TimePower) => {
+    if (p === "retry" || (left[p] ?? 0) <= 0) return false;
+    left[p] = (left[p] ?? 0) - 1;
+    return true;
+  };
+  if (loadout) return loadout.filter(take).slice(0, LOADOUT_SLOTS);
+  const out: TimePower[] = [];
+  while (out.length < LOADOUT_SLOTS) {
+    const before = out.length;
+    for (const p of LOADOUT_POWERS) if (out.length < LOADOUT_SLOTS && take(p)) out.push(p);
+    if (out.length === before) break;
+  }
+  return out;
+}
+
+/** What a player takes on a raid: the crystals in their loadout, and all their retries. */
+export function packShards(owned: Shards, loadout: readonly TimePower[] | null = null): Shards {
   const pack: Shards = {};
-  for (const power of powers.slice(0, SHARD_PICKS)) pack[power] = owned[power];
+  for (const p of fitLoadout(owned, loadout)) pack[p] = (pack[p] ?? 0) + 1;
   if ((owned.retry ?? 0) > 0) pack.retry = owned.retry;
   return pack;
 }
 
-/** Picks or drops a power from the three taken on raids. */
-export function togglePick(picks: readonly TimePower[], power: TimePower): TimePower[] {
-  if (power === "retry") return [...picks];
-  if (picks.includes(power)) return picks.filter((p) => p !== power);
-  return [...picks, power].slice(-SHARD_PICKS);
+/** Puts a crystal in the next free slot, if there's one and they own another of it. */
+export function addToLoadout(
+  owned: Shards,
+  loadout: readonly TimePower[] | null,
+  power: TimePower,
+): TimePower[] {
+  const now = fitLoadout(owned, loadout);
+  if (power === "retry" || now.length >= LOADOUT_SLOTS) return now;
+  const using = now.filter((p) => p === power).length;
+  return using < (owned[power] ?? 0) ? [...now, power] : now;
 }
 
-export function readPicks(value: unknown): TimePower[] {
-  if (!Array.isArray(value)) return [];
-  return TIME_POWERS.filter((p) => p !== "retry" && value.includes(p)).slice(0, SHARD_PICKS);
+/** Takes a crystal back out of its slot. */
+export function removeFromLoadout(
+  owned: Shards,
+  loadout: readonly TimePower[] | null,
+  slot: number,
+): TimePower[] {
+  return fitLoadout(owned, loadout).filter((_, i) => i !== slot);
+}
+
+/** Reads a saved loadout; null for one never chosen. */
+export function readLoadout(value: unknown): TimePower[] | null {
+  if (!Array.isArray(value)) return null;
+  return value
+    .filter((p): p is TimePower => LOADOUT_POWERS.includes(p as TimePower))
+    .slice(0, LOADOUT_SLOTS);
 }
 
 /**
- * The retries a crew can use on a raid: a slot for each crewmate attacking, or for each member of
- * the crew when someone goes alone, each filled from the retry shards they brought.
+ * The retries a raid gives: a slot for each raider the island calls for beyond those going, each
+ * filled with a retry crystal one of them brings. One person on a one-person island gets none;
+ * alone on a three-person island, two. Who each slot's crystal belongs to, in the order they go:
+ * one from each raider in turn.
  */
-export function retrySlots(brought: readonly number[], crewSize: number): number {
-  if (brought.length === 1) return Math.min(brought[0] ?? 0, Math.max(1, crewSize));
-  return brought.reduce((sum, n) => sum + Math.min(1, n), 0);
+export function retryOwners(brought: readonly number[], raiders: number): number[] {
+  const slots = Math.max(0, raiders - brought.length);
+  const left = [...brought];
+  const owners: number[] = [];
+  while (owners.length < slots && left.some((n) => n > 0)) {
+    left.forEach((n, i) => {
+      if (owners.length >= slots || n <= 0) return;
+      owners.push(i);
+      left[i] = n - 1;
+    });
+  }
+  return owners;
 }
 
 /** How many shards a crystal breaks into at the Hourglass: usually 2 to 4, now and then 1 or 5. */

@@ -13,6 +13,7 @@ import {
   islandRadius,
   type MapIsland,
   REGION,
+  snowAt,
   type WorldProgress,
 } from "../logic/worldMap";
 import { cloudTexture } from "./clouds";
@@ -30,7 +31,7 @@ import {
   palmGeometry,
   swaying,
 } from "./props";
-import { merge, vertexColored } from "./shapes";
+import { merge, painted, vertexColored } from "./shapes";
 import { SKY } from "./sky";
 import type { Stage } from "./stage";
 
@@ -75,7 +76,45 @@ const OCEAN_FRAGMENT = /* glsl */ `
   }
 `;
 
+/** A snowy pine for the northern islands: a stack of dark cones with snow on each. */
+function pineGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const trunk = new THREE.CylinderGeometry(0.07, 0.1, 0.5, 5);
+  trunk.translate(0, 0.25, 0);
+  parts.push(painted(trunk, 0x6b4a2e));
+  for (const [y, r, h] of [
+    [0.55, 0.62, 0.8],
+    [0.95, 0.48, 0.7],
+    [1.3, 0.33, 0.6],
+  ] as const) {
+    const cone = new THREE.ConeGeometry(r, h, 7);
+    cone.translate(0, y + h / 2, 0);
+    parts.push(painted(cone, 0x2f6448));
+    const snow = new THREE.ConeGeometry(r * 0.72, h * 0.42, 7);
+    snow.translate(0, y + h * 0.79, 0);
+    parts.push(painted(snow, 0xf2f6fa));
+  }
+  return merge(parts);
+}
+
+/** A chunk of floating ice: a few slabs of white and pale blue piled up, lopsided. */
+function icebergGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [x, z, r, h, color] of [
+    [0, 0, 1, 1.1, 0xf4f8fc],
+    [0.6, 0.3, 0.7, 0.7, 0xdcebf6],
+    [-0.5, -0.2, 0.6, 0.55, 0xe8f2fa],
+  ] as const) {
+    const g = new THREE.CylinderGeometry(r * 0.55, r, h, 6);
+    g.translate(x, h / 2 - 0.15, z);
+    parts.push(painted(g, color));
+  }
+  return merge(parts);
+}
+
 let shapes: {
+  pine: THREE.BufferGeometry;
+  iceberg: THREE.BufferGeometry;
   palm: THREE.BufferGeometry;
   tree: THREE.BufferGeometry;
   bush: THREE.BufferGeometry;
@@ -95,6 +134,8 @@ function bakedBuilding(root: THREE.Object3D): THREE.BufferGeometry {
 
 function sharedShapes(): NonNullable<typeof shapes> {
   shapes ??= {
+    pine: pineGeometry(),
+    iceberg: icebergGeometry(),
     palm: palmGeometry(),
     tree: jungleTreeGeometry(),
     bush: bushGeometry(),
@@ -109,6 +150,8 @@ function sharedShapes(): NonNullable<typeof shapes> {
 /** Everything drawn on the islands of one region, gathered up to go into a few meshes. */
 interface Batch {
   land: THREE.BufferGeometry[];
+  pines: PropInstance[];
+  icebergs: PropInstance[];
   palms: PropInstance[];
   trees: PropInstance[];
   bushes: PropInstance[];
@@ -120,6 +163,8 @@ interface Batch {
 function newBatch(): Batch {
   return {
     land: [],
+    pines: [],
+    icebergs: [],
     palms: [],
     trees: [],
     bushes: [],
@@ -172,9 +217,14 @@ function addLand(
     x: x + (wx - mx) * scale,
     y: z + (wz - mz) * scale,
   });
-  const sand = new THREE.Color(shape.blackSand ? 0x4a4648 : COLORS.sand);
-  const grass = new THREE.Color(0x6fbf4c);
-  const rock = new THREE.Color(0x6d6358);
+  // The further north, the more snow lies over it.
+  const snow = snowAt(z);
+  const sand = new THREE.Color(shape.blackSand ? 0x4a4648 : COLORS.sand).lerp(
+    new THREE.Color(0xdde6ec),
+    snow * 0.85,
+  );
+  const grass = new THREE.Color(0x6fbf4c).lerp(new THREE.Color(0xf2f6fa), snow * 0.92);
+  const rock = new THREE.Color(0x6d6358).lerp(new THREE.Color(0x8a8f96), snow * 0.5);
   const lava = new THREE.Color(0xff7a24);
   const step = (reach * 2) / MODEL_CELLS;
   const positions: number[] = [];
@@ -253,9 +303,26 @@ function addLand(
       scale: new THREE.Vector3().setScalar(0.24 + rng() * 0.12),
     };
     const roll = rng();
-    (roll < 0.4 ? batch.palms : roll < 0.7 ? batch.trees : batch.bushes).push(item);
+    // Pines in the snow, palms and jungle in the warm.
+    if (rng() < snow) (roll < 0.8 ? batch.pines : batch.bushes).push(item);
+    else (roll < 0.4 ? batch.palms : roll < 0.7 ? batch.trees : batch.bushes).push(item);
   }
   return toMap;
+}
+
+/** Icebergs drifting in the northern sea, clear of the islands, more the colder it is. */
+function addIcebergs(batch: Batch, key: string, islands: readonly MapIsland[]): void {
+  const [column = 0, row = 0] = key.split(",").map(Number);
+  const rng = createRng((column * 7919 + row * 104729) ^ 0x1ceb);
+  for (let i = 0; i < 26; i++) {
+    const x = (column - 0.5 + rng()) * REGION.w;
+    const y = (row - 0.5 + rng()) * REGION.h;
+    const size = 0.5 + rng() * 1.1;
+    const spin = rng() * 6.28;
+    if (rng() > snowAt(y) * 0.8) continue;
+    if (islands.some((i) => Math.hypot(i.x - x, i.y - y) < islandRadius(i.size) + 5)) continue;
+    batch.icebergs.push({ x, y, rotation: spin, scale: new THREE.Vector3().setScalar(size) });
+  }
 }
 
 /** The land a map island shows: player islands are all crew islands. */
@@ -292,6 +359,8 @@ function buildBatch(batch: Batch): THREE.Group {
   const still = vertexColored();
   const lifted = () => 0.4;
   group.add(
+    instanced(s.pine, batch.pines, false, sway, lifted),
+    instanced(s.iceberg, batch.icebergs, false, still, () => 0),
     instanced(s.palm, batch.palms, false, sway, lifted),
     instanced(s.tree, batch.trees, false, sway, lifted),
     instanced(s.bush, batch.bushes, false, sway, lifted),
@@ -443,7 +512,9 @@ export class WorldMapView {
 
   private buildRegion(key: string): void {
     const batch = newBatch();
-    for (const island of this.islands) if (island.region === key) addIsland(batch, island);
+    const here = this.islands.filter((i) => i.region === key);
+    for (const island of here) addIsland(batch, island);
+    addIcebergs(batch, key, here);
     const group = buildBatch(batch);
     this.regionRoot.add(group);
     this.regions.set(key, { group, look: this.lookOf(key) });

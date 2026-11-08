@@ -8,7 +8,7 @@ import type { NightRaid } from "./logic/nightRaid";
 import { BLUEPRINT_TYPES, type Blueprint } from "./logic/spoils";
 import type { Place } from "./logic/sun";
 import {
-  readPicks,
+  readLoadout,
   readShards,
   type Shards,
   STARTER_SHARDS,
@@ -39,8 +39,8 @@ export interface SaveData {
   crystals: Crystals;
   /** Personal time shards, by power. */
   shards: Shards;
-  /** The powers to take on raids, up to three; none means the first three they have. */
-  shardPicks: TimePower[];
+  /** The three time crystals to take on raids, any mix; null until chosen, for one of each. */
+  shardLoadout: TimePower[] | null;
   /** The upgrades each hero owns (see heroTrees.ts). */
   upgrades: Record<HeroKind, string[]>;
   /** Blueprints won that haven't reached the crew's island yet. */
@@ -52,6 +52,8 @@ export interface SaveData {
   settings: Settings;
   /** The last night the raid was run for; 0 until this phone has seen its first night. */
   nightChecked: number;
+  /** The last night whose raid the player has looked at, for the red dot on its button. */
+  nightSeen: number;
   /** What the supply ship is carrying from the crew's islands, waiting to be unloaded. */
   cargo: Partial<Purse>;
   /** The day it was last loaded (see shipDay), or 0 on a new phone. */
@@ -193,13 +195,14 @@ const DEFAULT_SAVE: SaveData = {
   gold: 0,
   crystals: noCrystals(),
   shards: STARTER_SHARDS,
-  shardPicks: [],
+  shardLoadout: null,
   upgrades: noUpgrades(),
   blueprints: [],
   blueprintDrought: 0,
   unlocked: starters(),
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
+  nightSeen: 0,
   cargo: {},
   cargoDay: 0,
   nightRaid: null,
@@ -292,13 +295,14 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       crystals,
       // Saves from before time shards get the starter set too.
       shards: parsed.shards === undefined ? { ...STARTER_SHARDS } : readShards(parsed.shards),
-      shardPicks: readPicks(parsed.shardPicks),
+      shardLoadout: readLoadout(parsed.shardLoadout),
       upgrades,
       blueprints: BLUEPRINT_TYPES.filter((t) => rawPrints.includes(t)),
       blueprintDrought: count(parsed.blueprintDrought, 99),
       unlocked,
       settings: readSettings(parsed.settings),
       nightChecked: count(parsed.nightChecked),
+      nightSeen: count(parsed.nightSeen),
       cargo: readLoot(parsed.cargo),
       cargoDay: count(parsed.cargoDay),
       nightRaid: readNightRaid(parsed.nightRaid),

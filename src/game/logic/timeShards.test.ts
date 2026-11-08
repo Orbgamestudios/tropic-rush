@@ -13,16 +13,18 @@ import {
 } from "./raid";
 import { createRng } from "./rng";
 import {
+  addToLoadout,
   FAST_BARRIER,
+  fitLoadout,
   packShards,
-  readPicks,
+  readLoadout,
   readShards,
-  retrySlots,
+  removeFromLoadout,
+  retryOwners,
   type Shards,
   shardsFromCrystal,
   TIME_POWER_SPECS,
   type TimePower,
-  togglePick,
 } from "./timeShards";
 import { distance, vec } from "./vec";
 
@@ -44,9 +46,9 @@ function layout(buildings: PlacedBuilding[]): IslandLayout {
 const ALL: Shards = { slow: 2, pause: 2, fastForward: 2, retry: 1 };
 
 /** A rifleman with shards, and a gun turret 12 meters north that can reach them. */
-function raid(shards: Shards = ALL, crewSize = 1): RaidState {
+function raid(shards: Shards = ALL, raiders = 1): RaidState {
   const turret: PlacedBuilding = { type: "gunTurret", pos: vec(0, -12) };
-  return createRaid(layout([turret]), ["rifleman"], [], [], undefined, [shards], crewSize);
+  return createRaid(layout([turret]), ["rifleman"], [], [], undefined, [shards], raiders);
 }
 
 function input(partial: Partial<HeroInput> = {}): HeroInput {
@@ -84,39 +86,42 @@ const enemyShots = (events: RaidEvent[]) =>
   events.filter((e) => e.type === "shot" && e.team === "enemy").length;
 
 describe("time shards", () => {
-  it("packs the three powers picked, or else the first three owned, and every retry", () => {
-    const owned: Shards = { slow: 2, pause: 1, fastForward: 4, record: 3, rewind: 1, retry: 2 };
-    expect(packShards(owned)).toEqual({ slow: 2, pause: 1, fastForward: 4, retry: 2 });
-    expect(packShards(owned, ["rewind", "record"])).toEqual({ rewind: 1, record: 3, retry: 2 });
-    // A pick that's run out drops away; with none left it's back to the first three.
-    expect(packShards({ ...owned, rewind: 0 }, ["rewind", "record"])).toEqual({
-      record: 3,
-      retry: 2,
-    });
-    expect(packShards({ pause: 1, retry: 0 }, ["slow"])).toEqual({ pause: 1 });
+  it("takes three crystals, any mix of the ones owned, and every retry", () => {
+    const owned: Shards = { slow: 2, pause: 5, fastForward: 1, retry: 2 };
+    // None chosen: one of each kind first.
+    expect(fitLoadout(owned, null)).toEqual(["slow", "pause", "fastForward"]);
+    expect(packShards(owned)).toEqual({ slow: 1, pause: 1, fastForward: 1, retry: 2 });
+    // Three of the same, if they own three.
+    expect(packShards(owned, ["pause", "pause", "pause"])).toEqual({ pause: 3, retry: 2 });
+    // Never more of one than they own: the third slow drops away.
+    expect(fitLoadout(owned, ["slow", "slow", "slow"])).toEqual(["slow", "slow"]);
+    expect(fitLoadout({ pause: 1 }, null)).toEqual(["pause"]);
   });
 
-  it("picks up to three powers, dropping the oldest for a fourth, and never retries", () => {
-    expect(togglePick([], "slow")).toEqual(["slow"]);
-    expect(togglePick(["slow", "pause"], "slow")).toEqual(["pause"]);
-    expect(togglePick(["slow", "pause", "record"], "rewind")).toEqual([
+  it("fills a slot with a crystal they own, frees it again, and reads a saved loadout", () => {
+    const owned: Shards = { slow: 2, pause: 1 };
+    expect(addToLoadout(owned, [], "slow")).toEqual(["slow"]);
+    expect(addToLoadout(owned, ["slow", "slow"], "slow")).toEqual(["slow", "slow"]);
+    expect(addToLoadout(owned, ["slow", "slow"], "pause")).toEqual(["slow", "slow", "pause"]);
+    expect(addToLoadout(owned, ["slow", "slow", "pause"], "slow")).toHaveLength(3);
+    expect(addToLoadout(owned, [], "retry")).toEqual([]);
+    expect(removeFromLoadout(owned, ["slow", "pause"], 0)).toEqual(["pause"]);
+    expect(readLoadout(["pause", "retry", "junk", "pause", "slow", "rewind"])).toEqual([
       "pause",
-      "record",
-      "rewind",
-    ]);
-    expect(togglePick(["slow"], "retry")).toEqual(["slow"]);
-    expect(readPicks(["rewind", "retry", "junk", "slow", "pause", "record"])).toEqual([
+      "pause",
       "slow",
-      "pause",
-      "record",
     ]);
+    expect(readLoadout(undefined)).toBeNull();
   });
 
-  it("gives a slot of retries for each crewmate attacking, or each crew member to someone alone", () => {
-    expect(retrySlots([5], 4)).toBe(4);
-    expect(retrySlots([2], 4)).toBe(2);
-    expect(retrySlots([0], 4)).toBe(0);
-    expect(retrySlots([3, 0, 1], 5)).toBe(2);
+  it("gives a retry for each raider the island calls for beyond those going, from their crystals", () => {
+    expect(retryOwners([5], 1)).toEqual([]);
+    expect(retryOwners([5], 3)).toEqual([0, 0]);
+    expect(retryOwners([1], 3)).toEqual([0]);
+    expect(retryOwners([0], 3)).toEqual([]);
+    expect(retryOwners([2, 1], 5)).toEqual([0, 1, 0]);
+    expect(retryOwners([3, 0, 1], 5)).toEqual([0, 2]);
+    expect(retryOwners([3, 3, 3], 3)).toEqual([]);
   });
 
   it("breaks a crystal into 2 to 4 shards most of the time, 1 or 5 now and then", () => {
@@ -236,7 +241,7 @@ describe("time powers on a raid", () => {
   });
 
   it("retry: a fallen hero is taken back a few seconds, until the crew's retries run out", () => {
-    const state = raid({ retry: 1 });
+    const state = raid({ retry: 1 }, 2);
     const h = hero(state);
     const start = { ...h.pos };
     run(state, 4, input({ move: vec(0, -1) }));
@@ -258,8 +263,9 @@ describe("time powers on a raid", () => {
     expect(state.status).toBe("lost");
   });
 
-  it("gives someone alone a retry slot for each crew member, from their own shards", () => {
-    expect(raid({ retry: 5 }, 3).retries).toBe(3);
+  it("gives no retries on an island meant for one, and more the more raiders it calls for", () => {
+    expect(raid({ retry: 5 }, 1).retries).toBe(0);
+    expect(raid({ retry: 5 }, 3).retries).toBe(2);
     expect(raid({ retry: 1 }, 3).retries).toBe(1);
     expect(raid({}, 3).retries).toBe(0);
   });
@@ -291,10 +297,10 @@ describe("record", () => {
     run(state, 3);
     expect(distance(copy?.pos ?? start, recordedTo)).toBeLessThan(1);
 
-    // The defenses can only see the copy.
+    // The defenses can only see the copy, and nothing can touch the hero while it plays.
     const copyHp = copy?.hp ?? 0;
     const realHp = real?.hp ?? 0;
-    run(state, 2);
+    run(state, 2, input({ move: vec(0, -1) }));
     expect(copy?.hp ?? 0).toBeLessThan(copyHp);
     expect(real?.hp).toBe(realHp);
 

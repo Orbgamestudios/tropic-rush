@@ -62,14 +62,14 @@ export interface CrewUiHandlers {
   onClearCancel(): void;
   onToolsPanel(): void;
   onToolUp(tool: Tool): void;
+  /** Opens the night raid panel: the last raid, its replay, and the next ship. */
+  onNight(): void;
   onNightReplay(): void;
   onStrikeBack(): void;
   /** A producer's tab was tapped: what it's made goes into the stock. */
   onCollect(id: string): void;
   /** The supply ship's tab was tapped: its cargo comes ashore. */
   onUnload(): void;
-  onStatuesPanel(): void;
-  onHourglassPanel(): void;
   /** Gives a statue all the crystals of its kind the player can spare. */
   onStatueGive(kind: CrystalKind): void;
   onStatueRestore(kind: CrystalKind): void;
@@ -291,6 +291,9 @@ export class CrewUi {
   private drawerShutting: ReturnType<typeof setTimeout> | null = null;
   private selecting = false;
   private category: Category = "defenses";
+  /** Red dots: something to build, and a night raid not looked at yet. */
+  private readonly buildDot = el("span", "ui-dot");
+  private readonly nightDot = el("span", "ui-dot");
 
   constructor(
     parent: HTMLElement,
@@ -325,7 +328,18 @@ export class CrewUi {
       this.resourceItems.set(r, { amount, fill, root: item, rate });
     }
     const right = el("div", "crew-top-right");
-    right.append(resources);
+    const night = button({
+      icon: "skull",
+      aria: "Night raid",
+      round: true,
+      variant: "steel",
+      size: "sm",
+      className: "crew-night-open",
+      onClick: () => handlers.onNight(),
+    });
+    this.nightDot.style.display = "none";
+    night.append(this.nightDot);
+    right.append(resources, night);
     const menu = button({
       icon: "pause",
       aria: "Menu",
@@ -352,18 +366,14 @@ export class CrewUi {
       );
       tab.addEventListener("click", () => {
         sfx.tick();
-        this.showCategory(name);
+        this.scrollToCategory(name);
       });
       this.tabs.set(name, tab);
       tabRow.append(tab);
     }
     // These open a panel of their own rather than a row of cards.
     const panels = el("div", "crew-tab-panels");
-    for (const [label, tabIcon, open] of [
-      ["Tools", "gear", handlers.onToolsPanel],
-      ["Statues", "star", handlers.onStatuesPanel],
-      ["Hourglass", "clock", handlers.onHourglassPanel],
-    ] as const) {
+    for (const [label, tabIcon, open] of [["Tools", "gear", handlers.onToolsPanel]] as const) {
       const tab = el("button", "crew-tab");
       tab.setAttribute("aria-label", label);
       tab.append(icon(tabIcon, "crew-tab-icon"), el("span", "crew-tab-label", label));
@@ -389,8 +399,10 @@ export class CrewUi {
         this.setDrawer(!this.drawerOpen);
       },
     });
-    this.buildButton.append(this.buildLabel);
-    this.showCategory("defenses");
+    this.buildButton.append(this.buildLabel, this.buildDot);
+    this.fillCards();
+    // The tab lit is the part of the list in view.
+    this.cards.addEventListener("scroll", () => this.followScroll(), { passive: true });
     this.mapButton = button({
       icon: "map",
       aria: "World map",
@@ -680,32 +692,70 @@ export class CrewUi {
     parent.append(this.root);
   }
 
-  private showCategory(category: Category): void {
+  /** Every building in one list, a category's worth after another. */
+  private fillCards(): void {
+    this.chips.clear();
+    this.firstChips.clear();
+    this.cards.replaceChildren(
+      ...(Object.keys(CATEGORIES) as Category[]).flatMap((category) =>
+        CATEGORIES[category].types.map((type, i) => {
+          const chip = el("button", "crew-chip");
+          chip.setAttribute("aria-label", BUILDINGS[type].label);
+          const img = el("img", "crew-chip-img");
+          img.alt = "";
+          img.draggable = false;
+          showBuildingIcon(img, type);
+          const count = el("span", "crew-chip-count");
+          const cost = el("span", "crew-chip-cost");
+          const lock = el("span", "crew-chip-lock");
+          chip.append(img, el("span", "crew-chip-name", BUILDINGS[type].label), cost, count, lock);
+          chip.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            sfx.tick();
+            this.handlers.onChipDown(type, event);
+          });
+          this.chips.set(type, { chip, count, cost, lock });
+          if (i === 0) {
+            chip.classList.add("crew-chip-first");
+            this.firstChips.set(category, chip);
+          }
+          return chip;
+        }),
+      ),
+    );
+    this.lightTab("defenses");
+    this.refreshChips();
+  }
+
+  /** The first card of each category, for the tabs to scroll to and follow. */
+  private readonly firstChips = new Map<Category, HTMLElement>();
+
+  private scrollToCategory(category: Category): void {
+    const chip = this.firstChips.get(category);
+    if (!chip) return;
+    this.lightTab(category);
+    // The tab tapped stays lit while the list glides over to it.
+    this.jumpingUntil = performance.now() + 700;
+    this.cards.scrollTo({ left: chip.offsetLeft - this.cards.offsetLeft - 4, behavior: "smooth" });
+  }
+
+  /** Lights the tab of whichever category the list has scrolled to. */
+  private jumpingUntil = 0;
+
+  private followScroll(): void {
+    if (performance.now() < this.jumpingUntil) return;
+    const at = this.cards.scrollLeft + this.cards.offsetLeft + 24;
+    let showing: Category = "defenses";
+    for (const [category, chip] of this.firstChips) if (chip.offsetLeft <= at) showing = category;
+    // At the very end, the last category, however little of it there is.
+    const end = this.cards.scrollLeft + this.cards.clientWidth >= this.cards.scrollWidth - 4;
+    this.lightTab(end ? ([...this.firstChips.keys()].pop() ?? showing) : showing);
+  }
+
+  private lightTab(category: Category): void {
+    if (category === this.category && this.tabs.get(category)?.classList.contains("active")) return;
     this.category = category;
     for (const [name, tab] of this.tabs) tab.classList.toggle("active", name === category);
-    this.chips.clear();
-    this.cards.replaceChildren(
-      ...CATEGORIES[category].types.map((type) => {
-        const chip = el("button", "crew-chip");
-        chip.setAttribute("aria-label", BUILDINGS[type].label);
-        const img = el("img", "crew-chip-img");
-        img.alt = "";
-        img.draggable = false;
-        showBuildingIcon(img, type);
-        const count = el("span", "crew-chip-count");
-        const cost = el("span", "crew-chip-cost");
-        const lock = el("span", "crew-chip-lock");
-        chip.append(img, el("span", "crew-chip-name", BUILDINGS[type].label), cost, count, lock);
-        chip.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          sfx.tick();
-          this.handlers.onChipDown(type, event);
-        });
-        this.chips.set(type, { chip, count, cost, lock });
-        return chip;
-      }),
-    );
-    this.refreshChips();
   }
 
   private setDrawer(open: boolean): void {
@@ -746,9 +796,11 @@ export class CrewUi {
     const state = this.chipState;
     if (!state) return;
     const states = [...this.chips.keys()].map((type) => [type, state(type)] as const);
-    const key = this.category + JSON.stringify(states);
+    const key = JSON.stringify(states);
     if (key === this.lastChipKey) return;
     this.lastChipKey = key;
+    // A red dot on Build while there's something that could be built right now.
+    this.buildDot.style.display = states.some(([, s]) => !s.blocked) ? "" : "none";
     for (const [type, s] of states) {
       const chip = this.chips.get(type);
       if (!chip) continue;
@@ -784,6 +836,11 @@ export class CrewUi {
 
   show(visible: boolean): void {
     this.root.style.display = visible ? "block" : "none";
+  }
+
+  /** Whether last night's raid is still waiting to be looked at. */
+  setNightNews(waiting: boolean): void {
+    this.nightDot.style.display = waiting ? "" : "none";
   }
 
   showJoin(nickname: string, error = ""): void {

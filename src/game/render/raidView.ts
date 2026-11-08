@@ -21,7 +21,7 @@ import type {
   Zone,
 } from "../logic/raid";
 import type { Spoils } from "../logic/spoils";
-import { FAST_BARRIER } from "../logic/timeShards";
+import { FAST_BARRIER, FAST_FORWARD, SLOW_WORLD } from "../logic/timeShards";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
@@ -110,6 +110,9 @@ interface HeroView {
  * but every part of them the one color.
  */
 const RECORDING = new THREE.MeshLambertMaterial({ color: 0x3dff6e, emissive: 0x0d7a2a });
+
+/** Seconds a hero takes running back along the way they came, on a retry or a record's end. */
+const REWIND_SLIDE = 0.8;
 
 /** A glowing ring on the ground under a hero: bright green for you, blue for crewmates. */
 function heroRing(radius: number, leader: boolean, rgb?: string): THREE.Mesh {
@@ -505,6 +508,11 @@ export class RaidView {
         case "heroDown":
           this.effects.skull(this.at(e.pos, 0));
           break;
+        case "retried":
+        case "rewound":
+          if (e.path.length > 1)
+            this.slides.set(e.heroId, { path: e.path, start: performance.now() });
+          break;
         case "acidBurst":
           this.effects.acidBurst(this.at(e.pos, 0.4), e.radius);
           break;
@@ -612,6 +620,15 @@ export class RaidView {
   ): void {
     this.lastCamera = camera;
     this.lastSize = { width, height };
+    // How fast shots move under the time power running, so they're drawn where they really are.
+    const power = state.timePower?.power;
+    this.shotRate.crew = power === "fastForward" ? FAST_FORWARD : 1;
+    this.shotRate.enemy =
+      power === "pause" || power === "rewind"
+        ? 0
+        : power === "slow"
+          ? SLOW_WORLD
+          : this.shotRate.crew;
     this.terrain.update(time);
     this.clouds.update(time);
     this.updatePlume(dt);
@@ -718,6 +735,30 @@ export class RaidView {
     };
     this.heroes.set(h.id, view);
     return view;
+  }
+
+  /** Heroes time is taking back, running backwards along the way they came. */
+  private readonly slides = new Map<number, { path: Vec2[]; start: number }>();
+
+  /** Where a hero time is taking back is drawn, quick at first and easing in at the end. */
+  private sliding(h: RaidHero): Vec2 | null {
+    const slide = this.slides.get(h.id);
+    if (!slide) return null;
+    const t = (performance.now() - slide.start) / (REWIND_SLIDE * 1000);
+    if (t >= 1) {
+      this.slides.delete(h.id);
+      return null;
+    }
+    const eased = 1 - (1 - t) ** 2;
+    const { path } = slide;
+    const along = eased * (path.length - 1);
+    const i = Math.min(path.length - 2, Math.floor(along));
+    const a = path[i] ?? h.pos;
+    const b = path[i + 1] ?? h.pos;
+    const k = along - i;
+    // A streak of the time it's running back through.
+    if (Math.random() < 0.6) this.effects.trail(this.at(a, 1), false);
+    return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
   }
 
   /** Fast forward's barrier: a bubble round the hero, fainter the more of it's been used up. */
@@ -890,6 +931,8 @@ export class RaidView {
 
   /** Where a hero is drawn: between where it stood before the last step and where it is now. */
   drawnAt(h: RaidHero): Vec2 {
+    const slid = this.sliding(h);
+    if (slid) return slid;
     const before = this.before.get(h.id);
     if (!before || this.between >= 1) return h.pos;
     const t = this.between;
@@ -1041,9 +1084,14 @@ export class RaidView {
     }
   }
 
+  /** How far a step moves the defenses' shots and the crew's, under the time power running. */
+  private readonly shotRate = { enemy: 1, crew: 1 };
+
   private placeProjectile(p: Projectile, obj: THREE.Object3D): void {
-    // Drawn as far back along its way as the picture is behind the rules.
-    const behind = (1 - this.between) * SIM_STEP;
+    // Drawn as far back along its way as the picture is behind the rules: not at all for a shot
+    // that time is holding still, which would otherwise shiver back and forth.
+    const rate = p.team === "enemy" ? this.shotRate.enemy : this.shotRate.crew;
+    const behind = (1 - this.between) * SIM_STEP * rate;
     if (p.lob) {
       const { from, to, t: elapsed, duration, peak } = p.lob;
       obj.visible = elapsed >= 0;

@@ -5,7 +5,9 @@
 // off pays), and one way out: Return to island.
 
 import type { Crystals } from "../logic/crystals";
+import { RAIDERS } from "../logic/difficulty";
 import type { RaiderShip } from "../logic/raiderShip";
+import { crystalRange } from "../logic/spoils";
 import {
   archetypeLabel,
   archetypeTip,
@@ -14,7 +16,7 @@ import {
   type MapIsland,
   type WorldProgress,
 } from "../logic/worldMap";
-import { button, CLOSE_MS, CrystalWallet, el, layerPlacer } from "./kit/dom";
+import { button, CLOSE_MS, CrystalWallet, crystalIcon, el, layerPlacer } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
 import { shipDetails } from "./raiderShipCard";
@@ -293,7 +295,22 @@ export class WorldMapScreen {
     loot.append(icon("coin", "map-fact-icon"), el("span", "", String(island.reward.gold)));
     const guns = el("span", "map-fact");
     guns.append(icon("shield", "map-fact-icon"), el("span", "", `${island.defenses} defenses`));
-    this.cardFacts.replaceChildren(guns, loot);
+    // The crystal its headquarters holds, and how many of it a win is likely to bring.
+    const [least, most] = crystalRange(island.difficulty);
+    const gems = el("span", "map-fact");
+    gems.title = `Likely crystals: ${island.crystal}`;
+    gems.append(
+      crystalIcon(island.crystal, "map-fact-icon"),
+      el("span", "", least === most ? String(least) : `${least}–${most}`),
+    );
+    // How many raiders it calls for: going with fewer brings retries.
+    const raiders = RAIDERS[island.difficulty];
+    const team = el("span", "map-fact");
+    team.append(
+      icon("crew", "map-fact-icon"),
+      el("span", "", `${raiders} raider${raiders === 1 ? "" : "s"}`),
+    );
+    this.cardFacts.replaceChildren(guns, loot, gems, team);
     this.cardTip.textContent = archetypeTip(island);
     const crew = this.handlers.crewOnline();
     const prints = this.handlers.blueprintsOn(island);

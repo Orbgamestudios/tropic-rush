@@ -9,6 +9,18 @@ import { createRng, type Rng } from "./rng";
 import { type Shards, shardsFromCrystal, type TimePower } from "./timeShards";
 
 export const HOURGLASS_COST: Partial<Purse> = { stone: 6000, gold: 3000 };
+
+/**
+ * The headquarters level the crew learns what the Hourglass is for: when the Shaman tells them,
+ * as the first of Professor Terror's islands turns up (docs/STORY.md). Until then it can be found,
+ * but it's covered in vines and nobody knows how to use it. A stand-in for the story's own moment
+ * until the story plays in the game.
+ */
+export const HOURGLASS_KNOWN_HQ = 6;
+
+export function hourglassKnown(hqLevel: number): boolean {
+  return hqLevel >= HOURGLASS_KNOWN_HQ;
+}
 export const HOURGLASS_MS = 24 * 3600 * 1000;
 
 export interface HourglassState {

@@ -137,14 +137,15 @@ describe("raiding together", () => {
 });
 
 describe("time shards together", () => {
-  it("pools a retry from each crewmate who brings one, and shows everyone the power running", () => {
+  it("pools retries for the raiders an island needs beyond those going, and shows the power", () => {
     const layout = generateIsland(5, 2);
     const seats: Seat[] = [
       { ...(SEATS[0] as Seat), shards: { slow: 1, retry: 3 } },
       { ...(SEATS[1] as Seat), shards: { pause: 2, retry: 1 } },
     ];
-    const host = createCoopRaid(layout, seats);
-    const guest = createCoopRaid(layout, seats);
+    // Two going to an island that calls for four: two retries, one from each of them.
+    const host = createCoopRaid(layout, seats, undefined, 4);
+    const guest = createCoopRaid(layout, seats, undefined, 4);
     expect(host.retries).toBe(2);
     stepRaid(host, [IDLE_INPUT, { ...IDLE_INPUT, timePower: "pause" }], DT);
     const targets: HeroTargets = [];

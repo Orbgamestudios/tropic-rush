@@ -48,6 +48,7 @@ import {
   costFor,
   holdHours,
   hqCapacity,
+  hqFor,
   levelCap,
   MAX_HQ_LEVEL,
   nextLevelGain,
@@ -56,6 +57,7 @@ import {
   RESOURCES,
   START_RESOURCES,
   storageCapacity,
+  storageRoom,
 } from "./economy";
 import { heroTree } from "./heroTrees";
 import { isOnGrass } from "./island";
@@ -877,6 +879,24 @@ describe("crew island progression", () => {
       const room = hqCapacity(below) + stores;
       const cost = costFor("headquarters", hq);
       for (const r of RESOURCES) expect(cost[r] ?? 0, `HQ ${hq} ${r}`).toBeLessThan(room);
+    }
+  });
+
+  it("makes each upgrade a bigger share of storage than the last, but never more than it holds", () => {
+    const share = (type: BuildingType, level: number) => {
+      const hq = type === "headquarters" ? level - 1 : hqFor(type, level);
+      const cost = costFor(type, level);
+      return Math.max(...RESOURCES.map((r) => (cost[r] ?? 0) / storageRoom(hq, r)));
+    };
+    for (const type of Object.keys(PROGRESSION) as BuildingType[]) {
+      const top = PROGRESSION[type].maxLevel;
+      for (let level = 2; level <= top; level++) {
+        expect(share(type, level), `${type} ${level}`).toBeLessThan(0.92);
+      }
+      // The last levels take much more of the storage than the middle ones.
+      if (top >= 10) {
+        expect(share(type, top), type).toBeGreaterThan(share(type, Math.ceil(top / 2)) * 1.5);
+      }
     }
   });
 

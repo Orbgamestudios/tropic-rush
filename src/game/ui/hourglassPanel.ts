@@ -17,9 +17,12 @@ import {
   panel,
 } from "./kit/dom";
 import { sfx } from "./kit/fx";
+import { timeGem } from "./kit/timeIcons";
 
 export interface HourglassView {
   hourglass: HourglassState;
+  /** Whether the crew's been told what it's for. */
+  known: boolean;
   now: number;
   /** Why it can't be mended right now, or null. */
   blocker: string | null;
@@ -93,6 +96,9 @@ export class HourglassPanel {
     if (!h.found) {
       say("A ruin lies deep in the jungle, where a chainsaw has to go.");
       say("Clear the forest to find it. The old wise ones broke crystals into time there.");
+    } else if (!view.known) {
+      say("Vines cover it, and carvings nobody here can read.");
+      say("Nobody knows how to use it yet. Someone who knows the old stories might.");
     } else if (!h.mended && h.doneAt === null) {
       say("Cracked and overgrown. Mend it, and it will break crystals into time shards again.");
       const cost = el("div", "crew-hourglass-cost");
@@ -117,14 +123,10 @@ export class HourglassPanel {
       const powers = el("div", "crew-hourglass-row");
       for (const power of TIME_POWERS) {
         const spec = TIME_POWER_SPECS[power];
-        const b = el("button", `heroes-shard${power === this.power ? " taking" : ""}`);
-        b.style.setProperty("--tint", spec.color);
+        const b = el("button", `loadout-crystal${power === this.power ? " chosen" : ""}`);
         b.title = `${spec.name}: ${spec.text}`;
         b.setAttribute("aria-label", spec.name);
-        b.append(
-          el("span", "heroes-shard-glyph", spec.glyph),
-          el("span", "heroes-shard-count", String(view.shards[power] ?? 0)),
-        );
+        b.append(timeGem(power), el("span", "loadout-count", String(view.shards[power] ?? 0)));
         b.addEventListener("click", () => {
           sfx.press();
           this.power = power;

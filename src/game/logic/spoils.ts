@@ -53,6 +53,12 @@ const CRYSTALS: Record<Difficulty, { least: number; extra: readonly number[] }> 
   Impossible: { least: 2, extra: [0.6, 0.4] },
 };
 
+/** The fewest and most crystals a win here can give, for the map to say. */
+export function crystalRange(difficulty: Difficulty): [number, number] {
+  const { least, extra } = CRYSTALS[difficulty];
+  return [least, least + extra.length];
+}
+
 const BLUEPRINT_CHANCE = 0.35;
 /** Each win without one makes the next likelier, and this many in a row guarantees it. */
 const DROUGHT_CHANCE = 0.2;

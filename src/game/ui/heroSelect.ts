@@ -13,13 +13,14 @@ import {
   statBars,
   treeProgress,
 } from "../logic/heroProgress";
-import { capstones, UPGRADES_PER_HERO } from "../logic/heroTrees";
+import { UPGRADES_PER_HERO } from "../logic/heroTrees";
 import {
-  packShards,
+  addToLoadout,
+  fitLoadout,
+  LOADOUT_POWERS,
+  LOADOUT_SLOTS,
+  removeFromLoadout,
   TIME_POWER_SPECS,
-  TIME_POWERS,
-  type TimePower,
-  togglePick,
 } from "../logic/timeShards";
 import type { Showcase } from "../render/showcase";
 import { heroPortrait } from "../render/thumbnails";
@@ -39,6 +40,7 @@ import {
 } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
+import { timeGem } from "./kit/timeIcons";
 
 export interface HeroSelectHost {
   save(): SaveData;
@@ -70,17 +72,13 @@ export class HeroSelect {
     speed: new StatBar("speed", "Speed", "yellow"),
     range: new StatBar("range", "Range", "blue"),
   };
-  private readonly signatureTag = el("div", "stats-signature-tag");
-  private readonly signatureName = el("div", "stats-signature-name");
-  private readonly signatureText = el("div", "stats-signature-text");
-  private readonly perks = el("div", "perk-track");
-  private readonly perkText = el("div", "perk-text");
   private readonly upgrades: HTMLButtonElement;
   private readonly upgradeCount = el("span", "heroes-cost");
   private readonly start: HTMLButtonElement;
-  /** The time shards to take: tap up to three powers. */
-  private readonly shards = el("div", "heroes-shards");
-  private readonly shardButtons = new Map<TimePower, HTMLButtonElement>();
+  /** The time crystals to take: three slots, filled by tapping the crystals they own below. */
+  private readonly crystalSlots = el("div", "loadout-slots");
+  private readonly crystalOwned = el("div", "loadout-owned");
+  private readonly retryLine = el("div", "loadout-retries");
   private readonly hint = el("div", "heroes-spin-hint", "Drag to spin");
   private hero: HeroKind = "rifleman";
   /** An island's been picked, and this is the last look at who's going. */
@@ -153,13 +151,15 @@ export class HeroSelect {
     head.append(this.cardLevel, this.cardName, this.cardBadges);
     const barsBox = el("div", "stats-bars");
     barsBox.append(...Object.values(this.bars).map((b) => b.root));
-    const signature = el("div", "stats-signature");
-    const signatureIcon = el("div", "stats-signature-icon");
-    signatureIcon.append(icon("star"));
-    const signatureWords = el("div", "stats-signature-words");
-    signatureWords.append(this.signatureTag, this.signatureName, this.signatureText);
-    signature.append(signatureIcon, signatureWords);
-    card.append(head, barsBox, signature, this.perks, this.perkText);
+    const loadout = el("div", "loadout");
+    loadout.append(
+      el("div", "loadout-title", "Time crystals"),
+      el("div", "loadout-hint", "Take three: any mix of the ones you own"),
+      this.crystalSlots,
+      this.crystalOwned,
+      this.retryLine,
+    );
+    card.append(head, barsBox, loadout);
     info.body.append(card);
     top.append(back, wallet);
 
@@ -179,32 +179,8 @@ export class HeroSelect {
       className: "heroes-start",
       onClick: () => this.go(),
     });
-    this.shards.append(el("div", "heroes-shards-title", "Time shards"));
-    const shardRow = el("div", "heroes-shards-row");
-    for (const power of TIME_POWERS) {
-      const spec = TIME_POWER_SPECS[power];
-      const b = el("button", "heroes-shard");
-      b.style.setProperty("--tint", spec.color);
-      b.title = `${spec.name}: ${spec.text}`;
-      b.setAttribute("aria-label", spec.name);
-      b.append(el("span", "heroes-shard-glyph", spec.glyph), el("span", "heroes-shard-count"));
-      if (power !== "retry") {
-        b.addEventListener("click", () => {
-          sfx.press();
-          const save = host.save();
-          const picks = Object.keys(packShards(save.shards, save.shardPicks)).filter(
-            (p): p is TimePower => p !== "retry",
-          );
-          host.update({ shardPicks: togglePick(picks, power) });
-          this.refreshShards();
-        });
-      }
-      shardRow.append(b);
-      this.shardButtons.set(power, b);
-    }
-    this.shards.append(shardRow);
     const actions = el("div", "heroes-actions");
-    actions.append(this.shards, this.upgrades, this.start);
+    actions.append(this.upgrades, this.start);
 
     this.root.append(top, roster.root, stageArea, info.root, actions);
     this.root.style.display = "none";
@@ -270,7 +246,6 @@ export class HeroSelect {
     this.bars.dps.set(bars.dps, `${formatNumber(now.dps)}/s`);
     this.bars.speed.set(bars.speed, now.speed.toFixed(1));
     this.bars.range.set(bars.range, `${now.range} m`);
-    this.refreshCapstones(kind, owned);
 
     // What's in their tree, or which headquarters brings this hero in.
     this.upgrades.disabled = !unlocked;
@@ -283,46 +258,57 @@ export class HeroSelect {
     this.refreshShards();
   }
 
-  /** The shards they own, with the ones they'll take lit up. */
+  /** The three crystals they're taking, what they own to choose from, and their retries. */
   private refreshShards(): void {
-    const { shards, shardPicks } = this.host.save();
-    const taking = packShards(shards, shardPicks);
-    let any = false;
-    for (const [power, b] of this.shardButtons) {
-      const owned = shards[power] ?? 0;
-      any ||= owned > 0;
-      b.style.display = owned > 0 ? "" : "none";
-      b.classList.toggle("taking", taking[power] !== undefined);
-      const count = b.querySelector(".heroes-shard-count");
-      if (count) count.textContent = String(owned);
-    }
-    this.shards.style.display = any ? "" : "none";
-  }
-
-  /** The hero's capstones, one at the end of each branch: tap one to read about it. */
-  private refreshCapstones(kind: HeroKind, owned: readonly string[]): void {
-    const tops = capstones(kind);
-    const show = (name: string, text: string, has: boolean) => {
-      this.signatureTag.textContent = has ? "Capstone" : "Capstone to work towards";
-      this.signatureName.textContent = name;
-      this.signatureText.textContent = text;
+    const { shards, shardLoadout } = this.host.save();
+    const taking = fitLoadout(shards, shardLoadout);
+    const change = (next: ReturnType<typeof fitLoadout>) => {
+      sfx.press();
+      this.host.update({ shardLoadout: next });
+      this.refreshShards();
     };
-    this.perks.replaceChildren(
-      ...tops.map((u) => {
-        const has = owned.includes(u.id);
-        const chip = el("button", `perk signature${has ? " earned" : ""}`);
-        chip.setAttribute("aria-label", u.name);
-        chip.append(icon(has ? "star" : "lock", "perk-icon"));
-        chip.addEventListener("click", () => {
-          sfx.tick();
-          show(u.name, u.text, has);
-        });
-        return chip;
+    this.crystalSlots.replaceChildren(
+      ...Array.from({ length: LOADOUT_SLOTS }, (_, i) => {
+        const power = taking[i];
+        const slot = el("button", `loadout-slot${power ? " filled" : ""}`);
+        if (!power) {
+          slot.disabled = true;
+          slot.setAttribute("aria-label", "Empty slot");
+          return slot;
+        }
+        slot.setAttribute("aria-label", `Take out ${TIME_POWER_SPECS[power].name}`);
+        slot.title = TIME_POWER_SPECS[power].text;
+        slot.append(timeGem(power));
+        slot.addEventListener("click", () => change(removeFromLoadout(shards, taking, i)));
+        return slot;
       }),
     );
-    const first = tops.find((u) => owned.includes(u.id)) ?? tops[0];
-    if (first) show(first.name, first.text, owned.includes(first.id));
-    this.perkText.textContent = `${owned.length} of ${UPGRADES_PER_HERO} upgrades bought`;
+    const full = taking.length >= LOADOUT_SLOTS;
+    this.crystalOwned.replaceChildren(
+      ...LOADOUT_POWERS.flatMap((power) => {
+        const owned = shards[power] ?? 0;
+        if (owned <= 0) return [];
+        const spare = owned - taking.filter((p) => p === power).length;
+        const b = el("button", "loadout-crystal");
+        b.setAttribute("aria-label", `Take ${TIME_POWER_SPECS[power].name}`);
+        b.title = `${TIME_POWER_SPECS[power].name}: ${TIME_POWER_SPECS[power].text}`;
+        b.disabled = full || spare <= 0;
+        b.append(timeGem(power), el("span", "loadout-count", String(owned)));
+        b.addEventListener("click", () => change(addToLoadout(shards, taking, power)));
+        return [b];
+      }),
+    );
+    const retries = shards.retry ?? 0;
+    this.retryLine.replaceChildren(
+      timeGem("retry", "small"),
+      el(
+        "span",
+        "",
+        retries > 0
+          ? `${retries} retry crystal${retries === 1 ? "" : "s"}: used on islands that call for more raiders than go`
+          : "No retry crystals",
+      ),
+    );
   }
 
   private go(): void {

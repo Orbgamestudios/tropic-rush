@@ -276,6 +276,18 @@ const LATE_COST = 1.08;
 const LATE_MINUTES = 60;
 /** Past headquarters 20, each headquarters level costs this much more than the last. */
 const LATE_HQ_COST = 1.07;
+/**
+ * Upgrades cost this many times what they first did (2026-11-08: crews had far more than they
+ * could spend), easing in over the first few levels so none of them costs more than the
+ * headquarters can hold before there are storages. The headquarters itself is left alone: its
+ * late levels already take most of a full set of storages.
+ */
+const UPGRADE_COST = 2;
+
+function upgradeCost(level: number): number {
+  if (level <= 2) return 1;
+  return level === 3 ? (1 + UPGRADE_COST) / 2 : UPGRADE_COST;
+}
 
 /** How far up its early levels a level is, in ordinary levels: a stretched building's count less. */
 function rung(type: BuildingType, level: number): number {
@@ -306,6 +318,65 @@ export function nextLevelGain(type: BuildingType, level: number): string {
   return `+${Math.round(gain * 100)}% strength`;
 }
 
+/**
+ * What a full set of storages, at the best levels the headquarters allows, holds of a resource,
+ * with the headquarters' own room on top.
+ */
+export function storageRoom(hqLevel: number, r: Resource): number {
+  const store = (Object.keys(STORAGES) as BuildingType[]).find((t) => STORAGES[t] === r);
+  const stores = store
+    ? allowedCount(store, hqLevel) * storageCapacity(levelCap(store, hqLevel))
+    : 0;
+  return hqCapacity(hqLevel) + stores;
+}
+
+/** The headquarters level a building's level first opens at. */
+export function hqFor(type: BuildingType, level: number): number {
+  let hq = 1;
+  while (hq < MAX_HQ_LEVEL && levelCap(type, hq) < level) hq++;
+  return hq;
+}
+
+/**
+ * Each level costs at least this share of what a full set of storages holds at the headquarters
+ * level it opens at (2026-11-08): a tenth for a building's first level, rising steeply level by
+ * level to most of it for its last, so the top levels take saving up for but can always be paid.
+ */
+const SHARE_FIRST = 0.1;
+const SHARE_LAST = 0.8;
+/** The same for the headquarters, which costs the most of anything. */
+const HQ_SHARE_FIRST = 0.25;
+const HQ_SHARE_LAST = 0.9;
+
+export function storageShare(type: BuildingType, level: number): number {
+  const top = PROGRESSION[type].maxLevel;
+  const progress = top > 1 ? (Math.min(level, top) - 1) / (top - 1) : 0;
+  return SHARE_FIRST * (SHARE_LAST / SHARE_FIRST) ** progress;
+}
+
+const shareCache = new Map<string, Partial<Purse>>();
+
+/** A level's cost as its share of the storage at the headquarters level it opens at. */
+function shareOfStorage(type: BuildingType, level: number): Partial<Purse> {
+  const key = `${type}|${level}`;
+  let cost = shareCache.get(key);
+  if (!cost) {
+    const base = PROGRESSION[type].cost;
+    const most = Math.max(...RESOURCES.map((r) => base[r] ?? 0));
+    const hq = hqFor(type, level);
+    const share = storageShare(type, level);
+    const out: Partial<Purse> = {};
+    // Each resource in the building's own mix, the main one taking the full share.
+    for (const r of RESOURCES) {
+      const amount = base[r] ?? 0;
+      if (amount > 0) out[r] = (share * storageRoom(hq, r) * amount) / most;
+    }
+    cost = scale(out, 1);
+    shareCache.set(key, cost);
+  }
+  return cost;
+}
+
 /** Cost to bring a building to `level` (level 1 is building it). */
 export function costFor(type: BuildingType, level: number): Partial<Purse> {
   if (type === "headquarters") {
@@ -316,10 +387,31 @@ export function costFor(type: BuildingType, level: number): Partial<Purse> {
     const cost = scale({ gold: 400, timber: 400, stone: 250 }, 1.32 ** (early - 2) * late);
     // Scrap joins the bill from HQ 3, once the scrap yard (HQ 2) has had time to produce.
     if (level >= 3) cost.scrap = Math.round((120 * 1.32 ** (early - 3) * late) / 10) * 10;
+    // Never less than its share of what the level below can store: a quarter at first, rising
+    // steeply to nearly all of it for the last.
+    const share =
+      HQ_SHARE_FIRST * (HQ_SHARE_LAST / HQ_SHARE_FIRST) ** ((level - 2) / (MAX_HQ_LEVEL - 2));
+    for (const r of RESOURCES) {
+      const amount = cost[r] ?? 0;
+      if (amount <= 0) continue;
+      const floor =
+        Math.round((share * storageRoom(level - 1, r) * amount) / (cost.gold ?? amount) / 10) * 10;
+      cost[r] = Math.max(amount, floor);
+    }
     return cost;
   }
   const late = LATE_COST ** Math.max(0, level - PROGRESSION[type].early);
-  return scale(PROGRESSION[type].cost, 1.45 ** (rung(type, level) - 1) * late);
+  const ladder = scale(
+    PROGRESSION[type].cost,
+    1.45 ** (rung(type, level) - 1) * late * upgradeCost(level),
+  );
+  const share = shareOfStorage(type, level);
+  const cost: Partial<Purse> = {};
+  for (const r of RESOURCES) {
+    const amount = Math.max(ladder[r] ?? 0, share[r] ?? 0);
+    if (amount > 0) cost[r] = amount;
+  }
+  return cost;
 }
 
 /** Minutes of work to bring a building to a level, from 1 upward; level 1 is building it. */

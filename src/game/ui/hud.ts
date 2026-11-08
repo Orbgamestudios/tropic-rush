@@ -22,6 +22,7 @@ import { TIME_POWER_SPECS, TIME_POWERS, type TimePower } from "../logic/timeShar
 import { CurrencyPill, costChips, el, formatNumber, levelBadge } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { type IconName, icon } from "./kit/icons";
+import { timeGem } from "./kit/timeIcons";
 
 export interface HudHandlers {
   onBoat(): void;
@@ -165,8 +166,10 @@ export class Hud {
       b.title = spec.text;
       b.style.setProperty("--tint", spec.color);
       const count = el("span", "hud-shard-count");
-      b.append(el("span", "hud-shard-glyph", spec.glyph), count);
-      b.addEventListener("click", () => {
+      b.append(timeGem(power), count);
+      // On the touch itself, not a click: a click never comes while another finger is on a stick.
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
         sfx.press();
         handlers.onShard(power);
       });

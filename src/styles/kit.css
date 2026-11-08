@@ -951,3 +951,19 @@
     animation: none;
   }
 }
+
+/* A red dot in a button's corner: something there wants looking at. */
+.ui-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff9a8a, #e5302a 60%, #a8140f);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 2px 4px rgb(0 0 0 / 0.4);
+  pointer-events: none;
+}

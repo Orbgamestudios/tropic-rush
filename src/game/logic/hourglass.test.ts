@@ -11,7 +11,13 @@ import {
   tryOp,
 } from "./crewIsland";
 import { noCrystals } from "./crystals";
-import { breakBlocker, breakCrystal, HOURGLASS_COST, HOURGLASS_MS } from "./hourglass";
+import {
+  breakBlocker,
+  breakCrystal,
+  HOURGLASS_COST,
+  HOURGLASS_KNOWN_HQ,
+  HOURGLASS_MS,
+} from "./hourglass";
 import { createRng } from "./rng";
 
 const NOW = 1_700_000_000_000;
@@ -20,9 +26,12 @@ function rich(layout: CrewLayout): CrewLayout {
   return { ...layout, resources: { gold: 1e6, timber: 1e6, stone: 1e6, scrap: 1e6 } };
 }
 
-/** The Hourglass's jungle, cleared: it's found. */
-function found(): CrewLayout {
+/** The Hourglass's jungle, cleared: it's found, on an island at this headquarters level. */
+function found(hq = HOURGLASS_KNOWN_HQ): CrewLayout {
   const start = rich(starterLayout(NOW));
+  start.buildings = start.buildings.map((b) =>
+    b.type === "headquarters" ? { ...b, level: hq } : b,
+  );
   const site = hourglassSite(start.relicSeed);
   if (!site) throw new Error("no Hourglass on this island");
   // Settling caps the stock at what the starter storages hold, so it's topped up after.
@@ -46,6 +55,14 @@ describe("the Hourglass", () => {
     expect(start.hourglass.found).toBe(false);
     expect(tryOp(start, { kind: "mendHourglass" }, NOW)).toEqual({ error: "Not found yet" });
     expect(found().hourglass.found).toBe(true);
+  });
+
+  it("can't be mended till the crew knows what it's for", () => {
+    const early = found(HOURGLASS_KNOWN_HQ - 1);
+    expect(early.hourglass.found).toBe(true);
+    expect(tryOp(early, { kind: "mendHourglass" }, NOW + 30)).toEqual({
+      error: "Nobody knows how to use it yet",
+    });
   });
 
   it("takes stone, gold and a day to mend, and stays mended", () => {

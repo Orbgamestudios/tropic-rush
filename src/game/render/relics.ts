@@ -208,8 +208,8 @@ export interface HourglassModel {
 }
 
 /** The Hourglass ruin, about 6 m tall at scale 1, standing on y = 0. */
-export function hourglassModel(mended: boolean): HourglassModel {
-  const key = `hourglass|${mended}`;
+export function hourglassModel(mended: boolean, overgrown = false): HourglassModel {
+  const key = `hourglass|${mended}|${overgrown}`;
   let template = templates.get(key);
   if (!template) {
     const stone = mended ? CLEAN : WORN;
@@ -239,6 +239,31 @@ export function hourglassModel(mended: boolean): HourglassModel {
         const patch = ball(r, MOSS, 8);
         patch.scale.y = 0.3;
         g.add(at(patch, x, y, z));
+      }
+    }
+    if (overgrown) {
+      // Vines wound round the posts and the glass, and leaves heaped over the top.
+      for (let i = 0; i < 26; i++) {
+        const a = i * 0.9;
+        const y = 1.2 + (i / 26) * 4.2;
+        const r = 1.18 + Math.sin(i * 1.7) * 0.25;
+        const vine = cyl(0.09, 0.11, 1.1, 0x3f7a2c, 6);
+        g.add(at(vine, Math.cos(a) * r, y, Math.sin(a) * r, 0.9, a, 0.6));
+        if (i % 2 === 0) {
+          const leaf = ball(0.34, i % 4 === 0 ? 0x5fa043 : 0x4a8a35, 7);
+          leaf.scale.set(1, 0.55, 1);
+          g.add(at(leaf, Math.cos(a) * (r + 0.1), y + 0.1, Math.sin(a) * (r + 0.1)));
+        }
+      }
+      for (const [x, z, size] of [
+        [0, 0, 1.1],
+        [0.7, 0.4, 0.8],
+        [-0.6, -0.5, 0.75],
+        [0.3, -0.8, 0.6],
+      ] as const) {
+        const heap = ball(size, 0x4f9a3a, 8);
+        heap.scale.y = 0.5;
+        g.add(at(heap, x, 5.6, z));
       }
     }
     flatten(g);
