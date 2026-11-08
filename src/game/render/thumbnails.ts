@@ -8,6 +8,7 @@ import type { HeroKind } from "../logic/heroes";
 import { kitVersion, stageFor } from "./buildingKit";
 import { menuHero, visibleBox } from "./heroAssets";
 import { buildingModel } from "./models";
+import { SKY } from "./sky";
 
 const SIZE = 256;
 
@@ -95,7 +96,11 @@ export function buildingIcon(type: BuildingType, level = 1): string {
     const distance = radius / Math.sin(THREE.MathUtils.degToRad(15));
     camera.position.set(center.x, center.y + distance * 0.55, center.z + distance * 0.84);
     camera.lookAt(center);
+    // Drawn as by day, whatever the hour: the lamps on a model light up with the dark.
+    const dark = SKY.dark.value;
+    SKY.dark.value = 0;
     url = snapshot(model, camera);
+    SKY.dark.value = dark;
     icons.set(key, url);
   }
   return url;

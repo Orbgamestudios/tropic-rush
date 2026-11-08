@@ -9,11 +9,29 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { BuildingType } from "../logic/buildings";
 import { PROGRESSION } from "../logic/economy";
+import { SKY } from "./sky";
 
 export const STAGES = 10;
 
-/** The buildings modeled so far. */
-const MODELED: readonly BuildingType[] = ["gunTurret", "mortar", "harpoon", "headquarters"];
+/** The buildings modeled so far: all but the land mine, a disc too small to be worth it. */
+const MODELED: readonly BuildingType[] = [
+  "headquarters",
+  "gunTurret",
+  "mortar",
+  "harpoon",
+  "flamethrower",
+  "watchtower",
+  "goldMine",
+  "lumberCamp",
+  "quarry",
+  "scrapYard",
+  "goldVault",
+  "timberShed",
+  "stoneYard",
+  "scrapBin",
+  "refinery",
+  "laboratory",
+];
 
 type Side = "enemy" | "crew";
 
@@ -53,6 +71,39 @@ export function kitVersion(): number {
   return version;
 }
 
+/**
+ * The texture's squares, as scripts/blender/kit.py lays them out: a GRID by GRID of materials, in
+ * its MATERIALS order. Lamps and glass are the 19th and 20th.
+ */
+const GRID = 6;
+const LAMP_SQUARE = { col: 0, row: 3 };
+const GLASS_SQUARE = { col: 1, row: 3 };
+/** What lamps and windows give off after dark: a warm bulb, and a room lit behind the glass. */
+const LAMP_GLOW = [255, 205, 150] as const;
+const WINDOW_GLOW = [110, 72, 36] as const;
+/** How bright a lamp shows at full dark, against its own color. */
+const GLOW_POWER = 2.4;
+
+let glowMap: THREE.DataTexture | null = null;
+
+/** One texel a square: lamps glow, windows glow a little, nothing else does. */
+function glowSquares(): THREE.DataTexture {
+  if (glowMap) return glowMap;
+  const data = new Uint8Array(GRID * GRID * 4);
+  for (const [square, rgb] of [
+    [LAMP_SQUARE, LAMP_GLOW],
+    [GLASS_SQUARE, WINDOW_GLOW],
+  ] as const) {
+    data.set([...rgb, 255], (square.row * GRID + square.col) * 4);
+  }
+  glowMap = new THREE.DataTexture(data, GRID, GRID);
+  glowMap.colorSpace = THREE.SRGBColorSpace;
+  glowMap.magFilter = THREE.NearestFilter;
+  glowMap.minFilter = THREE.NearestFilter;
+  glowMap.needsUpdate = true;
+  return glowMap;
+}
+
 async function atlas(side: Side): Promise<void> {
   const map = await new THREE.TextureLoader().loadAsync(
     `${import.meta.env.BASE_URL}textures/building-kit-${side}.webp`,
@@ -61,7 +112,76 @@ async function atlas(side: Side): Promise<void> {
   // The models' texture coordinates come from glTF, which counts from the top.
   map.flipY = false;
   map.anisotropy = 4;
-  looks[side] = new THREE.MeshLambertMaterial({ map, vertexColors: true });
+  const look = new THREE.MeshLambertMaterial({
+    map,
+    vertexColors: true,
+    emissive: 0xffffff,
+    emissiveMap: glowSquares(),
+  });
+  // Lamps and windows light up as the sky darkens, with nothing to update each frame.
+  look.onBeforeCompile = (shader) => {
+    shader.uniforms.uDark = SKY.dark;
+    shader.fragmentShader = `uniform float uDark;\n${shader.fragmentShader.replace(
+      "#include <emissivemap_fragment>",
+      `#include <emissivemap_fragment>\n\ttotalEmissiveRadiance *= min(1.0, uDark) * ${GLOW_POWER.toFixed(1)};`,
+    )}`;
+  };
+  looks[side] = look;
+}
+
+const LAMP_MARK = "kitLamp";
+
+/** How close together the corners of one lamp lie, in meters, against the next lamp along. */
+const LAMP_SIZE = 0.5;
+
+/**
+ * Finds a stage's lamps by what they're painted with, and marks each one with an empty that goes
+ * wherever the model does, so a lamp's light can come from the lamp.
+ */
+function markLamps(stage: THREE.Object3D): void {
+  stage.updateMatrixWorld(true);
+  const toStage = stage.matrixWorld.clone().invert();
+  const lamps: { sum: THREE.Vector3; count: number }[] = [];
+  const corner = new THREE.Vector3();
+  const middle = new THREE.Vector3();
+  const [u0, u1] = [LAMP_SQUARE.col / GRID, (LAMP_SQUARE.col + 1) / GRID];
+  const [v0, v1] = [LAMP_SQUARE.row / GRID, (LAMP_SQUARE.row + 1) / GRID];
+  stage.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const uv = o.geometry.getAttribute("uv");
+    const position = o.geometry.getAttribute("position");
+    if (!uv || !position) return;
+    const toLocal = toStage.clone().multiply(o.matrixWorld);
+    for (let i = 0; i < uv.count; i++) {
+      const u = uv.getX(i);
+      const v = uv.getY(i);
+      if (u < u0 || u > u1 || v < v0 || v > v1) continue;
+      corner.fromBufferAttribute(position, i).applyMatrix4(toLocal);
+      const lamp = lamps.find(
+        (l) => middle.copy(l.sum).divideScalar(l.count).distanceTo(corner) < LAMP_SIZE,
+      );
+      if (lamp) {
+        lamp.sum.add(corner);
+        lamp.count++;
+      } else lamps.push({ sum: corner.clone(), count: 1 });
+    }
+  });
+  for (const lamp of lamps) {
+    const mark = new THREE.Object3D();
+    mark.name = LAMP_MARK;
+    mark.position.copy(lamp.sum).divideScalar(lamp.count);
+    stage.add(mark);
+  }
+}
+
+/** Where a placed building's lamps are, in the world: none for one without any. */
+export function lampSpots(root: THREE.Object3D): THREE.Vector3[] {
+  root.updateWorldMatrix(true, true);
+  const spots: THREE.Vector3[] = [];
+  root.traverse((o) => {
+    if (o.name === LAMP_MARK) spots.push(o.getWorldPosition(new THREE.Vector3()));
+  });
+  return spots;
 }
 
 /** Fetches the modeled buildings and their texture, the first time it's asked. */
@@ -85,6 +205,7 @@ export function loadBuildingKit(): Promise<void> {
           const stage = gltf.scene.getObjectByName(`s${s}`);
           if (!stage) return;
           stage.position.set(0, 0, 0);
+          markLamps(stage);
           list.push(stage);
         }
         stages.set(type, list);

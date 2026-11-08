@@ -27,7 +27,7 @@ import { statueBefore } from "../logic/statues";
 import { tideTurn } from "../logic/tides";
 import { angleOf, clamp, lerp, sub, type Vec2, vec } from "../logic/vec";
 import type { CollectPin, JobPin } from "../ui/crewUi";
-import { kitVersion, levelSize, stageFor } from "./buildingKit";
+import { kitVersion, lampSpots, levelSize, stageFor } from "./buildingKit";
 import { type CloudView, homeClouds } from "./clouds";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
@@ -476,12 +476,7 @@ export class CrewIslandView {
       return;
     this.drawn = { layout, hidden: hiddenId, held, kit };
     this.overgrowth.sync(layout);
-    this.buildingLampList = layout.buildings.flatMap((b) => {
-      const { x, y } = buildingCenter(b);
-      return buildingLamps(b.type, x, groundFor(b), y);
-    });
     this.syncStatues(layout);
-    this.lights.setLamps([...this.buildingLampList, ...this.statueLampList]);
     const live = new Set<string>();
     for (const b of layout.buildings) {
       live.add(b.id);
@@ -523,6 +518,12 @@ export class CrewIslandView {
       this.root.remove(entry.group);
       this.blocks.delete(id);
     }
+    this.buildingLampList = layout.buildings.flatMap((b) => {
+      const { x, y } = buildingCenter(b);
+      const group = this.blocks.get(b.id)?.group;
+      return buildingLamps(b.type, x, groundFor(b), y, group ? lampSpots(group) : []);
+    });
+    this.lights.setLamps([...this.buildingLampList, ...this.statueLampList]);
     this.spinners = [];
     this.heads = [];
     for (const { group } of this.blocks.values()) {

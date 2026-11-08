@@ -111,6 +111,20 @@ These were explicitly left out to keep the first version to a basic structure:
   size at its top level.
 - **Enemy bases** follow the same table, so a headquarters 50 base has headquarters 50's buildings
   and levels, rather than headquarters 20's with levels piled on.
+- **Every building modeled:** the flamethrower, watchtower, gold mine, lumber mill, quarry, scrap
+  yard, the four storages, the refinery and the laboratory get their ten Blender looks in the game,
+  blue for the crew and red for raiders, like the headquarters and the other defenses. Only the
+  land mine is still a plain disc.
+- **Lights after dark, from the buildings themselves:** no more glowing balls hanging in front of
+  every building. The lamps on a model light up as the sky darkens, and its windows glow dimly
+  like lit rooms. A building with lamps is floodlit from where they are, each with a small point of
+  glare; one whose model has none yet is lit by a lantern out of sight on the side facing the
+  camera, flickering. Light falls away the way a real lamp's does, bright close by and gone a few
+  meters on, so there's dark ground between buildings.
+- **Real light colors:** a lantern's flame (about 1900 K, amber), a warm floodlight (3000 K), the
+  lab's tubes (cool white) and the refinery's furnace (deep orange); raiders' lamps are the same
+  lamps as the crew's, no longer tinted red. Lamplight is added to the blue moonlight rather than
+  multiplied into it, so a lamp turns grass olive and a path amber instead of a brighter green.
 
 ## Added 2026-11-07 (owner's requests)
 

@@ -25,7 +25,7 @@ import type { Spoils } from "../logic/spoils";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
-import { kitPiece, levelSize, type Piece } from "./buildingKit";
+import { kitPiece, lampSpots, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
 import { DefenseReach } from "./defenseReach";
@@ -672,9 +672,11 @@ export class RaidView {
     this.lights.setLamps([
       ...state.buildings
         .filter((b) => !b.destroyed)
-        .flatMap((b) =>
-          buildingLamps(b.type, b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y, !this.defending),
-        ),
+        .flatMap((b) => {
+          const view = this.buildings.get(b.id);
+          const spots = view ? lampSpots(view.model.root) : [];
+          return buildingLamps(b.type, b.pos.x, this.ground(b.pos.x, b.pos.y), b.pos.y, spots);
+        }),
       ...this.lavaLamps(),
     ]);
   }

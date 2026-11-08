@@ -59,7 +59,16 @@ export const SKY = {
   forest: { value: new THREE.Color(1, 1, 1) },
   /** 0 by day, 1 and over once it's dark enough for lamps to show. */
   dark: { value: 0 },
+  /**
+   * What lamplight is multiplied by to land on what's already lit: the light falling on open
+   * ground just now, as its brightness over each of its colors. Under a blue moon a warm lamp
+   * shows warm, rather than brightening the blue that's already there.
+   */
+  lampBalance: { value: new THREE.Color(1, 1, 1) },
 };
+
+/** How far the light already there may push a lamp's color, either way. */
+const BALANCE_RANGE = [0.3, 3] as const;
 
 interface Look {
   /** The sun's height in degrees that this look belongs to. */
@@ -290,6 +299,8 @@ export class Sky {
     uStarMap: { value: null as THREE.Texture | null },
   };
   private readonly lightDirection = DAY_DIRECTION.clone();
+  private readonly lit = new THREE.Color();
+  private readonly sunLit = new THREE.Color();
   private place: Place = { lat: 0, lon: 0 };
   /** A fixed moment to show instead of the clock, for tests. */
   private heldClock: number | null = null;
@@ -454,6 +465,16 @@ export class Sky {
     this.shadows = strength > 0;
     sun.shadow.intensity = strength;
     sun.position.copy(sun.target.position).addScaledVector(this.lightDirection, LIGHT_DISTANCE);
+
+    const sunOnGround = sun.intensity * Math.max(0, this.lightDirection.y);
+    const ground = this.lit
+      .copy(fill.color)
+      .multiplyScalar(fill.intensity)
+      .add(this.sunLit.copy(sun.color).multiplyScalar(sunOnGround));
+    const brightness = 0.2126 * ground.r + 0.7152 * ground.g + 0.0722 * ground.b;
+    const balance = (c: number) =>
+      clamp(brightness / Math.max(c, 1e-4), BALANCE_RANGE[0], BALANCE_RANGE[1]);
+    SKY.lampBalance.value.setRGB(balance(ground.r), balance(ground.g), balance(ground.b));
   }
 
   /** Where the light comes from, as a unit vector. */
