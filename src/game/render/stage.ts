@@ -27,6 +27,8 @@ const SLOW_SECONDS = 1.5;
 const WORST_FRAME = 0.1;
 /** How many times less often shadows are redrawn on a screen that's sitting still. */
 const CALM_SHADOWS = 4;
+/** The longest a screen waits for its shaders before drawing anyway. */
+const MOST_PREPARING_MS = 3000;
 
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
   "vec3 CustomToneMapping( vec3 color ) { return color; }",
@@ -54,6 +56,10 @@ export class Stage {
 
   constructor(private readonly container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Asking after each shader whether it built makes the phone finish building it there and then,
+    // one at a time, which is most of the freeze when a new screen first draws. Only worth it while
+    // the shaders are being written.
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIOS[0] ?? 1));
     this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = true;
@@ -183,6 +189,21 @@ export class Stage {
     this.slowSeconds = 0;
   }
 
+  /**
+   * Builds the shaders for everything now in view before drawing it, in the background where the
+   * browser can (Safari can). Otherwise the first frame of a new screen stops to build every new
+   * material's shader in turn, which is most of the freeze when one opens. Until they're ready the
+   * screen keeps its last frame, under the wipe, rather than locking up.
+   */
+  prepare(): void {
+    const token = ++this.preparing;
+    const done = () => {
+      if (this.preparing === token) this.preparing = 0;
+    };
+    this.renderer.compileAsync(this.scene, this.camera).then(done, done);
+    setTimeout(done, MOST_PREPARING_MS);
+  }
+
   private elapsed = 0;
   private slowSeconds = 0;
   private quality = 0;
@@ -193,10 +214,13 @@ export class Stage {
   private shadowsStale = true;
   /** Nobody's touching the screen and nothing's fast: shadows can wait much longer. */
   calm = false;
+  /** Shaders are being built for what's just appeared (see prepare); nothing's drawn till then. */
+  private preparing = 0;
 
   render(): void {
-    this.frameNumber++;
     this.sky.update(performance.now() / 1000);
+    if (this.preparing) return;
+    this.frameNumber++;
     const pace = this.calm ? CALM_SHADOWS : 1;
     const shadowEvery = (this.sky.moonShadows ? this.shadowEvery * 2 : this.shadowEvery) * pace;
     const dueShadows = this.sky.shadows && this.frameNumber % shadowEvery === 0;

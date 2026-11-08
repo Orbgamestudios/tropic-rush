@@ -108,7 +108,10 @@ These were explicitly left out to keep the first version to a basic structure:
   the whole island still takes about 44 days (70 with tools at 5).
 - **Buildings grow with their level:** on top of the ten looks (every fifth level on a 50-level
   building), each level stands a building a little bigger: 90% of its full size at level 1, full
-  size at its top level.
+  size at its top level. **Changed (owner):** not defenses. A gun turret, mortar, harpoon,
+  flamethrower or watchtower stands full size from its first level, and every one of its ten looks
+  is its last look's size: only what it's made of moves on. The mortar's tube no longer fattens
+  at looks 4 and 8. The concrete pad still comes at the sixth look.
 - **Enemy bases** follow the same table, so a headquarters 50 base has headquarters 50's buildings
   and levels, rather than headquarters 20's with levels piled on.
 - **Every building modeled:** the flamethrower, watchtower, gold mine, lumber mill, quarry, scrap
@@ -125,6 +128,11 @@ These were explicitly left out to keep the first version to a basic structure:
   lab's tubes (cool white) and the refinery's furnace (deep orange); raiders' lamps are the same
   lamps as the crew's, no longer tinted red. Lamplight is added to the blue moonlight rather than
   multiplied into it, so a lamp turns grass olive and a path amber instead of a brighter green.
+  **Changed (owner):** brighter than the first pass, lanterns most of all.
+- **Sand under every building:** each building stands in a patch of trodden sand with rounded
+  corners, stopping about a third of a meter short of the edge of its tiles, on the crew's island
+  and on raider bases alike, faintly mottled, with a fine grain and the odd pebble close up and a
+  touch darker where it meets the grass. Land mines get none, so they stay hidden.
 
 ## Added 2026-11-07 (owner's requests)
 
@@ -223,6 +231,7 @@ These were explicitly left out to keep the first version to a basic structure:
   polished emplacement with a radar dish. Its tube turns to its target, tipped up, and when it
   fires it slams back down along itself with a big flash and a puff of smoke over the muzzle.
   The tube gets fatter twice on the way up, at looks 4 and 8, so a strong mortar shows from afar.
+  (Since 2026-11-07 the tube is full width at every look.)
 - **Harpoon launcher modeled:** a great crossbow on a turning mount, ten looks from log limbs and
   a log harpoon in sandbags to polished steel with lights and a radar dish. When it fires, the
   bowstring snaps forward and the harpoon on the stock goes; a second later the next one slides on,

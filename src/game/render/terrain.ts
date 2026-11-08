@@ -11,6 +11,7 @@ import { smoothstep, type Vec2 } from "../logic/vec";
 import { bladeTexture, swathes } from "./meadow";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
+import { SAND_HALF } from "./sandPatches";
 import type { SceneryMap } from "./scenery";
 import { GROUND_ORDER } from "./shapes";
 import { SKY } from "./sky";
@@ -38,7 +39,12 @@ export interface TerrainOptions {
    * ground. The home island draws what's uncleared into it, so clearing lifts the shade.
    */
   shade?: THREE.Texture;
+  /** Where buildings stand in sand: a soft mask, painted by a SandMask. */
+  sand?: THREE.Texture;
 }
+
+/** Trodden sand round a building, a little darker than the beach. */
+const PATCH_SAND = new THREE.Color(0xdcc48f);
 
 const SAND = new THREE.Color(COLORS.sand);
 const WET_SAND = new THREE.Color(COLORS.wetSand);
@@ -355,12 +361,17 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const { shade } = options;
+  const { shade, sand } = options;
   blades ??= bladeTexture();
   const bladeMap = blades;
   material.onBeforeCompile = (program) => {
     program.uniforms.uBlades = { value: bladeMap };
     if (shade) program.uniforms.uShade = { value: shade };
+    if (sand) {
+      program.uniforms.uSand = { value: sand };
+      program.uniforms.uNoise = { value: noiseTexture() };
+      program.uniforms.uPatchSand = { value: PATCH_SAND };
+    }
     program.vertexShader = program.vertexShader
       .replace(
         "#include <common>",
@@ -381,6 +392,7 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
         `#include <common>
         uniform sampler2D uBlades;
         ${shade ? "uniform sampler2D uShade;" : ""}
+        ${sand ? "uniform sampler2D uSand; uniform sampler2D uNoise; uniform vec3 uPatchSand;" : ""}
         varying float vLawn;
         varying vec2 vGroundUv;`,
       )
@@ -395,10 +407,41 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.25, 0.04), shade.r * 0.8);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.23), shade.g * 0.7);`
             : ""
+        }
+        ${
+          sand
+            ? /* glsl */ `float sand = texture2D(uSand, vGroundUv / ${(SAND_HALF * 2).toFixed(1)} + 0.5).r;
+        if (sand > 0.0) {
+          vec2 at = vGroundUv / ${NOISE_CELLS.toFixed(1)};
+          float broad = texture2D(uNoise, at * 0.3).r;
+          // Grain and pebbles only where they're big enough to see, or they'd sparkle as it moves.
+          float near = 1.0 - smoothstep(0.05, 0.16, fwidth(vGroundUv.x));
+          float grain = texture2D(uNoise, at * 5.0 + 0.64).r;
+          float pebble = smoothstep(0.9, 0.94, texture2D(uNoise, at * 4.6 + 0.14).r);
+          vec3 trodden = uPatchSand * (0.96 + broad * 0.08);
+          // A little browner in places, and packed a touch darker where it meets the grass.
+          trodden = mix(trodden, trodden * vec3(0.9, 0.86, 0.8), (1.0 - broad) * 0.12);
+          trodden *= 1.0 + (grain - 0.5) * 0.07 * near;
+          trodden *= 1.0 - pebble * 0.18 * near;
+          // Ripples the wind has left: their heading, spacing and strength drift with the noise, so
+          // they bend round, bunch up and fade out rather than running in rows.
+          float drift = texture2D(uNoise, at * 0.7 + 0.41).r;
+          float heading = 0.6 + (broad - 0.5) * 1.6;
+          vec2 across = vec2(cos(heading), sin(heading));
+          float phase = dot(vGroundUv, across) * 9.0 + drift * 14.0;
+          float ridge = pow(0.5 + 0.5 * sin(phase), 3.0);
+          float rippled = smoothstep(0.35, 0.7, texture2D(uNoise, at * 0.45 + 0.83).r);
+          float clear = 1.0 - smoothstep(0.12, 0.25, fwidth(phase) / 6.2832);
+          trodden *= 1.0 + (ridge - 0.25) * 0.11 * rippled * clear;
+          trodden *= mix(0.93, 1.0, smoothstep(0.3, 0.95, sand));
+          diffuseColor.rgb = mix(diffuseColor.rgb, trodden, sand);
+        }`
+            : ""
         }`,
       );
   };
-  material.customProgramCacheKey = () => `tropic-ground-${shade ? "shaded" : "plain"}`;
+  material.customProgramCacheKey = () =>
+    `tropic-ground-${shade ? "shaded" : "plain"}-${sand ? "sanded" : "bare"}`;
   const ground = new THREE.Mesh(geometry, material);
   ground.receiveShadow = true;
   ground.renderOrder = GROUND_ORDER;

@@ -21,7 +21,7 @@ import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/ene
 import { HERO_KINDS, type HeroKind } from "./logic/heroes";
 import { raidReward } from "./logic/heroProgress";
 import { heroMods, noUpgrades, readOwned, type TreeUpgrade, trimUpgrades } from "./logic/heroTrees";
-import { BASE_CENTER, HOME_SHAPE } from "./logic/island";
+import { BASE_CENTER, HOME_SHAPE, type IslandLayout } from "./logic/island";
 import { archetypeFor } from "./logic/islandShapes";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
 import { puzzleFor } from "./logic/puzzles";
@@ -1452,13 +1452,21 @@ export class Game {
   }
 
   /** The island a map spot holds: a raider base, or a rival crew's own. */
-  private islandFor(target: MapIsland) {
+  private islandFor(target: MapIsland): IslandLayout {
+    // Landing on the island just scouted needn't lay it all out again.
+    if (this.laidOut?.target === target) return this.laidOut.layout;
     const { rival } = target;
-    if (!rival) return generateIsland(target.seed, target.hq, { maxed: target.retaken });
     const buildings =
-      rival.buildings.length > 0 ? rival.buildings : enemyBase(target.seed, rival.hq);
-    return { ...rivalIsland(target.seed, buildings), buffs: rival.buffs };
+      rival && (rival.buildings.length > 0 ? rival.buildings : enemyBase(target.seed, rival.hq));
+    const layout =
+      rival && buildings
+        ? { ...rivalIsland(target.seed, buildings), buffs: rival.buffs }
+        : generateIsland(target.seed, target.hq, { maxed: target.retaken });
+    this.laidOut = { target, layout };
+    return layout;
   }
+
+  private laidOut: { target: MapIsland; layout: IslandLayout } | null = null;
 
   /** Sets a target island up, the same whether the crew is scouting it or landing. */
   private loadRaid(hero: HeroKind, target: MapIsland, team?: Team) {
@@ -1474,6 +1482,7 @@ export class Game {
     this.view = new RaidView(layout, state, this.labels, undefined, this.seat);
     this.view.names = team?.seats.map((s) => s.name) ?? [];
     this.stage.scene.add(this.view.root);
+    this.stage.prepare();
     this.stage.ignoreSlowFrames();
     return { layout, state };
   }
@@ -1583,6 +1592,7 @@ export class Game {
     this.state = state;
     this.view = new RaidView(layout, state, this.labels, raid);
     this.stage.scene.add(this.view.root);
+    this.stage.prepare();
     this.accumulator = 0;
     this.phase = "replay";
     this.replaySpeed = 1;

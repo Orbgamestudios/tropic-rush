@@ -39,6 +39,7 @@ import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
 import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, updateWind } from "./props";
 import { CRYSTAL_COLORS, disposeGlint, glintSprite, type StatueModel, statueModel } from "./relics";
+import { SandMask } from "./sandPatches";
 import { homeScenery } from "./scenery";
 import { at, barrel, cyl, flatten, rbox, vertexColored } from "./shapes";
 import { overlayOpacity } from "./sky";
@@ -336,6 +337,7 @@ export class CrewIslandView {
     }
   >();
   private readonly lights = new LightPool();
+  private readonly sand = new SandMask();
   private readonly fireflies = new Fireflies(7, (x, z) => Math.max(0, homeHeight(x, z)));
   /** What sync() last drew, so a frame where nothing changed costs nothing. */
   private drawn: { layout: CrewLayout | null; hidden: string | null; held: string; kit: number } = {
@@ -400,7 +402,11 @@ export class CrewIslandView {
     const scenery = homeScenery(HOME_START);
     const landing = landingPoints();
     this.overgrowth = new OvergrowthView(scenery);
-    this.terrain = buildTerrain(scenery, { height: homeHeight, shade: this.overgrowth.shade });
+    this.terrain = buildTerrain(scenery, {
+      height: homeHeight,
+      shade: this.overgrowth.shade,
+      sand: this.sand.texture,
+    });
     this.clouds = homeClouds();
     // Beyond the grass it's the raid islands' shore; the grass itself is the overgrowth.
     const shore = buildShore(HOME_SEED, scenery, landing.spawn, homeHeight, -0.5);
@@ -476,6 +482,12 @@ export class CrewIslandView {
       return;
     this.drawn = { layout, hidden: hiddenId, held, kit };
     this.overgrowth.sync(layout);
+    this.sand.paint(
+      layout.buildings.map((b) => {
+        const { x, y } = buildingCenter(b);
+        return { type: b.type, x, z: y, rotated: b.rotated };
+      }),
+    );
     this.syncStatues(layout);
     const live = new Set<string>();
     for (const b of layout.buildings) {
@@ -890,6 +902,7 @@ export class CrewIslandView {
     this.root.remove(this.overgrowth.root);
     if (this.glint.sprite) disposeGlint(this.glint.sprite);
     this.lights.dispose();
+    this.sand.dispose();
     this.fireflies.dispose();
     this.overgrowth.dispose();
     this.heroes.dispose();

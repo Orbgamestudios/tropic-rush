@@ -81,9 +81,44 @@ export function heroPortrait(kind: HeroKind): Promise<string> {
   return pending;
 }
 
+function iconKey(type: BuildingType, level: number): string {
+  return `${type}|${stageFor(type, level)}|${kitVersion()}`;
+}
+
+/** Nothing to see, while an icon waits its turn. */
+const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+/** Icons still to draw, a frame apart, and the icon each image wants now. */
+const waiting: { img: HTMLImageElement; type: BuildingType; level: number }[] = [];
+const wanted = new WeakMap<HTMLImageElement, string>();
+
+/**
+ * Puts a building's icon in an image: straight away if it's been drawn already, or else a frame or
+ * so later, one icon a frame, so a screen full of new ones opens without stopping to draw them all.
+ */
+export function showBuildingIcon(img: HTMLImageElement, type: BuildingType, level = 1): void {
+  const key = iconKey(type, level);
+  wanted.set(img, key);
+  const ready = icons.get(key);
+  if (ready) {
+    img.src = ready;
+    return;
+  }
+  img.src = BLANK;
+  if (waiting.length === 0) requestAnimationFrame(drawWaiting);
+  waiting.push({ img, type, level });
+}
+
+function drawWaiting(): void {
+  const next = waiting.shift();
+  if (next && wanted.get(next.img) === iconKey(next.type, next.level)) {
+    next.img.src = buildingIcon(next.type, next.level);
+  }
+  if (waiting.length > 0) requestAnimationFrame(drawWaiting);
+}
+
 /** A three-quarter picture of a building at a level (a PNG data URL). */
 export function buildingIcon(type: BuildingType, level = 1): string {
-  const key = `${type}|${stageFor(type, level)}|${kitVersion()}`;
+  const key = iconKey(type, level);
   let url = icons.get(key);
   if (!url) {
     const model = buildingModel(type, false, level).root;

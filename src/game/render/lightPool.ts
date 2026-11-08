@@ -64,11 +64,11 @@ const LANTERNS: Partial<Record<BuildingType, readonly LanternSpot[]>> = {
 };
 
 /** How far a building's floodlights and a lantern reach, against the figures above. */
-const FLOODLIGHT_REACH = 0.7;
-const LANTERN_REACH = 0.6;
+const FLOODLIGHT_REACH = 0.85;
+const LANTERN_REACH = 0.8;
 /** How much light lands right under each, against the moonlight there already. */
-const FLOODLIGHT_POWER = 7;
-const LANTERN_POWER = 9;
+const FLOODLIGHT_POWER = 11;
+const LANTERN_POWER = 15;
 /** The glare round each lamp on a model, in meters, and how many of a building's lamps get one. */
 const GLINT_SIZE = 0.8;
 const GLINTS_EACH = 6;
@@ -215,7 +215,7 @@ const POOL_FRAGMENT = /* glsl */ `
  * of every color, but the night's grading leaves the darkest channel black, and multiplying black
  * by any light leaves it black: without this, warm light on grass would only make it greener.
  */
-const SPILL = 0.004;
+const SPILL = 0.006;
 
 const SPILL_FRAGMENT = /* glsl */ `
   varying vec2 vUv;

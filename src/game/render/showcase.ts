@@ -301,6 +301,7 @@ export class Showcase {
       this.savedFog = this.stage.scene.fog;
       this.stage.scene.background = this.background;
       this.stage.scene.fog = null;
+      this.stage.prepare();
     } else {
       this.stage.scene.background = this.savedBackground;
       this.stage.scene.fog = this.savedFog;
@@ -335,6 +336,7 @@ export class Showcase {
     if (kind === "tank") model.scale.multiplyScalar(0.55);
     this.hero = model;
     this.turntable.add(model);
+    if (this.root.visible) this.stage.prepare();
   }
 
   /** What the hero's doing now: standing about, and every so often something else. */

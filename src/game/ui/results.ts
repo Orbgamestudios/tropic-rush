@@ -5,7 +5,7 @@ import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse, RESOURCES } from "../logic/economy";
 import type { RaidReward } from "../logic/heroProgress";
 import { blueprintName, isWeapon, type Spoils } from "../logic/spoils";
-import { buildingIcon } from "../render/thumbnails";
+import { showBuildingIcon } from "../render/thumbnails";
 import { ABILITY_ICONS } from "./hud";
 import { button, costChips, crystalChip, el, formatNumber, plate } from "./kit/dom";
 import { sfx, sparkleAt } from "./kit/fx";
@@ -181,7 +181,7 @@ export class ResultsScreen {
       if (isWeapon(blueprint)) picture = icon(ABILITY_ICONS[blueprint], "results-blueprint-img");
       else {
         const image = el("img", "results-blueprint-img");
-        image.src = buildingIcon(blueprint);
+        showBuildingIcon(image, blueprint);
         image.alt = "";
         picture = image;
       }

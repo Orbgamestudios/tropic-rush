@@ -19,7 +19,7 @@ import type { NightRaid } from "../logic/nightRaid";
 import type { RaiderShip } from "../logic/raiderShip";
 import { type Blueprint, isWeapon } from "../logic/spoils";
 import type { Member } from "../net/protocol";
-import { buildingIcon, heroPortrait } from "../render/thumbnails";
+import { heroPortrait, showBuildingIcon } from "../render/thumbnails";
 import { ABILITY_ICONS } from "./hud";
 import {
   button,
@@ -689,7 +689,7 @@ export class CrewUi {
         const img = el("img", "crew-chip-img");
         img.alt = "";
         img.draggable = false;
-        img.src = buildingIcon(type);
+        showBuildingIcon(img, type);
         const count = el("span", "crew-chip-count");
         const cost = el("span", "crew-chip-cost");
         const lock = el("span", "crew-chip-lock");
@@ -987,7 +987,7 @@ export class CrewUi {
     if (isWeapon(r.type)) picture = icon(ABILITY_ICONS[r.type], "crew-lab-icon");
     else {
       const image = el("img", "crew-lab-icon");
-      image.src = buildingIcon(r.type);
+      showBuildingIcon(image, r.type);
       image.alt = "";
       picture = image;
     }
@@ -1236,7 +1236,7 @@ export class CrewUi {
     this.buildButton.style.display = info ? "none" : "";
     this.fitMapButton();
     if (info) {
-      if (info.type !== this.selectedType) this.selectionImg.src = buildingIcon(info.type);
+      if (info.type !== this.selectedType) showBuildingIcon(this.selectionImg, info.type);
       if (info.type === this.selectedType && info.level > this.selectedLevel) {
         sfx.levelUp();
         sparkleAt(this.fx, this.selectionImg, { count: 26, spread: 110 });

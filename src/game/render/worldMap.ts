@@ -507,6 +507,7 @@ export class WorldMapView {
       this.savedFog = scene.fog;
       scene.background = sky.mapBackground;
       scene.fog = null;
+      this.stage.prepare();
     } else {
       scene.background = this.savedBackground;
       scene.fog = this.savedFog;

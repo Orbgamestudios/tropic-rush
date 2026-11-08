@@ -51,6 +51,7 @@ import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
 import { buildProps, buildShore, homeCliffs, updateWind } from "./props";
 import { crystalGem } from "./relics";
+import { SandMask } from "./sandPatches";
 import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
 import { buildTerrain, type TerrainView } from "./terrain";
@@ -265,6 +266,7 @@ export class RaidView {
   names: readonly string[] = [];
   readonly effects: Effects;
   private readonly lights = new LightPool();
+  private readonly sand = new SandMask();
   private readonly fireflies: Fireflies;
   /** How hard the last blasts should shake the camera; Game takes it each frame. */
   private tremor = 0;
@@ -331,13 +333,17 @@ export class RaidView {
       const scenery = homeScenery(HOME_START);
       this.overgrowth = new OvergrowthView(scenery);
       this.overgrowth.sync(home);
-      this.terrain = buildTerrain(scenery, { height, shade: this.overgrowth.shade });
+      this.terrain = buildTerrain(scenery, {
+        height,
+        shade: this.overgrowth.shade,
+        sand: this.sand.texture,
+      });
       this.props = new THREE.Group();
       this.props.add(buildShore(layout.seed, scenery, layout.spawn, height, -0.5), homeCliffs());
       this.root.add(this.overgrowth.root);
     } else {
       const scenery = sceneryMap(layout);
-      this.terrain = buildTerrain(scenery, { shape });
+      this.terrain = buildTerrain(scenery, { shape, sand: this.sand.texture });
       this.props = buildProps(layout, scenery);
       this.props.add(buildCamp(layout, scenery));
     }
@@ -384,6 +390,14 @@ export class RaidView {
         sights,
       });
     });
+    this.sand.paint(
+      state.buildings.map((b, i) => ({
+        type: b.type,
+        x: b.pos.x,
+        z: b.pos.y,
+        rotated: layout.buildings[i]?.rotated ?? false,
+      })),
+    );
     this.lightBuildings(state);
 
     state.heroes.forEach((h, i) => {
@@ -1246,6 +1260,7 @@ export class RaidView {
       this.overgrowth.dispose();
     }
     this.clouds.dispose();
+    this.sand.dispose();
     this.aimView.dispose();
     this.reach?.dispose();
     for (const { ring } of this.heroes.values()) {

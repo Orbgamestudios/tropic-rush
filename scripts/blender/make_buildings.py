@@ -68,6 +68,9 @@ def grow(groups, k, lift=0.0):
 
 # The defenses are drawn a size up from the rest, on pads that still fit their tiles.
 GROW = 1.15
+# Every look of a defense is its last look's size: only what it's made of moves on, so it never
+# starts small and grows.
+FULL = 1.0
 
 
 def drum(g, at, r=0.42, h=0.88, material="rust"):
@@ -213,7 +216,7 @@ def barrel_pair(g, s, top, length, spread, z):
 
 
 def turret_gun(g, guns, s, top):
-    t = (s - 1) / 9
+    t = FULL
     length = lerp(1.45, 2.15, t)
     spread = lerp(0.17, 0.26, t)
     z = top + lerp(0.42, 0.62, t)
@@ -283,7 +286,7 @@ def turret_gun(g, guns, s, top):
 
 
 def gun_turret(s):
-    top = lerp(1.35, 2.6, (s - 1) / 9)
+    top = lerp(1.35, 2.6, FULL)
     body = Group("body", seed=s)
     head = Group("head", pivot=(0, 0, top), seed=100 + s)
     # The barrels kick back on their own when they fire.
@@ -354,9 +357,8 @@ def mortar_base(g, s, top):
 
 
 def mortar_gun(head, s, top):
-    t = (s - 1) / 9
-    # The tube gets fatter twice on the way up, so the step shows from across the island.
-    radius = 0.2 if s <= 3 else 0.28 if s <= 7 else 0.36
+    t = FULL
+    radius = 0.36
     # Raised as it fattens, so the breech clears the base.
     pivot_z = top + lerp(0.5, 0.65, t) + (radius - 0.2) * 1.2
     length = lerp(1.6, 2.2, t)
@@ -415,7 +417,7 @@ def mortar_gun(head, s, top):
 
 
 def mortar(s):
-    top = lerp(0.42, 0.95, (s - 1) / 9)
+    top = lerp(0.42, 0.95, FULL)
     body = Group("body", seed=s)
     head = Group("head", pivot=(0, 0, top), seed=100 + s)
     mortar_base(body, s, top)
@@ -480,7 +482,7 @@ def harpoon_base(g, s, top):
 
 
 def harpoon_gun(head, s, top):
-    t = (s - 1) / 9
+    t = FULL
     z = top + lerp(0.42, 0.55, t)
     reach = lerp(1.15, 1.6, t)
     wood = s <= 4
@@ -558,7 +560,7 @@ def harpoon_gun(head, s, top):
 
 
 def harpoon(s):
-    top = lerp(1.25, 2.25, (s - 1) / 9)
+    top = lerp(1.25, 2.25, FULL)
     body = Group("body", seed=s)
     head = Group("head", pivot=(0, 0, top), seed=100 + s)
     harpoon_base(body, s, top)
@@ -1250,7 +1252,7 @@ def laboratory(s):
 
 
 def flamethrower(s):
-    t = (s - 1) / 9
+    t = FULL
     top = lerp(1.25, 2.4, t)
     body = Group("body", seed=s)
     head = Group("head", pivot=(0, 0, top), seed=100 + s)
@@ -1283,7 +1285,7 @@ def flamethrower(s):
 
 
 def watchtower(s):
-    t = (s - 1) / 9
+    t = FULL
     top = lerp(4.2, 6.2, t)
     body = Group("body", seed=s)
     head = Group("head", pivot=(0, 0, top), seed=100 + s)

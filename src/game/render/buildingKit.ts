@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { BuildingType } from "../logic/buildings";
+import { BUILDINGS, type BuildingType } from "../logic/buildings";
 import { PROGRESSION } from "../logic/economy";
 import { SKY } from "./sky";
 
@@ -57,11 +57,12 @@ const FIRST_SIZE = 0.9;
 
 /**
  * How big a building stands at a level, as a share of its full fitted size: a little bigger with
- * every level, so it keeps growing between one look and the next.
+ * every level, so it keeps growing between one look and the next. Defenses stand full size from
+ * their first level.
  */
 export function levelSize(type: BuildingType, level: number): number {
   const most = PROGRESSION[type].maxLevel;
-  if (most <= 1) return 1;
+  if (most <= 1 || BUILDINGS[type].attack) return 1;
   const along = Math.min(1, Math.max(0, (level - 1) / (most - 1)));
   return FIRST_SIZE + (1 - FIRST_SIZE) * along;
 }
@@ -82,7 +83,7 @@ const GLASS_SQUARE = { col: 1, row: 3 };
 const LAMP_GLOW = [255, 205, 150] as const;
 const WINDOW_GLOW = [110, 72, 36] as const;
 /** How bright a lamp shows at full dark, against its own color. */
-const GLOW_POWER = 2.4;
+const GLOW_POWER = 3.2;
 
 let glowMap: THREE.DataTexture | null = null;
 

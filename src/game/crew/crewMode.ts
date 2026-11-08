@@ -291,6 +291,7 @@ export class CrewMode {
   enter(): void {
     this.view = new CrewIslandView(this.stage, this.labelLayer);
     this.stage.scene.add(this.view.root);
+    this.stage.prepare();
     this.surface.style.display = "block";
     this.ui.show(true);
     this.layout = sanitizeLayout(loadLocalLayout());

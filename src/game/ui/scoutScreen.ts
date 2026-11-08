@@ -6,7 +6,7 @@ import { BUILDINGS } from "../logic/buildings";
 import type { ScoutRow } from "../logic/enemyBase";
 import type { RaidBuilding } from "../logic/raid";
 import type { MapIsland } from "../logic/worldMap";
-import { buildingIcon } from "../render/thumbnails";
+import { showBuildingIcon } from "../render/thumbnails";
 import { button, el, setLabel } from "./kit/dom";
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
@@ -115,7 +115,7 @@ export class ScoutScreen {
       ...report.map((row) => {
         const tile = el("div", "scout-tile");
         const picture = el("img", "scout-tile-icon");
-        picture.src = buildingIcon(row.type);
+        showBuildingIcon(picture, row.type);
         picture.alt = BUILDINGS[row.type].label;
         tile.append(
           picture,
