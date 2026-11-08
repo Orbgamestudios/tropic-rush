@@ -264,6 +264,8 @@ export interface IslandLayout {
   cover?: number;
   /** What the defenders' restored statues add: multipliers on their health and damage. */
   buffs?: { health: number; damage: number };
+  /** How snowy the island is, 0 to 1, from how far north it lies (see snowAt). Looks only. */
+  snow?: number;
 }
 
 /** Walks along a ray from the island's center until the shore distance drops to `target`. */

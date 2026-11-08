@@ -56,6 +56,7 @@ import { crystalGem } from "./relics";
 import { SandMask } from "./sandPatches";
 import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
+import { Snowfall } from "./snowfall";
 import { buildTerrain, type TerrainView } from "./terrain";
 
 interface BuildingView {
@@ -294,6 +295,8 @@ export class RaidView {
   lastBlast: Vec2 | null = null;
   /** The camera as of the last frame, for placing words over things. */
   private lastCamera: THREE.Camera | null = null;
+  private snowfall: Snowfall | null = null;
+  private readonly snowAt = new THREE.Vector3();
   private lastSize = { width: 1, height: 1 };
   private readonly aimView = new AimView();
   private readonly terrain: TerrainView;
@@ -361,9 +364,14 @@ export class RaidView {
       this.root.add(this.overgrowth.root);
     } else {
       const scenery = sceneryMap(layout);
-      this.terrain = buildTerrain(scenery, { shape, sand: this.sand.texture });
+      this.terrain = buildTerrain(scenery, { shape, sand: this.sand.texture, snow: layout.snow });
       this.props = buildProps(layout, scenery);
       this.props.add(buildCamp(layout, scenery));
+      // Snow falling on the islands up north.
+      if ((layout.snow ?? 0) > 0.3) {
+        this.snowfall = new Snowfall(layout.snow ?? 0);
+        this.root.add(this.snowfall.points);
+      }
     }
     this.clouds = buildClouds(layout.seed, shape);
     this.root.add(this.clouds.root, this.aimView.root);
@@ -632,6 +640,11 @@ export class RaidView {
     this.terrain.update(time);
     this.clouds.update(time);
     this.updatePlume(dt);
+    if (this.snowfall) {
+      const watched = state.heroes[this.seat] ?? state.heroes[0];
+      if (watched) this.snowAt.set(watched.pos.x, 0, watched.pos.y);
+      this.snowfall.update(dt, time, this.snowAt);
+    }
     this.updateGems(dt, time);
     // Plants between the camera and the followed hero dissolve so the hero never disappears.
     const leader = state.heroes[this.seat];
@@ -663,6 +676,13 @@ export class RaidView {
   private updatePlume(dt: number): void {
     const { volcano } = this.shape;
     if (!volcano) return;
+    // Embers drift up off the running lava.
+    const rivers = this.shape.rivers;
+    if (rivers.length > 0 && Math.random() < dt * 9) {
+      const river = rivers[Math.floor(Math.random() * rivers.length)] ?? [];
+      const spot = river[Math.floor(Math.random() * river.length)];
+      if (spot) this.effects.ember(this.at(spot, 0.4));
+    }
     this.plumeIn -= dt;
     if (this.plumeIn > 0) return;
     this.plumeIn = 2.4;
@@ -1362,6 +1382,7 @@ export class RaidView {
       this.overgrowth.dispose();
     }
     this.clouds.dispose();
+    this.snowfall?.dispose();
     this.sand.dispose();
     this.aimView.dispose();
     this.reach?.dispose();

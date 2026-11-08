@@ -1093,6 +1093,25 @@ export class Effects {
     });
   }
 
+  /** A spark drifting up off running lava, glowing as it goes and dying away. */
+  ember(pos: THREE.Vector3): void {
+    this.glow.add({
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      vx: between(-0.4, 0.4),
+      vy: between(1.4, 3),
+      vz: between(-0.4, 0.4),
+      gravity: 0.3,
+      drag: 0.7,
+      life: between(1, 1.8),
+      from: 0.1,
+      to: 0.03,
+      cell: GLOW,
+      ramp: SPARK,
+    });
+  }
+
   /** A lick of flame and smoke from a building that's badly hurt. */
   burn(pos: THREE.Vector3, spread: number): void {
     this.light(pos, 0xff7a30, 6 + spread * 2, 1.5, 0.45);

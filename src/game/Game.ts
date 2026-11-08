@@ -58,6 +58,7 @@ import {
   raiderHome,
   settleRivals,
   shipSpot,
+  snowAt,
   takeIsland,
   worldIslands,
 } from "./logic/worldMap";
@@ -559,8 +560,11 @@ export class Game {
       findHourglass: (mended = false) => this.crew.findHourglassForTest(mended),
       /** Points the home island's camera at a spot. */
       crewLook: (x: number, y: number, distance: number) => this.crew.lookForTest(x, y, distance),
-      /** Scouts any island there is, for looking at how it comes out. */
-      visit: (seed: number, hq: number, standIn = false) => {
+      /**
+       * Scouts any island there is, for looking at how it comes out, or lands on it with `raid`;
+       * `y` puts it that far south.
+       */
+      visit: (seed: number, hq: number, standIn = false, y?: number, raid = false) => {
         const hero = this.save.hero;
         this.mapHero = hero;
         const [any] = worldIslands(this.save.world, hq).filter((i) => !i.rival === !standIn);
@@ -573,9 +577,11 @@ export class Game {
           rival,
           archetype: archetypeFor(seed, hq),
           puzzle: rival ? null : puzzleFor(seed, hq),
+          y: y ?? any.y,
         };
         if (this.crew.active) this.crew.exit();
-        this.startScout(rated);
+        if (raid) this.startRaid(hero, rated);
+        else this.startScout(rated);
       },
       /** Has the hero on the pedestal run, aim or fall, for looking at how they move. */
       heroPose: (move: Partial<HeroMove>, closeUp = true) => {
@@ -1496,10 +1502,12 @@ export class Game {
     const { rival } = target;
     const buildings =
       rival && (rival.buildings.length > 0 ? rival.buildings : enemyBase(target.seed, rival.hq));
-    const layout =
+    const base =
       rival && buildings
         ? { ...rivalIsland(target.seed, buildings), buffs: rival.buffs }
         : generateIsland(target.seed, target.hq, { maxed: target.retaken });
+    // Islands up north are snowy.
+    const layout = { ...base, snow: snowAt(target.y) };
     this.laidOut = { target, layout };
     return layout;
   }

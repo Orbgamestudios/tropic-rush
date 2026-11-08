@@ -10,7 +10,7 @@ import { HOME_CLIFFS } from "../logic/crewIsland";
 import { HOME_SHAPE, homeHeight, type IslandLayout, type IslandShape } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
 import { lotTide, TIDE_LOTS } from "../logic/tides";
-import type { Vec2 } from "../logic/vec";
+import { smoothstep, type Vec2 } from "../logic/vec";
 import { meadowTint } from "./meadow";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
@@ -252,6 +252,49 @@ export function palmGeometry(): THREE.BufferGeometry {
     parts.push(painted(nut, 0x5e4026));
   }
   return merge(parts);
+}
+
+/** A snowy pine for the northern islands: tiers of dark needles, each with snow lying on it. */
+export function pineGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const trunk = new THREE.CylinderGeometry(0.14, 0.26, 1.4, 7);
+  trunk.translate(0, 0.7, 0);
+  parts.push(painted(trunk, 0x5e4430));
+  const tiers = [
+    [1.0, 1.9, 2.0],
+    [2.2, 1.55, 1.8],
+    [3.3, 1.2, 1.6],
+    [4.3, 0.8, 1.4],
+  ] as const;
+  tiers.forEach(([y, r, h], i) => {
+    const needles = new THREE.ConeGeometry(r, h, 8);
+    needles.translate(0, y + h / 2, 0);
+    parts.push(painted(needles, i % 2 ? 0x2c5e43 : 0x31694a));
+    const snow = new THREE.ConeGeometry(r * 0.78, h * 0.5, 8);
+    snow.translate(0, y + h * 0.76, 0);
+    parts.push(painted(snow, i % 2 ? 0xe9f0f6 : 0xf5f8fb));
+  });
+  return merge(parts);
+}
+
+/**
+ * A copy of a plant or rock with snow lying on whatever faces up: the more it faces the sky, the
+ * whiter.
+ */
+export function snowCapped(source: THREE.BufferGeometry, amount = 1): THREE.BufferGeometry {
+  const g = source.clone();
+  if (!g.getAttribute("normal")) g.computeVertexNormals();
+  const normals = g.getAttribute("normal");
+  const colors = g.getAttribute("color");
+  if (!colors) return g;
+  const white = new THREE.Color(0xf3f7fb);
+  const c = new THREE.Color();
+  for (let i = 0; i < colors.count; i++) {
+    const up = smoothstep(0.35, 0.75, normals.getY(i)) * amount;
+    c.fromBufferAttribute(colors as THREE.BufferAttribute, i).lerp(white, up);
+    colors.setXYZ(i, c.r, c.g, c.b);
+  }
+  return g;
 }
 
 export function jungleTreeGeometry(): THREE.BufferGeometry {
@@ -764,6 +807,19 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
 
   const sway = swaying();
   const low = swaying(false);
+  if ((layout.snow ?? 0) > 0.5) {
+    // The snowy north: pines where the palms and jungle would be, snow on the rocks and bushes,
+    // and nothing flowering.
+    root.add(
+      chunked(snowy.pine(), [...palms, ...trees], true, sway, ground),
+      instanced(snowy.rock(), rocks, true, vertexColored(), ground),
+      instanced(snowy.cliff(), cliffs, true, swaying(true, true), ground),
+      instanced(snowy.pebbles(), pebbles, true, vertexColored(), ground),
+      instanced(snowy.bush(), [...bushes, ...ears], true, low, ground, true),
+      buildShore(layout.seed, map, layout.spawn, ground, 5, shape, true),
+    );
+    return root;
+  }
   root.add(
     chunked(palmGeometry(), palms, true, sway, ground),
     chunked(jungleTreeGeometry(), trees, true, sway, ground),
@@ -782,6 +838,24 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
   return root;
 }
 
+/** The snowy north's shapes, made the first time they're wanted and kept. */
+const snowyShapes = new Map<string, THREE.BufferGeometry>();
+const snowyShape = (name: string, make: () => THREE.BufferGeometry) => () => {
+  let g = snowyShapes.get(name);
+  if (!g) {
+    g = make();
+    snowyShapes.set(name, g);
+  }
+  return g;
+};
+const snowy = {
+  pine: snowyShape("pine", pineGeometry),
+  rock: snowyShape("rock", () => snowCapped(rockGeometry())),
+  cliff: snowyShape("cliff", () => snowCapped(cliffGeometry(), 0.85)),
+  pebbles: snowyShape("pebbles", () => snowCapped(pebblesGeometry())),
+  bush: snowyShape("bush", () => snowCapped(bushGeometry(), 0.9)),
+};
+
 /**
  * The shore every island shares: palms along the top of the sand, and whatever the tide's left on
  * it. `inland` is how far past the top of the sand the palms may grow.
@@ -793,6 +867,7 @@ export function buildShore(
   ground: (x: number, y: number) => number = homeHeight,
   inland = 5,
   shape: IslandShape = HOME_SHAPE,
+  snowy = false,
 ): THREE.Group {
   const rng = createRng(seed + 29);
   const extent = shape.reach;
@@ -811,7 +886,7 @@ export function buildShore(
 
   const root = new THREE.Group();
   root.add(
-    chunked(palmGeometry(), palms, true, swaying(false), ground),
+    chunked(snowy ? pineGeometry() : palmGeometry(), palms, true, swaying(false), ground),
     beachFinds(seed, map, landing, ground, shape),
   );
   return root;

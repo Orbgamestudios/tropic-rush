@@ -150,8 +150,17 @@ These were explicitly left out to keep the first version to a basic structure:
 - **The map:** an island's card shows the crystal its headquarters holds and how many a win is
   likely to bring, and how many raiders it calls for. The raider ship can't be culled away up close.
   **The snowy north:** from about a region and a half north of home, islands turn snowy, with pines
-  in place of palms, and icebergs drift in the sea between them, more the further north. On the
-  map only for now: raids there still look tropical.
+  in place of palms, and icebergs drift in the sea between them, more the further north.
+- **Snowy islands in raids:** an island as far north as that is snowy when it's raided too: snow
+  over the grass in drifts, thinning to frozen grass in patches, frost on the beach, the trail
+  trodden to slush, cold grey rock, and trodden frozen dirt round the buildings. Pines for the
+  palms and jungle, snow on the rocks, cliffs, pebbles and bushes, no flowers. The sea is a colder,
+  steelier blue with an ice shelf along the shore and floes drifting out from it, and snow falls
+  round the hero. Looks only: the rules are the same.
+- **Lava that flows:** the molten rock runs fast and churns, hottest and yellow-white down the
+  middle, with a channel left open there; dark crust plates ride slower on top, closing in from the
+  banks, with glowing cracks between them. The flow swells up in the middle, an orange glow spills
+  onto the ground beside it, and embers drift up off it.
 - **Full screen on load:** the game always reaches the bottom of the screen, where an iPhone could
   start a home-screen app a strip short in landscape.
 

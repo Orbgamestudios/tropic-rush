@@ -41,6 +41,8 @@ export interface TerrainOptions {
   shade?: THREE.Texture;
   /** Where buildings stand in sand: a soft mask, painted by a SandMask. */
   sand?: THREE.Texture;
+  /** How snowy the island is, 0 to 1: snow over the grass, frost on the beach, ice on the sea. */
+  snow?: number;
 }
 
 /** Trodden sand round a building, a little darker than the beach. */
@@ -61,6 +63,13 @@ const ROCK = new THREE.Color(0x9c9584);
 const BLACK_SAND = new THREE.Color(0x6a6468);
 const BLACK_WET_SAND = new THREE.Color(0x4b4650);
 const BURNT_GROUND = new THREE.Color(0x3b2a26);
+const SNOW = new THREE.Color(0xf2f6fa);
+const SNOW_SHADE = new THREE.Color(0xd9e4ee);
+const FROZEN_GRASS = new THREE.Color(0x8d9c7a);
+const FROST_SAND = new THREE.Color(0xd6dbdc);
+const ICE_ROCK = new THREE.Color(0x8e959e);
+const SLUSH = new THREE.Color(0x9d958d);
+const TRODDEN_SNOW = new THREE.Color(0xb3aca4);
 
 function noise(x: number, y: number): number {
   return (
@@ -71,6 +80,35 @@ function noise(x: number, y: number): number {
 }
 
 function groundColor(
+  map: SceneryMap,
+  shape: IslandShape,
+  height: (x: number, y: number) => number,
+  x: number,
+  y: number,
+  out: THREE.Color,
+  snow = 0,
+): THREE.Color {
+  groundColorWarm(map, shape, height, x, y, out);
+  if (snow <= 0) return out;
+  // Snow lies over the grass in drifts, thinning to frozen grass in patches; frost whitens the
+  // beach; the trail is trodden to slush and the rock goes cold grey.
+  const sd = shape.shoreDistance(x, y);
+  const grass = Math.max(0, map.grass(x, y));
+  const drift = smoothstep(-0.35, 0.25, noise(x * 0.6, y * 0.6));
+  const cover = SNOW.clone().lerp(SNOW_SHADE, smoothstep(0.1, 0.8, noise(x * 1.7 + 3, y * 1.7)));
+  cover.lerp(FROZEN_GRASS, (1 - drift) * 0.45);
+  const t = map.trail(x, y);
+  cover.lerp(SLUSH, smoothstep(2.4, 1.2, t) * 0.8);
+  const e = 0.8;
+  const slope =
+    Math.hypot(height(x + e, y) - height(x - e, y), height(x, y + e) - height(x, y - e)) / (2 * e);
+  cover.lerp(ICE_ROCK, smoothstep(0.5, 0.85, slope) * 0.7);
+  const beach = sd < 0 ? 0 : 1 - grass;
+  out.lerp(FROST_SAND, beach * snow * 0.75);
+  return out.lerp(cover, grass * snow * 0.95);
+}
+
+function groundColorWarm(
   map: SceneryMap,
   shape: IslandShape,
   height: (x: number, y: number) => number,
@@ -200,6 +238,9 @@ const LAVA_VERTEX = /* glsl */ `
   }
 `;
 
+/** Past this share of a ribbon's half-width it's no longer lava, only its glow on the ground. */
+const LAVA_CORE = 0.68;
+
 const LAVA_FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform sampler2D uNoise;
@@ -207,14 +248,28 @@ const LAVA_FRAGMENT = /* glsl */ `
   varying float vSide;
   float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
   void main() {
-    // Bright rock pouring downhill under a dark crust, which breaks up and closes over again.
-    float edge = abs(vSide);
-    vec2 p = vec2(vFlow * 0.42 - uTime * 0.55, vSide * 1.5);
-    float veins = noise(p * 1.6);
-    float crust = smoothstep(0.44, 0.56, noise(p * 0.7 + 4.0) + edge * 0.3 - 0.06);
-    vec3 hot = mix(vec3(0.95, 0.12, 0.01), vec3(1.0, 0.42, 0.04), smoothstep(0.4, 0.62, veins));
-    vec3 color = mix(hot, vec3(0.07, 0.03, 0.03), crust * 0.92);
-    gl_FragColor = vec4(color, smoothstep(1.0, 0.78, edge));
+    float edge = abs(vSide) / ${LAVA_CORE.toFixed(2)};
+    float core = 1.0 - smoothstep(0.9, 1.0, edge);
+    // Two speeds: the molten rock runs fast underneath, the crust on top drifts slower.
+    vec2 under = vec2(vFlow * 0.5 - uTime * 0.8, vSide * 1.2);
+    vec2 over = vec2(vFlow * 0.33 - uTime * 0.26, vSide * 1.35);
+    float churn = noise(under * 1.2) * 0.6 + noise(under * 2.9 + 1.7) * 0.4;
+    float heat = clamp(1.0 - edge * 0.85 + (churn - 0.5) * 0.9, 0.0, 1.0);
+    vec3 molten = mix(vec3(0.75, 0.05, 0.0), vec3(1.0, 0.42, 0.03), smoothstep(0.2, 0.7, heat));
+    molten = mix(molten, vec3(1.0, 0.86, 0.45), smoothstep(0.8, 1.0, heat) * 0.8);
+    molten *= 0.88 + 0.12 * sin(uTime * 2.3 + vFlow * 0.35);
+    // Crust: dark plates, thicker towards the banks, cracked open where they meet.
+    float plates = noise(over * 0.8 + 3.0);
+    float cracks = 1.0 - smoothstep(0.0, 0.06, abs(plates - 0.5));
+    // A molten channel stays open down the middle; the crust closes in from the banks.
+    float crust = smoothstep(0.45, 0.66, noise(over * 0.55 + 7.0) + edge * 0.55 - 0.2);
+    vec3 rock = mix(vec3(0.07, 0.035, 0.03), vec3(0.2, 0.06, 0.02), noise(over * 3.0) * 0.6);
+    vec3 color = mix(molten, rock, crust * (1.0 - cracks));
+    color += vec3(1.0, 0.45, 0.08) * cracks * crust * 0.85;
+    // Beyond the banks, an orange glow on the ground, fading out.
+    float halo = (1.0 - smoothstep(1.0, 1.0 / ${LAVA_CORE.toFixed(2)}, edge)) * (1.0 - core);
+    vec3 glow = vec3(1.0, 0.32, 0.04) * (0.8 + 0.2 * sin(uTime * 1.7 + vFlow * 0.2));
+    gl_FragColor = vec4(mix(glow, color, core), max(core, halo * 0.45));
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -222,7 +277,7 @@ const LAVA_FRAGMENT = /* glsl */ `
 
 /** Lengths of ribbon a river is cut into, and points across it, for it to lie on the ground. */
 const LAVA_STEP = 1.5;
-const LAVA_ACROSS = 4;
+const LAVA_ACROSS = 8;
 const CRATER_RINGS = 3;
 const CRATER_SEGMENTS = 20;
 
@@ -254,12 +309,14 @@ function layRiver(
       const t = s / steps;
       const x = a.x + (b.x - a.x) * t;
       const y = a.y + (b.y - a.y) * t;
-      const width = lavaWidth((leg + t) / legs, x, y) + 0.6;
+      const width = (lavaWidth((leg + t) / legs, x, y) + 0.6) / LAVA_CORE;
       for (let i = 0; i <= LAVA_ACROSS; i++) {
         const side = (i / LAVA_ACROSS) * 2 - 1;
         const px = x + nx * side * width;
         const py = y + ny * side * width;
-        out.positions.push(px, Math.max(0.02, height(px, py)) + 0.12, py);
+        const across = Math.min(1, Math.abs(side) / LAVA_CORE);
+        const swell = (1 - across * across) * 0.18;
+        out.positions.push(px, Math.max(0.02, height(px, py)) + 0.12 + swell, py);
         out.flows.push(walked + (gap * s) / steps);
         out.sides.push(side);
       }
@@ -342,6 +399,7 @@ let blades: THREE.Texture | null = null;
 function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   const shape = options.shape ?? HOME_SHAPE;
   const height = options.height ?? shape.height;
+  const snow = options.snow ?? 0;
   const { xs, ys, indices } = shape === HOME_SHAPE ? polarGround() : gridGround(shape, height);
   const positions: number[] = [];
   const colors: number[] = [];
@@ -350,9 +408,11 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   xs.forEach((x, i) => {
     const y = ys[i] ?? 0;
     positions.push(x, height(x, y), y);
-    groundColor(map, shape, height, x, y, color);
+    groundColor(map, shape, height, x, y, color, snow);
     colors.push(color.r, color.g, color.b);
-    lawns.push(Math.max(0, map.grass(x, y)) * smoothstep(1.4, 2.8, map.trail(x, y)));
+    // Under snow there are no blades of grass to see.
+    const lawn = Math.max(0, map.grass(x, y)) * smoothstep(1.4, 2.8, map.trail(x, y));
+    lawns.push(lawn * (1 - snow * 0.85));
   });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -370,7 +430,8 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
     if (sand) {
       program.uniforms.uSand = { value: sand };
       program.uniforms.uNoise = { value: noiseTexture() };
-      program.uniforms.uPatchSand = { value: PATCH_SAND };
+      // Trodden frozen dirt round the buildings in the snow, not beach sand.
+      program.uniforms.uPatchSand = { value: PATCH_SAND.clone().lerp(TRODDEN_SNOW, snow) };
     }
     program.vertexShader = program.vertexShader
       .replace(
@@ -494,6 +555,7 @@ const WATER_FRAGMENT = /* glsl */ `
   uniform vec3 uUnlit;
   uniform vec3 uGlint;
   uniform vec3 uHorizon;
+  uniform float uIce;
   varying vec3 vWorld;
 
   uniform sampler2D uNoise;
@@ -532,13 +594,20 @@ const WATER_FRAGMENT = /* glsl */ `
                 * smoothstep(0.35, 0.7, noise(p * 0.7 + t * 0.25));
     float foam = clamp(shoreFoam * (0.6 + 0.4 * lace) + waves, 0.0, 1.0);
     color = mix(color, vec3(1.0), foam * 0.9);
+    // Ice: a shelf along the shore, and floes breaking off it that drift slowly out.
+    float shelf = (1.0 - smoothstep(0.5, 3.5 + lace * 2.5, dist)) * smoothstep(0.35, 0.55, lace);
+    vec2 drift = p * 0.16 + vec2(t * 0.004, t * 0.003);
+    float floes = smoothstep(0.66, 0.7, noise(drift)) * (1.0 - smoothstep(10.0, 40.0, dist));
+    float ice = clamp(shelf + floes, 0.0, 1.0) * uIce;
+    vec3 iceColor = mix(vec3(0.83, 0.92, 0.97), vec3(0.97, 0.99, 1.0), noise(p * 2.2));
+    color = mix(color, iceColor, ice);
     // Lit by the hour, reflecting more of the sky the flatter you look across it.
     float edgeOn = 1.0 - max(view.y, 0.0);
     color = mix(color * uUnlit, uHorizon, edgeOn * edgeOn * edgeOn * 0.5) + glint;
 
     // Clear over the sand, more solid in deep water.
     float alpha = mix(0.38, 0.95, smoothstep(0.0, 18.0, dist));
-    alpha = max(alpha, foam * 0.92);
+    alpha = max(alpha, max(foam * 0.92, ice));
     gl_FragColor = vec4(color, alpha);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -550,6 +619,15 @@ export interface TerrainView {
   root: THREE.Group;
   update(time: number): void;
   dispose(): void;
+}
+
+/** The sea's colors, warm or cold: greener shallows in the tropics, steely blue in the north. */
+function seaColors(snow: number): { shallow: THREE.Color; mid: THREE.Color; deep: THREE.Color } {
+  return {
+    shallow: new THREE.Color(0x8eeadb).lerp(new THREE.Color(0x9fc9d6), snow),
+    mid: new THREE.Color(0x3cc6d2).lerp(new THREE.Color(0x4f8fb0), snow),
+    deep: new THREE.Color(0x1689b8).lerp(new THREE.Color(0x24557e), snow),
+  };
 }
 
 export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): TerrainView {
@@ -569,9 +647,10 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
       {
         uTime: { value: 0 },
         uShore: { value: null },
-        uShallow: { value: new THREE.Color(0x8eeadb) },
-        uMid: { value: new THREE.Color(0x3cc6d2) },
-        uDeep: { value: new THREE.Color(0x1689b8) },
+        uShallow: { value: seaColors(options.snow ?? 0).shallow },
+        uMid: { value: seaColors(options.snow ?? 0).mid },
+        uDeep: { value: seaColors(options.snow ?? 0).deep },
+        uIce: { value: options.snow ?? 0 },
       },
     ]),
     vertexShader: WATER_VERTEX,
