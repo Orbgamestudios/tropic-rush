@@ -20,6 +20,8 @@ export interface HeroMove {
   cheering: boolean;
   /** How fast they're turning, in radians a second, so they can lean into it. */
   turn?: number;
+  /** Waving with the free hand, up beside the head. */
+  waving?: boolean;
 }
 
 export const AT_EASE: HeroMove = {
@@ -326,6 +328,7 @@ export class HeroAnimator {
   private gait = 0;
   private aim = 0;
   private cheer = 0;
+  private wave = 0;
   private recoil = 0;
   private flinching = 0;
   private hips = 0;
@@ -376,6 +379,7 @@ export class HeroAnimator {
     this.run += ((move.moving ? 1 : 0) - this.run) * ease(dt, 10);
     this.aim += ((move.aiming ? 1 : 0) - this.aim) * ease(dt, 14);
     this.cheer += ((move.cheering ? 1 : 0) - this.cheer) * ease(dt, 6);
+    this.wave += ((move.waving ? 1 : 0) - this.wave) * ease(dt, 8);
     this.gait += (clamp(move.speed / 5, 0, 1.5) - this.gait) * ease(dt, 8);
     const { run, aim, cheer, gait, recoil, flinching } = this;
     // A runner throws their weight forward to set off and rocks back as they pull up.
@@ -494,7 +498,7 @@ export class HeroAnimator {
     rig.rifle.updateMatrix();
 
     // A free hand simply carries on from the forearm.
-    const leftHold = poses.leftHand !== null && cheer < 0.5;
+    const leftHold = poses.leftHand !== null && cheer < 0.5 && this.wave < 0.5;
     const { quaternion } = rig.rifle;
     hands.right.along.copy(poses.rightHand.along).applyQuaternion(quaternion);
     hands.right.palm.copy(poses.rightHand.palm).applyQuaternion(quaternion);
@@ -529,6 +533,9 @@ export class HeroAnimator {
       FIST_UP.z * rig.stretch,
     );
     this.leftHand.lerp(fist, cheer * (0.9 + Math.sin(time * 6.5) * 0.1));
+    // A wave: the hand up where a cheer's fist goes, a little out to the side, swinging to and fro.
+    fist.z += (0.12 + Math.sin(time * 9) * 0.16) * rig.stretch * rig.left.side;
+    this.leftHand.lerp(fist, this.wave);
     pole.copy(RIGHT_ELBOW);
     if (!poses.leftHand) pole.lerp(RIGHT_ELBOW_RUNNING, carry);
     reach(rig.right, this.rightHand, pole, hands.right.along, hands.right.palm);
@@ -543,7 +550,7 @@ export class HeroAnimator {
     );
     if (rig.right.fingers) rig.right.fingers.rotation.x = GRIP * rig.right.side;
     if (rig.left.fingers) {
-      const curl = lerp(poses.leftHand ? GRIP : RELAXED, GRIP, cheer);
+      const curl = lerp(lerp(poses.leftHand ? GRIP : RELAXED, GRIP, cheer), 0, this.wave);
       rig.left.fingers.rotation.x = curl * rig.left.side;
     }
   }

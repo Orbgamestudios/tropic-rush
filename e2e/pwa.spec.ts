@@ -51,7 +51,7 @@ test("picks a hero and starts a raid", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  // On a phone you tap a strolling hero; the hook opens the same screen without chasing one.
+  // On a phone you tap the Heroes button; the hook opens the same screen.
   await page.goto("/?testhooks");
   await hooksReady(page);
   await page.evaluate(() =>

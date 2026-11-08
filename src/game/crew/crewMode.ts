@@ -173,7 +173,11 @@ export class CrewMode {
   /** A night's raid is waiting to run, as soon as the crew's real island is here. */
   private nightDue = false;
   /** The island as of the last refresh, for how much each producer holds. */
-  private liveHeld: Pick<CrewLayout, "buildings" | "held"> = { buildings: [], held: {} };
+  private liveHeld: Pick<CrewLayout, "buildings" | "held" | "builds"> = {
+    buildings: [],
+    held: {},
+    builds: [],
+  };
 
   constructor(
     private readonly stage: Stage,
@@ -311,7 +315,7 @@ export class CrewMode {
       this.bankLoot();
       this.runDueRaid();
     }
-    if (save.wins === 0) this.ui.flash("Tap a hero to upgrade them and go raiding");
+    if (save.wins === 0) this.ui.flash("Tap Heroes to upgrade them and go raiding");
   }
 
   /**
@@ -396,6 +400,10 @@ export class CrewMode {
     sfx.coin();
     this.ui.flowResources("supply", ashore);
     if (Object.keys(left).length > 0) this.ui.flash("Storage full: the rest stays aboard");
+  }
+
+  private collectable(id: string): boolean {
+    return this.view?.collectPins(this.liveHeld).some((pin) => pin.id === id) ?? false;
   }
 
   /** A producer's tab: what it's made goes into the stock, flying up to the bar. */
@@ -1302,9 +1310,11 @@ export class CrewMode {
     }
     const gesture = this.gesture;
     if (gesture?.kind === "pending" && this.pointers.size === 1 && e.type === "pointerup") {
-      if (gesture.hero) this.host.onHero(gesture.hero);
+      if (gesture.hero) this.view?.waveHero(gesture.hero);
       else if (gesture.statue) this.showStatues();
       else if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
+      // A producer with its tab up collects when it's tapped anywhere, not just on the tab.
+      else if (gesture.hitId && this.collectable(gesture.hitId)) this.collect(gesture.hitId);
       else {
         this.showClearing(null);
         this.select(gesture.hitId);

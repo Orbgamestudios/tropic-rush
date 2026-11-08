@@ -1130,6 +1130,42 @@ describe("hero upgrades", () => {
     expect(state.projectiles.filter((p) => p.team === "enemy")).toHaveLength(0);
   });
 
+  it("gives away a hero who fires from smoke, a moment later", () => {
+    const state = raided(
+      ["rifleman"],
+      [],
+      [
+        { type: "gunTurret", pos: vec(0, -14) },
+        { type: "headquarters", pos: vec(40, -40) },
+      ],
+    );
+    const h = hero(state);
+    state.zones.push({
+      id: 999,
+      kind: "smoke",
+      pos: { ...h.pos },
+      radius: 6,
+      time: 20,
+      healPerSecond: 0,
+      burnPerSecond: 0,
+      ownerId: h.id,
+    });
+    const enemyShots = (seconds: number, aim?: Vec2) => {
+      let shots = 0;
+      for (let t = 0; t < seconds; t += DT) {
+        stepRaid(state, [aim ? fire(aim) : IDLE_INPUT], DT);
+        h.hp = h.maxHp;
+        shots += state.events.filter((e) => e.type === "shot" && e.team === "enemy").length;
+      }
+      return shots;
+    };
+    // Keeping still in the smoke, nothing comes their way.
+    expect(enemyShots(1)).toBe(0);
+    // Firing from it gives them away, though not straight off.
+    expect(enemyShots(0.4, vec(0, -1))).toBe(0);
+    expect(enemyShots(1, vec(0, -1))).toBeGreaterThan(0);
+  });
+
   it("sets mines off from further with Mine Sweeper", () => {
     const set = (names: string[]) => {
       const state = raided(["grenadier"], names, towers, { mines: [vec(0, -7)] });

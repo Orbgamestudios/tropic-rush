@@ -196,6 +196,12 @@ export interface RaidHero {
   patientId: number | null;
   /** Rounds fired, for everything that counts every nth shot. */
   shotCount: number;
+  /**
+   * Firing from inside smoke gives a hero away: from `revealFrom` until `revealUntil` (raid time,
+   * seconds), defenses can see them through it.
+   */
+  revealFrom: number;
+  revealUntil: number;
   /** Fallen heroes this medic has brought back this raid. */
   saves: number;
   /** Health soaked up before the real health is touched. */
@@ -465,6 +471,8 @@ export function createRaid(
       autoDir: vec(0, -1),
       autoDistance: 0,
       shotCount: 0,
+      revealFrom: 0,
+      revealUntil: 0,
       saves: 0,
       shield: 0,
       sinceHit: 0,
@@ -640,7 +648,27 @@ function updateHero(state: RaidState, hero: RaidHero, input: HeroInput, dt: numb
   if (dir) hero.facing = angleOf(dir);
   else if (hero.moving) hero.facing = angleOf(input.move);
 
+  const before = state.events.length;
   updateAttack(state, hero, dir, aimDistance, dt);
+  const shot = state.events
+    .slice(before)
+    .some((e) => e.type === "shot" && e.ownerId === hero.id && e.kind !== "vial");
+  if (shot && inSmoke(state, hero.pos)) givenAway(state, hero);
+}
+
+/** How long after firing from smoke the defenses round about can see a hero, and for how long. */
+const SMOKE_GIVEN_AWAY = { after: 0.6, seconds: 1.5 };
+
+/** A shot from inside smoke: a moment later the defenses can see where it came from. */
+function givenAway(state: RaidState, hero: RaidHero): void {
+  if (state.time >= hero.revealUntil) hero.revealFrom = state.time + SMOKE_GIVEN_AWAY.after;
+  hero.revealUntil = state.time + SMOKE_GIVEN_AWAY.after + SMOKE_GIVEN_AWAY.seconds;
+}
+
+/** Whether defenses can see a hero, smoke or no smoke. */
+function seen(state: RaidState, hero: RaidHero): boolean {
+  if (!inSmoke(state, hero.pos)) return true;
+  return state.time >= hero.revealFrom && state.time < hero.revealUntil;
 }
 
 /**
@@ -1203,7 +1231,7 @@ interface Target {
   turret: CrewTurret | null;
 }
 
-/** Defenses can't aim into smoke, and anyone in it can't be seen. */
+/** Defenses can't aim into smoke, and anyone in it can't be seen, unless they fire from it. */
 function inSmoke(state: RaidState, pos: Vec2): boolean {
   return state.zones.some((z) => z.kind === "smoke" && distance(pos, z.pos) <= z.radius);
 }
@@ -1230,7 +1258,7 @@ function findTarget(state: RaidState, from: Vec2, range: number, minRange: numbe
     if (!hero.alive) continue;
     const d = distance(from, hero.pos);
     if (d < minRange || d > range + HEROES[hero.kind].radius || d >= bestDistance) continue;
-    if (inSmoke(state, hero.pos)) continue;
+    if (!seen(state, hero)) continue;
     best = { pos: hero.pos, hero, turret: null };
     bestDistance = d;
   }

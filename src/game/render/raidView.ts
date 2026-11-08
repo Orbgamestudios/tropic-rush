@@ -19,12 +19,12 @@ import type {
   Team,
   TurretKind,
   Zone,
-  ZoneKind,
 } from "../logic/raid";
 import type { Spoils } from "../logic/spoils";
 import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
+import { type AreaMark, areaMark } from "./areaMarks";
 import { kitPiece, lampSpots, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
 import { buildClouds, type CloudView } from "./clouds";
@@ -33,6 +33,7 @@ import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
 import { HeroAnimator } from "./heroAnimator";
+import { Lightning } from "./lightning";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import { Lookout } from "./lookout";
 import {
@@ -290,8 +291,9 @@ export class RaidView {
   /** How high a defense's shot set off, and how far it has to drop to whoever it's at. */
   private readonly shotStarts = new Map<number, { height: number; drop: number }>();
   private readonly pool = new Map<string, THREE.Object3D[]>();
-  private readonly telegraphs = new Map<number, { ring: THREE.Mesh; fill: THREE.Mesh }>();
-  private readonly zones = new Map<number, THREE.Object3D>();
+  private readonly telegraphs = new Map<number, AreaMark>();
+  private readonly zones = new Map<number, AreaMark>();
+  private readonly lightning = new Map<number, Lightning>();
   private readonly turrets = new Map<number, { root: THREE.Group; head: THREE.Object3D }>();
   /** Where each hero stood before the rules' last step, and how far on to now the picture is. */
   private readonly before = new Map<number, Vec2>();
@@ -635,8 +637,8 @@ export class RaidView {
     this.updateHeroes(state, dt);
     this.lights.update(dt, time);
     this.fireflies.update(time);
-    this.updateProjectiles(state);
-    this.updateZones(state, time);
+    this.updateProjectiles(state, time);
+    this.updateZones(state, time, dt);
     this.updateTurrets(state);
     this.updateMines(state, time);
     this.updateBoat(time, dt);
@@ -896,7 +898,7 @@ export class RaidView {
     this.pool.set(key, free);
   }
 
-  private updateProjectiles(state: RaidState): void {
+  private updateProjectiles(state: RaidState, time: number): void {
     this.trailTick++;
     const live = new Set<number>();
     for (const p of state.projectiles) {
@@ -910,7 +912,7 @@ export class RaidView {
       }
       this.placeProjectile(p, obj);
       if (p.lob && (p.kind === "mortar" || p.kind === "artillery" || p.kind === "lava")) {
-        this.placeTelegraph(p);
+        this.placeTelegraph(p, time);
       }
       if (p.kind === "rocket" || p.kind === "lava") this.effects.trail(obj.position, true);
       else if (
@@ -929,11 +931,8 @@ export class RaidView {
     }
     for (const [id, t] of this.telegraphs) {
       if (live.has(id)) continue;
-      this.root.remove(t.ring, t.fill);
-      t.ring.geometry.dispose();
-      t.fill.geometry.dispose();
-      (t.ring.material as THREE.Material).dispose();
-      (t.fill.material as THREE.Material).dispose();
+      this.root.remove(t.mesh);
+      t.dispose();
       this.telegraphs.delete(id);
     }
   }
@@ -991,164 +990,87 @@ export class RaidView {
     return { height, drop: Math.max(3, target) };
   }
 
-  private placeTelegraph(p: Projectile): void {
+  /** Where a lobbed shell will land, filling in as it comes down. */
+  private placeTelegraph(p: Projectile, time: number): void {
     if (!p.lob) return;
     let t = this.telegraphs.get(p.id);
     if (!t) {
-      const color = p.team === "enemy" ? 0xff4b3a : 0xffd84a;
-      const ringGeometry = new THREE.RingGeometry(p.splash * 0.88, p.splash, 40);
-      ringGeometry.rotateX(-Math.PI / 2);
-      const fillGeometry = new THREE.CircleGeometry(p.splash, 40);
-      fillGeometry.rotateX(-Math.PI / 2);
-      // Laid flat over slopes, so they ignore the depth of what's under them.
-      const overlay = (opacity: number) =>
-        new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity,
-          depthWrite: false,
-          depthTest: false,
-        });
-      // Several shells can land on one spot, so the fill is faint enough to overlap.
-      const ring = new THREE.Mesh(ringGeometry, overlay(0.7));
-      const fill = new THREE.Mesh(fillGeometry, overlay(0.13));
-      ring.renderOrder = 2;
-      fill.renderOrder = 2;
-      const y = this.ground(p.lob.to.x, p.lob.to.y) + 0.12;
-      ring.position.set(p.lob.to.x, y, p.lob.to.y);
-      fill.position.set(p.lob.to.x, y + 0.01, p.lob.to.y);
-      this.root.add(ring, fill);
-      t = { ring, fill };
+      t = areaMark("incoming", p.splash, p.team === "enemy" ? 0xff4b3a : 0xffd84a);
+      t.mesh.position.set(p.lob.to.x, this.ground(p.lob.to.x, p.lob.to.y) + 0.12, p.lob.to.y);
+      this.root.add(t.mesh);
       this.telegraphs.set(p.id, t);
     }
-    const progress = Math.max(0.02, Math.min(1, p.lob.t / p.lob.duration));
-    t.ring.visible = p.lob.t >= 0;
-    t.fill.visible = p.lob.t >= 0;
-    t.fill.scale.setScalar(progress);
+    t.mesh.visible = p.lob.t >= 0;
+    t.update(time, Math.max(0.02, Math.min(1, p.lob.t / p.lob.duration)));
   }
 
-  private updateZones(state: RaidState, time: number): void {
+  private updateZones(state: RaidState, time: number, dt: number): void {
     const live = new Set<number>();
     for (const z of state.zones) {
       live.add(z.id);
-      let obj = this.zones.get(z.id);
-      if (!obj) {
-        if (z.kind === "heal") obj = this.healCircle(z.radius);
-        else if (z.kind === "shock") obj = this.shockCircle(z.radius);
-        else obj = this.groundPatch(z.kind, z.radius);
-        obj.position.set(z.pos.x, this.ground(z.pos.x, z.pos.y), z.pos.y);
-        this.root.add(obj);
-        this.zones.set(z.id, obj);
+      let mark = this.zones.get(z.id);
+      if (!mark) {
+        mark = areaMark(z.kind, z.radius);
+        mark.mesh.position.set(z.pos.x, this.ground(z.pos.x, z.pos.y) + 0.1, z.pos.y);
+        this.root.add(mark.mesh);
+        this.zones.set(z.id, mark);
+        if (z.kind === "shock") {
+          const bolts = new Lightning(
+            () => this.at(this.somewhereIn(z), 0),
+            (at) => this.lights.flash(at.x, at.y, at.z, 0x9fdcff, 6, 2.5, 0.12),
+          );
+          this.root.add(bolts.mesh);
+          this.lightning.set(z.id, bolts);
+        }
         if (z.kind === "smoke") {
           if (z.radius > SMALL_SMOKE)
             this.effects.smokeCloud(this.at(z.pos, 0.4), z.radius, z.time);
           else this.effects.smokeColumn(this.at(z.pos, 0.4), z.time, false);
         }
       }
-      const fade = Math.min(1, z.time);
-      obj.scale.setScalar(0.6 + 0.4 * fade);
-      obj.rotation.y = time * 0.6;
+      mark.update(time, Math.min(1, z.time));
       if (z.kind === "fire" && Math.random() < 0.3) {
-        const a = Math.random() * Math.PI * 2;
-        const r = Math.random() * z.radius;
-        const flame = { x: z.pos.x + Math.cos(a) * r, y: z.pos.y + Math.sin(a) * r };
-        this.effects.burn(this.at(flame, 0.3), 0.5);
+        this.effects.burn(this.at(this.somewhereIn(z), 0.3), 0.5);
       }
-      if (z.kind === "shock") this.crackle(state, z);
+      // Green crosses drift up off healing ground.
+      if (z.kind === "heal" && Math.random() < 0.3) {
+        this.effects.heal(this.at(this.somewhereIn(z), -0.2));
+      }
+      if (z.kind === "shock") this.crackle(state, z, dt);
     }
-    for (const [id, obj] of this.zones) {
+    for (const [id, mark] of this.zones) {
       if (live.has(id)) continue;
-      this.root.remove(obj);
-      disposeGeometries(obj);
+      this.root.remove(mark.mesh);
+      mark.dispose();
       this.zones.delete(id);
+      const bolts = this.lightning.get(id);
+      if (!bolts) continue;
+      this.root.remove(bolts.mesh);
+      bolts.dispose();
+      this.lightning.delete(id);
     }
   }
 
-  /** Sparks across a shock circle, and off the defenses it's caught. */
-  private crackle(state: RaidState, z: Zone): void {
-    if (Math.random() < 0.5) {
-      const a = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(Math.random()) * z.radius;
-      const spark = { x: z.pos.x + Math.cos(a) * r, y: z.pos.y + Math.sin(a) * r };
-      this.effects.zap(this.at(spark, 0.3));
-    }
+  private somewhereIn(z: Zone): Vec2 {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * z.radius;
+    return { x: z.pos.x + Math.cos(a) * r, y: z.pos.y + Math.sin(a) * r };
+  }
+
+  /**
+   * Lightning across a shock circle and up into the defenses it's caught, and sparks off them where
+   * it strikes.
+   */
+  private crackle(state: RaidState, z: Zone, dt: number): void {
+    const struck: THREE.Vector3[] = [];
     for (const b of state.buildings) {
       const { attack, height } = BUILDINGS[b.type];
-      if (b.destroyed || !attack || Math.random() > 0.2) continue;
-      if (distance(b.pos, z.pos) - b.radius <= z.radius) {
-        this.effects.zap(this.at(b.pos, height * (0.5 + Math.random() * 0.5)));
-      }
+      if (b.destroyed || !attack || distance(b.pos, z.pos) - b.radius > z.radius) continue;
+      const at = this.at(b.pos, height * (0.55 + Math.random() * 0.4));
+      struck.push(at);
+      if (Math.random() < 0.2) this.effects.zap(at);
     }
-  }
-
-  private shockCircle(radius: number): THREE.Group {
-    const g = new THREE.Group();
-    const flat = (shape: THREE.BufferGeometry, opacity: number) => {
-      const mesh = new THREE.Mesh(
-        shape.rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({
-          color: 0x6fd8ff,
-          transparent: true,
-          opacity,
-          depthWrite: false,
-          depthTest: false,
-        }),
-      );
-      mesh.renderOrder = 2;
-      return mesh;
-    };
-    g.add(at(flat(new THREE.CircleGeometry(radius, 40), 0.16), 0, 0.1, 0));
-    g.add(at(flat(new THREE.RingGeometry(radius * 0.94, radius, 56), 0.85), 0, 0.12, 0));
-    return g;
-  }
-
-  /** A soft stain on the ground under burning ground or a smoke cloud. */
-  private groundPatch(kind: Exclude<ZoneKind, "heal" | "shock">, radius: number): THREE.Group {
-    const g = new THREE.Group();
-    const disc = new THREE.CircleGeometry(radius, 32);
-    disc.rotateX(-Math.PI / 2);
-    const material = new THREE.MeshBasicMaterial({
-      color: kind === "fire" ? 0xff6a1c : 0xc9ced6,
-      transparent: true,
-      opacity: kind === "fire" ? 0.3 : 0.55,
-      depthWrite: false,
-      depthTest: false,
-    });
-    const mesh = new THREE.Mesh(disc, material);
-    mesh.renderOrder = 2;
-    g.add(at(mesh, 0, 0.1, 0));
-    return g;
-  }
-
-  private healCircle(radius: number): THREE.Group {
-    const g = new THREE.Group();
-    const flat = (shape: THREE.BufferGeometry, color: number, opacity: number) => {
-      const mesh = new THREE.Mesh(
-        shape,
-        new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity,
-          depthWrite: false,
-          depthTest: false,
-        }),
-      );
-      mesh.renderOrder = 2;
-      return mesh;
-    };
-    const disc = new THREE.CircleGeometry(radius, 40);
-    disc.rotateX(-Math.PI / 2);
-    g.add(at(flat(disc, 0x7dff9a, 0.22), 0, 0.1, 0));
-    const ring = new THREE.RingGeometry(radius * 0.9, radius, 40);
-    ring.rotateX(-Math.PI / 2);
-    g.add(at(flat(ring, 0x9dffb4, 0.7), 0, 0.12, 0));
-    for (const [x, z] of [
-      [0.5, 0],
-      [-0.5, 0],
-    ] as const) {
-      g.add(at(cyl(0.12, 0.12, 0.9, 0x7dff9a), x * radius * 0.6, 0.6, z));
-    }
-    return g;
+    this.lightning.get(z.id)?.update(dt, struck);
   }
 
   private updateTurrets(state: RaidState): void {
@@ -1303,9 +1225,8 @@ export class RaidView {
     this.fireflies.dispose();
     disposeGeometries(this.root);
     for (const objects of this.pool.values()) for (const o of objects) disposeGeometries(o);
-    for (const t of this.telegraphs.values()) {
-      (t.ring.material as THREE.Material).dispose();
-      (t.fill.material as THREE.Material).dispose();
-    }
+    for (const t of this.telegraphs.values()) t.dispose();
+    for (const mark of this.zones.values()) mark.dispose();
+    for (const bolts of this.lightning.values()) bolts.dispose();
   }
 }

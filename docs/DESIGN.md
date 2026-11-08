@@ -139,8 +139,8 @@ These were explicitly left out to keep the first version to a basic structure:
 - **No light round the hero** at night: the glow that went everywhere with them is gone.
 - **Shots from the gun:** a defense's bullets and harpoons leave its muzzle up on the building and
   come down to whoever they're aimed at, rather than flying low from its base.
-- **Buildings sharp at night:** a building's light falls round it and leaves the building itself out,
-  so it isn't washed over and stays easy to make out, with only its own lamps and windows lit.
+- **Buildings sharp at night:** a building's light fell round it and left the building itself out.
+  **Changed (owner):** that left a dark ring round every building, so it's gone; see below.
 - **Flat small plants, and an Ultra setting:** ferns, grass tufts and flowers are flat cards turned to
   the camera, swaying, two triangles each instead of dozens, which takes a fifth off what the home
   island draws. Graphics: ultra is the best the game looks: solid small plants at any distance, up
@@ -159,6 +159,23 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Winning:** a drum riff (a fill down the toms into a groove, a roll, one big hit left to ring)
   instead of the bugle fanfare, and each star locks into its slot with a whoosh, a thud and the ring
   of struck metal, higher for each one, instead of a beep.
+- **Buildings after dark, again:** a building keeps a little of its own color at night, so it can be
+  made out under moonlight alone, and its lamps light it and the ground round it alike, with no dark
+  ring left round it.
+- **Heroes wave:** tapping a hero strolling on the crew's island stops them, turns them to the camera
+  and has them wave for a couple of seconds, rather than opening the heroes screen; the Heroes button
+  does that.
+- **Collecting:** a producer being upgraded shows no collect tab, and tapping anywhere on a producer
+  whose tab is up collects from it.
+- **Smoke gives you away:** firing from inside smoke lets the defenses in reach see the hero 0.6
+  seconds later, for 1.5 seconds, and longer while they keep firing. A medic's healing doesn't count.
+  Smoke still hides anyone who holds their fire.
+- **Ability circles:** the medkit's healing ground, a shock circle, smoke and where a shell will land
+  are drawn alike: a soft fill, a glowing rim and a pulse running out to the edge. Healing ground
+  breathes a soft cross with green crosses drifting up off it; smoke is a soft stain with a drifting
+  edge. A shock circle's rim crackles, and real lightning cracks across it in the air and up into
+  the defenses it's caught: jagged bowed bolts with forks, a white-hot core in a blue haze, each
+  there for a blink, throwing light on the ground at night.
 
 ## Added 2026-11-07 (owner's requests)
 

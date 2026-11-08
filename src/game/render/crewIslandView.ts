@@ -762,6 +762,11 @@ export class CrewIslandView {
     return this.heroes.heroAt(x, y);
   }
 
+  /** A hero tapped on the island waves back. */
+  waveHero(kind: HeroKind): void {
+    this.heroes.wave(kind);
+  }
+
   /** Where each clearing job's countdown goes, as fractions of the screen's width and height. */
   /** Shows the supply ship at its dock, or sends it off. */
   showSupply(on: boolean): void {
@@ -776,13 +781,16 @@ export class CrewIslandView {
     return { x, y, visible: p.z < 1 && x > 0 && x < 1 && y > 0.1 && y < 1 };
   }
 
-  /** The tabs over the producers that have enough made to be worth collecting. */
-  collectPins(layout: Pick<CrewLayout, "buildings" | "held">): CollectPin[] {
+  /**
+   * The tabs over the producers that have enough made to be worth collecting, and aren't being
+   * upgraded just now.
+   */
+  collectPins(layout: Pick<CrewLayout, "buildings" | "held" | "builds">): CollectPin[] {
     return layout.buildings.flatMap((b) => {
       const resource = PRODUCERS[b.type];
       const held = layout.held[b.id] ?? 0;
       const most = producerHold(b.level);
-      if (!resource || held < most * COLLECT_AT) return [];
+      if (!resource || held < most * COLLECT_AT || buildJobOn(layout, b.id)) return [];
       const c = buildingCenter(b);
       return [
         {

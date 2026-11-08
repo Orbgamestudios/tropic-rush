@@ -84,6 +84,11 @@ const LAMP_GLOW = [255, 205, 150] as const;
 const WINDOW_GLOW = [110, 72, 36] as const;
 /** How bright a lamp shows at full dark, against its own color. */
 const GLOW_POWER = 3.2;
+/**
+ * How much of its own color a building keeps after dark, whatever light falls on it: moonlight
+ * alone leaves it too dark to make out, and lamplight washes over it.
+ */
+const NIGHT_LIFT = 0.22;
 
 let glowMap: THREE.DataTexture | null = null;
 
@@ -119,12 +124,15 @@ async function atlas(side: Side): Promise<void> {
     emissive: 0xffffff,
     emissiveMap: glowSquares(),
   });
-  // Lamps and windows light up as the sky darkens, with nothing to update each frame.
+  // Lamps and windows light up as the sky darkens, and the building keeps a little of its own
+  // color, with nothing to update each frame.
   look.onBeforeCompile = (shader) => {
     shader.uniforms.uDark = SKY.dark;
     shader.fragmentShader = `uniform float uDark;\n${shader.fragmentShader.replace(
       "#include <emissivemap_fragment>",
-      `#include <emissivemap_fragment>\n\ttotalEmissiveRadiance *= min(1.0, uDark) * ${GLOW_POWER.toFixed(1)};`,
+      `#include <emissivemap_fragment>
+      totalEmissiveRadiance *= min(1.0, uDark) * ${GLOW_POWER.toFixed(1)};
+      totalEmissiveRadiance += diffuseColor.rgb * min(1.0, uDark) * ${NIGHT_LIFT.toFixed(2)};`,
     )}`;
   };
   looks[side] = look;

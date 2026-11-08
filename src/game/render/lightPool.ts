@@ -92,11 +92,6 @@ export interface Lamp {
    * fire's or a glow's.
    */
   point?: boolean;
-  /**
-   * The building a lamp is on. Its pool leaves the building itself out, so its light falls round
-   * it without washing over it, and the building stays sharp.
-   */
-  building?: { x: number; z: number; radius: number; height: number };
   flicker: boolean;
 }
 
@@ -115,7 +110,6 @@ export function buildingLamps(
   const spec = BUILDINGS[type];
   const lanterns = LANTERNS[type] ?? [];
   const fire = FIRES[type];
-  const building = { x, z, radius: spec.radius, height: spec.height };
   if (spots.length > 0) {
     const middle = new THREE.Vector3();
     for (const spot of spots) middle.add(spot);
@@ -137,7 +131,6 @@ export function buildingLamps(
           (_, i) => spots[Math.floor(i * step)] as THREE.Vector3,
         ),
         point: true,
-        building,
         flicker: fire !== undefined,
       },
     ];
@@ -153,7 +146,6 @@ export function buildingLamps(
     halo: 0,
     height: spot.up * spec.height,
     point: true,
-    building,
     flicker: true,
   }));
 }
@@ -178,22 +170,17 @@ const POOL_VERTEX = /* glsl */ `
   attribute vec4 iSpot;
   attribute vec4 iColor;
   attribute float iShape;
-  attribute vec4 iHole;
   uniform float uTime;
   uniform float uDark;
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vCore;
-  varying vec2 vGround;
-  varying vec4 vHole;
   void main() {
     vUv = position.xy * 2.0;
     float wobble = iColor.a > 0.0 ? 0.88 + 0.12 * sin(uTime * 9.0 + iColor.a) * sin(uTime * 5.3 + iColor.a * 2.0) : 1.0;
     vColor = iColor.rgb * wobble * uDark;
     vCore = iShape * iShape;
     vec3 world = iSpot.xyz + vec3(position.x, 0.0, position.y) * iSpot.w * 2.0;
-    vGround = world.xz;
-    vHole = iHole;
     gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
   }
 `;
@@ -208,17 +195,6 @@ const POOL_FALL = /* glsl */ `
     return edge * edge * (core > 0.0 ? pow(core / (core + d2), 1.5) : 1.0);
   }
 
-  // A pool's drawn flat on the ground over whatever's on screen there, so it would light up the
-  // building it's round as well, and blur it. It leaves out the building's footprint and the ground
-  // its walls stand in front of, seen from the camera: about three quarters of its height beyond it.
-  float clearOfBuilding(vec2 ground, vec4 hole) {
-    if (hole.z <= 0.0) return 1.0;
-    vec2 away = normalize(hole.xy - cameraPosition.xz);
-    vec2 reach = away * hole.w * 0.75;
-    float along = clamp(dot(ground - hole.xy, reach) / dot(reach, reach), 0.0, 1.0);
-    float gap = length(ground - hole.xy - reach * along);
-    return smoothstep(hole.z * 0.7, hole.z * 1.05, gap);
-  }
 `;
 
 const POOL_FRAGMENT = /* glsl */ `
@@ -226,11 +202,9 @@ const POOL_FRAGMENT = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vCore;
-  varying vec2 vGround;
-  varying vec4 vHole;
   ${POOL_FALL}
   void main() {
-    vec3 light = vColor * uBalance * poolFall(vUv, vCore) * clearOfBuilding(vGround, vHole);
+    vec3 light = vColor * uBalance * poolFall(vUv, vCore);
     // What's on screen is finished color, not light: this is the same brightening in those terms.
     gl_FragColor = vec4(pow(1.0 + light, vec3(0.4545)) - 1.0, 1.0);
   }
@@ -247,11 +221,9 @@ const SPILL_FRAGMENT = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vCore;
-  varying vec2 vGround;
-  varying vec4 vHole;
   ${POOL_FALL}
   void main() {
-    float fall = poolFall(vUv, vCore) * clearOfBuilding(vGround, vHole);
+    float fall = poolFall(vUv, vCore);
     vec3 spill = 1.0 - exp(-vColor * fall * ${SPILL});
     gl_FragColor = vec4(pow(spill, vec3(0.4545)), 1.0);
   }
@@ -315,8 +287,6 @@ class Discs {
   readonly color: THREE.InstancedBufferAttribute;
   /** A pool's middle, or whether a halo is a point of glare. */
   readonly shape: THREE.InstancedBufferAttribute;
-  /** The building a pool leaves out: where it stands, how wide and how tall. */
-  readonly hole: THREE.InstancedBufferAttribute;
 
   constructor(capacity: number) {
     this.geometry.setIndex([0, 1, 2, 0, 2, 3]);
@@ -330,20 +300,18 @@ class Discs {
     this.spot = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
     this.color = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
     this.shape = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1);
-    this.hole = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-    for (const attribute of [this.spot, this.color, this.shape, this.hole]) {
+    for (const attribute of [this.spot, this.color, this.shape]) {
       attribute.setUsage(THREE.DynamicDrawUsage);
     }
     this.geometry.setAttribute("iSpot", this.spot);
     this.geometry.setAttribute("iColor", this.color);
     this.geometry.setAttribute("iShape", this.shape);
-    this.geometry.setAttribute("iHole", this.hole);
     this.geometry.instanceCount = 0;
   }
 
   /** Marks what changed for upload, in whole instances. */
   touch(first: number, count: number): void {
-    for (const attribute of [this.spot, this.color, this.shape, this.hole]) {
+    for (const attribute of [this.spot, this.color, this.shape]) {
       attribute.clearUpdateRanges();
       attribute.addUpdateRange(first * attribute.itemSize, count * attribute.itemSize);
       attribute.needsUpdate = true;
@@ -451,8 +419,6 @@ export class LightPool {
       this.pools.spot.setXYZW(i, lamp.x, lamp.y + 0.2, lamp.z, lamp.reach);
       this.pools.color.setXYZW(i, tint.r * power, tint.g * power, tint.b * power, phase);
       this.pools.shape.setX(i, poolCore(lamp));
-      const b = lamp.building;
-      this.pools.hole.setXYZW(i, b?.x ?? 0, b?.z ?? 0, b?.radius ?? 0, b?.height ?? 0);
       if (lamp.halo <= 0) continue;
       if (lamp.glints) for (const g of lamp.glints) halo(g.x, g.y, g.z, lamp, phase, true);
       else halo(lamp.x, lamp.y + lamp.height, lamp.z, lamp, phase, false);
@@ -513,7 +479,6 @@ export class LightPool {
       this.pools.spot.setXYZW(i, flash.x, flash.y + 0.2, flash.z, flash.reach);
       this.pools.color.setXYZW(i, flash.r * fade, flash.g * fade, flash.b * fade, 0);
       this.pools.shape.setX(i, 0);
-      this.pools.hole.setXYZW(i, 0, 0, 0, 0);
       i++;
     }
     this.flashes.length = write;

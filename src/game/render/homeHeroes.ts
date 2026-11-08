@@ -1,5 +1,5 @@
 // The crew's unlocked heroes, strolling round the base between jobs: each ambles to a random open
-// spot, stands about for a while, and sets off again. Tap one to open them up.
+// spot, stands about for a while, and sets off again. Tap one and they stop, turn and wave.
 
 import * as THREE from "three";
 import {
@@ -24,6 +24,8 @@ const WALK_SPEED = 1.5;
 const WANDER = 26;
 /** A tap this close to a hero (CSS pixels) counts as tapping them. */
 const TAP_RADIUS = 46;
+/** How long a hero waves back when tapped, in seconds. */
+const WAVE_SECONDS = 2;
 
 interface Walker {
   kind: HeroKind;
@@ -34,6 +36,8 @@ interface Walker {
   walk: number;
   animator: HeroAnimator | null;
   facing: number;
+  /** Seconds of waving left, after being tapped. */
+  waving: number;
 }
 
 export class HomeHeroes {
@@ -75,6 +79,7 @@ export class HomeHeroes {
         walk: 0,
         animator: model.rig && new HeroAnimator(model.rig),
         facing: Math.random() * Math.PI * 2,
+        waving: 0,
       });
     }
   }
@@ -100,14 +105,29 @@ export class HomeHeroes {
     return to;
   }
 
+  /** A hero's been tapped: they stop where they are, turn to the camera and wave. */
+  wave(kind: HeroKind): void {
+    const w = this.walkers.get(kind);
+    if (!w) return;
+    w.target = null;
+    w.waving = WAVE_SECONDS;
+    w.rest = Math.max(w.rest, WAVE_SECONDS + 0.5);
+  }
+
   update(dt: number): void {
+    const camera = this.stage.camera.position;
     for (const w of this.walkers.values()) {
+      if (w.waving > 0) {
+        w.waving -= dt;
+        const toCamera = Math.atan2(camera.z - w.pos.y, camera.x - w.pos.x);
+        w.facing += angleDiff(toCamera, w.facing) * Math.min(1, dt * 8);
+      }
       // A new building or job landed on them: step aside.
       if (!this.isOpen(w.pos) && this.spots.length > 0) {
         w.pos = { ...this.randomSpot() };
         w.target = null;
       }
-      if (!w.target) {
+      if (!w.target && w.waving <= 0) {
         w.rest -= dt;
         if (w.rest <= 0) {
           w.target = this.pickTarget(w.pos);
@@ -133,7 +153,12 @@ export class HomeHeroes {
       model.root.position.set(w.pos.x, Math.max(0, homeHeight(w.pos.x, w.pos.y)), w.pos.y);
       model.root.rotation.y = -w.facing;
       if (w.animator) {
-        w.animator.update(dt, { ...AT_EASE, moving, speed: moving ? WALK_SPEED : 0 });
+        w.animator.update(dt, {
+          ...AT_EASE,
+          moving,
+          speed: moving ? WALK_SPEED : 0,
+          waving: w.waving > 0,
+        });
         continue;
       }
       const swing = moving ? Math.sin(w.walk) : 0;
