@@ -560,6 +560,11 @@ export class Game {
       findHourglass: (mended = false) => this.crew.findHourglassForTest(mended),
       /** Points the home island's camera at a spot. */
       crewLook: (x: number, y: number, distance: number) => this.crew.lookForTest(x, y, distance),
+      /** Points the scouting camera at a spot, pulled in or back by `zoom` (below 1 is closer). */
+      scoutLook: (x: number, y: number, zoom = 1) => {
+        this.rig.boatFocus.set(x, 0, y);
+        this.rig.scoutZoom(zoom);
+      },
       /**
        * Scouts any island there is, for looking at how it comes out, or lands on it with `raid`;
        * `y` puts it that far south.

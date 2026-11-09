@@ -260,8 +260,10 @@ const LAVA_FRAGMENT = /* glsl */ `
     float ragged = (noise(vec2(vFlow * 0.9, vSide * 0.5)) - 0.5) * 0.18;
     float edge = abs(vSide) / ${LAVA_CORE.toFixed(2)} + ragged;
     float core = 1.0 - smoothstep(0.8, 1.0, edge);
-    // Running into the sea it cools: the crust closes over and it fades under the water.
-    float wet = smoothstep(1.5, -0.5, vShore);
+    // Nearing the sea it cools: the crust closes over and it runs out under the water, its front
+    // pushed out in lobes rather than cut straight across.
+    float front = vShore + (noise(vec2(vSide * 1.7 + 5.0, vFlow * 0.2)) - 0.5) * 2.6;
+    float wet = smoothstep(3.5, 0.0, front);
     // Two speeds: the molten rock runs fast underneath, the crust on top drifts slower.
     vec2 under = vec2(vFlow * 0.5 - uTime * 0.8, vSide * 1.2);
     vec2 over = vec2(vFlow * 0.33 - uTime * 0.26, vSide * 1.35);
@@ -277,15 +279,17 @@ const LAVA_FRAGMENT = /* glsl */ `
     float crust = smoothstep(0.45, 0.66, noise(over * 0.55 + 7.0) + edge * 0.55 - 0.2);
     crust = max(crust, wet);
     vec3 rock = mix(vec3(0.07, 0.035, 0.03), vec3(0.2, 0.06, 0.02), noise(over * 3.0) * 0.6);
-    vec3 color = mix(molten, rock, crust * (1.0 - cracks * (1.0 - wet)));
-    color += vec3(1.0, 0.45, 0.08) * cracks * crust * 0.85 * (1.0 - wet);
+    // Its cracks still glow through the cooled crust, dimmer, right down to the water.
+    float seams = 1.0 - wet * 0.65;
+    vec3 color = mix(molten, rock, crust * (1.0 - cracks * seams));
+    color += vec3(1.0, 0.45, 0.08) * cracks * crust * 0.85 * seams;
     // Cooled rock along the very edge, so it meets the scorched ground softly.
     color = mix(color, rock, smoothstep(0.75, 1.0, edge) * 0.6);
     // Beyond the banks, an orange glow on the ground, fading out.
     float halo = (1.0 - smoothstep(0.95, 1.0 / ${LAVA_CORE.toFixed(2)}, edge)) * (1.0 - core);
     vec3 glow = vec3(1.0, 0.32, 0.04) * (0.8 + 0.2 * sin(uTime * 1.7 + vFlow * 0.2));
-    // Tapering in at either end, and gone a little way out to sea.
-    float shown = smoothstep(0.0, 3.0, vEnd) * (1.0 - smoothstep(-0.5, -3.0, vShore));
+    // Tapering in at either end, and gone a little way out under the sea.
+    float shown = smoothstep(0.0, 3.0, vEnd) * smoothstep(-2.8, -0.6, front);
     float alpha = max(core, halo * 0.4 * (1.0 - wet)) * shown;
     gl_FragColor = vec4(mix(glow, color, core), alpha);
     #include <tonemapping_fragment>
@@ -296,6 +300,8 @@ const LAVA_FRAGMENT = /* glsl */ `
 /** Lengths of ribbon a river is cut into, and points across it, for it to lie on the ground. */
 const LAVA_STEP = 1.5;
 const LAVA_ACROSS = 8;
+/** How far out under the sea a river's still laid, in meters: past where its front has faded out. */
+const LAVA_UNDER_SEA = 4.5;
 const CRATER_RINGS = 3;
 const CRATER_SEGMENTS = 20;
 
@@ -325,9 +331,10 @@ function layRiver(
   });
   let walked = 0;
   let rows = 0;
+  let outAtSea = false;
   river.forEach((a, leg) => {
     const b = river[leg + 1];
-    if (!b) return;
+    if (!b || outAtSea) return;
     const gap = Math.hypot(b.x - a.x, b.y - a.y);
     const steps = Math.max(1, Math.round(gap / LAVA_STEP));
     const nx = -(b.y - a.y) / (gap || 1);
@@ -336,6 +343,11 @@ function layRiver(
       const t = s / steps;
       const x = a.x + (b.x - a.x) * t;
       const y = a.y + (b.y - a.y) * t;
+      // Once it's run out of sight under the sea there's nothing more to lay.
+      if (shape.shoreDistance(x, y) < -LAVA_UNDER_SEA) {
+        outAtSea = true;
+        break;
+      }
       const width = (lavaWidth((leg + t) / legs, x, y) + 0.6) / LAVA_CORE;
       for (let i = 0; i <= LAVA_ACROSS; i++) {
         const side = (i / LAVA_ACROSS) * 2 - 1;
@@ -343,7 +355,8 @@ function layRiver(
         const py = y + ny * side * width;
         const across = Math.min(1, Math.abs(side) / LAVA_CORE);
         const swell = (1 - across * across) * 0.18;
-        out.positions.push(px, Math.max(0.02, height(px, py)) + 0.12 + swell, py);
+        // Down the beach and on under the water, which closes over it.
+        out.positions.push(px, height(px, py) + 0.12 + swell, py);
         const along = walked + (gap * s) / steps;
         out.flows.push(along);
         out.sides.push(side);
@@ -423,7 +436,8 @@ function buildLava(
     fragmentShader: LAVA_FRAGMENT,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.renderOrder = 1;
+  // Before the sea, so the water's drawn over wherever it runs in under it.
+  mesh.renderOrder = 0.9;
   return { mesh, time };
 }
 

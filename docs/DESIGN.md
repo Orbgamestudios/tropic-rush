@@ -171,10 +171,16 @@ These were explicitly left out to keep the first version to a basic structure:
   85% of it against 73%, and took about a quarter of the damage. Raids from before replay as they
   ran.
 - **One kind of cloud everywhere:** raided islands have the same sheet of cloud as the crew's own,
-  clear over the island and further off its coast (from 16 meters past the shore, thick by 46), in
-  place of the flat puffs they had.
-- **Lava's edges:** a river tapers in at either end, cools to dark crust and fades out where it
-  runs into the sea, and meets the scorched ground along its banks in a ragged rim of cooled rock.
+  the same distance off the coast (from 4 meters past the shore, thick by 28), in place of the flat
+  puffs they had. It's measured straight to the nearest coast, so it follows a headland's sides
+  softly instead of stopping dead along them, and it never drifts in over land or a lagoon: the
+  coast is always seen clean, with the cloud building up beyond it in puffs. In a raid it parts
+  where the camera looks down through it at the hero.
+- **Lava's edges:** a river tapers in at either end, and meets the scorched ground along its banks
+  in a ragged rim of cooled rock. Nearing the sea it crusts over, its cracks still glowing, and runs
+  on under the water in lobes; where it meets the sea a plume of steam billows up and drifts out,
+  lit orange from underneath after dark. The lava lights the ground beside it at night, but has no
+  glowing balls of light hanging over it or out at sea.
 - **Slower first upgrades:** every building's first levels take half a minute to put up, a quarter
   of an hour, then an hour; then 1½, 2, 3, 4, 6, 8 and 12 hours by level 10. A turret's levels,
   three to an ordinary one, stay at an hour from level 3 until they catch up.

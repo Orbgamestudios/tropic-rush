@@ -44,37 +44,32 @@ export function cloudTexture(): THREE.CanvasTexture {
 export interface CloudView {
   root: THREE.Group;
   update(time: number): void;
+  /** Parts the cloud between the camera and a hero on the ground; null closes it again. */
+  seeThrough(eye: THREE.Vector3, hero: THREE.Vector3 | null): void;
   dispose(): void;
 }
 
-/** How far out from the middle the island's coast lies along a line, in meters. */
-function coastAlong(shape: IslandShape, angle: number): number {
-  for (let r = shape.reach; r > 0; r -= 3) {
-    if (shape.shoreDistance(Math.cos(angle) * r, Math.sin(angle) * r) > 0) return r;
-  }
-  return 30;
-}
-
-/** The sheet over the crew's island, in meters: wide enough to reach past any view of it. */
+/** The sheet over an island, in meters: wide enough to reach past any view of it. */
 const HOME_SHEET = { size: 1400, height: 9 } as const;
 /**
- * How far past the coast the cloud starts, and where it's solid: the crew's island has it close,
- * and a raid, where the camera roams the coast, further out.
+ * Clear this far past the coast, solid this far out, round every island alike. The cloud's drift
+ * can bring it in closer, but never in over the land: the coast is always seen clean.
  */
-export interface CloudReach {
-  clear: number;
-  solid: number;
-}
-const HOME_REACH: CloudReach = { clear: 4, solid: 28 };
-export const RAID_REACH: CloudReach = { clear: 16, solid: 46 };
+const CLEAR_PAST = 4;
+const SOLID_PAST = 28;
+/** The gap it parts in where the camera looks down through it at a hero, in meters across. */
+const SEE_THROUGH = 15;
 /**
  * How square on to the camera a way out from the island has to be to count as the beach in front,
  * as the cosine of the angle between them: the cloud thins out over this whole span, the clearing
  * widening the further out it goes, so its edge is a soft, ragged one and never a straight line.
  */
 const BEACH_CLEAR = [0.1, 0.9] as const;
-/** The furthest coast the bake of the island's outline can hold, in meters. */
-const OUTLINE_REACH = 220;
+/** The square the distances out to sea are baked over, in meters either way of the middle. */
+const SEA_HALF = 200;
+const SEA_SIZE = 256;
+/** The furthest out to sea the bake holds, in meters: past it is all open sea alike. */
+const SEA_FAR = 64;
 
 const HOME_VERTEX = /* glsl */ `
   varying vec2 vMap;
@@ -87,15 +82,15 @@ const HOME_VERTEX = /* glsl */ `
 
 /**
  * The map's cloud, closer: the same baked tile at three times the size, with the clear sky round
- * the island's own outline, its edge bent in and out by a slow third look at the tile.
+ * the island's own coast, its edge bent in and out by a slow third look at the tile.
  */
 const HOME_FRAGMENT = /* glsl */ `
   uniform sampler2D uTile;
-  uniform sampler2D uCoast;
+  uniform sampler2D uSea;
   uniform vec2 uToCamera;
   uniform float uTime;
   uniform vec3 uUnlit;
-  uniform vec2 uReach;
+  uniform vec3 uSee;
   varying vec2 vMap;
   void main() {
     vec2 p = vMap;
@@ -103,15 +98,20 @@ const HOME_FRAGMENT = /* glsl */ `
     vec2 near = texture2D(uTile, p / 96.0 - vec2(uTime * 0.0013, -uTime * 0.0024)).rg;
     float thick = smoothstep(0.12, 0.8, wide.r * 0.72 + near.r * 0.28);
     vec2 flow = texture2D(uTile, p.yx / 520.0 + vec2(uTime * 0.0011, -uTime * 0.0008)).rg - 0.5;
-    float angle = atan(p.y, p.x) / 6.2831853 + 0.5;
-    float coast = texture2D(uCoast, vec2(angle, 0.5)).r * ${OUTLINE_REACH}.0;
-    float out_ = length(p) + (flow.x + flow.y) * 34.0 - coast;
+    // How far out to sea, straight to the nearest coast; past the bake it's all open sea.
+    float sea = texture2D(uSea, p / ${2 * SEA_HALF}.0 + 0.5).r * ${SEA_FAR}.0;
+    float out_ = sea + min((flow.x + flow.y) * 34.0, ${CLEAR_PAST}.0);
     // Nothing off the beach in front of the camera, at the bottom of the screen; round the sides
     // it comes in as close as anywhere else. The clearing grows with the distance out and wanders
     // with the cloud's own drift, so it fades away rather than stopping along a line.
     float facing = dot(normalize(p), uToCamera) + (flow.x - flow.y) * 0.6;
     out_ -= smoothstep(${BEACH_CLEAR[0]}, ${BEACH_CLEAR[1]}, facing) * (length(p) * 0.95 + 30.0);
-    float cover = smoothstep(uReach.x, uReach.y, out_);
+    // Parted where the camera looks down through it at a hero, the same ragged way.
+    if (uSee.z > 0.0) {
+      float seen = length(p - uSee.xy) + (flow.x - flow.y) * uSee.z * 0.6;
+      out_ -= (1.0 - smoothstep(uSee.z * 0.3, uSee.z, seen)) * 60.0;
+    }
+    float cover = smoothstep(${CLEAR_PAST}.0, ${SOLID_PAST}.0, out_);
     // Deep in the bank it's solid, and towards the clear sky only the thickest puffs stay.
     float edge = 1.02 - cover * 1.5;
     float alpha = smoothstep(edge, edge + 0.52, thick);
@@ -123,19 +123,51 @@ const HOME_FRAGMENT = /* glsl */ `
   }
 `;
 
-/** The island's coast all the way round, as a strip of texture: how far out it lies each way. */
-function coastStrip(shape: IslandShape): THREE.DataTexture {
-  const steps = 256;
-  const data = new Uint8Array(steps * 4);
-  for (let i = 0; i < steps; i++) {
-    const angle = (i / steps - 0.5) * Math.PI * 2;
-    const reach = Math.min(1, coastAlong(shape, angle) / OUTLINE_REACH);
-    data[i * 4] = Math.round(reach * 255);
-    data[i * 4 + 3] = 255;
+/**
+ * How far out to sea every spot round an island is, straight to its nearest coast. Measuring out
+ * from the middle instead would jump wherever a coast runs out that way, down the side of a
+ * headland, and the cloud would stop dead along it. Land, and water shut in by it like a lagoon,
+ * are 0: the cloud keeps off both.
+ */
+function seaTexture(shape: IslandShape): THREE.DataTexture {
+  const cells = SEA_SIZE * SEA_SIZE;
+  const out = new Float32Array(cells);
+  for (let j = 0; j < SEA_SIZE; j++) {
+    for (let i = 0; i < SEA_SIZE; i++) {
+      const x = ((i + 0.5) / SEA_SIZE) * 2 * SEA_HALF - SEA_HALF;
+      const y = ((j + 0.5) / SEA_SIZE) * 2 * SEA_HALF - SEA_HALF;
+      out[j * SEA_SIZE + i] = Math.min(SEA_FAR, -shape.shoreDistance(x, y));
+    }
   }
-  const texture = new THREE.DataTexture(data, steps, 1);
-  texture.wrapS = THREE.RepeatWrapping;
+  // Open sea is whatever water the edge of the bake reaches without crossing land.
+  const open = new Uint8Array(cells);
+  const next: number[] = [];
+  const reach = (k: number) => {
+    if (open[k] || (out[k] ?? 0) <= 0) return;
+    open[k] = 1;
+    next.push(k);
+  };
+  for (let n = 0; n < SEA_SIZE; n++) {
+    reach(n);
+    reach(cells - 1 - n);
+    reach(n * SEA_SIZE);
+    reach(n * SEA_SIZE + SEA_SIZE - 1);
+  }
+  for (let k = next.pop(); k !== undefined; k = next.pop()) {
+    const i = k % SEA_SIZE;
+    if (i > 0) reach(k - 1);
+    if (i < SEA_SIZE - 1) reach(k + 1);
+    if (k >= SEA_SIZE) reach(k - SEA_SIZE);
+    if (k < cells - SEA_SIZE) reach(k + SEA_SIZE);
+  }
+  const data = new Uint8Array(cells * 4);
+  for (let k = 0; k < cells; k++) {
+    data[k * 4] = open[k] ? Math.round(((out[k] ?? 0) / SEA_FAR) * 255) : 0;
+    data[k * 4 + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(data, SEA_SIZE, SEA_SIZE);
   texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
   texture.needsUpdate = true;
   return texture;
 }
@@ -144,21 +176,22 @@ function coastStrip(shape: IslandShape): THREE.DataTexture {
  * The cloud over the sea round an island, the crew's or one being raided: one sheet, drawn in a
  * single call.
  */
-export function homeClouds(shape: IslandShape = HOME_SHAPE, reach = HOME_REACH): CloudView {
+export function homeClouds(shape: IslandShape = HOME_SHAPE): CloudView {
   const root = new THREE.Group();
   const geometry = new THREE.PlaneGeometry(HOME_SHEET.size, HOME_SHEET.size);
   geometry.rotateX(-Math.PI / 2);
-  const coast = coastStrip(shape);
+  const sea = seaTexture(shape);
   const time = { value: 0 };
+  const see = { value: new THREE.Vector3() };
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uTile: { value: cloudTile() },
-      uCoast: { value: coast },
+      uSea: { value: sea },
       // The camera always looks from the same side: this way, along the ground.
       uToCamera: { value: new THREE.Vector2(Math.sin(VIEW_YAW), Math.cos(VIEW_YAW)) },
       uTime: time,
       uUnlit: SKY.unlit,
-      uReach: { value: new THREE.Vector2(reach.clear, reach.solid) },
+      uSee: see,
     },
     vertexShader: HOME_VERTEX,
     fragmentShader: HOME_FRAGMENT,
@@ -175,9 +208,18 @@ export function homeClouds(shape: IslandShape = HOME_SHAPE, reach = HOME_REACH):
     update(seconds) {
       time.value = seconds;
     },
+    seeThrough(eye, hero) {
+      // Where the line from the camera down to the hero crosses the sheet, if it does.
+      const k = hero ? (eye.y - HOME_SHEET.height) / (eye.y - hero.y) : -1;
+      if (!hero || k <= 0 || k >= 1) {
+        see.value.z = 0;
+        return;
+      }
+      see.value.set(eye.x + (hero.x - eye.x) * k, eye.z + (hero.z - eye.z) * k, SEE_THROUGH);
+    },
     dispose() {
       geometry.dispose();
-      coast.dispose();
+      sea.dispose();
       material.dispose();
     },
   };

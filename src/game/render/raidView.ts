@@ -8,7 +8,7 @@ import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse } from "../logic/economy";
 import { HEROES } from "../logic/heroes";
-import { HOME_SHAPE, type IslandLayout, type IslandShape } from "../logic/island";
+import { HOME_SHAPE, type IslandLayout, type IslandShape, lavaWidth } from "../logic/island";
 import type {
   Projectile,
   ProjectileKind,
@@ -22,13 +22,13 @@ import type {
 } from "../logic/raid";
 import type { Spoils } from "../logic/spoils";
 import { FAST_BARRIER, FAST_FORWARD, SLOW_WORLD } from "../logic/timeShards";
-import { angleDiff, angleOf, distance, sub, type Vec2 } from "../logic/vec";
+import { angleDiff, angleOf, distance, sub, type Vec2, vec } from "../logic/vec";
 import type { WorldLabels } from "../ui/labels";
 import { AimView } from "./aimCone";
 import { type AreaMark, areaMark } from "./areaMarks";
 import { kitPiece, lampSpots, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
-import { type CloudView, homeClouds, RAID_REACH } from "./clouds";
+import { type CloudView, homeClouds } from "./clouds";
 import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
@@ -114,6 +114,55 @@ const RECORDING = new THREE.MeshLambertMaterial({ color: 0x3dff6e, emissive: 0x0
 
 /** Seconds a hero takes running back along the way they came, on a retry or a record's end. */
 const REWIND_SLIDE = 0.8;
+
+/** Where a lava river runs into the sea, the way it's running there, and how wide it is. */
+interface LavaMouth {
+  pos: Vec2;
+  out: Vec2;
+  width: number;
+}
+
+/** Points a meter apart down every lava river where it runs over land, and where each meets the sea. */
+interface LavaCourse {
+  spots: Vec2[];
+  mouths: LavaMouth[];
+}
+
+/** Meters between the lamps glowing on the ground along a lava river. */
+const LAVA_LAMP_GAP = 14;
+/** Billows of steam a second where a river meets the sea. */
+const STEAM_RATE = 12;
+
+function walkRivers(shape: IslandShape): LavaCourse {
+  const course: LavaCourse = { spots: [], mouths: [] };
+  for (const river of shape.rivers) {
+    const legs = river.length - 1;
+    let total = 0;
+    for (let i = 0; i < legs; i++) total += distance(river[i] as Vec2, river[i + 1] as Vec2);
+    let walked = 0;
+    leg: for (let i = 0; i < legs; i++) {
+      const a = river[i] as Vec2;
+      const b = river[i + 1] as Vec2;
+      const gap = distance(a, b);
+      const steps = Math.max(1, Math.round(gap));
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps;
+        const p = vec(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+        const shore = shape.shoreDistance(p.x, p.y);
+        if (shore <= 0) {
+          const out = vec((b.x - a.x) / gap, (b.y - a.y) / gap);
+          course.mouths.push({ pos: p, out, width: lavaWidth((i + t) / legs, p.x, p.y) });
+          break leg;
+        }
+        // Clear of either tapered end and of the beach, where it's cooled to rock.
+        const along = walked + gap * t;
+        if (shore > 2 && along > 3 && total - along > 3) course.spots.push(p);
+      }
+      walked += gap;
+    }
+  }
+  return course;
+}
 
 /** A glowing ring on the ground under a hero: bright green for you, blue for crewmates. */
 function heroRing(radius: number, leader: boolean, rgb?: string): THREE.Mesh {
@@ -334,6 +383,7 @@ export class RaidView {
   private readonly shape: IslandShape;
   /** Seconds until the volcano's next plume of smoke. */
   private plumeIn = 0;
+  private readonly lava: LavaCourse;
   private readonly gems: THREE.Group[] = [];
 
   /** `home` draws the crew's own island instead: the heroes are then the attackers. */
@@ -373,8 +423,8 @@ export class RaidView {
         this.root.add(this.snowfall.points);
       }
     }
-    // The same sheet of cloud as round the crew's island, kept further off a raid's coast.
-    this.clouds = homeClouds(shape, RAID_REACH);
+    this.clouds = homeClouds(shape);
+    this.lava = walkRivers(shape);
     this.root.add(this.clouds.root, this.aimView.root);
     this.effects = new Effects((x, z) => this.ground(x, z), this.lights);
     this.fireflies = new Fireflies(layout.seed, this.ground);
@@ -657,7 +707,10 @@ export class RaidView {
       watched ? this.ground(watched.pos.x, watched.pos.y) + 1 : 0,
       watched?.pos.y ?? 0,
     );
-    updateWind(time, watched && !watched.inBoat && this.showBars ? this.focus : null);
+    const following = watched && !watched.inBoat && this.showBars;
+    updateWind(time, following ? this.focus : null);
+    // The cloud too, wherever the hero walks under its edge.
+    this.clouds.seeThrough(camera.position, following ? this.focus : null);
     this.effects.update(dt);
     this.reach?.update(state, this.showBars && state.conquest === null ? leader : undefined);
     const aiming = this.showBars && !this.defending ? leader : undefined;
@@ -675,16 +728,24 @@ export class RaidView {
     this.updateLabels(state, camera, width, height);
   }
 
-  /** A volcano smokes all the time, not only when it goes off. */
+  /** A volcano smokes all the time, not only when it goes off, and its lava steams in the sea. */
   private updatePlume(dt: number): void {
     const { volcano } = this.shape;
     if (!volcano) return;
     // Embers drift up off the running lava.
-    const rivers = this.shape.rivers;
-    if (rivers.length > 0 && Math.random() < dt * 9) {
-      const river = rivers[Math.floor(Math.random() * rivers.length)] ?? [];
-      const spot = river[Math.floor(Math.random() * river.length)];
-      if (spot) this.effects.ember(this.at(spot, 0.4));
+    const { spots, mouths } = this.lava;
+    if (spots.length > 0 && Math.random() < dt * 9) {
+      const spot = spots[Math.floor(Math.random() * spots.length)] as Vec2;
+      this.effects.ember(this.at(spot, 0.4));
+    }
+    for (const { pos, out, width } of mouths) {
+      if (Math.random() > dt * STEAM_RATE) continue;
+      // All along the front, where the lava meets the water, and a little way out.
+      const across = (Math.random() * 2 - 1) * width;
+      const ahead = Math.random() * 2.5 - 1.5;
+      const x = pos.x - out.y * across + out.x * ahead;
+      const z = pos.y + out.x * across + out.y * ahead;
+      this.effects.steam(new THREE.Vector3(x, 0.2, z), out.x, out.y);
     }
     this.plumeIn -= dt;
     if (this.plumeIn > 0) return;
@@ -692,10 +753,12 @@ export class RaidView {
     this.effects.smokeColumn(this.at(volcano.pos, 1), 3, false);
   }
 
-  /** The glow of a volcano's crater and its rivers, seen after dark. */
+  /**
+   * The light a volcano's crater and its rivers throw on the ground round them after dark. The lava
+   * glows by itself, so these light only the ground, with no glow of their own hanging over it.
+   */
   private lavaLamps(): Lamp[] {
-    const { shape } = this;
-    const { volcano } = shape;
+    const { volcano } = this.shape;
     if (!volcano) return [];
     const lamp = (x: number, z: number, reach: number): Lamp => ({
       x,
@@ -704,21 +767,14 @@ export class RaidView {
       reach,
       power: 2.6,
       color: 0xff6a24,
-      halo: 2,
+      halo: 0,
       height: 0.5,
       flicker: true,
     });
     const lamps = [lamp(volcano.pos.x, volcano.pos.y, volcano.radius * 0.6)];
-    // Along the rivers, wherever the lava runs on open ground.
-    for (let x = -shape.reach; x < shape.reach; x += 16) {
-      for (let y = -shape.reach; y < shape.reach; y += 16) {
-        for (let dx = 0; dx < 16; dx += 4) {
-          if (shape.lava(x + dx, y + dx) <= 0.5) continue;
-          lamps.push(lamp(x + dx, y + dx, 12));
-          break;
-        }
-      }
-    }
+    this.lava.spots.forEach((spot, i) => {
+      if (i % LAVA_LAMP_GAP === LAVA_LAMP_GAP >> 1) lamps.push(lamp(spot.x, spot.y, 12));
+    });
     return lamps;
   }
 

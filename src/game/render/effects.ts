@@ -169,6 +169,9 @@ const ZAP: Ramp = [2.2, 3, 4, 0.5, 1.6, 3.4, 0.1, 0.3, 0.9];
 const ACID: Ramp = [1.5, 2.4, 0.3, 0.7, 1.6, 0.15, 0.2, 0.5, 0.05];
 const FUMES: Ramp = [0.5, 0.72, 0.2, 0.52, 0.66, 0.26, 0.6, 0.66, 0.42];
 const SCREEN: Ramp = [0.95, 0.96, 0.98, 0.88, 0.9, 0.93, 0.74, 0.77, 0.82];
+const STEAM: Ramp = [1, 1, 1, 0.94, 0.95, 0.97, 0.84, 0.87, 0.9];
+/** The lava's light on the underside of its steam, after dark. */
+const STEAM_GLOW: Ramp = [1, 0.42, 0.1, 0.55, 0.18, 0.04, 0.12, 0.03, 0];
 
 interface Particle {
   x: number;
@@ -1109,6 +1112,49 @@ export class Effects {
       to: 0.03,
       cell: GLOW,
       ramp: SPARK,
+    });
+  }
+
+  /**
+   * A billow of steam off the sea where lava runs into it, carried on out the way the lava runs
+   * (`outX`, `outZ`) and lit from under by it after dark.
+   */
+  steam(pos: THREE.Vector3, outX: number, outZ: number): void {
+    const drift = between(0.8, 2.2);
+    this.solid.add({
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      vx: outX * drift + between(-0.4, 0.4),
+      vy: between(1.4, 2.6),
+      vz: outZ * drift + between(-0.4, 0.4),
+      drag: 0.25,
+      life: between(3.5, 5.5),
+      from: between(1.4, 2.4),
+      to: between(5.5, 8.5),
+      spin: between(-0.3, 0.3),
+      cell: pick(SMOKE),
+      ramp: STEAM,
+      opacity: between(0.5, 0.72),
+      rise: 0.15,
+    });
+    const dark = Math.min(1, SKY.dark.value);
+    if (dark < 0.2 || Math.random() > 0.6) return;
+    this.glow.add({
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      vx: outX * drift * 0.5,
+      vy: between(0.9, 1.5),
+      vz: outZ * drift * 0.5,
+      drag: 0.3,
+      life: between(1.6, 2.4),
+      from: 3,
+      to: 6,
+      cell: pick(SMOKE),
+      ramp: STEAM_GLOW,
+      opacity: 0.2 * dark,
+      rise: 0.3,
     });
   }
 
