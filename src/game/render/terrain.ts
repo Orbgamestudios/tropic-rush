@@ -229,11 +229,17 @@ function gridGround(shape: IslandShape, height: (x: number, y: number) => number
 const LAVA_VERTEX = /* glsl */ `
   attribute float aFlow;
   attribute float aSide;
+  attribute float aShore;
+  attribute float aEnd;
   varying float vFlow;
   varying float vSide;
+  varying float vShore;
+  varying float vEnd;
   void main() {
     vFlow = aFlow;
     vSide = aSide;
+    vShore = aShore;
+    vEnd = aEnd;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -246,10 +252,16 @@ const LAVA_FRAGMENT = /* glsl */ `
   uniform sampler2D uNoise;
   varying float vFlow;
   varying float vSide;
+  varying float vShore;
+  varying float vEnd;
   float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
   void main() {
-    float edge = abs(vSide) / ${LAVA_CORE.toFixed(2)};
-    float core = 1.0 - smoothstep(0.9, 1.0, edge);
+    // The banks wander a little, so the lava's edge isn't ruled straight.
+    float ragged = (noise(vec2(vFlow * 0.9, vSide * 0.5)) - 0.5) * 0.18;
+    float edge = abs(vSide) / ${LAVA_CORE.toFixed(2)} + ragged;
+    float core = 1.0 - smoothstep(0.8, 1.0, edge);
+    // Running into the sea it cools: the crust closes over and it fades under the water.
+    float wet = smoothstep(1.5, -0.5, vShore);
     // Two speeds: the molten rock runs fast underneath, the crust on top drifts slower.
     vec2 under = vec2(vFlow * 0.5 - uTime * 0.8, vSide * 1.2);
     vec2 over = vec2(vFlow * 0.33 - uTime * 0.26, vSide * 1.35);
@@ -263,13 +275,19 @@ const LAVA_FRAGMENT = /* glsl */ `
     float cracks = 1.0 - smoothstep(0.0, 0.06, abs(plates - 0.5));
     // A molten channel stays open down the middle; the crust closes in from the banks.
     float crust = smoothstep(0.45, 0.66, noise(over * 0.55 + 7.0) + edge * 0.55 - 0.2);
+    crust = max(crust, wet);
     vec3 rock = mix(vec3(0.07, 0.035, 0.03), vec3(0.2, 0.06, 0.02), noise(over * 3.0) * 0.6);
-    vec3 color = mix(molten, rock, crust * (1.0 - cracks));
-    color += vec3(1.0, 0.45, 0.08) * cracks * crust * 0.85;
+    vec3 color = mix(molten, rock, crust * (1.0 - cracks * (1.0 - wet)));
+    color += vec3(1.0, 0.45, 0.08) * cracks * crust * 0.85 * (1.0 - wet);
+    // Cooled rock along the very edge, so it meets the scorched ground softly.
+    color = mix(color, rock, smoothstep(0.75, 1.0, edge) * 0.6);
     // Beyond the banks, an orange glow on the ground, fading out.
-    float halo = (1.0 - smoothstep(1.0, 1.0 / ${LAVA_CORE.toFixed(2)}, edge)) * (1.0 - core);
+    float halo = (1.0 - smoothstep(0.95, 1.0 / ${LAVA_CORE.toFixed(2)}, edge)) * (1.0 - core);
     vec3 glow = vec3(1.0, 0.32, 0.04) * (0.8 + 0.2 * sin(uTime * 1.7 + vFlow * 0.2));
-    gl_FragColor = vec4(mix(glow, color, core), max(core, halo * 0.45));
+    // Tapering in at either end, and gone a little way out to sea.
+    float shown = smoothstep(0.0, 3.0, vEnd) * (1.0 - smoothstep(-0.5, -3.0, vShore));
+    float alpha = max(core, halo * 0.4 * (1.0 - wet)) * shown;
+    gl_FragColor = vec4(mix(glow, color, core), alpha);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -285,6 +303,9 @@ interface LavaMesh {
   positions: number[];
   flows: number[];
   sides: number[];
+  /** How far inland each point is (below 0 out at sea), and how far from either end of its river. */
+  shores: number[];
+  ends: number[];
   indices: number[];
 }
 
@@ -293,9 +314,15 @@ function layRiver(
   river: readonly Vec2[],
   height: (x: number, y: number) => number,
   out: LavaMesh,
+  shape: IslandShape,
 ): void {
   const legs = river.length - 1;
   const row = LAVA_ACROSS + 1;
+  let total = 0;
+  river.forEach((a, leg) => {
+    const b = river[leg + 1];
+    if (b) total += Math.hypot(b.x - a.x, b.y - a.y);
+  });
   let walked = 0;
   let rows = 0;
   river.forEach((a, leg) => {
@@ -317,8 +344,11 @@ function layRiver(
         const across = Math.min(1, Math.abs(side) / LAVA_CORE);
         const swell = (1 - across * across) * 0.18;
         out.positions.push(px, Math.max(0.02, height(px, py)) + 0.12 + swell, py);
-        out.flows.push(walked + (gap * s) / steps);
+        const along = walked + (gap * s) / steps;
+        out.flows.push(along);
         out.sides.push(side);
+        out.shores.push(shape.shoreDistance(px, py));
+        out.ends.push(Math.min(along, total - along));
       }
       rows++;
     }
@@ -350,6 +380,8 @@ function layCrater(
       out.positions.push(x + Math.cos(a) * r, top, y + Math.sin(a) * r);
       out.flows.push(seg * 2.2);
       out.sides.push(ring / CRATER_RINGS);
+      out.shores.push(99);
+      out.ends.push(99);
     }
   }
   for (let ring = 0; ring < CRATER_RINGS; ring++) {
@@ -371,13 +403,15 @@ function buildLava(
 ): { mesh: THREE.Mesh; time: THREE.IUniform<number> } | null {
   const { volcano } = shape;
   if (!volcano) return null;
-  const lava: LavaMesh = { positions: [], flows: [], sides: [], indices: [] };
-  for (const river of shape.rivers) layRiver(river, height, lava);
+  const lava: LavaMesh = { positions: [], flows: [], sides: [], shores: [], ends: [], indices: [] };
+  for (const river of shape.rivers) layRiver(river, height, lava, shape);
   layCrater(volcano, height, lava);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(lava.positions, 3));
   geometry.setAttribute("aFlow", new THREE.Float32BufferAttribute(lava.flows, 1));
   geometry.setAttribute("aSide", new THREE.Float32BufferAttribute(lava.sides, 1));
+  geometry.setAttribute("aShore", new THREE.Float32BufferAttribute(lava.shores, 1));
+  geometry.setAttribute("aEnd", new THREE.Float32BufferAttribute(lava.ends, 1));
   geometry.setIndex(lava.indices);
   const time = { value: 0 };
   const material = new THREE.ShaderMaterial({

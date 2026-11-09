@@ -170,6 +170,15 @@ These were explicitly left out to keep the first version to a basic structure:
   little saved first for a crew that bombards). Over a dozen test raids on the same base they broke
   85% of it against 73%, and took about a quarter of the damage. Raids from before replay as they
   ran.
+- **One kind of cloud everywhere:** raided islands have the same sheet of cloud as the crew's own,
+  clear over the island and further off its coast (from 16 meters past the shore, thick by 46), in
+  place of the flat puffs they had.
+- **Lava's edges:** a river tapers in at either end, cools to dark crust and fades out where it
+  runs into the sea, and meets the scorched ground along its banks in a ragged rim of cooled rock.
+- **Slower first upgrades:** every building's first levels take half a minute to put up, a quarter
+  of an hour, then an hour; then 1½, 2, 3, 4, 6, 8 and 12 hours by level 10. A turret's levels,
+  three to an ordinary one, stay at an hour from level 3 until they catch up.
+- **No fireflies in the snow** on snowy islands at night.
 - **Snipers shoot over small rocks:** a watchtower's shot clears the small rocks; cliffs still stop
   it.
 - **Full screen on load:** the game always reaches the bottom of the screen, where an iPhone could
@@ -270,7 +279,9 @@ These were explicitly left out to keep the first version to a basic structure:
   dark smoke at the far end. Fuel splashes and burns where it lands, embers fly off it, and it throws
   firelight on the ground after dark.
 - **Clouds round the crew's island:** they come in closer (from 4 meters past the shore, thick by
-  28) and wrap down both sides of the island, kept off only the beach in front of the camera.
+  28) and wrap down both sides of the island, kept off only the beach in front of the camera. Since
+  2026-11-08 the clearing in front fades in gradually, wider the further out, with a ragged edge,
+  where it used to stop along a straight line.
 - **Collecting:** a producer being upgraded shows no collect tab, and tapping anywhere on a producer
   whose tab is up collects from it.
 - **Smoke gives you away:** firing from inside smoke lets the defenses in reach see the hero 0.6

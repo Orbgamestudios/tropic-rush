@@ -415,7 +415,12 @@ export function costFor(type: BuildingType, level: number): Partial<Purse> {
 }
 
 /** Minutes of work to bring a building to a level, from 1 upward; level 1 is building it. */
-const BUILD_MINUTES = [0.5, 1, 2, 3, 5, 15, 60, 240, 480, 720] as const;
+const BUILD_MINUTES = [0.5, 15, 60, 90, 120, 180, 240, 360, 480, 720] as const;
+/**
+ * Every building's first levels take this long, whatever its pace after (2026-11-08: they'd gone
+ * by in a minute or two): half a minute to put up, a quarter of an hour, then an hour.
+ */
+const OPENING_MINUTES = [0.5, 15, 60] as const;
 /** The same for the headquarters: minutes at first, hours from level 7, days by level 20... */
 const HQ_MINUTES = [
   0, 2, 5, 10, 20, 30, 60, 120, 240, 480, 720, 1200, 1440, 1800, 2160, 2520, 2880, 3240, 3600, 4320,
@@ -437,8 +442,11 @@ export function buildTime(type: BuildingType, level: number): number {
   }
   // A stretched building's levels take as long as the ordinary level they're a share of, and the
   // levels past its early ones an hour more each.
+  const opening = OPENING_MINUTES[level - 1];
+  if (opening !== undefined) return opening * MINUTE_MS;
   const step = Math.ceil(Math.min(level, PROGRESSION[type].early) / stretchOf(type));
-  const early = BUILD_MINUTES[Math.max(0, Math.min(BUILD_MINUTES.length, step) - 1)] ?? 0;
+  const stepped = BUILD_MINUTES[Math.max(0, Math.min(BUILD_MINUTES.length, step) - 1)] ?? 0;
+  const early = Math.max(stepped, OPENING_MINUTES[OPENING_MINUTES.length - 1] ?? 0);
   const past = Math.max(0, level - PROGRESSION[type].early);
   return (early + LATE_MINUTES * past) * MINUTE_MS;
 }

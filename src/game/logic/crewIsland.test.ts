@@ -637,11 +637,13 @@ describe("crew island progression", () => {
   it("takes minutes, then hours, for each level, and longer for the headquarters", () => {
     const minutes = (type: BuildingType, level: number) => buildTime(type, level) / 60_000;
     expect(minutes("mortar", 1)).toBe(0.5);
-    expect([2, 3, 4, 5].map((level) => minutes("mortar", level))).toEqual([1, 2, 3, 5]);
+    // A quarter of an hour, then an hour by the third level, climbing from there.
+    expect([2, 3, 4, 5].map((level) => minutes("mortar", level))).toEqual([15, 60, 90, 120]);
     expect(minutes("mortar", 8)).toBeGreaterThanOrEqual(60);
-    // A turret's thirty levels take as long, three at a time, as an ordinary building's ten.
-    expect([1, 2, 3, 4, 6, 7].map((level) => minutes("gunTurret", level))).toEqual([
-      0.5, 0.5, 0.5, 1, 1, 2,
+    // A turret's thirty levels take as long, three at a time, as an ordinary building's ten,
+    // though its first three take as long as anyone's.
+    expect([1, 2, 3, 4, 6, 7, 10].map((level) => minutes("gunTurret", level))).toEqual([
+      0.5, 15, 60, 60, 60, 60, 90,
     ]);
     expect(minutes("gunTurret", 30)).toBe(minutes("mortar", 10));
     expect(minutes("headquarters", 2)).toBeLessThanOrEqual(5);

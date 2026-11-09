@@ -28,7 +28,7 @@ import { AimView } from "./aimCone";
 import { type AreaMark, areaMark } from "./areaMarks";
 import { kitPiece, lampSpots, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
-import { buildClouds, type CloudView } from "./clouds";
+import { type CloudView, homeClouds, RAID_REACH } from "./clouds";
 import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
@@ -373,10 +373,13 @@ export class RaidView {
         this.root.add(this.snowfall.points);
       }
     }
-    this.clouds = buildClouds(layout.seed, shape);
+    // The same sheet of cloud as round the crew's island, kept further off a raid's coast.
+    this.clouds = homeClouds(shape, RAID_REACH);
     this.root.add(this.clouds.root, this.aimView.root);
     this.effects = new Effects((x, z) => this.ground(x, z), this.lights);
     this.fireflies = new Fireflies(layout.seed, this.ground);
+    // No fireflies out in the snow.
+    this.fireflies.away = (layout.snow ?? 0) >= 0.5;
     this.root.add(
       this.terrain.root,
       this.props,

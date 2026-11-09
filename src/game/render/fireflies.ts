@@ -89,8 +89,11 @@ export class Fireflies {
     this.mesh.visible = false;
   }
 
+  /** None at all, as out in the snow. */
+  away = false;
+
   update(time: number): void {
-    this.mesh.visible = SKY.dark.value >= SHOW_FROM;
+    this.mesh.visible = !this.away && SKY.dark.value >= SHOW_FROM;
     this.time.value = time;
   }
 
