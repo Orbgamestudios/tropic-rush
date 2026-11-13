@@ -44,10 +44,23 @@ describe("raider ships", () => {
 
   it("carries more raiders, and stronger, the harder it is", () => {
     expect(raiderCount(20)).toBeGreaterThan(raiderCount(1));
+    const crew: Partial<Record<Difficulty, { count: number; power: number }>> = {};
     for (let day = 0; day < 200; day++) {
       const ship = raiderShip(day, 10, 0);
-      expect(ship.kinds).toHaveLength(raiderCount(ship.hq));
       expect(ship.powers.every((p) => p === ship.powers[0])).toBe(true);
+      crew[ship.difficulty] = { count: ship.kinds.length, power: ship.powers[0] ?? 0 };
+    }
+    const easy = crew.Easy;
+    const impossible = crew.Impossible;
+    if (!easy || !impossible) throw new Error("no easy or impossible ship in 200 days");
+    expect(impossible.power).toBeGreaterThan(easy.power);
+    expect(impossible.count).toBeGreaterThanOrEqual(easy.count);
+  });
+
+  it("sizes its crew to the island it raids: one raider more at most, however hard", () => {
+    for (let day = 0; day < 200; day++) {
+      const ship = raiderShip(day, 6, 0);
+      expect(ship.kinds.length).toBeLessThanOrEqual(raiderCount(6) + 1);
     }
   });
 

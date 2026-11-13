@@ -55,6 +55,11 @@ export interface RaidingShip {
    * replay with the raiders as they were, so a replay still matches what happened.
    */
   dodges?: boolean;
+  /**
+   * Its raiders weave across a defense's line of fire and shoot back in short bursts, rather than
+   * jinking at every bullet on the spot (2026-11-09).
+   */
+  weaves?: boolean;
 }
 
 /** A raid that happened, with what's needed to replay it. */
@@ -119,6 +124,7 @@ export function raidingShip(ship: RaiderShip): RaidingShip {
     homeSeed: ship.homeSeed,
     at: ship.at,
     dodges: true,
+    weaves: true,
   };
 }
 
@@ -132,7 +138,9 @@ export function startNightRaid(
   const arsenal = ship ? raiderArsenal(ship.hq) : FULL_ARSENAL;
   const state = createRaid(nightIsland(crew, seed), kinds, powers, [], arsenal);
   state.hitAndRun = true;
-  state.tactics = ship ? { bombards: ship.bombards, dodges: ship.dodges === true } : null;
+  state.tactics = ship
+    ? { bombards: ship.bombards, dodges: ship.dodges === true, weaves: ship.weaves === true }
+    : null;
   return state;
 }
 

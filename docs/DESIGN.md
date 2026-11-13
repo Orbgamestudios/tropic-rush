@@ -77,6 +77,29 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
 
+## Added 2026-11-09 (owner's requests)
+
+**Decided.**
+
+- **Raiders who weave:** under a defense's fire, raiders off tonight's ships no longer sidestep each
+  bullet on the spot, which looked like standing there and never fired back. Defenses fire at where
+  a raider is, not where they're going, so a raider keeps moving across the line of fire, on the
+  side they're already on, so they never turn back into the shots behind them: zigzagging in, and
+  circling at their own range once there. They stop only the moment their weapon's ready, for one
+  shot or burst (a minigun for a burst no longer than the shots take to arrive), and below half
+  health just keep moving. They still run from mortar shells and sniper sights. Over a dozen test
+  raids on the same base they took about a third less damage and broke 74% of it against 63%. Raids
+  from before replay as they ran.
+- **Clouds like the map's:** the cloud round an island is the world map's cloud, its tile at 1.6
+  times the map's size: a clear ring of shallows first (from 12 meters past the shore, solid by
+  52), the edge wandering in and out with the puffs, only the thickest puffs left towards the clear
+  sky, and a soft shadow on the sea under it.
+- **Night raids sized to the island:** a ship's crew comes from the headquarters level of the
+  island it raids, not of the base it sailed from, which an impossible ship's is 7 to 12 levels
+  above: an extreme or impossible ship brings one raider more at most, and its raiders are
+  somewhat stronger (80% of the usual strength on an easy ship up to 132% on an impossible one).
+  Its gunboat still follows its home base. Raids from before replay as they ran.
+
 ## Added 2026-11-08 (owner's requests)
 
 - **Heavy:** 3,717 health, 18% more than 3,150. **Decided.**
@@ -171,7 +194,7 @@ These were explicitly left out to keep the first version to a basic structure:
   85% of it against 73%, and took about a quarter of the damage. Raids from before replay as they
   ran.
 - **One kind of cloud everywhere:** raided islands have the same sheet of cloud as the crew's own,
-  the same distance off the coast (from 4 meters past the shore, thick by 28), in place of the flat
+  the same distance off the coast (from 4 meters past the shore), in place of the flat
   puffs they had. It's measured straight to the nearest coast, so it follows a headland's sides
   softly instead of stopping dead along them, and it never drifts in over land or a lagoon: the
   coast is always seen clean, with the cloud building up beyond it in puffs. In a raid it parts

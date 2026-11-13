@@ -24,6 +24,24 @@ const WINDOW_HOURS = 1;
 
 /** The most raiders a ship carries. */
 const MOST_RAIDERS = 8;
+/**
+ * A ship's crew is sized to the island it raids, not the base it sailed from, which an impossible
+ * ship's is far above: harder ships bring one more raider at most, and somewhat stronger ones.
+ */
+const EXTRA_RAIDERS: Record<Difficulty, number> = {
+  Easy: 0,
+  Medium: 0,
+  Hard: 0,
+  Extreme: 1,
+  Impossible: 1,
+};
+const RAIDER_STRENGTH: Record<Difficulty, number> = {
+  Easy: 0.8,
+  Medium: 0.95,
+  Hard: 1.08,
+  Extreme: 1.2,
+  Impossible: 1.32,
+};
 
 /** How a ship's crew goes about it, and who's aboard, in the order they sign on. */
 export interface RaidPlan {
@@ -191,10 +209,12 @@ export function raiderShip(
   const at =
     dayStart(day, offsetMinutes) + (STRIKE_AFTER + (rng() * 2 - 1) * STRIKE_SPREAD) * HOUR_MS;
   const plan = PLANS[Math.floor(rng() * PLANS.length)] ?? (PLANS[0] as RaidPlan);
+  const count = Math.min(MOST_RAIDERS, raiderCount(yourHq) + EXTRA_RAIDERS[difficulty]);
   const kinds = Array.from(
-    { length: raiderCount(hq) },
+    { length: count },
     (_, i) => plan.kinds[i % plan.kinds.length] ?? "rifleman",
   );
+  const power = raiderPower(yourHq) * RAIDER_STRENGTH[difficulty];
   const start = CREW_START[Math.floor(rng() * CREW_START.length)];
   const end = CREW_END[Math.floor(rng() * CREW_END.length)];
   const homeSeed = Math.floor(rng() * 2 ** 31);
@@ -208,7 +228,7 @@ export function raiderShip(
     window: { from: hour - WINDOW_HOURS * HOUR_MS, to: hour + WINDOW_HOURS * HOUR_MS },
     plan,
     kinds,
-    powers: kinds.map(() => raiderPower(hq)),
+    powers: kinds.map(() => power),
     crew: `The ${start} ${end}`,
     homeSeed,
     reward: heldReward(hq, difficulty, seed),

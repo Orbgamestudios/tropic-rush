@@ -7,6 +7,9 @@
 // also stop shooting to get out of the way of what's coming at them: sidestepping bullets and
 // harpoons, running clear of where a mortar shell will land, stepping out of a sniper's sights,
 // backing off when badly hurt, and stepping out of the defenses' reach before calling the gunboat.
+// Since 2026-11-09, instead of sidestepping each bullet on the spot, they keep moving across a
+// defense's line of fire, zigzagging in and circling it at range, and stop only for the moment
+// their weapon's ready to fire back.
 
 import { BUILDINGS } from "./buildings";
 import { type Ability, HEAL, SHOCK, SMOKE } from "./gunboat";
@@ -15,6 +18,7 @@ import {
   type HeroInput,
   IDLE_INPUT,
   nextAbilityCost,
+  type Projectile,
   type RaidBuilding,
   type RaidHero,
   type RaidState,
@@ -50,6 +54,23 @@ const SHOT_SEEN = 0.75;
 const SHELL_SEEN = 1.5;
 /** Below this share of their health, a raider backs out of the defenses' reach for a while. */
 const BACK_OFF = 0.28;
+
+/**
+ * Raiders who weave see a shot coming this many seconds off. A defense fires at where they are, not
+ * where they're going, so they keep moving one way across its line of fire for a stretch...
+ */
+const WEAVE_SEEN = 1;
+/** Closer than this to a shot's line counts as square on to it, in meters. */
+const SQUARE_ON = 0.3;
+const WEAVE_TURN = 3;
+/**
+ * ...stopping to shoot back between stretches of this long, for a burst no longer than its shots
+ * take to reach them, so what it fires at them standing lands after they've moved on.
+ */
+const WEAVE = 0.55;
+const BURST = [0.15, 0.5] as const;
+/** Below this share of their health, a raider under fire stops shooting back and just weaves. */
+const HOLD_FIRE = 0.5;
 
 /** Where each squadmate stands relative to the leader when nothing is in reach (behind, fanned). */
 const SLOTS: readonly Vec2[] = [vec(-2.6, 2.4), vec(2.6, 2.4), vec(0, 3.8), vec(-4, 4.2)];
@@ -120,10 +141,15 @@ function strafe(state: RaidState, hero: RaidHero, index: number, target: RaidBui
   const to = normalize(sub(target.pos, hero.pos));
   const side = Math.floor(state.time / STRAFE_TURN + index * 0.37) % 2 === 0 ? 1 : -1;
   const across = vec(-to.y * side, to.x * side);
+  return normalize(add(across, keepRange(hero, target)));
+}
+
+/** In or out, to stay within reach of what they're shooting without walking right up to it. */
+function keepRange(hero: RaidHero, target: RaidBuilding): Vec2 {
   const gap = distance(hero.pos, target.pos) - target.radius;
   const reach = HEROES[hero.kind].attack.range;
   const inOut = gap < reach * STRAFE_NEAR ? -0.6 : gap > reach * STRAFE_FAR ? 0.6 : 0;
-  return normalize(add(across, scaleVec(to, inOut)));
+  return scaleVec(normalize(sub(target.pos, hero.pos)), inOut);
 }
 
 /**
@@ -131,11 +157,11 @@ function strafe(state: RaidState, hero: RaidHero, index: number, target: RaidBui
  * line of a bullet or harpoon that will pass close, out of where a mortar shell will land, and to
  * one side of a sniper's sights holding on them.
  */
-export function dodge(state: RaidState, hero: RaidHero): Vec2 | null {
+export function dodge(state: RaidState, hero: RaidHero, bullets = true): Vec2 | null {
   const r = HEROES[hero.kind].radius;
   let away = vec(0, 0);
   for (const p of state.projectiles) {
-    if (p.team !== "enemy") continue;
+    if (p.team !== "enemy" || (!bullets && !p.lob)) continue;
     if (p.lob) {
       const left = p.lob.duration - p.lob.t;
       if (left > SHELL_SEEN) continue;
@@ -165,6 +191,57 @@ export function dodge(state: RaidState, hero: RaidHero): Vec2 | null {
     away = add(away, vec(-line.y * side, line.x * side));
   }
   return length(away) > 0.01 ? normalize(add(away, scaleVec(spacing(state, hero), 0.3))) : null;
+}
+
+/** The soonest bullet or harpoon on its way to hit this raider, if any. */
+function incoming(state: RaidState, hero: RaidHero): Projectile | null {
+  const r = HEROES[hero.kind].radius;
+  let soonest: Projectile | null = null;
+  let first = WEAVE_SEEN;
+  for (const p of state.projectiles) {
+    if (p.team !== "enemy" || p.lob) continue;
+    const speed2 = dot(p.vel, p.vel);
+    const ahead = dot(sub(hero.pos, p.pos), p.vel);
+    if (speed2 < 1e-6 || ahead <= 0) continue;
+    const t = ahead / speed2;
+    if (t >= first || distance(add(p.pos, scaleVec(p.vel, t)), hero.pos) > r + SHOT_MISS) continue;
+    soonest = p;
+    first = t;
+  }
+  return soonest;
+}
+
+/**
+ * Across a shot's line, away from it on whichever side they're already on: moving, that's the way
+ * they were going, since it was aimed at where they'd been, so they keep circling the defense and
+ * never turn back into the shots trailing behind them. Caught square on, standing, they pick a
+ * side and hold it a while. `toward` leans it the way they're heading.
+ */
+function weave(
+  state: RaidState,
+  hero: RaidHero,
+  index: number,
+  shot: Projectile,
+  toward: Vec2 | null,
+): Vec2 {
+  const across = normalize(vec(-shot.vel.y, shot.vel.x));
+  const offset = dot(sub(hero.pos, shot.pos), across);
+  const held = Math.floor((state.time + index * 1.3) / WEAVE_TURN) % 2 === 0 ? 1 : -1;
+  const side = Math.abs(offset) > SQUARE_ON ? Math.sign(offset) : held;
+  const lean = toward ? scaleVec(toward, 0.6) : vec(0, 0);
+  return normalize(add(add(scaleVec(across, side), lean), scaleVec(spacing(state, hero), 0.4)));
+}
+
+/**
+ * Whether a weaving raider stops to shoot back now: the moment their weapon's ready, for the one
+ * shot or burst, then on the move again while it reloads. A minigun has to keep turning to fire at
+ * all, so its gunner stops for a burst no longer than the shots coming at them take to arrive.
+ */
+function shootsBack(state: RaidState, hero: RaidHero, index: number, shot: Projectile): boolean {
+  if (HEROES[hero.kind].attack.kind !== "minigun") return hero.reload <= 0 && hero.burstLeft === 0;
+  const flight = (shot.traveled + distance(shot.pos, hero.pos)) / Math.max(1, length(shot.vel));
+  const burst = clamp(flight * 0.85, BURST[0], BURST[1]);
+  return (state.time + index * 0.37) % (WEAVE + burst) < burst;
 }
 
 /** The defenses that can reach a spot, with a little to spare. */
@@ -264,8 +341,11 @@ export function squadInput(state: RaidState, index: number): HeroInput {
   // Raiders who dodge stop shooting to get out of the way of what's coming, and back off when
   // they're badly hurt, unless a medic is on them.
   // Out of the way first, unless already on the radio.
+  // Those who weave take bullets and harpoons in their stride below, and only drop everything for
+  // a shell or a sniper.
+  const weaves = state.tactics?.weaves === true && !hero.inBoat;
   if (state.tactics?.dodges && !hero.inBoat) {
-    const out = dodge(state, hero);
+    const out = dodge(state, hero, !weaves);
     if (out) return { ...IDLE_INPUT, move: out };
     const tended = state.heroes.some(
       (h) => h.alive && h !== hero && HEROES[h.kind].attack.kind === "heal",
@@ -291,10 +371,17 @@ export function squadInput(state: RaidState, index: number): HeroInput {
     }
   }
   const anchor = leader && leader !== hero && leader.alive ? leader.pos : null;
+  // Under fire, they zigzag wherever they're going, and fight back between stretches of it.
+  const shot = weaves ? incoming(state, hero) : null;
+  const go = (toward: Vec2): Vec2 => {
+    const dir = steer(state, hero, toward);
+    return shot ? weave(state, hero, index, shot, dir) : dir;
+  };
+  const holding =
+    shot !== null && !(hero.hp / hero.maxHp > HOLD_FIRE && shootsBack(state, hero, index, shot));
 
   // Too far behind: catch up before anything else.
-  if (anchor && distance(hero.pos, anchor) > LEASH)
-    return { ...IDLE_INPUT, move: steer(state, hero, anchor) };
+  if (anchor && distance(hero.pos, anchor) > LEASH) return { ...IDLE_INPUT, move: go(anchor) };
 
   // The medic tends to the most hurt teammate in reach.
   if (spec.attack.kind === "heal") {
@@ -307,6 +394,12 @@ export function squadInput(state: RaidState, index: number): HeroInput {
     if (patient) {
       const gap = distance(patient.pos, hero.pos);
       const close = gap < spec.attack.range * 0.7;
+      if (shot && (!close || holding)) {
+        return {
+          ...IDLE_INPUT,
+          move: weave(state, hero, index, shot, close ? null : go(patient.pos)),
+        };
+      }
       return {
         ...IDLE_INPUT,
         move: close ? vec(0, 0) : steer(state, hero, patient.pos),
@@ -320,7 +413,13 @@ export function squadInput(state: RaidState, index: number): HeroInput {
   if (target) {
     const gap = distance(hero.pos, target.pos) - target.radius;
     const reach = spec.attack.range * 0.85;
-    if (gap > reach) return { ...IDLE_INPUT, move: steer(state, hero, target.pos) };
+    if (shot) {
+      // Weaving in, or round it at range, firing back whenever they're ready and it's in reach.
+      if (holding || gap > spec.attack.range * 0.95) {
+        const lean = gap > reach ? normalize(sub(target.pos, hero.pos)) : keepRange(hero, target);
+        return { ...IDLE_INPUT, move: weave(state, hero, index, shot, lean) };
+      }
+    } else if (gap > reach) return { ...IDLE_INPUT, move: steer(state, hero, target.pos) };
     const lobbed = spec.attack.kind === "lob";
     if (!lobbed && shotBlocked(state, hero.pos, target.pos)) {
       // Side-step around the cover, the way a player would.
@@ -340,7 +439,7 @@ export function squadInput(state: RaidState, index: number): HeroInput {
   // Nothing in reach: fall in behind the leader, or head for the HQ once leaderless.
   if (!anchor || !leader) {
     const hq = state.buildings.find((b) => b.type === "headquarters" && !b.destroyed);
-    return hq ? { ...IDLE_INPUT, move: steer(state, hero, hq.pos) } : IDLE_INPUT;
+    return hq ? { ...IDLE_INPUT, move: go(hq.pos) } : IDLE_INPUT;
   }
   const facing = leader.moving ? leader.facing : -Math.PI / 2;
   const slot = SLOTS[(index - 1) % SLOTS.length] ?? vec(0, 3);
@@ -348,6 +447,7 @@ export function squadInput(state: RaidState, index: number): HeroInput {
   const forward = fromAngle(facing);
   const right = vec(-forward.y, forward.x);
   const spot = add(anchor, add(scaleVec(right, slot.x), scaleVec(forward, -slot.y)));
+  if (shot) return { ...IDLE_INPUT, move: go(spot) };
   if (distance(hero.pos, spot) < 1.2)
     return { ...IDLE_INPUT, move: scaleVec(spacing(state, hero), 0.5) };
   const urgency = clamp(distance(hero.pos, spot) / 4, 0.4, 1);

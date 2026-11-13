@@ -451,7 +451,7 @@ export interface RaidState {
    * AI raiders off a raider ship: they strafe the defenses and work the gunboat, saving its energy
    * for big strikes if they bombard. Null for raids from before the ships, which replay as they ran.
    */
-  tactics: { bombards: boolean; dodges?: boolean } | null;
+  tactics: { bombards: boolean; dodges?: boolean; weaves?: boolean } | null;
   /**
    * The time power running, crew-wide, and who used it. A record is `replaying` once time has
    * gone back and the copy is playing it out.

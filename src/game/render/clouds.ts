@@ -55,8 +55,18 @@ const HOME_SHEET = { size: 1400, height: 9 } as const;
  * Clear this far past the coast, solid this far out, round every island alike. The cloud's drift
  * can bring it in closer, but never in over the land: the coast is always seen clean.
  */
-const CLEAR_PAST = 4;
-const SOLID_PAST = 28;
+const CLEAR_PAST = 12;
+const SOLID_PAST = 52;
+/**
+ * The world map's cloud, its tile looked up at the map's three sizes (the puffs, the finer ones,
+ * and the slow drift that bends the edge), drawn this many times larger here, closer in.
+ */
+const MAP_SIZES = [118, 53, 410] as const;
+const ZOOM = 1.6;
+/** How far the puffs, and the slow drift, push the edge in and out, in meters. */
+const WANDER = [12, 44] as const;
+/** How far its shadow falls from it on the sea, in meters. */
+const SHADOW_FALLS = [4, 6] as const;
 /** The gap it parts in where the camera looks down through it at a hero, in meters across. */
 const SEE_THROUGH = 15;
 /**
@@ -81,7 +91,7 @@ const HOME_VERTEX = /* glsl */ `
 `;
 
 /**
- * The map's cloud, closer: the same baked tile at three times the size, with the clear sky round
+ * The map's cloud, closer: the same baked tile at three sizes, with the clear sky round
  * the island's own coast, its edge bent in and out by a slow third look at the tile.
  */
 const HOME_FRAGMENT = /* glsl */ `
@@ -92,32 +102,47 @@ const HOME_FRAGMENT = /* glsl */ `
   uniform vec3 uUnlit;
   uniform vec3 uSee;
   varying vec2 vMap;
-  void main() {
-    vec2 p = vMap;
-    vec2 wide = texture2D(uTile, p / 210.0 + vec2(uTime * 0.0021, uTime * 0.0008)).rg;
-    vec2 near = texture2D(uTile, p / 96.0 - vec2(uTime * 0.0013, -uTime * 0.0024)).rg;
-    float thick = smoothstep(0.12, 0.8, wide.r * 0.72 + near.r * 0.28);
-    vec2 flow = texture2D(uTile, p.yx / 520.0 + vec2(uTime * 0.0011, -uTime * 0.0008)).rg - 0.5;
-    // How far out to sea, straight to the nearest coast; past the bake it's all open sea.
-    float sea = texture2D(uSea, p / ${2 * SEA_HALF}.0 + 0.5).r * ${SEA_FAR}.0;
-    float out_ = sea + min((flow.x + flow.y) * 34.0, ${CLEAR_PAST}.0);
+  // How far out to sea a spot is, straight to the nearest coast; past the bake it's all open sea.
+  float seaAt(vec2 at) {
+    return texture2D(uSea, at / ${2 * SEA_HALF}.0 + 0.5).r * ${SEA_FAR}.0;
+  }
+  // How thick the bank is over a spot (0 clear, 1 solid): out past the coast, but never in front of
+  // the camera or between it and a hero.
+  float coverAt(vec2 at, float sea, vec2 flow) {
+    float out_ = sea;
     // Nothing off the beach in front of the camera, at the bottom of the screen; round the sides
-    // it comes in as close as anywhere else. The clearing grows with the distance out and wanders
-    // with the cloud's own drift, so it fades away rather than stopping along a line.
-    float facing = dot(normalize(p), uToCamera) + (flow.x - flow.y) * 0.6;
-    out_ -= smoothstep(${BEACH_CLEAR[0]}, ${BEACH_CLEAR[1]}, facing) * (length(p) * 0.95 + 30.0);
-    // Parted where the camera looks down through it at a hero, the same ragged way.
+    // it comes in as close as anywhere else, the clearing growing with the distance out.
+    float facing = dot(normalize(at), uToCamera) + (flow.x - flow.y) * 0.6;
+    out_ -= smoothstep(${BEACH_CLEAR[0]}, ${BEACH_CLEAR[1]}, facing) * (length(at) * 0.95 + 30.0);
     if (uSee.z > 0.0) {
-      float seen = length(p - uSee.xy) + (flow.x - flow.y) * uSee.z * 0.6;
+      float seen = length(at - uSee.xy) + (flow.x - flow.y) * uSee.z * 0.6;
       out_ -= (1.0 - smoothstep(uSee.z * 0.3, uSee.z, seen)) * 60.0;
     }
-    float cover = smoothstep(${CLEAR_PAST}.0, ${SOLID_PAST}.0, out_);
+    return smoothstep(${CLEAR_PAST}.0, ${SOLID_PAST}.0, out_);
+  }
+  void main() {
+    vec2 p = vMap;
+    vec2 wide = texture2D(uTile, p / ${(MAP_SIZES[0] * ZOOM).toFixed(1)} + vec2(uTime * 0.0019, uTime * 0.0007)).rg;
+    vec2 near = texture2D(uTile, p / ${(MAP_SIZES[1] * ZOOM).toFixed(1)} - vec2(uTime * 0.0012, -uTime * 0.0022)).rg;
+    float thick = smoothstep(0.12, 0.8, wide.r * 0.72 + near.r * 0.28);
+    vec2 flow = texture2D(uTile, p.yx / ${(MAP_SIZES[2] * ZOOM).toFixed(1)} + vec2(uTime * 0.0011, -uTime * 0.0008)).rg - 0.5;
+    // As on the map: where it's looked up is nudged by the puffs and bent by the slow third look,
+    // so the edge wanders in and out rather than following the coast.
+    vec2 bent = p + (vec2(wide.r, near.r) - 0.5) * ${WANDER[0]}.0 + flow * ${WANDER[1]}.0;
+    // It keeps off the land itself, so the coast is always seen clean.
+    float offshore = smoothstep(2.0, 12.0, seaAt(p));
+    float cover = coverAt(bent, seaAt(bent), flow) * offshore;
     // Deep in the bank it's solid, and towards the clear sky only the thickest puffs stay.
     float edge = 1.02 - cover * 1.5;
     float alpha = smoothstep(edge, edge + 0.52, thick);
-    if (alpha < 0.004) discard;
+    // Its shadow on the sea, a little way off towards where the sun's not.
+    vec2 under = bent + vec2(${SHADOW_FALLS[0]}.0, ${SHADOW_FALLS[1]}.0);
+    float shadow = smoothstep(0.1, 0.55, coverAt(under, seaAt(under), flow)) * 0.22 * (1.0 - alpha) * offshore;
+    if (alpha + shadow < 0.004) discard;
+    // Bright on the sun's side of each puff, blue-grey in the hollows.
     vec3 cloud = mix(vec3(0.44, 0.54, 0.74), vec3(1.0, 0.995, 0.98), smoothstep(0.34, 0.92, wide.g));
-    gl_FragColor = vec4(cloud * uUnlit, alpha);
+    vec3 color = mix(vec3(0.02, 0.1, 0.2), cloud * uUnlit, alpha);
+    gl_FragColor = vec4(color, alpha + shadow);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }

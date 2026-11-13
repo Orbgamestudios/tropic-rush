@@ -226,3 +226,73 @@ describe("raiders who dodge", () => {
     expect(input.move.y).toBeGreaterThan(0);
   });
 });
+
+/** A rifleman raider off a ship whose raiders weave, a gun turret 12 meters north. */
+function weaving(): RaidState {
+  const state = raid();
+  if (state.tactics) state.tactics.weaves = true;
+  state.energy = 0;
+  return state;
+}
+
+describe("raiders who weave", () => {
+  it("keep moving across a defense's fire rather than standing in it", () => {
+    const state = weaving();
+    const h = hero(state, 0);
+    h.reload = 0.5;
+    state.projectiles.push(shot(vec(0, -8), vec(0, 30)));
+    const input = squadInput(state, 0);
+    expect(input.aim).toBeNull();
+    expect(Math.abs(normalize(input.move).x)).toBeGreaterThan(0.6);
+  });
+
+  it("carry on the way they were going, never back into the shots behind them", () => {
+    for (const side of [-1, 1]) {
+      const state = weaving();
+      const h = hero(state, 0);
+      h.reload = 0.5;
+      // Fired at where they were, half a meter to one side of where they are now.
+      state.projectiles.push(shot(vec(-0.5 * side, -8), vec(0, 30)));
+      expect(Math.sign(squadInput(state, 0).move.x)).toBe(side);
+    }
+  });
+
+  it("stop to shoot back the moment their weapon's ready", () => {
+    const state = weaving();
+    const h = hero(state, 0);
+    h.pos = vec(0, -1);
+    h.reload = 0;
+    state.projectiles.push(shot(vec(0, -8), vec(0, 30)));
+    expect(squadInput(state, 0).aim).not.toBeNull();
+  });
+
+  it("break more of a base and take less of its fire than raiders who sidestep each bullet", () => {
+    const fight = (weaves: boolean) => {
+      const base = generateIsland(7, 6);
+      let hurt = 0;
+      let broken = 0;
+      for (let n = 0; n < 4; n++) {
+        const state = createRaid(base, ["rifleman", "heavy", "medic", "bazooka"]);
+        state.tactics = { bombards: false, dodges: true, weaves };
+        let last = state.heroes.map((h) => h.hp);
+        for (let t = 0; t < 90 && state.status === "playing"; t += DT) {
+          stepRaid(
+            state,
+            state.heroes.map((_, i) => squadInput(state, i)),
+            DT,
+          );
+          state.heroes.forEach((h, i) => {
+            hurt += Math.max(0, (last[i] ?? 0) - h.hp);
+          });
+          last = state.heroes.map((h) => h.hp);
+        }
+        broken += state.buildings.filter((b) => b.destroyed).length;
+      }
+      return { hurt, broken };
+    };
+    const jinks = fight(false);
+    const weaves = fight(true);
+    expect(weaves.hurt).toBeLessThan(jinks.hurt);
+    expect(weaves.broken).toBeGreaterThanOrEqual(jinks.broken);
+  }, 40_000);
+});
