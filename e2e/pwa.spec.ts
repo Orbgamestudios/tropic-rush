@@ -55,6 +55,16 @@ test("boots without errors and fills the screen", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+/** Through the boat: Ready, on to the console (skipping the walk), Set off, and skip the landing. */
+async function throughTheBoat(page: Page): Promise<void> {
+  await page.locator(".boat-ready").click({ timeout: 90_000 });
+  await page
+    .locator(".boat-skip")
+    .click({ timeout: 30_000 })
+    .catch(() => undefined);
+  await page.locator(".boat-setoff").click({ timeout: 90_000 });
+  await page.locator(".boat-skip").click({ timeout: 60_000 });
+}
 /** The test hooks go on once the game has started, which can be a moment after the page loads. */
 async function hooksReady(page: Page): Promise<void> {
   await page.waitForFunction(() => "tropicRush" in window, null, { polling: 250 });
@@ -78,7 +88,7 @@ test("gets through to a raid with block figures when no models load", async ({ p
   await openMap(page);
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
-  await page.locator(".boat-ready").click({ timeout: 90_000 });
+  await throughTheBoat(page);
   await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 90_000 });
   expect(errors).toEqual([]);
 });
@@ -97,7 +107,7 @@ test("picks a hero and starts a raid", async ({ page }) => {
   await page.getByRole("button", { name: "Raid", exact: true }).click();
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
-  await page.locator(".boat-ready").click({ timeout: 90_000 });
+  await throughTheBoat(page);
 
   const timer = page.locator(".hud-objective-time");
   // After the run in and the landing.
@@ -127,7 +137,7 @@ test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
   await openMap(page);
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
-  await page.locator(".boat-ready").click({ timeout: 90_000 });
+  await throughTheBoat(page);
   const boat = page.locator(".hud-boat");
   await expect(boat).toBeVisible({ timeout: 60_000 });
   await boat.click();
@@ -160,7 +170,7 @@ test("scouts an island, then attacks it", async ({ page }) => {
   await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
 
   await page.locator(".scout-attack").click();
-  await page.locator(".boat-ready").click({ timeout: 90_000 });
+  await throughTheBoat(page);
   await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".scout-tile").first()).toBeHidden();
   expect(errors).toEqual([]);

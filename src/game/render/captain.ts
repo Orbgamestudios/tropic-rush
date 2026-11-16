@@ -1,21 +1,45 @@
-// The Captain at full detail (docs/CHARACTERS.md, The way now): the owner's model with every one
-// of its ~490,000 triangles, his face (render/face/), the stock clips where they're there to play
-// (render/clipLibrary.ts), fingers that curl one by one, and his hair moving in the breeze.
+// The Captain (docs/CHARACTERS.md, The way now): the owner's model, his face (render/face/), the
+// stock clips where they're there to play (render/clipLibrary.ts), fingers that curl one by one,
+// and his hair moving in the breeze.
 //
-// For close-ups only: on the boat now, cutscenes later. In a raid he's still the old Rifleman.
+// Two copies of the same body on one skeleton: every one of the ~490,000 triangles for when the
+// camera's close, and a 40,000 one for when it isn't, which also casts his shadow either way (no one
+// can tell a shadow's detail, and it halves what he costs). Each file's fetched and unpacked once,
+// however many Captains there are: the pictures alone are a phone's worth of memory.
 
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { type GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone } from "three/addons/utils/SkeletonUtils.js";
 import type { Expression } from "../logic/face/expressions";
 import { ClipLibrary, ClipPlayer } from "./clipLibrary";
 import { addFace, type FaceMap, FaceRig } from "./face/faceRig";
 
 const MODEL = "/models/captain-full.glb";
+const RAID_MODEL = "/models/captain-raid.glb";
 const FACE = "/models/captain-face.json";
 const CLIPS = "/models/anims/";
 /** How tall the heroes stand in menus (heroAssets.ts). */
 const HEIGHT = 1.8;
+/** Nearer than this (metres, camera to head) he's drawn in full. */
+const NEAR = 4.2;
+
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const files = new Map<string, Promise<GLTF>>();
+/** A model file, fetched and unpacked once; each Captain clones it, sharing its meshes. */
+function file(url: string): Promise<GLTF> {
+  let load = files.get(url);
+  if (!load) {
+    load = loader.loadAsync(url);
+    load.catch(() => files.delete(url));
+    files.set(url, load);
+  }
+  return load;
+}
+let faceMap: Promise<FaceMap> | null = null;
+let faceSkin: Promise<THREE.Texture> | null = null;
+/** The hair found on each mesh, worked out once (it's the same mesh for every Captain). */
+const hairOf = new WeakMap<THREE.BufferGeometry, Float32Array>();
 
 export type Side = "L" | "R";
 export const FINGERS = ["Thumb", "Index", "Mid", "Ring", "Pinky"] as const;
@@ -310,17 +334,20 @@ void cKinds(vec3 linear, out float shirt, out float white, out float leather, ou
   hair = warm * (1.0 - leather) * smoothstep(0.42, 0.55, sat) * smoothstep(0.6, 0.66, c.g / max(c.r, 1e-3));
   skin = warm * (1.0 - leather) * (1.0 - hair);
 }
-// The relief, in texels of the paint.
-float cRelief(vec2 p, float shirt, float white, float leather, float skin, float hair) {
+// The relief of one kind of surface (0 shirt, 1 trousers, 2 leather, 3 skin, 4 hair), in units of
+// a third of a thread. Only the kind that's there is worked out: each pixel pays for one pattern.
+float cRelief(vec2 p, int kind) {
   float k = 6.2832 / 4.0;
-  float weave = sin(p.x * k) * sin(p.y * k) + 0.35 * sin((p.x - p.y) * k * 0.5);
-  float twill = sin((p.x + p.y) * k * 0.9) + 0.3 * cNoise(p * 0.5);
-  float grain = cNoise(p * 0.22) * 0.7 + cNoise(p * 0.55) * 0.3;
-  grain = 1.0 - pow(abs(grain - 0.5) * 2.0, 0.6);
-  float pores = cNoise(p * 0.7) * 0.6 + cNoise(p * 1.6) * 0.4;
-  float strands = sin(p.x * k * 1.4 + cNoise(p * vec2(0.05, 0.25)) * 9.0);
-  return shirt * weave * 0.9 + white * twill * 0.8 + leather * grain * 1.6 + skin * pores * 0.35
-    + hair * strands * 0.9;
+  if (kind == 0) return (sin(p.x * k) * sin(p.y * k) + 0.35 * sin((p.x - p.y) * k * 0.5)) * 0.9;
+  if (kind == 1) return (sin((p.x + p.y) * k * 0.9) + 0.3 * cNoise(p * 0.5)) * 0.8;
+  if (kind == 2) {
+    float grain = cNoise(p * 0.22) * 0.7 + cNoise(p * 0.55) * 0.3;
+    return (1.0 - pow(abs(grain - 0.5) * 2.0, 0.6)) * 1.6;
+  }
+  // Skin: barely any, and none at the finest scale (see SURFACE_COLOR): on a face it read as grit.
+  if (kind == 3) return cNoise(p * 0.7) * 0.15;
+  // Hair and beard: soft clumps, a little longer one way, not drawn lines (those read as ridges).
+  return (cNoise(p * vec2(0.08, 0.3)) - 0.5) * 0.5;
 }
 `;
 
@@ -331,20 +358,21 @@ const SURFACE_COLOR = /* glsl */ `
   // which way the surface faces: the paint's layout is in small scattered pieces, and a pattern laid
   // across it would turn at every piece's edge. Four of these units is a thread and a half of shirt.
   vec3 cAt = vCPos * 4800.0;
-  vec3 cSide = pow(abs(normalize(vCNorm)), vec3(4.0));
-  cSide /= dot(cSide, vec3(1.0));
-  float cFine = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cAt)));
-  float cH = (cRelief(cAt.yz, kShirt, kWhite, kLeather, kSkin, kHair) * cSide.x
-    + cRelief(cAt.xz, kShirt, kWhite, kLeather, kSkin, kHair) * cSide.y
-    + cRelief(cAt.xy, kShirt, kWhite, kLeather, kSkin, kHair) * cSide.z) * cFine;
+  // From the side the surface mostly faces (blending all three cost three times as much, for a
+  // difference no one could see in a weave this fine).
+  vec3 cN = abs(vCNorm);
+  vec2 cTexel = cN.x > cN.y && cN.x > cN.z ? cAt.yz : (cN.y > cN.z ? cAt.xz : cAt.xy);
+  // What it is, by whichever kind's strongest.
+  float cTop = max(max(kShirt, kWhite), max(kLeather, max(kSkin, kHair)));
+  int cKind = cTop == kShirt ? 0 : (cTop == kWhite ? 1 : (cTop == kLeather ? 2 : (cTop == kSkin ? 3 : 4)));
+  float cFine = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cTexel)));
   // The same again four times coarser and stronger, which still shows when the threads are too fine
   // to: the twill's ribs, the leather's pebbles, slubs in the cotton, clumps in the hair.
-  vec3 cAt4 = cAt * 0.25;
-  float cMid = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cAt4)));
-  cH += (cRelief(cAt4.yz, kShirt * 0.4, kWhite, kLeather, kSkin * 0.5, kHair) * cSide.x
-    + cRelief(cAt4.xz, kShirt * 0.4, kWhite, kLeather, kSkin * 0.5, kHair) * cSide.y
-    + cRelief(cAt4.xy, kShirt * 0.4, kWhite, kLeather, kSkin * 0.5, kHair) * cSide.z) * cMid * 2.5;
-  vec2 cTexel = cAt.xy * cSide.z + cAt.xz * cSide.y + cAt.yz * cSide.x;
+  float cMid = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cTexel * 0.25)));
+  float cMidStrength = cKind == 0 ? 0.4 : (cKind == 3 ? 0.5 : 1.0);
+  float cH = 0.0;
+  if (cFine > 0.0 && cKind != 3) cH += cRelief(cTexel, cKind) * cTop * cFine;
+  if (cMid > 0.0) cH += cRelief(cTexel * 0.25, cKind) * cTop * cMid * 2.5 * cMidStrength;
   // Heathered cotton: threads a shade lighter or darker, in slubs along the weave.
   diffuseColor.rgb *= 1.0 + (kShirt + kWhite * 0.5) * (cNoise(cTexel * vec2(0.02, 0.15)) - 0.5) * 0.12;
   // The threads' and the grain's own small changes of shade, and darker hollows.
@@ -368,6 +396,12 @@ const SURFACE_NORMAL = /* glsl */ `
     float det = dot(dx, r1);
     // The relief's depth: a tenth of a millimetre or so.
     vec3 grad = sign(det) * (hx * r1 + hy * r2) * 0.00012;
+    // Never tipped more than about 30 degrees: where the surface is nearly edge-on to the screen,
+    // or a pixel steps across a hard change in the relief, the tip would be huge, and a wet-looking
+    // spot of light flashes there as he moves (it did on his forehead).
+    float most = abs(det) * 0.55;
+    float g = length(grad);
+    if (g > most) grad *= most / g;
     normal = normalize(abs(det) * normal - grad);
   }
 `;
@@ -417,11 +451,26 @@ function dress(mesh: THREE.SkinnedMesh, loose: Float32Array): void {
 
 export interface Captain {
   holder: THREE.Group;
+  /** The model itself, inside the holder (which stands him 1.8 m tall on the ground). */
+  model: THREE.Object3D;
+  /** Which way he faces in the model's own space, found at rest from his eyes. */
+  forward: THREE.Vector3;
   face: FaceRig | null;
   hands: Hands;
   /** Playing the stock clips, or null when they aren't there and he stands at ease instead. */
   player: ClipPlayer | null;
-  update(dt: number): void;
+  /** Moves him on; `pose`, when given, sets his body instead of the clips or his stance at ease. */
+  update(dt: number, pose?: () => void): void;
+  /** Draws him in full when this camera's close to his face, the lighter copy when it isn't. */
+  detailFor(camera: THREE.Camera): void;
+}
+
+/** Writes nothing to the picture: the light copy, kept only for the shadow it casts. */
+const SHADOW_ONLY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+
+/** What to load: the full model, or the lighter raid copy, moved by whatever leads him there. */
+export interface CaptainOptions {
+  raid?: boolean;
 }
 
 let cast: Promise<Captain | null> | null = null;
@@ -448,31 +497,75 @@ export const MOOD_FACE: Record<string, Expression> = {
 };
 
 /** Loads the Captain, standing 1.8 m on y = 0 facing +x, as the menus' heroes do. */
-export async function loadCaptain(): Promise<Captain> {
-  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  const [gltf, map, clips] = await Promise.all([
-    loader.loadAsync(MODEL),
-    fetch(FACE).then((r) => r.json() as Promise<FaceMap>),
+export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain> {
+  faceMap ??= fetch(FACE).then((r) => {
+    if (!r.ok) throw new Error("No face map");
+    return r.json() as Promise<FaceMap>;
+  });
+  faceSkin ??= faceMap.then((m) => new THREE.TextureLoader().loadAsync(`/models/${m.picture}`));
+  const [full, light, map, skin, clips] = await Promise.all([
+    options.raid ? null : file(MODEL),
+    file(RAID_MODEL),
+    faceMap,
+    faceSkin,
     // The clips are the owner's stock and aren't in the repo until their licence is confirmed;
-    // without them he stands at ease on moves of his own.
-    ClipLibrary.load(CLIPS, ["idle"]).catch(() => null),
+    // without them he stands at ease on moves of his own. In a raid something else leads him.
+    options.raid ? null : ClipLibrary.load(CLIPS, ["idle"]).catch(() => null),
   ]);
-  const model = gltf.scene;
-  const skin = await new THREE.TextureLoader().loadAsync(`/models/${map.picture}`);
+  const model = clone((full ?? light).scene);
+  const nearMeshes: THREE.SkinnedMesh[] = [];
+  model.traverse((o) => {
+    if (o instanceof THREE.SkinnedMesh) nearMeshes.push(o);
+  });
+  // The light copy on the same skeleton, beside the full one: for the shadow, and for afar.
+  const farMeshes: THREE.SkinnedMesh[] = [];
+  if (full) {
+    const extra = clone(light.scene);
+    extra.traverse((o) => {
+      if (o instanceof THREE.SkinnedMesh) farMeshes.push(o);
+    });
+    const beside = nearMeshes[0];
+    for (const m of farMeshes) {
+      const bones = m.skeleton.bones.map((b) => model.getObjectByName(b.name));
+      if (!beside?.parent || bones.some((b) => !(b instanceof THREE.Bone))) continue;
+      beside.parent.add(m);
+      m.position.copy(beside.position);
+      m.quaternion.copy(beside.quaternion);
+      m.scale.copy(beside.scale);
+      m.bind(new THREE.Skeleton(bones as THREE.Bone[], m.skeleton.boneInverses), m.bindMatrix);
+    }
+  }
   const parts = addFace(model, map, skin);
   const face = parts && new FaceRig(parts);
   const hands = new Hands(model);
-  model.traverse((o) => {
-    if (o instanceof THREE.SkinnedMesh) {
-      o.castShadow = true;
-      o.frustumCulled = false;
+  const farMaterial = new Map<THREE.SkinnedMesh, THREE.Material | THREE.Material[]>();
+  for (const o of [...nearMeshes, ...farMeshes]) {
+    o.frustumCulled = false;
+    let loose = hairOf.get(o.geometry);
+    if (!loose) {
       const count = o.geometry.getAttribute("position")?.count ?? 0;
-      dress(o, looseHair(o, map.browZ) ?? new Float32Array(count));
+      loose = looseHair(o, map.browZ) ?? new Float32Array(count);
+      hairOf.set(o.geometry, loose);
     }
-  });
+    dress(o, loose);
+  }
+  for (const o of nearMeshes) o.castShadow = farMeshes.length === 0;
+  for (const o of farMeshes) {
+    o.castShadow = true;
+    farMaterial.set(o, o.material);
+  }
+  let near = true;
+  const setNear = (on: boolean) => {
+    if (farMeshes.length === 0 || on === near) return;
+    near = on;
+    for (const o of nearMeshes) o.visible = on;
+    for (const o of farMeshes) o.material = on ? SHADOW_ONLY : (farMaterial.get(o) ?? o.material);
+  };
+  near = false;
+  setNear(true);
   const player = clips && new ClipPlayer(model, clips);
   player?.play("idle", { fade: 0 });
-  if (face && player) face.animated = true;
+  if (face && (player || options.raid)) face.animated = true;
   // Which way he faces: from the head to his eyes, at rest.
   const forward = new THREE.Vector3(1, 0, 0);
   if (parts) {
@@ -494,7 +587,7 @@ export async function loadCaptain(): Promise<Captain> {
       if (eyes.lengthSq() > 1e-8) forward.copy(eyes.normalize());
     }
   }
-  const atEase = player ? null : new AtEase(model, forward);
+  const atEase = player || options.raid ? null : new AtEase(model, forward);
   const box = new THREE.Box3().setFromObject(model);
   const root = new THREE.Group();
   root.add(model);
@@ -504,16 +597,25 @@ export async function loadCaptain(): Promise<Captain> {
   holder.add(root);
   return {
     holder,
+    model,
+    forward,
     face,
     hands,
     player,
-    update(dt: number) {
+    update(dt: number, pose?: () => void) {
       windTime.value += dt;
       hands.release();
-      if (player) player.update(dt);
+      if (pose) pose();
+      else if (player) player.update(dt);
       else atEase?.update(dt);
       hands.update(dt);
       face?.update(dt);
     },
+    detailFor(camera: THREE.Camera) {
+      const head = parts?.head ?? holder;
+      setNear(camera.position.distanceTo(head.getWorldPosition(headAt)) < NEAR);
+    },
   };
 }
+
+const headAt = new THREE.Vector3();

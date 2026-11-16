@@ -7,7 +7,7 @@ import { BUILDINGS, type BuildingSpec, type BuildingType } from "../logic/buildi
 import { type CrewLayout, HOME_START } from "../logic/crewIsland";
 import { CRYSTAL_KINDS } from "../logic/crystals";
 import { costText, type Purse } from "../logic/economy";
-import { HEROES } from "../logic/heroes";
+import { HEROES, type HeroKind } from "../logic/heroes";
 import { HOME_SHAPE, type IslandLayout, type IslandShape, lavaWidth } from "../logic/island";
 import type {
   Projectile,
@@ -28,12 +28,14 @@ import { AimView } from "./aimCone";
 import { type AreaMark, areaMark } from "./areaMarks";
 import { kitPiece, lampSpots, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
+import { CaptainInRaid } from "./captainRaid";
 import { type CloudView, homeClouds } from "./clouds";
 import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
-import { HeroAnimator } from "./heroAnimator";
+import { boatRise, boatRoll, type CrewBoat, crewBoatModel, gearBag, SITTING } from "./gunboat";
+import { AT_EASE, HeroAnimator } from "./heroAnimator";
 import { Lightning } from "./lightning";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import { Lookout } from "./lookout";
@@ -42,8 +44,6 @@ import {
   buildingModel,
   crewTurretModel,
   decoyDroneModel,
-  type GunboatModel,
-  gunboatModel,
   type HeroModel,
   heroModel,
   mineModel,
@@ -58,6 +58,17 @@ import { homeScenery, sceneryMap } from "./scenery";
 import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
 import { Snowfall } from "./snowfall";
 import { buildTerrain, type TerrainView } from "./terrain";
+
+/** Whose place the Captain takes in a raid. */
+const CAPTAIN_KIND: HeroKind = "rifleman";
+
+/** One of the crew left aboard the gunboat for the raid. */
+interface DeckHand {
+  model: HeroModel;
+  animator: HeroAnimator | null;
+  sit: boolean;
+  captain: CaptainInRaid | null;
+}
 
 interface BuildingView {
   model: BuildingModel;
@@ -104,6 +115,8 @@ interface HeroView {
   greened: Map<THREE.Mesh, THREE.Material | THREE.Material[]> | null;
   /** Fast forward's barrier round them, made the first time they have one. */
   bubble: THREE.Mesh | null;
+  /** The Captain, wearing the Rifleman's moves, once he's loaded. */
+  captain: CaptainInRaid | null;
 }
 
 /**
@@ -369,7 +382,11 @@ export class RaidView {
   private readonly before = new Map<number, Vec2>();
   between = 1;
   private readonly mines = new Map<number, THREE.Mesh>();
-  private readonly boat: GunboatModel;
+  private readonly boat: CrewBoat;
+  /** Where the gunboat's drawn: run up onto the beach ahead of her mooring. */
+  private readonly boatAt: Vec2;
+  /** The crew who stay aboard. */
+  private readonly deckHands: DeckHand[] = [];
   /** Heroes aboard the gunboat in the landing or the way home, and not to be drawn. */
   readonly aboard = new Set<number>();
   /** A film's being shot over the raid: the rings under the heroes and every health bar stay hidden. */
@@ -502,14 +519,77 @@ export class RaidView {
     this.reach = home ? null : new DefenseReach(state);
     if (this.reach) this.root.add(this.reach.mesh);
 
-    this.boat = gunboatModel();
+    this.boat = crewBoatModel();
     this.boatGunsRest = this.boat.guns?.position.x ?? 0;
     const toLand = sub(layout.spawn, layout.boat);
     this.boatHeading = angleOf(toLand);
     this.cannonAim = this.boatHeading;
-    this.boat.root.position.set(layout.boat.x, 0, layout.boat.y);
+    // She's run up onto the beach: her bow just on the sand, wherever the sand starts ahead of
+    // her mooring (only where she's drawn moves; she fires from her mooring as ever).
+    const ahead = { x: Math.cos(this.boatHeading), y: Math.sin(this.boatHeading) };
+    let shore = 0;
+    while (
+      shore < 40 &&
+      this.ground(layout.boat.x + ahead.x * shore, layout.boat.y + ahead.y * shore) <= 0.05
+    ) {
+      shore += 0.25;
+    }
+    const back = shore - this.boat.length / 2 - 0.2;
+    this.boatAt = { x: layout.boat.x + ahead.x * back, y: layout.boat.y + ahead.y * back };
+    this.boat.root.position.set(this.boatAt.x, 0, this.boatAt.y);
     this.boat.root.rotation.y = -this.boatHeading;
     this.root.add(this.boat.root);
+  }
+
+  /** Where the gunboat's drawn, and which way her bow points (radians, as `angleOf` goes). */
+  get boatPlace(): { x: number; y: number; heading: number } {
+    return { ...this.boatAt, heading: this.boatHeading };
+  }
+
+  /** The crew's gunboat itself, for where the crew stand on her. */
+  get crewBoat(): CrewBoat {
+    return this.boat;
+  }
+
+  /** How high the island is at a point (0 at the sea). */
+  groundAt(x: number, y: number): number {
+    return this.ground(x, y);
+  }
+
+  /**
+   * The rest of the crew, who stay aboard for the raid, each at their place on her: the same
+   * stations and the same models they had when the player chose, so the landing hands over without
+   * a cut.
+   */
+  crewAboard(kinds: readonly HeroKind[]): void {
+    kinds.forEach((kind, i) => {
+      const station = this.boat.stations[i];
+      if (!station) return;
+      const model = heroModel(kind);
+      model.root.position.set(station.x, station.y, station.z);
+      model.root.rotation.y = -station.facing;
+      this.boat.root.add(model.root);
+      const animator = model.rig ? new HeroAnimator(model.rig) : null;
+      const deck: DeckHand = { model, animator, sit: station.sit, captain: null };
+      this.deckHands.push(deck);
+      if (kind === CAPTAIN_KIND && model.rig) {
+        void CaptainInRaid.follow(model).then((captain) => {
+          if (!captain || !this.deckHands.includes(deck)) return;
+          deck.captain = captain;
+          this.boat.root.add(captain.root);
+        });
+      }
+    });
+  }
+
+  /** Gear the crew threw ashore at the landing, left lying where it fell. */
+  dropGear(at: readonly { x: number; y: number; z: number; turn: number }[]): void {
+    for (const g of at) {
+      const bag = gearBag();
+      bag.position.set(g.x, g.y, g.z);
+      bag.rotation.y = g.turn;
+      this.root.add(bag);
+    }
   }
 
   handleEvents(events: readonly RaidEvent[], state: RaidState): void {
@@ -826,8 +906,18 @@ export class RaidView {
       ring,
       greened: null,
       bubble: null,
+      captain: null,
     };
     this.heroes.set(h.id, view);
+    // The Captain is the player's own character, in the Rifleman's place (docs/DESIGN.md): he
+    // follows the Rifleman's moves once his model's here; until then, or without it, the Rifleman.
+    if (h.kind === CAPTAIN_KIND && h.copyOf === null && model.rig) {
+      void CaptainInRaid.follow(model).then((captain) => {
+        if (!captain || this.heroes.get(h.id) !== view) return;
+        view.captain = captain;
+        this.root.add(captain.root);
+      });
+    }
     return view;
   }
 
@@ -1153,6 +1243,7 @@ export class RaidView {
       cheering: (state.status === "won" || state.conquest !== null) && !h.moving,
       turn: view.turn,
     });
+    view.captain?.update(dt);
   }
 
   private takeFromPool(kind: ProjectileKind, team: Team, variant: string): THREE.Object3D {
@@ -1410,8 +1501,13 @@ export class RaidView {
       this.boatKick = Math.max(0, this.boatKick - dt * BOAT_KICK_RETURN);
       guns.position.x = this.boatGunsRest - this.boatKick * BOAT_KICK;
     }
-    root.position.y = 0.12 + Math.sin(time * 1.6) * 0.08;
-    root.rotation.z = Math.sin(time * 1.1) * 0.025;
+    // Run aground, she only shifts a little as the swell comes in under her stern.
+    root.position.y = boatRise(time);
+    root.rotation.z = boatRoll(time);
+    for (const d of this.deckHands) {
+      d.animator?.update(dt, d.sit ? SITTING : AT_EASE);
+      d.captain?.update(dt);
+    }
     const relative = -angleDiff(this.cannonAim, this.boatHeading);
     cannon.rotation.y += (relative - cannon.rotation.y) * 0.1;
   }

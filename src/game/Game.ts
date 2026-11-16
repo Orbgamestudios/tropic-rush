@@ -70,7 +70,13 @@ import {
   signal,
 } from "./logic/story";
 import { type Place, sunPosition, sunRising } from "./logic/sun";
-import { packShards, readShards, type Shards, type TimePower } from "./logic/timeShards";
+import {
+  fitLoadout,
+  packShards,
+  readShards,
+  type Shards,
+  type TimePower,
+} from "./logic/timeShards";
 import { angleOf, distance, lerp, vec } from "./logic/vec";
 import {
   beatRival,
@@ -91,7 +97,7 @@ import { CoopSession, HOST_TIMEOUT } from "./net/coopSession";
 import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
 import { fetchRivals, reportRaid } from "./net/world";
-import { BoatScene } from "./render/boatScene";
+import { BoatScene, type LandingSite } from "./render/boatScene";
 import { loadBuildingKit, STAGES } from "./render/buildingKit";
 import { CameraRig } from "./render/cameraRig";
 import { DangerMap } from "./render/dangerMap";
@@ -363,6 +369,13 @@ export class Game {
       step: (by) => this.boatScene?.step(by) ?? null,
       ready: (hero) => this.sail(hero),
       nameOf: (hero) => this.boatScene?.nameOf(hero) ?? null,
+      crystals: () => ({ owned: this.save.shards, loadout: this.save.shardLoadout }),
+      setLoadout: (loadout) => {
+        this.updateSave({ shardLoadout: loadout });
+        this.boatScene?.setCrystals(fitLoadout(this.save.shards, loadout));
+      },
+      setOff: () => this.boatSetOff(),
+      skip: () => this.boatScene?.skip(),
     });
     this.heroes = new HeroSelect(screens, this.showcase, {
       save: () => this.save,
@@ -732,6 +745,8 @@ export class Game {
         const hero = this.boatScene?.current;
         if (hero) this.sail(hero);
       },
+      /** Sets off from the console, crystals as they are. */
+      setOffNow: () => this.boatSetOff(),
       /** Swings round the boat to the next hero (+1) or the one before (-1). */
       boatStep: (by: number) => this.boatSelect.set(this.boatScene?.step(by) ?? null),
       boat: () => this.boatScene,
@@ -850,7 +865,8 @@ export class Game {
       case "raid":
         return "evening";
       case "ended":
-        return this.departT !== null ? "dusk" : "evening";
+        // Dusk from the first shot of the way home, a cut, so the change is never seen happening.
+        return this.departT !== null && this.departT >= 0 ? "dusk" : "evening";
       case "replay":
         return "night";
       default:
@@ -1252,27 +1268,75 @@ export class Game {
       this.view.gunboat.visible = false;
       for (const h of this.state.heroes) this.view.aboard.add(h.id);
     }
-    // Out to sea along the line from the beach through the gunboat's mooring.
-    const dx = layout.boat.x - layout.spawn.x;
-    const dy = layout.boat.y - layout.spawn.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const at = (out: number) =>
-      vec(layout.boat.x + (dx / length) * out, layout.boat.y + (dy / length) * out);
-    const scene = new BoatScene(at(46), at(16));
+    const view = this.view;
+    if (!view) return;
+    const place = view.boatPlace;
+    // Out to sea, straight astern of where she'll run aground.
+    const from = vec(
+      place.x - Math.cos(place.heading) * 46,
+      place.y - Math.sin(place.heading) * 46,
+    );
+    const scene = new BoatScene(from, place, this.landingSite(layout.spawn, view));
+    scene.onConsole = () => {
+      if (this.boatScene === scene) this.boatSelect.showConsole();
+    };
     this.boatScene = scene;
     this.stage.scene.add(scene.root);
     this.phase = "boat";
     const crew = this.save.unlocked.length > 0 ? this.save.unlocked : [this.save.hero];
     void scene.board(crew, this.mapHero).then(() => {
-      if (this.boatScene === scene && this.phase === "boat") this.boatSelect.show(scene.current);
+      if (this.boatScene !== scene || this.phase !== "boat") return;
+      scene.setCrystals(fitLoadout(this.save.shards, this.save.shardLoadout));
+      this.boatSelect.show(scene.current);
     });
   }
 
-  /** Ready: the boat gets under way, and lands the chosen hero once she's run in. */
+  /** What the boat scene needs to land the hero just where the raid begins: its camera there. */
+  private landingSite(spawn: { x: number; y: number }, view: RaidView): LandingSite {
+    const camera = this.stage.camera;
+    const keep = { position: camera.position.clone(), quaternion: camera.quaternion.clone() };
+    this.rig.mode = "follow";
+    this.rig.zoomOut = 0;
+    this.rig.snap(spawn);
+    this.rig.update(0, vec(spawn.x, spawn.y), vec(0, -3), null, false);
+    const at = { position: camera.position.clone(), quaternion: camera.quaternion.clone() };
+    camera.position.copy(keep.position);
+    camera.quaternion.copy(keep.quaternion);
+    return { spawn: { ...spawn }, ground: (x, y) => view.groundAt(x, y), view: at };
+  }
+
+  /** Ready: the one chosen goes in to the console. */
   private sail(hero: HeroKind): void {
     this.mapHero = hero;
     this.boatSelect.hide();
-    this.boatScene?.sail();
+    this.boatScene?.ready();
+  }
+
+  /**
+   * Set off, from the console: the raid's world is made ready for the hero chosen and the crystals
+   * set (while the camera's still in the cabin, so any hitch doing it goes unseen), and she gets
+   * under way.
+   */
+  private boatSetOff(): void {
+    const scene = this.boatScene;
+    const island = this.attacking;
+    if (!scene || !island) return;
+    this.boatSelect.hide();
+    const hero = scene.current ?? this.mapHero;
+    this.updateSave({ hero });
+    this.dangerMap?.dispose();
+    this.dangerMap = null;
+    if (this.view) {
+      this.stage.scene.remove(this.view.root);
+      this.view.dispose();
+    }
+    this.loadRaid(hero, island);
+    if (this.view && this.state) {
+      this.view.filming = true;
+      this.view.gunboat.visible = false;
+      for (const h of this.state.heroes) this.view.aboard.add(h.id);
+    }
+    scene.setOff();
   }
 
   private boatFrame(dt: number): void {
@@ -1280,18 +1344,24 @@ export class Game {
     const { state, view } = this;
     if (!scene) return;
     scene.update(dt, this.stage.camera);
+    this.boatSelect.showSkip(scene.skippable);
+    const shade = scene.shadowFocus;
+    this.stage.focusShadows(shade.at, shade.size);
     if (state && view)
       view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
     const island = this.attacking;
-    if (scene.progress >= 1 && island) {
+    if (scene.done && island) {
       const hero = scene.current ?? this.mapHero;
-      this.endBoat();
-      this.startRaid(hero, island);
+      this.startRaid(hero, island, undefined, {
+        aboard: scene.stayingAboard,
+        gear: scene.gearDrops,
+      });
     }
   }
 
   private endBoat(): void {
     this.boatSelect.hide();
+    this.boatSelect.showSkip(false);
     this.boatScene?.dispose();
     this.boatScene = null;
   }
@@ -1813,13 +1883,27 @@ export class Game {
     this.view.update(this.state, dt, this.time, camera, width, height);
   }
 
-  private startRaid(hero: HeroKind, target: MapIsland, team?: Team): void {
+  /**
+   * Into the fight. `landed` when the boat scene's brought the hero ashore itself: the world it
+   * made ready at Set off goes on as it is, the crew who didn't go stay aboard, the kit thrown
+   * ashore stays where it fell, and there's no landing film (it's just been shown).
+   */
+  private startRaid(
+    hero: HeroKind,
+    target: MapIsland,
+    team?: Team,
+    landed?: { aboard: HeroKind[]; gear: { x: number; y: number; z: number; turn: number }[] },
+  ): void {
     this.updateSave({ hero });
-    this.endRaidWorld();
-    this.hideScreens();
+    const prepared = landed && this.view && this.state ? this.view : null;
+    if (prepared) this.endBoat();
+    else {
+      this.endRaidWorld();
+      this.hideScreens();
+    }
     this.islandLevel = target.tier;
     this.raidTarget = target;
-    const { layout } = this.loadRaid(hero, target, team);
+    const layout = prepared ? this.islandFor(target) : this.loadRaid(hero, target, team).layout;
     if (team) {
       this.coop = new CoopSession(team.raidId, team.seats, team.seat, (message, to) =>
         this.link?.relay(message, to),
@@ -1857,6 +1941,18 @@ export class Game {
     this.baseTaken = false;
     this.lockedOn = null;
     this.hud.show(false);
+    if (prepared && landed) {
+      // Straight on from the boat scene: no landing film, the fight's on.
+      this.landingT = -1;
+      prepared.aboard.clear();
+      prepared.filming = false;
+      prepared.gunboat.visible = true;
+      prepared.crewAboard(landed.aboard);
+      prepared.dropGear(landed.gear);
+      this.setControlMode("hero");
+      this.hud.show(true);
+      this.hud.flash("Destroy the headquarters!");
+    }
     this.story.note({ on: "first", thing: "raid" });
     if (target.story) this.story.note({ on: "island", island: target.story, stage: "landing" });
     if (target.rescue) this.story.note({ on: "rescue", hero: target.rescue, stage: "landing" });
@@ -1987,7 +2083,8 @@ export class Game {
     // The real frame time, so a device that's struggling badly drops quality straight away.
     if (!calm) this.stage.adaptQuality(frameTime);
     music.play(this.trackForPhase());
-    this.stage.sky.setScene(this.skyScene(), this.phase === "ended" ? 6 : 3);
+    // At once, never eased in view: each scene opens already at its hour (the owner's call).
+    this.stage.sky.setScene(this.skyScene(), 0);
     this.tickRally(dt);
     this.syncIn -= dt;
     if (this.syncIn <= 0) {
@@ -2016,7 +2113,9 @@ export class Game {
     this.tint.update(this.phase === "raid" ? this.state : null);
     this.story.update(dt);
     // A cutscene's cast gets the crisp shadows, wherever the island's own camera was looking.
-    if (this.story.stage.active) this.stage.focusShadows(this.story.stage.middle, 16);
+    if (this.story.stage.active) {
+      this.stage.focusShadows(this.story.stage.middle, this.story.stage.shadowReach);
+    }
     this.stage.render();
   };
 
@@ -2146,7 +2245,7 @@ export class Game {
     this.landingT += dt;
     const { places, shot } = landing(
       this.landingT,
-      state.boat.pos,
+      this.bowOf(view),
       this.landSpawn,
       state.heroes.length,
     );
@@ -2166,6 +2265,13 @@ export class Game {
     this.setControlMode("hero");
     this.hud.show(true);
     this.hud.flash("Destroy the headquarters!");
+  }
+
+  /** Where the crew go over the gunboat's bow: she's run up on the beach (raidView.ts). */
+  private bowOf(view: RaidView): { x: number; y: number } {
+    const { x, y, heading } = view.boatPlace;
+    const out = view.crewBoat.length / 2 - 0.6;
+    return vec(x + Math.cos(heading) * out, y + Math.sin(heading) * out);
   }
 
   /** Puts the crew where a film says, walking or still, and hides whoever's aboard. */
@@ -2211,9 +2317,10 @@ export class Game {
     this.departT = (this.departT ?? 0) + dt;
     this.hud.show(false);
     const crew = state.heroes.filter((h) => h.alive);
+    const bow = this.bowOf(view);
     const { places, crates, boatOut, shot } = departure(
       this.departT,
-      state.boat.pos,
+      bow,
       this.landSpawn,
       this.departFrom,
     );
@@ -2236,10 +2343,7 @@ export class Game {
         crate.rotation.y = -carrier.facing;
       }
     });
-    const away = Math.atan2(
-      state.boat.pos.y - this.landSpawn.y,
-      state.boat.pos.x - this.landSpawn.x,
-    );
+    const away = Math.atan2(bow.y - this.landSpawn.y, bow.x - this.landSpawn.x);
     view.gunboat.position.set(
       this.boatHome.x + Math.cos(away) * boatOut,
       this.boatHome.y,

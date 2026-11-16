@@ -58,11 +58,11 @@ export interface FaceMap {
 }
 
 export const CAPTAIN_PALETTE: FacePalette = {
-  iris: new THREE.Color().setRGB(0.36, 0.22, 0.11, THREE.SRGBColorSpace),
+  iris: new THREE.Color().setRGB(0.3, 0.21, 0.14, THREE.SRGBColorSpace),
   hair: new THREE.Color().setRGB(0.8, 0.57, 0.3, THREE.SRGBColorSpace),
   hairShade: new THREE.Color().setRGB(0.5, 0.32, 0.15, THREE.SRGBColorSpace),
   lash: new THREE.Color().setRGB(0.16, 0.09, 0.06, THREE.SRGBColorSpace),
-  lip: new THREE.Color().setRGB(1.0, 0.78, 0.76, THREE.SRGBColorSpace),
+  lip: new THREE.Color().setRGB(0.96, 0.7, 0.68, THREE.SRGBColorSpace),
 };
 
 /** One patch as a mesh in the head bone's space, each point knowing where it is on the feature. */

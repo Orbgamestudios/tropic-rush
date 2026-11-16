@@ -78,6 +78,53 @@
   border: 1.5px solid rgb(255 255 255 / 0.3);
 }
 
+/* At the console: the holders and the crystals owned, to one side of the cabin shot. */
+.boat-console-panel {
+  position: absolute;
+  left: max(18px, var(--safe-left, 0px));
+  bottom: 18px;
+  width: min(330px, 46vw);
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgb(8 22 34 / 0.62);
+  border: 1.5px solid rgb(120 220 210 / 0.35);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.boat-console-panel .loadout-title {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.boat-console-panel .loadout-hint {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 8px;
+}
+
+.boat-console-panel .loadout-slots,
+.boat-console-panel .loadout-owned {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.boat-skip {
+  position: absolute;
+  right: max(18px, var(--safe-right, 0px));
+  top: 14px;
+  z-index: 5;
+}
+
+.boat-setoff {
+  position: absolute;
+  right: max(18px, var(--safe-right, 0px));
+  bottom: 16px;
+}
+
 .boat-mate.ready {
   background: rgb(46 160 82 / 0.8);
   border-color: rgb(190 255 200 / 0.7);

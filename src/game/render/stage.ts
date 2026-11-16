@@ -121,6 +121,10 @@ export class Stage {
       cam.top = size;
       cam.bottom = -size;
       cam.updateProjectionMatrix();
+      // The offset that keeps a surface from shadowing itself in stripes goes with the size of a
+      // shadow's pixel: close up it's small, so the chin's shadow sits on the neck, not off it.
+      this.sun.shadow.normalBias = Math.min(0.04, Math.max(0.006, size * 0.0025));
+      this.shadowsStale = true;
     }
   }
 

@@ -92,15 +92,24 @@ These were explicitly left out to keep the first version to a basic structure:
   Clouds towards the sun glow at their edges; after sunset the Earth's shadow and the pink band
   over it rise opposite (`render/skyClouds.ts`). `Game.skyScene()` picks the scene for each phase.
   Night raids are shown at night now, not at the hour the raiders came.
-- **Setting out from the boat (Decided, the owner's call):** choosing a hero for a raid happens
-  aboard the gunboat out at sea, in the late afternoon, with the island ahead. The whole crew stands
-  aboard in full detail; arrows either side swing the camera round the boat from one hero to the
-  next, and Ready sets her running in to the island. Alone for now: a party still goes through the
-  map's lobby, and the squad-ready step aboard is still to do (`render/boatScene.ts`,
-  `ui/boatSelect.ts`).
-- **The landing (Decided):** every raid opens with the crew going over the side and up the beach,
-  the camera low by the boat rising to sit over the player's hero; the fight starts when they're
-  there, about three and a half seconds (`render/raidShots.ts`).
+- **Setting out from the boat, in one unbroken shot (Decided, the owner's call):** choosing a hero
+  for a raid happens aboard the gunboat out at sea, in the late afternoon, with the island ahead.
+  The crew stand and sit about her deck; arrows either side swing the camera round from one to the
+  next. Ready sends the one picked into the cabin to the console, where the three time crystals
+  they'll take are set in its holders (this is where the loadout is chosen now). Set off: she runs
+  in, the camera pulling out of the cabin and round, and runs up onto the beach; kit's thrown ashore,
+  the hero goes over the bow rail and walks up the sand, and the camera comes to rest just where the
+  player's camera sits in a raid, which takes over from there with no cut. The rest of the crew stay
+  aboard her for the raid, and the kit lies where it fell. Skip jumps to the end of the walk to the
+  console, or of the run in and landing (`render/boatScene.ts`, `ui/boatSelect.ts`). Alone for now:
+  a party still goes through the map's lobby, and the squad-ready step aboard is still to do.
+- **The crew's gunboat (Decided):** a new boat big enough for the whole crew at their raid size: an
+  open cabin with the helm, a bench and the crystal console, benches and crates to sit on aft, a
+  turret on the bow, a mast with the crew's flag. It's the same boat in the choosing, the landing,
+  the raid and the way home (`render/gunboat.ts`).
+- **The landing film (Decided):** what a raid opens with when it doesn't come from the boat scene (a
+  party, or a test): the crew going over the side and up the beach, the camera low by the boat
+  rising to sit over the player's hero (`render/raidShots.ts`).
 - **The way home (Decided):** a win alone no longer sits on the burning base. Three shots at dusk:
   close on a hero carrying a crate of loot down the beach, from the water as the crates come over
   the side and the crew climbs in, and wide as she pulls away; then the results. A cutscene after a

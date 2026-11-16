@@ -77,14 +77,14 @@ uniform vec3 uLash;
 float upperLid(float x, float open, float slant) {
   float shape = pow(max(0.0, 1.0 - x * x), 0.62);
   float shut = -0.12 + 0.05 * x;
-  // The top of the eye sits a little towards the nose, as eyes do.
-  float rest = 0.6 * shape * (1.0 - 0.12 * x) + slant * x * 0.25;
+  // The top of the eye sits a little towards the nose, as eyes do: a rounded almond, as drawn.
+  float rest = 0.56 * shape * (1.0 - 0.1 * x) + slant * x * 0.25;
   return mix(shut, rest, open);
 }
 
 float lowerLid(float x, float raised, float open) {
-  float shape = pow(max(0.0, 1.0 - x * x), 0.9);
-  float rest = -0.46 * shape - 0.02 * x;
+  float shape = pow(max(0.0, 1.0 - x * x), 0.95);
+  float rest = -0.36 * shape - 0.02 * x;
   float shut = -0.12 + 0.05 * x;
   return mix(rest, shut, clamp(raised * 0.55 + (1.0 - clamp(open, 0.0, 1.0)) * 0.25, 0.0, 1.0));
 }
@@ -94,8 +94,13 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
   float open = uLids.x;
   float x = q.x;
   float y = q.y;
-  float low = lowerLid(x, uLids.y, open);
-  float restUp = upperLid(x, 1.0, uLids.z);
+  // The eye is drawn smaller than its socket, as in the owner's designs (small, not anime): its
+  // lids, white, iris and lashes in these units; the brow and the socket's shading in the socket's.
+  const float EYE = 0.7;
+  // Set a little in towards the nose and up towards the brow, as the owner asked (2026-11-16).
+  vec2 e = (q - vec2(-0.13, 0.12)) / EYE;
+  float low = lowerLid(e.x, uLids.y, open);
+  float restUp = upperLid(e.x, 1.0, uLids.z);
   // Shut, the upper lid comes all the way down onto the lower one, wherever that is.
   float up = mix(low, restUp, open);
 
@@ -116,9 +121,10 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
     + b2 * (2.0 * x - xa - xb) / ((xc - xa) * (xc - xb));
   float across = (y - centre) / sqrt(1.0 + slope * slope);
   float along = clamp((x - xa) / (xc - xa), 0.0, 1.0);
-  float thick = mix(0.62, 0.24, smoothstep(0.0, 1.0, along)) * (1.0 + 0.08 * uBrow.x);
+  // Thick and nearly even, tapering only a little to the outer end, the ends rounded: as drawn.
+  float thick = mix(0.5, 0.36, smoothstep(0.2, 1.0, along)) * (1.0 + 0.08 * uBrow.x);
   float ends = max(xa - x, x - xc);
-  float browShape = max(abs(across) - thick * 0.5, ends * 1.4);
+  float browShape = max(abs(across) - thick * 0.5, ends * 1.4) - 0.04;
   float brow = edge(browShape);
   // Its shadow on the skin below it.
   float shade = smoothstep(0.18, 0.0, -(across + thick * 0.5)) * step(across, -thick * 0.5)
@@ -128,62 +134,79 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
     float n = across / (thick * 0.5);
     // Rounded like a bevel: lit along the top, darker underneath.
     float light = 0.98 + 0.22 * n - 0.3 * n * n;
-    // Hairs growing out and up from the inner end, laid along the brow towards the outer end.
-    float strands = 0.86 + 0.2 * sin((x - n * mix(0.5, 0.12, along)) * 46.0 + hash12(floor(vec2(x * 30.0, n * 3.0))) * 2.0);
-    vec3 hair = mix(uHairShade, uHair, smoothstep(-0.9, 0.6, n)) * light * strands;
+    // Soft, sculpted-looking hair: a faint grain along it rather than drawn strands, paler than
+    // the hair on his head.
+    float strands = 0.95 + 0.06 * sin((x - n * mix(0.5, 0.12, along)) * 40.0);
+    vec3 browHair = mix(uHair, vec3(0.9, 0.78, 0.55), 0.25);
+    vec3 hair = mix(uHairShade, browHair, smoothstep(-1.0, 0.4, n)) * light * strands;
     over(col, hair, brow);
   }
 
-  // The crease above the lid, and the shadow the brow ridge throws into the socket.
-  float crease = abs(y - (restUp + 0.3 + 0.03 * x)) ;
-  float creaseShade = smoothstep(0.07, 0.0, crease) * smoothstep(1.05, 0.6, abs(x)) * 0.28;
-  over(col, skin * 0.68, creaseShade);
-  float socket = smoothstep(1.25, 0.2, length(vec2(x * 0.85, (y - 0.15) * 1.1))) * 0.14;
-  over(col, skin * 0.75, socket * step(y, restUp + 0.25));
+  // The socket: a soft shadow under the brow ridge, deepest at the inner corner.
+  float socket = smoothstep(1.3, 0.25, length(vec2(x * 0.8 + 0.1, (y - 0.18) * 1.15))) * 0.16;
+  over(col, skin * 0.74, socket * step(e.y, restUp + 0.42));
+
+  // The upper lid: skin rounding over the eye, from the lash line up to its crease, catching the
+  // light along the middle and darker into the crease, the way the designs model it.
+  float lidH = 0.26;
+  float lidT = (e.y - up) / lidH;
+  float lidSpan = smoothstep(1.12, 0.92, abs(e.x));
+  if (lidT > 0.0 && lidT < 1.35) {
+    float lidLit = 0.93 + 0.13 * sin(clamp(lidT, 0.0, 1.0) * 3.1416) - 0.06 * lidT;
+    over(col, skin * lidLit, lidSpan * smoothstep(1.35, 1.0, lidT));
+    // The crease, a soft dark line where the lid tucks under the brow ridge.
+    float crease = smoothstep(0.22, 0.0, abs(lidT - 1.0)) * lidSpan * 0.3;
+    over(col, skin * 0.62, crease);
+  }
+  // The lower lid: a slight fullness under the eye, lit on top, shadowed underneath.
+  float lowT = (low - e.y) / 0.2;
+  if (lowT > 0.0 && lowT < 1.4) {
+    float lowSpan = smoothstep(1.0, 0.75, abs(e.x));
+    float lowLit = lowT < 0.45 ? 1.04 : mix(1.04, 0.86, smoothstep(0.45, 1.0, lowT));
+    over(col, skin * lowLit, lowSpan * smoothstep(1.4, 1.0, lowT) * 0.8);
+  }
 
   // The eye itself, inside the lids.
-  float inside = edge(max(max(y - up, low - y), abs(x) - 1.0));
+  float inside = edge(max(max(e.y - up, low - e.y), abs(e.x) - 1.0));
   if (inside > 0.0) {
     // The white: warm, shaded under the upper lid and towards the corners.
-    float underLid = exp(-(up - y) * 7.0);
-    float corner = smoothstep(0.55, 1.0, abs(x));
-    vec3 white = vec3(0.86, 0.82, 0.78) * (1.0 - 0.5 * underLid) * (1.0 - 0.28 * corner);
+    // The lid's shadow on the eye: a soft band under its edge.
+    float underLid = exp(-(up - e.y) * 5.0);
+    float corner = smoothstep(0.55, 1.0, abs(e.x));
+    vec3 white = vec3(0.86, 0.83, 0.8) * (1.0 - 0.45 * underLid) * (1.0 - 0.25 * corner);
     // Pink by the nose.
-    white = mix(white, vec3(0.75, 0.42, 0.38), smoothstep(-0.7, -0.98, x) * 0.6);
+    white = mix(white, vec3(0.75, 0.42, 0.38), smoothstep(-0.7, -0.98, e.x) * 0.5);
     vec3 eye = white;
-    // The iris, where the eye looks.
-    vec2 at = vec2(uGaze.x * 0.42, uGaze.y * 0.22 - 0.04);
-    vec2 d = q - at;
+    // The iris, where the eye looks: big for the opening, dark, with a soft darker rim and only a
+    // little pattern, as in the designs.
+    vec2 at = vec2(uGaze.x * 0.42, uGaze.y * 0.18 - 0.02);
+    vec2 d = e - at;
     float r = length(d);
     float R = 0.46;
     float iris = edge(r - R);
     if (iris > 0.0) {
       float a = atan(d.y, d.x);
-      float fibres = 0.82 + 0.18 * sin(a * 31.0 + sin(a * 7.0) * 2.0) * (0.5 + 0.5 * sin(r * 40.0));
-      vec3 ring = mix(uIris * 1.5, uIris, smoothstep(0.1, 0.32, r / R * 0.5));
-      vec3 irisCol = mix(ring, uIris * 0.32, smoothstep(0.72, 0.98, r / R)) * fibres;
-      // A warmer ring round the pupil.
-      irisCol = mix(irisCol, uIris * 1.9 + vec3(0.03, 0.015, 0.0), smoothstep(0.62, 0.42, r / R) * 0.5);
-      irisCol *= 1.0 - 0.55 * underLid;
-      float pupil = edge(r - R * 0.4 * uGaze.z);
-      irisCol = mix(irisCol, vec3(0.008, 0.006, 0.005), pupil);
+      float fibres = 0.92 + 0.08 * sin(a * 23.0 + sin(a * 5.0) * 2.0);
+      // Lighter brown round the pupil, deepening to a dark rim, as drawn.
+      vec3 irisCol = mix(uIris * 1.35, uIris * 0.4, smoothstep(0.45, 0.98, r / R)) * fibres;
+      irisCol *= 1.0 - 0.45 * underLid;
+      float pupil = edge(r - R * 0.55 * uGaze.z);
+      irisCol = mix(irisCol, vec3(0.012, 0.01, 0.009), pupil);
       eye = mix(eye, irisCol, iris);
     }
-    // Two catchlights, as the sky and a fill would leave on a wet eye.
-    float glint = edge(length(q - at - vec2(-0.16, 0.17)) - 0.1);
-    float glint2 = edge(length(q - at - vec2(0.14, -0.13)) - 0.045);
-    eye = mix(eye, vec3(1.0), max(glint, glint2 * 0.7));
+    // One small catchlight, up and to one side.
+    float glint = edge(length(e - at - vec2(-0.13, 0.14)) - 0.075);
+    eye = mix(eye, vec3(0.97), glint);
     over(col, eye, inside);
     faceWet = inside;
   }
 
-  // Lashes: a strong dark line along the upper lid, swept out past the outer corner, and a fine
-  // one under the lower lid.
-  float lashWidth = 0.075 + 0.07 * smoothstep(0.1, 1.0, x);
-  float upperLash = edge(max(abs(y - up - lashWidth * 0.5) - lashWidth * 0.5, abs(x) - 1.02));
-  float wing = edge(max(abs(y - (up + (x - 1.0) * 0.35) - 0.02) - 0.035 * (1.25 - x) * 2.5, max(1.0 - x, x - 1.22)));
-  float lowerLash = edge(max(abs(y - low + 0.01) - 0.018, abs(x) - 0.92)) * 0.55 * clamp(open, 0.0, 1.0);
-  over(col, uLash, max(max(upperLash, wing), lowerLash));
+  // The upper lid's edge: a thin dark line, a touch heavier at the outer end; no wing, and only a
+  // hint of one under the lower lid.
+  float lashWidth = 0.04 + 0.025 * smoothstep(0.1, 1.0, e.x);
+  float upperLash = edge(max(abs(e.y - up - lashWidth * 0.5) - lashWidth * 0.5, abs(e.x) - 1.0));
+  float lowerLash = edge(max(abs(e.y - low + 0.01) - 0.012, abs(e.x) - 0.85)) * 0.25 * clamp(open, 0.0, 1.0);
+  over(col, uLash, max(upperLash, lowerLash));
   return col;
 }
 `;
@@ -204,8 +227,9 @@ vec4 mouthFeature(vec2 q, vec3 skin) {
   float w = uMood.w * wide * (1.0 - 0.32 * round);
   float x = q.x;
   float u = x / w;
-  // The line of the mouth: its corners up for a smile, one higher than the other when lopsided.
-  float corners = (uMood.x + uMood.y * sign(x) * 0.6) * 0.16;
+  // The line of the mouth: its corners up for a smile, one higher than the other when lopsided;
+  // even at rest they tuck up a touch, as in the designs.
+  float corners = (uMood.x + uMood.y * sign(x) * 0.6) * 0.16 + 0.035;
   float line = corners * u * u - 0.03 * uMood.z * u * u;
   float shape = max(0.0, 1.0 - u * u);
   float top = line + open * 0.44 * pow(shape, 0.7 - round * 0.35);
@@ -216,14 +240,25 @@ vec4 mouthFeature(vec2 q, vec3 skin) {
   vec3 lip = skin * uLip * lipTone;
 
   // The lips: a thin upper lip above the line or the opening, a fuller lower lip under it.
-  float upperLip = edge(max(abs(q.y - (top + 0.05)) - 0.05 - 0.02 * press, abs(u) - 1.02));
-  float lowerY = bottom - 0.08 + bite * 0.07;
-  float lowerLip = edge(max(abs(q.y - lowerY) - 0.075 - 0.02 * press, abs(u) - 0.95));
+  // The upper lip a bow (higher either side of the middle); the lower one fuller in the middle.
+  float bow = 0.018 * smoothstep(0.0, 0.35, abs(u)) * smoothstep(1.0, 0.5, abs(u));
+  // Lips have no hard outline: they fade into the skin round them.
+  float upperLip = smoothstep(0.035, -0.02, max(abs(q.y - (top + 0.05 + bow)) - 0.05 - bow - 0.02 * press, abs(u) - 1.0));
+  float lowerY = bottom - 0.11 + bite * 0.07;
+  float lowerFull = 0.105 * (0.7 + 0.3 * shape);
+  float lowerLip = smoothstep(0.045, -0.025, max(abs(q.y - lowerY) - lowerFull - 0.02 * press, abs(u) - 0.9));
   float lipHighlight = smoothstep(0.06, 0.0, abs(q.y - (lowerY + 0.02))) * lowerLip * shape;
-  // At rest the lips are only a hint; they fill out as the mouth opens or presses.
-  float lipShow = 0.3 + 0.7 * max(parted, press);
-  over(col, lip, upperLip * 0.7 * lipShow * smoothstep(1.0, 0.75, abs(u)));
-  over(col, lip * (1.0 + 0.25 * lipHighlight), lowerLip * 0.8 * lipShow * smoothstep(1.0, 0.7, abs(u)));
+  // At rest the lips still read, as in the designs: the upper one in its own shade, the lower one
+  // fuller and lit, with its shadow on the chin below; they fill out as the mouth opens or presses.
+  float lipShow = 0.85 + 0.15 * max(parted, press);
+  float lowerBottom = lowerY - lowerFull - 0.02 * press;
+  float chinShade = smoothstep(0.1, 0.0, lowerBottom - q.y) * step(q.y, lowerBottom)
+    * smoothstep(0.95, 0.5, abs(u)) * 0.35;
+  over(col, skin * 0.78, chinShade);
+  over(col, lip * 0.82, upperLip * 0.75 * lipShow * smoothstep(1.0, 0.75, abs(u)));
+  // Rounded: lighter across its middle, darker toward the line and its lower edge.
+  float lowerRound = 1.0 - pow(abs(q.y - lowerY) / 0.085, 2.0) * 0.25;
+  over(col, lip * lowerRound * (1.0 + 0.3 * lipHighlight), lowerLip * 0.85 * lipShow * smoothstep(1.0, 0.7, abs(u)));
   faceWet = max(faceWet, lipHighlight * 0.4);
 
   if (inMouth > 0.0) {
@@ -254,6 +289,11 @@ vec4 mouthFeature(vec2 q, vec3 skin) {
   float cornerShade = smoothstep(0.12, 0.0, length(vec2((abs(u) - 1.0) * 1.4, q.y - line))) * 0.4;
   over(col, skin * 0.42, crease * 0.85);
   over(col, skin * 0.7, cornerShade);
+  // Where each corner tucks into the cheek: a short soft curve up and out.
+  float cu = abs(u) - 1.0;
+  float tuck = smoothstep(0.03, 0.0, abs(q.y - (line + 0.02 + cu * cu * 1.6)))
+    * smoothstep(-0.02, 0.04, cu) * smoothstep(0.22, 0.08, cu) * 0.35;
+  over(col, skin * 0.6, tuck);
   return col;
 }
 `;

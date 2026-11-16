@@ -12,6 +12,7 @@ import type { HeroKind } from "../logic/heroes";
 import { type Cue, isHero, type Mood, moodOf, type Speaker } from "../logic/story";
 import { angleDiff, type Vec2 } from "../logic/vec";
 import { type Captain, castCaptain, MOOD_FACE } from "./captain";
+import { contactShadow } from "./contactShadow";
 import { type Acting, AT_EASE, HeroAnimator } from "./heroAnimator";
 import { type HeroModel, heroModel, type StoryFigure, storyFigure } from "./heroModels";
 import { mouthAt } from "./lipSync";
@@ -129,6 +130,11 @@ export class CutsceneStage {
   /** Seconds to the next flash of lightning, in a storm, and how bright the last one still is. */
   private nextFlash = 2;
   private flash = 0;
+  /**
+   * How far round the middle of the cast the sun's shadows are kept sharp: just the cast, so the
+   * shadow map's pixels go on their faces (the beard on the neck, arms on the shirt).
+   */
+  shadowReach = 8;
   /** The Captain, once he's loaded; null until then or if he can't be had, and Steele stands in. */
   private captain: Captain | null = null;
 
@@ -180,6 +186,7 @@ export class CutsceneStage {
     }
     // A loose arc, deeper in the middle, with nobody's back to the wide shot and nobody lined up.
     const radius = 1.25 + cast.length * 0.42;
+    this.shadowReach = radius * 1.25 + 2.5;
     cast.forEach((who, i) => {
       const spread = cast.length === 1 ? 0 : (i / (cast.length - 1) - 0.5) * Math.PI * 1.05;
       const angle = front + Math.PI + spread;
@@ -198,6 +205,13 @@ export class CutsceneStage {
       model.root.traverse((o) => {
         if (o instanceof THREE.Mesh) o.castShadow = true;
       });
+      // Grounded: a soft dark patch under their feet, once (the Captain keeps his between scenes).
+      if (!model.root.userData.grounded) {
+        const blob = contactShadow(1.3);
+        blob.castShadow = false;
+        model.root.add(blob);
+        model.root.userData.grounded = true;
+      }
       this.root.add(model.root);
       captain?.face?.express("neutral");
       this.actors.set(who, {
@@ -485,6 +499,7 @@ export class CutsceneStage {
       actor.captain?.update(dt);
     }
     this.place(camera);
+    for (const actor of this.actors.values()) actor.captain?.detailFor(camera);
   }
 
   /** The lights jump with a cut, as on a real set, then breathe; a fire flickers, a storm flashes. */
