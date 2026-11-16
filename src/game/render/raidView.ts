@@ -582,6 +582,23 @@ export class RaidView {
     });
   }
 
+  /**
+   * Lets go of every hero drawn, for a fresh fight on this same island (the boat scene's landing,
+   * which sets the fight up only once the hero's ashore): they're drawn anew as the rules have them.
+   */
+  forgetHeroes(): void {
+    for (const view of this.heroes.values()) {
+      view.model.root.removeFromParent();
+      view.ring.removeFromParent();
+      view.bubble?.removeFromParent();
+      view.captain?.root.removeFromParent();
+    }
+    this.heroes.clear();
+    this.before.clear();
+    this.eased.clear();
+    this.aboard.clear();
+  }
+
   /** Gear the crew threw ashore at the landing, left lying where it fell. */
   dropGear(at: readonly { x: number; y: number; z: number; turn: number }[]): void {
     for (const g of at) {
@@ -1506,7 +1523,7 @@ export class RaidView {
     root.rotation.z = boatRoll(time);
     for (const d of this.deckHands) {
       d.animator?.update(dt, d.sit ? SITTING : AT_EASE);
-      d.captain?.update(dt);
+      d.captain?.update(dt, "deck-still");
     }
     const relative = -angleDiff(this.cannonAim, this.boatHeading);
     cannon.rotation.y += (relative - cannon.rotation.y) * 0.1;

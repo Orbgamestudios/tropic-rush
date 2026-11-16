@@ -1324,18 +1324,8 @@ export class Game {
     this.boatSelect.hide();
     const hero = scene.current ?? this.mapHero;
     this.updateSave({ hero });
-    this.dangerMap?.dispose();
-    this.dangerMap = null;
-    if (this.view) {
-      this.stage.scene.remove(this.view.root);
-      this.view.dispose();
-    }
-    this.loadRaid(hero, island);
-    if (this.view && this.state) {
-      this.view.filming = true;
-      this.view.gunboat.visible = false;
-      for (const h of this.state.heroes) this.view.aboard.add(h.id);
-    }
+    // The island's already built, and stays as it is: nothing's rebuilt while she's under way (it
+    // hitched, and once flashed black). The fight itself is set up at the landing.
     scene.setOff();
   }
 
@@ -1343,7 +1333,7 @@ export class Game {
     const scene = this.boatScene;
     const { state, view } = this;
     if (!scene) return;
-    scene.update(dt, this.stage.camera);
+    scene.update(dt, this.stage.camera, this.time);
     this.boatSelect.showSkip(scene.skippable);
     const shade = scene.shadowFocus;
     this.stage.focusShadows(shade.at, shade.size);
@@ -1808,6 +1798,23 @@ export class Game {
   private laidOut: { target: MapIsland; layout: IslandLayout } | null = null;
 
   /** Sets a target island up, the same whether the crew is scouting it or landing. */
+  /** A fresh fight on an island: the rules' side of it, nothing drawn. */
+  private raidState(hero: HeroKind, target: MapIsland, team?: Team): RaidState {
+    const layout = this.islandFor(target);
+    const weapons = gunboatWeapons(this.crew.snapshot().layout);
+    return team
+      ? createCoopRaid(layout, team.seats, weapons, RAIDERS[target.difficulty])
+      : createRaid(
+          layout,
+          [hero],
+          [],
+          [heroMods(hero, this.save.upgrades[hero])],
+          weapons,
+          [packShards(this.save.shards, this.save.shardLoadout)],
+          RAIDERS[target.difficulty],
+        );
+  }
+
   private loadRaid(hero: HeroKind, target: MapIsland, team?: Team) {
     const layout = this.islandFor(target);
     const weapons = gunboatWeapons(this.crew.snapshot().layout);
@@ -1896,8 +1903,13 @@ export class Game {
   ): void {
     this.updateSave({ hero });
     const prepared = landed && this.view && this.state ? this.view : null;
-    if (prepared) this.endBoat();
-    else {
+    if (prepared) {
+      this.endBoat();
+      // The same island, drawn as it is; a fresh fight on it for the hero who's landed, with the
+      // crystals they set. Only the heroes are drawn anew.
+      this.state = this.raidState(hero, target);
+      prepared.forgetHeroes();
+    } else {
       this.endRaidWorld();
       this.hideScreens();
     }
@@ -2080,6 +2092,7 @@ export class Game {
     this.stage.calm = calm;
     this.stage.setLight(LIGHT_PHASES.includes(this.phase));
     this.stage.flat = FLAT_PHASES.includes(this.phase);
+    this.stage.liveShadows = this.phase === "boat";
     // The real frame time, so a device that's struggling badly drops quality straight away.
     if (!calm) this.stage.adaptQuality(frameTime);
     music.play(this.trackForPhase());

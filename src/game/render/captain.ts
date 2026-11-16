@@ -385,6 +385,14 @@ const SURFACE_ROUGHNESS = /* glsl */ `
   roughnessFactor = mix(roughnessFactor, 0.42, kLeather * 0.8);
   roughnessFactor = mix(roughnessFactor, 0.5, kHair * 0.5);
   roughnessFactor = mix(roughnessFactor, 0.92, (kShirt + kWhite) * 0.6);
+  // Skin and hair are never glossy: the generated paint's roughness map has shiny patches, and the
+  // forehead's caught the key light as a glowing spot.
+  roughnessFactor = max(roughnessFactor, 0.68 * kSkin + 0.55 * kHair);
+`;
+
+const SURFACE_METALNESS = /* glsl */ `
+  // Nor metal: only the belt's buckle and the watch can be.
+  metalnessFactor *= 1.0 - clamp(kSkin + kHair + kShirt + kWhite, 0.0, 1.0);
 `;
 
 const SURFACE_NORMAL = /* glsl */ `
@@ -421,6 +429,10 @@ function dress(mesh: THREE.SkinnedMesh, loose: Float32Array): void {
       .replace(
         "#include <roughnessmap_fragment>",
         `#include <roughnessmap_fragment>\n${SURFACE_ROUGHNESS}`,
+      )
+      .replace(
+        "#include <metalnessmap_fragment>",
+        `#include <metalnessmap_fragment>\n${SURFACE_METALNESS}`,
       )
       .replace(
         "#include <normal_fragment_maps>",
@@ -461,6 +473,8 @@ export interface Captain {
   player: ClipPlayer | null;
   /** Moves him on; `pose`, when given, sets his body instead of the clips or his stance at ease. */
   update(dt: number, pose?: () => void): void;
+  /** Runs his stock clips on by `dt`: standing about, or walking (for his upper body). */
+  clipStep(dt: number, mode: "stand" | "stroll"): void;
   /** Draws him in full when this camera's close to his face, the lighter copy when it isn't. */
   detailFor(camera: THREE.Camera): void;
 }
@@ -471,6 +485,76 @@ const SHADOW_ONLY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite:
 /** What to load: the full model, or the lighter raid copy, moved by whatever leads him there. */
 export interface CaptainOptions {
   raid?: boolean;
+}
+
+let clipsLoad: Promise<ClipLibrary | null> | null = null;
+/** The stock clips he uses, fetched once for every Captain. */
+function stockClips(): Promise<ClipLibrary | null> {
+  clipsLoad ??= ClipLibrary.load(CLIPS, ["walk-think", "walk"]).catch(() => null);
+  return clipsLoad;
+}
+
+/**
+ * Standing about: the stretches of the stock "pacing, deep in thought" take where he's stopped,
+ * arms folded or a hand to his chin, looped (the owner found the stock idle, hands on hips, too
+ * feminine for him). Seconds into the take.
+ */
+const STANDING: readonly (readonly [number, number])[] = [
+  [18.4, 26.9],
+  [6.9, 11.9],
+];
+
+/**
+ * Keeps him standing about, starting a stretch again as one comes to its end. True when it jumped
+ * within the same take, which the clip player can't blend, so the caller fades the pose across.
+ */
+function stand(player: ClipPlayer): boolean {
+  const t = player.time;
+  if (player.current === "walk-think" && STANDING.some(([a, b]) => t >= a && t < b)) return false;
+  const jump = player.current === "walk-think";
+  const [start] = STANDING[Math.floor(Math.random() * STANDING.length)] ?? [18.4];
+  player.play("walk-think", { at: start, fade: player.current ? 0.9 : 0 });
+  return jump;
+}
+
+/** Walking, arms swinging loose (for his upper body over the game's own walk). */
+function stroll(player: ClipPlayer): void {
+  if (player.current !== "walk") player.play("walk", { fade: 0.35 });
+}
+
+/** Fades every bone from where it was to where a clip's jumped it, over a moment. */
+class PoseFade {
+  private readonly bones: THREE.Object3D[] = [];
+  private readonly from: THREE.Quaternion[] = [];
+  private left = 0;
+  private readonly seconds = 0.8;
+
+  constructor(model: THREE.Object3D) {
+    model.traverse((o) => {
+      if (o instanceof THREE.Bone) {
+        this.bones.push(o);
+        this.from.push(new THREE.Quaternion());
+      }
+    });
+  }
+
+  capture(): void {
+    this.bones.forEach((b, i) => {
+      this.from[i]?.copy(b.quaternion);
+    });
+    this.left = this.seconds;
+  }
+
+  apply(dt: number): void {
+    if (this.left <= 0) return;
+    this.left = Math.max(0, this.left - dt);
+    const k = this.left / this.seconds;
+    const keep = k * k * (3 - 2 * k);
+    this.bones.forEach((b, i) => {
+      const from = this.from[i];
+      if (from) b.quaternion.slerp(from, keep);
+    });
+  }
 }
 
 let cast: Promise<Captain | null> | null = null;
@@ -508,9 +592,8 @@ export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain
     file(RAID_MODEL),
     faceMap,
     faceSkin,
-    // The clips are the owner's stock and aren't in the repo until their licence is confirmed;
-    // without them he stands at ease on moves of his own. In a raid something else leads him.
-    options.raid ? null : ClipLibrary.load(CLIPS, ["idle"]).catch(() => null),
+    // The owner's stock clips; without them (offline) he stands at ease on moves of his own.
+    stockClips(),
   ]);
   const model = clone((full ?? light).scene);
   const nearMeshes: THREE.SkinnedMesh[] = [];
@@ -564,7 +647,16 @@ export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain
   near = false;
   setNear(true);
   const player = clips && new ClipPlayer(model, clips);
-  player?.play("idle", { fade: 0 });
+  if (player) stand(player);
+  const fade = new PoseFade(model);
+  /** The clips moved on: standing about, or (for his upper body) walking. */
+  const clipStep = (dt: number, mode: "stand" | "stroll") => {
+    if (!player) return;
+    if (mode === "stroll") stroll(player);
+    else if (stand(player)) fade.capture();
+    player.update(dt);
+    fade.apply(dt);
+  };
   if (face && (player || options.raid)) face.animated = true;
   // Which way he faces: from the head to his eyes, at rest.
   const forward = new THREE.Vector3(1, 0, 0);
@@ -602,11 +694,12 @@ export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain
     face,
     hands,
     player,
+    clipStep,
     update(dt: number, pose?: () => void) {
       windTime.value += dt;
       hands.release();
       if (pose) pose();
-      else if (player) player.update(dt);
+      else if (player) clipStep(dt, "stand");
       else atEase?.update(dt);
       hands.update(dt);
       face?.update(dt);

@@ -1,23 +1,24 @@
 // Setting out on a raid (docs/DESIGN.md, Added 2026-11-16), all one unbroken shot from the choosing
-// to the fight:
+// to the fight, with no cut anywhere:
 //
 // 1. The crew aboard the gunboat out at sea in the late afternoon, standing or sat about her deck;
 //    the player swings round her from one to the next and picks who goes.
-// 2. The one picked goes into the cabin to the console and sets the time crystals they'll take
-//    into its three holders.
-// 3. She gets under way and runs in to the island, the camera pulling out of the cabin and round,
-//    while the hero goes forward to the bow.
-// 4. She runs up onto the beach. Kit's thrown ashore, the hero goes over the rail with a hand on it
-//    and drops onto the sand, and walks up to where the fight starts, the camera coming to rest just
-//    where the player's camera sits in a raid. The raid takes over from there: the same boat, in
-//    the same place, the rest of the crew still aboard.
+// 2. The one picked goes into the wheelhouse to the console and sets the time crystals they'll take
+//    in its three cradles.
+// 3. She gets under way and curves in to the island, her bow lifting, her wake spreading, while the
+//    camera comes out of the wheelhouse door and along her side and up, and the hero goes forward.
+// 4. She runs up onto the beach. Kit's thrown ashore, the hero climbs the bow and drops onto the
+//    sand from where they stand, and walks up to where the fight starts, the camera coming down to
+//    just where the player's camera sits in a raid. The raid takes over from there: the same boat in
+//    the same place, swaying to the same clock, the rest of the crew still aboard.
 //
-// The boat, the crew and where everything stands are the raid's own (gunboat.ts), at the size they
-// are in a raid, so nothing changes at the hand-over.
+// Every camera position is planned in 3D before it's used: candidates round the subject are tried
+// against the boat's own geometry and the crew, and only one that sees them clearly (not through a
+// wall, the turret, a crewmate, or from inside anything) is kept.
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
-import { TIME_POWER_SPECS, type TimePower } from "../logic/timeShards";
+import type { TimePower } from "../logic/timeShards";
 import { CaptainInRaid } from "./captainRaid";
 import { contactShadow } from "./contactShadow";
 import {
@@ -25,6 +26,7 @@ import {
   boatRoll,
   type CrewBoat,
   crewBoatModel,
+  deckY,
   gearBag,
   SITTING,
   type Station,
@@ -32,16 +34,17 @@ import {
 import { AT_EASE, HeroAnimator, type HeroMove } from "./heroAnimator";
 import { type HeroModel, heroModel } from "./heroModels";
 import { loadMenuBody, loadRigs } from "./riggedHeroes";
+import { crystalTime, timeCrystal } from "./timeShard";
 
 /** Whose place the Captain takes aboard. */
 const CAPTAIN_KIND: HeroKind = "rifleman";
 /** Seconds the run in to the beach takes. */
-const RUN_SECONDS = 7.5;
+const RUN_SECONDS = 9;
 /** Walking pace, metres a second, on deck and up the beach. */
-const DECK_WALK = 2.6;
+const DECK_WALK = 2.4;
 const BEACH_WALK = 4.2;
-/** Seconds a camera move between two set-ups takes. */
-const CAMERA_MOVE = 1.4;
+/** Seconds the camera takes to settle on a new subject while choosing. */
+const CAMERA_MOVE = 1.2;
 
 type Step = "choose" | "console" | "run" | "ashore" | "done";
 
@@ -52,19 +55,26 @@ interface Copy {
 
 interface Crew {
   kind: HeroKind;
-  /** Where they are and which way they face, in the hull's space while aboard, the world's ashore. */
+  /** Where they are and which way they face: in the hull's space aboard, the world's ashore. */
   holder: THREE.Group;
-  /** In full for close-ups; the raid copy (null for the Captain, who has his own) further off. */
-  near: Copy;
-  far: Copy | null;
-  /** The Captain, following `near` (a Rifleman no one sees). */
+  /** The raid copy, drawn from the start; the detailed one once it's arrived, for close-ups. */
+  far: Copy;
+  near: Copy | null;
+  /** The Captain, following `far` (a Rifleman no one sees). */
   captain: CaptainInRaid | null;
   station: Station;
-  /** Where they're walking to next, in their holder's parent's space. */
   path: THREE.Vector3[];
   facing: number;
   sitting: boolean;
   tall: number;
+  /** Where the camera sees them best from, worked out once they're aboard (see planShot). */
+  shot: Shot | null;
+}
+
+/** A camera set-up in the boat's own space: where it is, and what it looks at. */
+interface Shot {
+  eye: THREE.Vector3;
+  look: THREE.Vector3;
 }
 
 /** What the boat scene needs of the island: where the fight starts, and the raid's camera there. */
@@ -81,6 +91,35 @@ const ease = (t: number) => {
 };
 const v = new THREE.Vector3();
 const v2 = new THREE.Vector3();
+const ray = new THREE.Raycaster();
+
+/** A splash of foam or spray: where it is, how it's going, how long it's left. */
+interface Fleck {
+  sprite: THREE.Sprite;
+  velocity: THREE.Vector3;
+  age: number;
+  life: number;
+  grow: number;
+}
+
+let foamTexture: THREE.Texture | null = null;
+function foam(): THREE.Texture {
+  if (foamTexture) return foamTexture;
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const g = canvas.getContext("2d");
+  if (g) {
+    const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, "rgba(255,255,255,0.95)");
+    r.addColorStop(0.5, "rgba(255,255,255,0.5)");
+    r.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = r;
+    g.fillRect(0, 0, 64, 64);
+  }
+  foamTexture = new THREE.CanvasTexture(canvas);
+  return foamTexture;
+}
 
 export class BoatScene {
   readonly root = new THREE.Group();
@@ -93,22 +132,22 @@ export class BoatScene {
   private time = 0;
   /** 0 out at sea, 1 run up on the beach. */
   private run = 0;
-  private readonly start = new THREE.Vector3();
-  private readonly end = new THREE.Vector3();
-  private readonly heading: number;
-  /** Where the camera's swung round to for the one picked: a bearing in the boat's space, eased. */
-  private bearing = 0;
-  private wantBearing = 0;
-  /** The camera as it was when the set-up last changed, to move on from. */
-  private readonly lastCamera = {
-    position: new THREE.Vector3(),
-    quaternion: new THREE.Quaternion(),
-  };
-  /** Seconds since the set-up changed; the first frame starts settled, not moving in from nowhere. */
-  private cameraSince = CAMERA_MOVE;
+  /** Her course in: a curve from out at sea to the beach, ending on her raid heading. */
+  private readonly course: THREE.CubicBezierCurve3;
+  private readonly endHeading: number;
+  private heading: number;
+  private speed = 0;
+  /** Seconds the camera's been on its current subject; over 90, it starts there with no move. */
+  private cameraSince = 99;
   private gear: { bag: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; turn: number }[] =
     [];
-  private readonly gems: THREE.Mesh[] = [];
+  private readonly gems: THREE.Object3D[] = [];
+  private readonly flecks: Fleck[] = [];
+  private fleckDue = 0;
+  /** The run in's camera path, in the boat's space, planned when she sets off. */
+  private runPath: { eyes: THREE.CatmullRomCurve3; looks: THREE.CatmullRomCurve3 } | null = null;
+  private readonly cameraAt = new THREE.Vector3();
+  private readonly cameraLook = new THREE.Vector3();
   /** Called once the hero picked is at the console. */
   onConsole: (() => void) | null = null;
   /** Straight down over the boat, for laying out where the crew stands. */
@@ -123,21 +162,39 @@ export class BoatScene {
     place: { x: number; y: number; heading: number },
     private readonly site: LandingSite,
   ) {
-    this.start.set(from.x, 0, from.y);
-    this.end.set(place.x, 0, place.y);
-    this.heading = place.heading;
+    const start = new THREE.Vector3(from.x, 0, from.y);
+    const end = new THREE.Vector3(place.x, 0, place.y);
+    const length = start.distanceTo(end);
+    const inbound = new THREE.Vector3(Math.cos(place.heading), 0, Math.sin(place.heading));
+    // She comes in on a curve: from off to one side, swinging onto her final heading.
+    const across = new THREE.Vector3(-inbound.z, 0, inbound.x);
+    const begin = start.clone().addScaledVector(across, length * 0.35);
+    this.course = new THREE.CubicBezierCurve3(
+      begin,
+      begin
+        .clone()
+        .addScaledVector(inbound, length * 0.35)
+        .addScaledVector(across, -length * 0.05),
+      end.clone().addScaledVector(inbound, -length * 0.4),
+      end,
+    );
+    this.endHeading = place.heading;
+    const tangent = this.course.getTangent(0);
+    this.heading = Math.atan2(tangent.z, tangent.x);
     this.boat = crewBoatModel();
     this.hull.add(this.boat.root);
     this.root.add(this.hull);
-    this.root.position.copy(this.start);
+    this.root.position.copy(begin);
     this.root.rotation.y = -this.heading;
   }
 
-  /** Puts the crew aboard, each at a station, in their detailed models once they've loaded. */
+  /**
+   * Puts the crew aboard: straight away in their raid copies (already loaded), so she's never
+   * empty; the detailed models follow for close-ups as they arrive.
+   */
   async board(kinds: readonly HeroKind[], chosen: HeroKind): Promise<void> {
     await loadRigs();
-    await Promise.all(kinds.map((k) => loadMenuBody(k)));
-    // The Captain stands (he's no sitting pose of his own yet): he goes to the first station.
+    // The Captain stands (he has no sitting pose): he goes to the first station.
     const order = [...kinds].sort(
       (a, b) => Number(b === CAPTAIN_KIND) - Number(a === CAPTAIN_KIND),
     );
@@ -148,39 +205,45 @@ export class BoatScene {
         const holder = new THREE.Group();
         holder.position.set(station.x, station.y, station.z);
         holder.rotation.y = -station.facing;
-        const nearModel = heroModel(kind, true);
-        const near: Copy = {
-          model: nearModel,
-          animator: nearModel.rig && new HeroAnimator(nearModel.rig),
+        const farModel = heroModel(kind, false);
+        const far: Copy = {
+          model: farModel,
+          animator: farModel.rig && new HeroAnimator(farModel.rig),
         };
-        holder.add(nearModel.root, contactShadow(1.4));
-        let far: Copy | null = null;
-        let captain: CaptainInRaid | null = null;
-        if (kind === CAPTAIN_KIND) captain = await CaptainInRaid.follow(nearModel, true);
+        holder.add(farModel.root, contactShadow(1.4));
+        const captain = kind === CAPTAIN_KIND ? await CaptainInRaid.follow(farModel) : null;
         if (captain) holder.add(captain.root);
-        else {
-          const farModel = heroModel(kind, false);
-          far = { model: farModel, animator: farModel.rig && new HeroAnimator(farModel.rig) };
-          holder.add(farModel.root);
-        }
         this.hull.add(holder);
         holder.updateMatrixWorld(true);
-        const tall = Math.max(1.4, new THREE.Box3().setFromObject(nearModel.root).getSize(v).y);
+        const tall = Math.max(1.4, new THREE.Box3().setFromObject(farModel.root).getSize(v).y);
         return {
           kind,
           holder,
-          near,
           far,
+          near: null,
           captain,
           station,
           path: [],
           facing: station.facing,
-          sitting: station.sit,
+          sitting: station.sit && !captain,
           tall,
+          shot: null,
         };
       }),
     );
+    this.hull.updateMatrixWorld(true);
+    for (const c of this.crew) c.shot = this.planShot(c);
     this.choose(chosen, true);
+    // The detailed models, as they come.
+    for (const c of this.crew) {
+      if (c.captain) continue;
+      void loadMenuBody(c.kind).then(() => {
+        const model = heroModel(c.kind, true);
+        model.root.visible = false;
+        c.holder.add(model.root);
+        c.near = { model, animator: model.rig && new HeroAnimator(model.rig) };
+      });
+    }
   }
 
   get kinds(): HeroKind[] {
@@ -195,31 +258,21 @@ export class BoatScene {
   step(by: number): HeroKind | null {
     if (this.crew.length === 0 || this.stage !== "choose") return this.current;
     this.chosen = (this.chosen + by + this.crew.length) % this.crew.length;
-    this.aim();
+    this.cameraSince = 0;
+    this.greet();
     return this.current;
   }
 
   choose(kind: HeroKind, now = false): void {
     const at = this.crew.findIndex((c) => c.kind === kind);
     this.chosen = Math.max(0, at);
-    this.aim();
-    if (now) this.bearing = this.wantBearing;
+    this.cameraSince = now ? 99 : 0;
+    this.greet();
   }
 
   /** What the player sees a hero called aboard: the Captain stands in the Rifleman's place. */
   nameOf(kind: HeroKind): string | null {
     return this.crew.find((c) => c.kind === kind)?.captain ? "The Captain" : null;
-  }
-
-  /** The camera's bearing for the one picked: in front of them, a little to one side. */
-  private aim(): void {
-    const c = this.crew[this.chosen];
-    if (!c) return;
-    let want = c.station.facing + 0.45;
-    while (want - this.bearing > Math.PI) want -= Math.PI * 2;
-    while (want - this.bearing < -Math.PI) want += Math.PI * 2;
-    this.wantBearing = want;
-    this.greet();
   }
 
   /** The Captain answers being picked, and goes back to watching the sea when he isn't. */
@@ -236,7 +289,147 @@ export class BoatScene {
     }
   }
 
-  /** Ready: the one picked goes into the cabin to the console. */
+  // ---------------------------------------------------------------------------------------------
+  // Planning the camera in 3D.
+
+  /** What the camera mustn't see through: the boat, and the crew other than `except`. */
+  private blockers(except: Crew | null): THREE.Object3D[] {
+    const list: THREE.Object3D[] = [this.boat.root];
+    for (const c of this.crew) if (c !== except) list.push(c.holder);
+    return list;
+  }
+
+  /** Whether the line from `eye` to `target` (both in the world) is clear of `blockers`. */
+  private clear(eye: THREE.Vector3, target: THREE.Vector3, blockers: THREE.Object3D[]): boolean {
+    const to = v2.copy(target).sub(eye);
+    const far = to.length();
+    ray.set(eye, to.normalize());
+    ray.far = far - 0.15;
+    ray.near = 0.05;
+    return ray.intersectObjects(blockers, true).length === 0;
+  }
+
+  /** The camera's not inside anything: straight up from it there's nothing within a few metres. */
+  private open(eye: THREE.Vector3, blockers: THREE.Object3D[]): boolean {
+    ray.set(eye, new THREE.Vector3(0, 1, 0));
+    ray.near = 0;
+    ray.far = 3;
+    const above = ray.intersectObjects(blockers, true);
+    // Inside a solid, or under the wheelhouse roof, both count as shut in.
+    return above.length === 0;
+  }
+
+  /**
+   * Where to see one of the crew from, planned in 3D: round them from in front, a little off to
+   * one side, at a few distances and heights, the first spot that sees both their face and their
+   * middle without anything (the boat, the turret, a crewmate) in the way, and not shut in.
+   */
+  private planShot(c: Crew): Shot {
+    const blockers = this.blockers(c);
+    const local = c.holder.position;
+    const eyes = c.sitting ? c.tall * 0.45 : c.tall * 0.8;
+    const face = new THREE.Vector3(local.x, local.y + eyes, local.z);
+    const middle = new THREE.Vector3(local.x, local.y + eyes * 0.6, local.z);
+    const turns = [0.45, -0.45, 0, 0.9, -0.9, 1.35, -1.35, 1.9, -1.9, Math.PI];
+    for (const reachK of [1, 1.3, 0.8]) {
+      for (const lift of [0.35, 1.1, 2.0]) {
+        for (const turn of turns) {
+          const bearing = c.station.facing + turn;
+          const reach = (1.4 + c.tall * 1.5) * reachK;
+          const eye = new THREE.Vector3(
+            local.x + Math.cos(bearing) * reach,
+            local.y + eyes + lift,
+            local.z + Math.sin(bearing) * reach,
+          );
+          const w = this.hull.localToWorld(eye.clone());
+          const wFace = this.hull.localToWorld(face.clone());
+          const wMid = this.hull.localToWorld(middle.clone());
+          if (
+            this.open(w, blockers) &&
+            this.clear(w, wFace, blockers) &&
+            this.clear(w, wMid, blockers)
+          ) {
+            return { eye, look: face.clone().setY(face.y - 0.1) };
+          }
+        }
+      }
+    }
+    // Nothing clear: high over them, looking down.
+    return {
+      eye: new THREE.Vector3(local.x + 3, local.y + eyes + 4, local.z + 3),
+      look: face,
+    };
+  }
+
+  /**
+   * The console shot, planned the same way inside the wheelhouse: over the shoulder of whoever's
+   * at it, seeing the cradles and their hands, from somewhere in the cabin (not in a wall).
+   */
+  private planConsole(c: Crew): Shot {
+    const blockers = this.blockers(c).filter((b) => b !== this.boat.root);
+    const s = this.boat.console.stand;
+    const { back, front, side } = this.boat.cabin;
+    const cradles = new THREE.Vector3(front - 0.75, s.y + 1.15, s.z);
+    for (const [dx, dy, dz] of [
+      [-1.4, 2.1, 1.25],
+      [-1.1, 2.0, 1.6],
+      [-1.8, 2.2, 0.9],
+      [-0.8, 2.15, 2.0],
+    ] as const) {
+      const eye = new THREE.Vector3(s.x + dx, s.y + dy, s.z + dz);
+      // Inside the walls, clear of the crew.
+      if (eye.x < back + 0.2 || eye.x > front - 0.4 || Math.abs(eye.z) > side - 0.15) continue;
+      const w = this.hull.localToWorld(eye.clone());
+      if (this.clear(w, this.hull.localToWorld(cradles.clone()), blockers)) {
+        return { eye, look: cradles };
+      }
+    }
+    return { eye: new THREE.Vector3(s.x - 1.5, s.y + 2.2, s.z + 1.3), look: cradles };
+  }
+
+  /**
+   * The run in's camera, one move with no cut: from the console, out through the wheelhouse door,
+   * forward along her side low by the bow wave with the island ahead, up and back to a high chase,
+   * and down to the raid's camera over the hero. Each point is in the boat's space; the last is
+   * filled in each frame (it follows the hero and the beach).
+   */
+  private planRun(c: Crew): void {
+    const shot = this.planConsole(c);
+    const { back } = this.boat.cabin;
+    const lane = this.boat.sideDeck;
+    const deck = deckY(back);
+    // Behind the hero up the aisle and out of the aft door, swinging out over the starboard
+    // quarter as they go forward along the side deck, then low by the bow wave, up, and back.
+    const eyes = [
+      shot.eye.clone(),
+      new THREE.Vector3(0.6, deck + 2.1, 0),
+      new THREE.Vector3(back + 0.6, deck + 2.2, 0),
+      new THREE.Vector3(back - 2.6, deck + 2.8, 1.2),
+      new THREE.Vector3(back - 1.5, deck + 3.2, lane + 2.2),
+      new THREE.Vector3(6.5, 2.4, 5.2),
+      new THREE.Vector3(-4, 7.5, 9.5),
+      new THREE.Vector3(-12, 10, 11),
+    ];
+    const looks = [
+      shot.look.clone(),
+      new THREE.Vector3(back, deck + 1.6, 0),
+      new THREE.Vector3(back - 1.2, deck + 1.5, 0.6),
+      new THREE.Vector3(back - 0.4, deck + 1.5, lane),
+      new THREE.Vector3(3, deck + 1.5, lane),
+      new THREE.Vector3(12, 1.5, -1),
+      new THREE.Vector3(4, 1.6, 0),
+      new THREE.Vector3(6, 1.2, 0),
+    ];
+    this.runPath = {
+      eyes: new THREE.CatmullRomCurve3(eyes, false, "centripetal"),
+      looks: new THREE.CatmullRomCurve3(looks, false, "centripetal"),
+    };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The steps.
+
+  /** Ready: the one picked goes into the wheelhouse to the console. */
   ready(): void {
     const c = this.crew[this.chosen];
     if (!c || this.stage !== "choose") return;
@@ -247,26 +440,16 @@ export class BoatScene {
     c.captain?.self.face?.express("tactical_focus");
   }
 
-  /** The crystals in the console's holders, as the player sets them. */
+  /** The crystals in the console's cradles, as the player sets them. */
   setCrystals(powers: readonly TimePower[]): void {
     for (const g of this.gems) g.removeFromParent();
     this.gems.length = 0;
     this.boat.console.holders.forEach((holder, i) => {
       const power = powers[i];
       if (!power) return;
-      const color = new THREE.Color(TIME_POWER_SPECS[power].color);
-      const gem = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.13, 0),
-        new THREE.MeshStandardMaterial({
-          color,
-          emissive: color,
-          emissiveIntensity: 0.8,
-          roughness: 0.25,
-        }),
-      );
-      gem.position.y = 0.2;
-      holder.add(gem);
-      this.gems.push(gem);
+      const crystal = timeCrystal(power, 0.42);
+      holder.add(crystal);
+      this.gems.push(crystal);
     });
   }
 
@@ -274,23 +457,39 @@ export class BoatScene {
   setOff(): void {
     const c = this.crew[this.chosen];
     if (!c || this.stage !== "console") return;
+    this.planRun(c);
     this.setStep("run");
-    const over = this.boat.over[0] ?? { x: 6.6, z: 1.3 };
-    c.path = this.routeTo(c, { x: over.x - 0.7, z: over.z });
+    const over = this.boat.over[0] ?? { x: 6.7, z: 1.15 };
+    c.path = this.routeTo(c, over);
     c.captain?.self.face?.say("[tactical_focus] Bring her in. [pause:0.3] [look:ahead] Quietly.");
   }
 
-  /**
-   * Where the sun's shadows are kept sharp, and how far round: tight on the one picked while the
-   * camera's close (every pixel of the shadow on them, for the beard's shadow on the neck, the
-   * arms' on the shirt), the whole boat while she runs in.
-   */
-  get shadowFocus(): { at: THREE.Vector3; size: number } {
-    const c = this.crew[this.chosen];
-    if (c && (this.stage === "choose" || this.stage === "console" || this.stage === "ashore")) {
-      return { at: c.holder.getWorldPosition(new THREE.Vector3()), size: 4 };
+  /** The way along the deck from where someone is to a point, round the wheelhouse. */
+  private routeTo(c: Crew, to: { x: number; z: number }): THREE.Vector3[] {
+    const from = { x: c.holder.position.x, z: c.holder.position.z };
+    const { back, front, side } = this.boat.cabin;
+    // In through the aft door and up the aisle between the seats; along the starboard side deck
+    // (the port one has a crewmate on it) between the bow and the stern.
+    const lane = this.boat.sideDeck;
+    const inCabin = (p: { x: number; z: number }) =>
+      p.x > back && p.x < front && Math.abs(p.z) < side;
+    const aft = (p: { x: number; z: number }) => p.x < back;
+    const outside = { x: back - 0.75, z: 0 };
+    const doorway = { x: back + 0.5, z: 0 };
+    const sternLane = { x: back - 0.75, z: lane };
+    const bowLane = { x: front + 0.6, z: lane };
+    const route: { x: number; z: number }[] = [];
+    if (inCabin(from)) {
+      route.push({ x: from.x, z: 0 }, doorway, outside);
+      if (!aft(to)) route.push(sternLane, bowLane);
+    } else if (inCabin(to)) {
+      if (!aft(from)) route.push(bowLane, sternLane);
+      route.push(outside, doorway, { x: to.x, z: 0 });
+    } else if (aft(from) !== aft(to)) {
+      route.push(...(aft(from) ? [sternLane, bowLane] : [bowLane, sternLane]));
     }
-    return { at: this.root.position.clone(), size: 11 };
+    route.push(to);
+    return route.map((p) => new THREE.Vector3(p.x, deckY(p.x), p.z));
   }
 
   /** Whether there's something to skip just now: a walk to the console, or the run in and landing. */
@@ -314,18 +513,20 @@ export class BoatScene {
       const s = this.boat.console.stand;
       c.holder.position.set(s.x, s.y, s.z);
       c.path.length = 0;
-      this.cameraSince = CAMERA_MOVE;
       this.arrived(c);
       return;
     }
     if (this.stage !== "run" && this.stage !== "ashore") return;
     this.run = 1;
-    this.root.position.copy(this.end);
+    this.placeBoat(0);
     this.root.updateMatrixWorld(true);
-    // Lay the kit out as it would have landed.
-    this.stage = "ashore";
-    this.stepTime = 0;
-    this.ashore(0);
+    if (this.stage === "run") {
+      const over = this.boat.over[0] ?? { x: 6.7, z: 1.15 };
+      c.holder.position.set(over.x, deckY(over.x), over.z);
+      c.path.length = 0;
+      this.setStep("ashore");
+    }
+    this.throwGear();
     for (const g of this.gear) {
       g.bag.position.copy(g.to);
       g.bag.visible = true;
@@ -336,30 +537,6 @@ export class BoatScene {
     c.holder.position.set(spawn.x, Math.max(0, ground(spawn.x, spawn.y)), spawn.y);
     c.path.length = 0;
     this.setStep("done");
-  }
-
-  /** The way along the deck from where someone is to a point, round the cabin. */
-  private routeTo(c: Crew, to: { x: number; z: number }): THREE.Vector3[] {
-    const from = c.holder.position;
-    const y = this.boat.stations[0]?.y ?? 1.6;
-    const door = { x: 1.2, z: 0 };
-    const inside = { x: -0.6, z: 0 };
-    const inCabin = (p: { x: number; z: number }) => p.x > -3.6 && p.x < 0.4 && Math.abs(p.z) < 2.1;
-    const aft = (p: { x: number; z: number }) => p.x < -3.4;
-    const route: { x: number; z: number }[] = [];
-    const side = from.z >= 0 ? 2.6 : -2.6;
-    // Out of the cabin by the door, or round it from aft.
-    if (inCabin({ x: from.x, z: from.z })) route.push(inside, door);
-    else if (aft({ x: from.x, z: from.z }) && !aft(to))
-      route.push({ x: -3.9, z: side }, { x: 0.9, z: side });
-    if (inCabin(to)) {
-      if (!inCabin({ x: from.x, z: from.z })) route.push(door, inside);
-    } else if (aft(to) && !aft({ x: from.x, z: from.z })) {
-      const toSide = to.z >= 0 ? 2.6 : -2.6;
-      route.push({ x: 0.9, z: toSide }, { x: -3.9, z: toSide });
-    }
-    route.push(to);
-    return route.map((p) => new THREE.Vector3(p.x, y, p.z));
   }
 
   /** Done: the hero's walked up the beach to where the fight starts. */
@@ -377,48 +554,124 @@ export class BoatScene {
     return this.crew.filter((_, i) => i !== this.chosen).map((c) => c.kind);
   }
 
+  /** Where the sun's shadows are kept sharp, and how far round. */
+  get shadowFocus(): { at: THREE.Vector3; size: number } {
+    const c = this.crew[this.chosen];
+    if (c && (this.stage === "choose" || this.stage === "console" || this.stage === "ashore")) {
+      return { at: c.holder.getWorldPosition(new THREE.Vector3()), size: 4 };
+    }
+    return { at: this.root.position.clone(), size: 11 };
+  }
+
   private setStep(step: Step): void {
     this.stage = step;
     this.stepTime = 0;
-    this.cameraSince = 0;
   }
 
-  update(dt: number, camera: THREE.PerspectiveCamera): void {
-    this.time += dt;
+  // ---------------------------------------------------------------------------------------------
+  // Each frame.
+
+  /** `time` is the game's clock, the same one the raid sways her by, so the hand-over matches. */
+  update(dt: number, camera: THREE.PerspectiveCamera, time: number): void {
+    this.time = time;
     this.stepTime += dt;
     this.cameraSince += dt;
-    if (this.cameraSince <= dt) {
-      this.lastCamera.position.copy(camera.position);
-      this.lastCamera.quaternion.copy(camera.quaternion);
-    }
+    crystalTime.value += dt;
     if (this.stage === "run") this.run = Math.min(1, this.run + dt / RUN_SECONDS);
-    const travelled = ease(this.run);
-    this.root.position.lerpVectors(this.start, this.end, travelled);
-    // Out at sea she rides the swell; run up on the beach she only shifts as the raid has her.
-    const sea = 1 - travelled;
-    this.hull.rotation.x = Math.sin(this.time * 0.9) * 0.03 * sea;
-    this.hull.position.y = boatRise(this.time) + Math.sin(this.time * 1.1) * 0.1 * sea;
-    this.hull.rotation.z = boatRoll(this.time) + Math.sin(this.time * 0.63 + 1) * 0.015 * sea;
+    this.placeBoat(dt);
     this.moveCrew(dt);
-    // Beached, and the hero's at the bow: over the side.
     const picked = this.crew[this.chosen];
     if (this.stage === "run" && this.run >= 1 && picked && picked.path.length === 0) {
       this.setStep("ashore");
     }
     if (this.stage === "ashore") this.ashore(dt);
+    this.splash(dt);
     this.place(dt, camera);
-    for (const c of this.crew) c.captain?.self.detailFor(camera);
+  }
+
+  /** Where she is on her course, and how she rides. */
+  private placeBoat(dt: number): void {
+    // Speeding up out at sea, slowing for the beach: the run's progress through her course.
+    const k = this.run < 0.5 ? 2 * this.run * this.run : 1 - (-2 * this.run + 2) ** 2 / 2;
+    const at = this.course.getPoint(k);
+    const was = this.root.position.clone();
+    this.root.position.set(at.x, 0, at.z);
+    const tangent = this.course.getTangent(Math.min(0.999, k));
+    this.heading = this.run >= 1 ? this.endHeading : Math.atan2(tangent.z, tangent.x);
+    this.root.rotation.y = -this.heading;
+    const moved = dt > 0 ? was.distanceTo(this.root.position) / dt : 0;
+    this.speed += (moved - this.speed) * Math.min(1, dt * 3);
+    // Her bow lifts with speed; out at sea she rolls and pitches on the swell, run aground she only
+    // shifts as the raid has her (the same clock and the same sway).
+    const sea = 1 - ease(this.run * 1.15);
+    const t = this.time;
+    this.hull.position.y = boatRise(t) + Math.sin(t * 1.1) * 0.12 * sea;
+    this.hull.rotation.x = Math.sin(t * 0.9) * 0.035 * sea;
+    this.hull.rotation.z =
+      boatRoll(t) + Math.sin(t * 0.63 + 1) * 0.02 * sea + Math.min(0.07, this.speed * 0.012);
+  }
+
+  /** Foam along her sides and astern, and spray off the bow, while she's moving. */
+  private splash(dt: number): void {
+    const world = this.root.parent;
+    if (!world) return;
+    this.fleckDue -= dt;
+    const moving = this.speed > 0.5 && this.stage === "run";
+    while (moving && this.fleckDue <= 0) {
+      this.fleckDue += 0.045;
+      const spray = Math.random() < 0.45;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const local = spray
+        ? new THREE.Vector3(6.2 + Math.random() * 1.2, 0.3, side * 1.6)
+        : new THREE.Vector3(-7.2 + Math.random() * 1.5, 0.05, side * (1.5 + Math.random() * 1.2));
+      const at = this.root.localToWorld(local);
+      const out = new THREE.Vector3(0, 0, side).applyQuaternion(this.root.quaternion);
+      const sprite =
+        this.flecks.find((f) => f.age >= f.life)?.sprite ??
+        new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: foam(), transparent: true, depthWrite: false }),
+        );
+      if (!sprite.parent) world.add(sprite);
+      sprite.position.copy(at);
+      const fleck = this.flecks.find((f) => f.sprite === sprite);
+      const velocity = spray
+        ? out.multiplyScalar(2 + Math.random() * 2).setY(2.5 + Math.random() * 2)
+        : out.multiplyScalar(0.6);
+      if (fleck) {
+        fleck.velocity.copy(velocity);
+        fleck.age = 0;
+        fleck.life = spray ? 0.9 : 2.6;
+        fleck.grow = spray ? 0.6 : 2.2;
+      } else {
+        this.flecks.push({
+          sprite,
+          velocity,
+          age: 0,
+          life: spray ? 0.9 : 2.6,
+          grow: spray ? 0.6 : 2.2,
+        });
+      }
+    }
+    for (const f of this.flecks) {
+      f.age += dt;
+      const k = f.age / f.life;
+      f.sprite.visible = k < 1;
+      if (k >= 1) continue;
+      f.velocity.y -= 9.8 * dt * (f.grow < 1 ? 1 : 0);
+      f.sprite.position.addScaledVector(f.velocity, dt);
+      if (f.grow >= 1) f.sprite.position.y = 0.06;
+      f.sprite.scale.setScalar(0.5 + f.grow * k);
+      (f.sprite.material as THREE.SpriteMaterial).opacity = (1 - k) * (f.grow < 1 ? 0.9 : 0.55);
+    }
   }
 
   private moveCrew(dt: number): void {
     const picked = this.crew[this.chosen];
     for (const c of this.crew) {
-      // Ashore, the hero's moved by ashore().
       if (c === picked && this.stage === "ashore") continue;
       let moving = false;
       const target = c.path[0];
       if (target) {
-        const pace = c.holder.parent === this.hull ? DECK_WALK : BEACH_WALK;
         const to = v.copy(target).sub(c.holder.position);
         to.y = 0;
         const gap = to.length();
@@ -429,7 +682,8 @@ export class BoatScene {
           if (c.path.length === 0) this.arrived(c);
         } else {
           moving = true;
-          c.holder.position.addScaledVector(to.normalize(), Math.min(gap, pace * dt));
+          c.holder.position.addScaledVector(to.normalize(), Math.min(gap, DECK_WALK * dt));
+          c.holder.position.y = deckY(c.holder.position.x);
           const want = Math.atan2(to.z, to.x);
           let d = want - c.facing;
           while (d > Math.PI) d -= Math.PI * 2;
@@ -438,22 +692,19 @@ export class BoatScene {
         }
       }
       c.holder.rotation.y = -c.facing;
-      const close = c === picked || moving;
-      const shown = c.far && !close ? c.far : c.near;
-      if (c.far) {
-        c.near.model.root.visible = shown === c.near || c.captain !== null;
+      // In full while it's them the camera's on (or they're walking); the raid copy otherwise.
+      const close = (c === picked || moving) && c.near !== null;
+      const shown = close && c.near ? c.near : c.far;
+      if (!c.captain) {
         c.far.model.root.visible = shown === c.far;
+        if (c.near) c.near.model.root.visible = shown === c.near;
       }
       const move: HeroMove = c.sitting
         ? SITTING
-        : {
-            ...AT_EASE,
-            moving,
-            speed: moving ? (c.holder.parent === this.hull ? DECK_WALK : BEACH_WALK) : 0,
-          };
-      shown.animator?.update(dt, move);
-      // Standing about aboard, the Captain's on his own idle; walking, he follows the game's walk.
-      c.captain?.update(dt, !moving);
+        : { ...AT_EASE, moving, speed: moving ? DECK_WALK : 0 };
+      if (c.captain) c.far.animator?.update(dt, move);
+      else shown.animator?.update(dt, move);
+      c.captain?.update(dt, moving ? "deck-walk" : "deck-still");
     }
   }
 
@@ -466,91 +717,96 @@ export class BoatScene {
     }
   }
 
-  /** At the beach: kit over the side, the hero over the rail and down, and up the sand. */
-  private ashore(dt: number): void {
-    const c = this.crew[this.chosen];
-    if (!c) return;
-    let walking = false;
-    const t = this.stepTime;
+  /** Two bags of kit, thrown from the bow onto the sand ahead. */
+  private throwGear(): void {
     const world = this.root.parent;
-    if (!world) return;
+    if (!world || this.gear.length > 0) return;
     const up = new THREE.Vector3(Math.cos(this.heading), 0, Math.sin(this.heading));
     const across = new THREE.Vector3(-up.z, 0, up.x);
-    const bow = this.hull.localToWorld(new THREE.Vector3(this.boat.length / 2 - 0.4, 1.6, 0));
-    // Two bags of kit thrown ahead onto the sand, one after the other.
-    if (this.gear.length === 0) {
-      for (const [lead, side] of [
-        [3.2, 1.3],
-        [4.4, -0.9],
-      ] as const) {
-        const bag = gearBag();
-        const from = bow.clone().add(new THREE.Vector3(0, 1.0, 0));
-        const to = bow.clone().addScaledVector(up, lead).addScaledVector(across, side);
-        to.y = Math.max(0, this.site.ground(to.x, to.z));
-        world.add(bag);
-        this.gear.push({ bag, from, to, turn: Math.random() * Math.PI });
-      }
+    const bow = this.hull.localToWorld(new THREE.Vector3(7.4, deckY(7.4) + 0.5, 0));
+    for (const [lead, side] of [
+      [3.4, 1.4],
+      [4.6, -1.0],
+    ] as const) {
+      const bag = gearBag();
+      const from = bow.clone().add(new THREE.Vector3(0, 0.8, 0));
+      const to = bow.clone().addScaledVector(up, lead).addScaledVector(across, side);
+      to.y = Math.max(0, this.site.ground(to.x, to.z));
+      bag.visible = false;
+      world.add(bag);
+      this.gear.push({ bag, from, to, turn: Math.random() * Math.PI });
     }
+  }
+
+  /** At the beach: kit over the side, the hero over the bow from where they stand, and up the sand. */
+  private ashore(dt: number): void {
+    const c = this.crew[this.chosen];
+    const world = this.root.parent;
+    if (!c || !world) return;
+    const t = this.stepTime;
+    this.throwGear();
     this.gear.forEach((g, i) => {
-      const k = ease((t - i * 0.35) / 0.7);
-      g.bag.position.lerpVectors(g.from, g.to, k);
-      g.bag.position.y += Math.sin(Math.min(1, Math.max(0, (t - i * 0.35) / 0.7)) * Math.PI) * 1.4;
-      g.bag.rotation.set(0, g.turn + k * 2.5, k * 1.2 * (1 - k));
+      const s = Math.min(1, Math.max(0, (t - i * 0.35) / 0.7));
+      g.bag.position.lerpVectors(g.from, g.to, ease(s));
+      g.bag.position.y += Math.sin(s * Math.PI) * 1.4;
+      g.bag.rotation.set(0, g.turn + s * 2.5, s * 1.2 * (1 - s));
       g.bag.visible = t > i * 0.35;
     });
-    // Up onto the rail, a hand on it, and over: down onto the sand ahead of the bow.
-    if (c.holder.parent === this.hull) world.attach(c.holder);
-    const railAt = this.hull.localToWorld(
-      new THREE.Vector3(this.boat.length / 2 - 1.3, 1.6, (this.boat.over[0]?.z ?? 1.3) * 0.6),
-    );
-    const landAt = bow.clone().addScaledVector(up, 2.2).addScaledVector(across, 0.8);
+    // Over the bow from exactly where they stand: up onto the bulwark, then down onto the sand.
+    if (c.holder.parent !== world) {
+      world.attach(c.holder);
+      c.path = [];
+      this.climbFrom.copy(c.holder.position);
+    }
+    const up = new THREE.Vector3(Math.cos(this.heading), 0, Math.sin(this.heading));
+    const landAt = this.climbFrom.clone().addScaledVector(up, 3.0);
     landAt.y = Math.max(0, this.site.ground(landAt.x, landAt.z));
+    const top = this.climbFrom.clone().addScaledVector(up, 0.6);
+    top.y += 0.95;
     c.facing = this.heading;
-    if (t < 0.7) {
-      const k = ease(t / 0.7);
-      c.holder.position.copy(railAt).setY(railAt.y + 0.95 * k);
-    } else if (t < 1.4) {
-      const k = (t - 0.7) / 0.7;
-      c.holder.position.lerpVectors(v2.copy(railAt).setY(railAt.y + 0.95), landAt, ease(k));
-      c.holder.position.y += Math.sin(k * Math.PI) * 0.7;
+    let walking = false;
+    let mode: "deck-walk" | "fight" = "deck-walk";
+    if (t < 0.6) {
+      c.holder.position.lerpVectors(this.climbFrom, top, ease(t / 0.6));
+    } else if (t < 1.3) {
+      const k = (t - 0.6) / 0.7;
+      c.holder.position.lerpVectors(top, landAt, ease(k));
+      c.holder.position.y += Math.sin(k * Math.PI) * 0.6;
     } else {
-      // Up the beach to where the fight starts.
-      if (c.path.length === 0 && t < 1.5) {
-        const spawn = this.site.spawn;
-        c.path = [new THREE.Vector3(spawn.x, this.site.ground(spawn.x, spawn.y), spawn.y)];
+      // Up the beach to where the fight starts, drawing the rifle on the way.
+      const spawn = this.site.spawn;
+      const to = v.set(spawn.x, 0, spawn.y);
+      const step = to.sub(c.holder.position);
+      step.y = 0;
+      const gap = step.length();
+      if (gap < 0.1) {
+        this.setStep("done");
+        return;
       }
-      const to = c.path[0];
-      if (to) {
-        const step = v.copy(to).sub(c.holder.position);
-        step.y = 0;
-        const gap = step.length();
-        if (gap < 0.1) {
-          c.path.length = 0;
-          this.setStep("done");
-          return;
-        }
-        c.holder.position.addScaledVector(step.normalize(), Math.min(gap, BEACH_WALK * dt));
-        c.facing = Math.atan2(step.z, step.x);
-        c.holder.position.y = Math.max(
-          0,
-          this.site.ground(c.holder.position.x, c.holder.position.z),
-        );
-        walking = true;
-      }
+      if (gap < 3.5) mode = "fight";
+      c.holder.position.addScaledVector(step.normalize(), Math.min(gap, BEACH_WALK * dt));
+      c.holder.position.y = Math.max(0, this.site.ground(c.holder.position.x, c.holder.position.z));
+      c.facing = Math.atan2(step.z, step.x);
+      walking = true;
     }
     c.holder.rotation.y = -c.facing;
-    // Their contact shadow stays on the sand (or the deck) as they go up and over.
     const blob = c.holder.children.find((o) => o.userData.contact === true);
     if (blob) {
       const below = Math.max(0, this.site.ground(c.holder.position.x, c.holder.position.z));
       blob.position.y = Math.min(0.02, below - c.holder.position.y + 0.02);
-      blob.visible = t > 1.35;
+      blob.visible = t > 1.25;
     }
-    c.near.animator?.update(dt, { ...AT_EASE, moving: walking, speed: walking ? BEACH_WALK : 0 });
-    c.captain?.update(dt);
+    const move = { ...AT_EASE, moving: walking, speed: walking ? BEACH_WALK : 0 };
+    const shown = c.near && !c.captain ? c.near : c.far;
+    shown.animator?.update(dt, move);
+    c.captain?.update(dt, mode);
   }
 
-  /** The camera, for the step the scene is on. */
+  private readonly climbFrom = new THREE.Vector3();
+
+  // ---------------------------------------------------------------------------------------------
+  // The camera.
+
   private place(dt: number, camera: THREE.PerspectiveCamera): void {
     if (this.overview) {
       const p = this.root.position;
@@ -558,74 +814,68 @@ export class BoatScene {
       camera.lookAt(p.x, p.y, p.z);
       return;
     }
-    const want = this.shot(dt);
-    // From the last set-up to this one over a moment, rather than a cut.
-    const k = ease(this.cameraSince / CAMERA_MOVE);
-    camera.position.lerpVectors(this.lastCamera.position, want.position, k);
-    camera.quaternion.slerpQuaternions(this.lastCamera.quaternion, want.quaternion, k);
-  }
-
-  private readonly shotCamera = new THREE.PerspectiveCamera();
-
-  /** Where the camera wants to be, for the step the scene's on. */
-  private shot(dt: number): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
-    const cam = this.shotCamera;
+    this.root.updateMatrixWorld(true);
     const c = this.crew[this.chosen];
-    this.hull.updateMatrixWorld(true);
-    if (this.stage === "choose" || !c) {
-      // In front of the one picked, a little off to one side, at their eye height.
-      this.bearing += (this.wantBearing - this.bearing) * (1 - Math.exp(-dt * 2.6));
-      const tall = c?.tall ?? 2.4;
-      const at = c ? c.holder.position : new THREE.Vector3();
-      const reach = 1.4 + tall * 1.5;
-      const eyes = c?.sitting ? tall * 0.45 : tall * 0.78;
-      cam.position.copy(
-        this.root.localToWorld(
-          new THREE.Vector3(
-            at.x + Math.cos(this.bearing) * reach,
-            at.y + eyes + 0.35,
-            at.z + Math.sin(this.bearing) * reach,
-          ),
-        ),
-      );
-      cam.lookAt(this.root.localToWorld(new THREE.Vector3(at.x, at.y + eyes - 0.1, at.z)));
-      return cam;
+    let eye: THREE.Vector3;
+    let look: THREE.Vector3;
+    if (!c || !c.shot) {
+      // Before the crew's aboard: the whole boat, from off her quarter.
+      eye = this.root.localToWorld(new THREE.Vector3(-14, 7, 12));
+      look = this.root.localToWorld(new THREE.Vector3(0, 2, 0));
+    } else if (this.stage === "choose") {
+      eye = this.hull.localToWorld(c.shot.eye.clone());
+      look = this.hull.localToWorld(c.shot.look.clone());
+    } else if (this.stage === "console") {
+      const shot = this.planConsole(c);
+      eye = this.hull.localToWorld(shot.eye.clone());
+      look = this.hull.localToWorld(shot.look.clone());
+    } else {
+      const follow = this.followView(c);
+      if (this.stage === "run" && this.runPath) {
+        const k = Math.min(1, this.stepTime / (RUN_SECONDS * 0.82));
+        eye = this.root.localToWorld(this.runPath.eyes.getPoint(ease(k)));
+        look = this.root.localToWorld(this.runPath.looks.getPoint(ease(k)));
+        // The last stretch comes down onto the raid's camera over the hero.
+        const w = ease((this.run - 0.72) / 0.28);
+        eye.lerp(follow.position, w);
+        look.lerp(follow.look, w);
+      } else {
+        eye = follow.position;
+        look = follow.look;
+      }
     }
-    if (this.stage === "console") {
-      // In the cabin, over their shoulder to the console and its crystals.
-      const s = this.boat.console.stand;
-      cam.position.copy(
-        this.root.localToWorld(new THREE.Vector3(s.x - 1.5, s.y + 2.25, s.z + 1.25)),
-      );
-      cam.lookAt(this.root.localToWorld(new THREE.Vector3(s.x + 0.85, s.y + 1.05, s.z)));
-      return cam;
+    // Eased towards where it wants to be: a move, never a jump.
+    const settle = this.stage === "choose" ? 1 - Math.exp(-dt * 4) : 1 - Math.exp(-dt * 9);
+    if (this.cameraSince > 90) {
+      this.cameraAt.copy(eye);
+      this.cameraLook.copy(look);
+      this.cameraSince = 0;
+    } else {
+      this.cameraAt.lerp(eye, settle);
+      this.cameraLook.lerp(look, settle);
     }
-    // Out of the cabin, wide, as she runs in; then down to where the raid's camera will be.
-    const chase = new THREE.Vector3(-15, 9, 11);
-    cam.position.copy(this.root.localToWorld(chase));
-    cam.lookAt(this.root.localToWorld(new THREE.Vector3(5, 1.5, 0)));
-    const follow = this.followView(c);
-    const k = this.stage === "ashore" ? 1 : ease((this.run - 0.55) / 0.45);
-    cam.position.lerp(follow.position, k);
-    cam.quaternion.slerp(follow.quaternion, k);
-    return cam;
+    camera.position.copy(this.cameraAt);
+    camera.lookAt(this.cameraLook);
+    void CAMERA_MOVE;
   }
 
   /** The raid's camera, kept on the hero as they go: where it'll be when the fight starts. */
-  private followView(c: Crew): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
+  private followView(c: Crew): { position: THREE.Vector3; look: THREE.Vector3 } {
     const { spawn, view, ground } = this.site;
     const spawnAt = new THREE.Vector3(spawn.x, Math.max(0, ground(spawn.x, spawn.y)), spawn.y);
     const offset = view.position.clone().sub(spawnAt);
     const hero = c.holder.getWorldPosition(new THREE.Vector3());
     hero.y = Math.max(0, ground(hero.x, hero.z));
-    return { position: hero.add(offset), quaternion: view.quaternion };
+    const position = hero.clone().add(offset);
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(view.quaternion);
+    return { position, look: position.clone().addScaledVector(forward, 10) };
   }
 
   dispose(): void {
     this.root.removeFromParent();
     for (const g of this.gear) g.bag.removeFromParent();
+    for (const f of this.flecks) f.sprite.removeFromParent();
     for (const c of this.crew) c.holder.removeFromParent();
-    // The Captain's meshes are shared with every other Captain (captain.ts): not ours to free.
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });

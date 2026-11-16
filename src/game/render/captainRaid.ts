@@ -6,6 +6,7 @@
 
 import * as THREE from "three";
 import { type Captain, loadCaptain } from "./captain";
+import { namesUnder, UPPER_BODY_ROOT } from "./clipLibrary";
 import type { HeroModel, HeroRig } from "./heroModels";
 
 const q = new THREE.Quaternion();
@@ -69,14 +70,22 @@ export class CaptainInRaid {
   private readonly hipRest = new THREE.Vector3();
   private readonly leadHipRest = new THREE.Vector3();
   private readonly lead: THREE.Object3D;
-  /** What the Rifleman holds: hidden while the Captain's on his own idle, which holds nothing. */
+  /** What the Rifleman holds, in the Captain's hands while he fights. */
   private readonly rifle: THREE.Object3D;
-  /** Every bone, and where the stock idle put each this frame, to blend towards. */
+  /** The same rifle slung across his back, while he isn't fighting. */
+  private readonly slung: THREE.Object3D | null;
+  /** Every bone, and where the stock clips put each this frame, to blend towards. */
   private readonly bones: THREE.Object3D[] = [];
-  private readonly idlePose: THREE.Quaternion[] = [];
-  private readonly idleHip = new THREE.Vector3();
-  /** 0 following the Rifleman, 1 on the stock idle; eased between, so the change never pops. */
-  private idle = 0;
+  private readonly upper: boolean[] = [];
+  private readonly clipPose: THREE.Quaternion[] = [];
+  private readonly clipHip = new THREE.Vector3();
+  /**
+   * How much of him is on the stock clips rather than the Rifleman's moves, eased so a change never
+   * pops: all of him, standing about on deck; his upper body, walking on deck (arms swinging, not
+   * holding a rifle that isn't there).
+   */
+  private whole = 0;
+  private upperBody = 0;
 
   private constructor(
     private readonly captain: Captain,
@@ -86,10 +95,12 @@ export class CaptainInRaid {
     this.lead = model.root;
     this.rifle = rig.rifle;
     const body = captain.model;
+    const above = namesUnder(body, UPPER_BODY_ROOT);
     body.traverse((o) => {
       if (o instanceof THREE.Bone) {
         this.bones.push(o);
-        this.idlePose.push(new THREE.Quaternion());
+        this.upper.push(above.has(o.name));
+        this.clipPose.push(new THREE.Quaternion());
       }
     });
     this.frame.add(body);
@@ -172,6 +183,38 @@ export class CaptainInRaid {
       const f = bone(`CC_Base_${side}_Foot`);
       if (f) this.feet.push({ foot: f, rest: restIn(f, this.root) });
     });
+    // A copy of the rifle slung across his back, barrel up over his left shoulder.
+    const spine = bone("CC_Base_Spine02");
+    this.slung = null;
+    if (spine) {
+      const slung = rig.rifle.clone(true);
+      slung.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.castShadow = true;
+      });
+      // The rifle's model isn't centred on its own origin, nor long along a known axis: measured,
+      // so its middle sits against his back and its length runs across it.
+      slung.position.set(0, 0, 0);
+      slung.quaternion.identity();
+      slung.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(slung);
+      const size = box.getSize(new THREE.Vector3());
+      const mid = box.getCenter(new THREE.Vector3());
+      const long =
+        size.x >= size.y && size.x >= size.z
+          ? new THREE.Vector3(1, 0, 0)
+          : size.y >= size.z
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(0, 0, 1);
+      slung.quaternion.setFromUnitVectors(long, new THREE.Vector3(-0.08, 0.8, -0.6).normalize());
+      const back = spine.getWorldPosition(new THREE.Vector3());
+      back.x -= tall * 0.085;
+      slung.position.copy(back).sub(mid.applyQuaternion(slung.quaternion));
+      slung.updateMatrixWorld(true);
+      this.root.add(slung);
+      spine.attach(slung);
+      slung.visible = false;
+      this.slung = slung;
+    }
     lead.rotation.y = leadTurn;
     lead.position.copy(leadAt);
     lead.updateMatrixWorld(true);
@@ -201,11 +244,11 @@ export class CaptainInRaid {
   }
 
   /**
-   * Call after the Rifleman's been moved this frame. `still`, where there's no fighting to do (on
-   * the boat): standing still, he eases onto the stock idle (when the clips are there), the rifle
-   * put away, and back onto the Rifleman's moves when he walks.
+   * Call after the Rifleman's been moved this frame. `fight`: the Rifleman's moves, rifle in hand.
+   * Aboard, nothing to fight: `deck-still` he stands about on the stock clips, `deck-walk` his legs
+   * walk as the Rifleman's do while his arms swing loose, the rifle slung on his back either way.
    */
-  update(dt: number, still = false): void {
+  update(dt: number, mode: "fight" | "deck-still" | "deck-walk" = "fight"): void {
     const { lead, root } = this;
     root.visible = lead.visible;
     if (!lead.visible) return;
@@ -213,29 +256,34 @@ export class CaptainInRaid {
     root.quaternion.copy(lead.quaternion);
     lead.updateMatrixWorld(true);
     root.updateMatrixWorld(true);
-    const player = this.captain.player;
-    const want = still && player ? 1 : 0;
-    this.idle += (want - this.idle) * (1 - Math.exp(-dt * 4));
-    const idling = this.idle > 0.001 && player !== null;
-    this.rifle.visible = this.idle < 0.5;
-    const grip = 0.8 - 0.55 * this.idle;
+    const clips = this.captain.player !== null;
+    const ease = 1 - Math.exp(-dt * 5);
+    this.whole += ((mode === "deck-still" && clips ? 1 : 0) - this.whole) * ease;
+    this.upperBody += ((mode !== "fight" && clips ? 1 : 0) - this.upperBody) * ease;
+    const away = Math.max(this.whole, this.upperBody);
+    // The rifle goes from his back to his hands halfway through his arms coming round to it.
+    const holding = away < 0.5 || !clips;
+    this.rifle.visible = holding;
+    if (this.slung) this.slung.visible = !holding;
+    const grip = 0.8 - 0.55 * away;
     this.captain.hands.clasp("L", grip);
     this.captain.hands.clasp("R", grip);
+    const blending = away > 0.001 && clips;
     this.captain.update(dt, () => {
-      if (idling && player) {
-        player.update(dt);
+      if (blending) {
+        this.captain.clipStep(dt, mode === "deck-walk" ? "stroll" : "stand");
         this.bones.forEach((b, i) => {
-          this.idlePose[i]?.copy(b.quaternion);
+          this.clipPose[i]?.copy(b.quaternion);
         });
-        if (this.hip) this.idleHip.copy(this.hip.position);
+        if (this.hip) this.clipHip.copy(this.hip.position);
       }
       this.pose();
-      if (!idling) return;
+      if (!blending) return;
       this.bones.forEach((b, i) => {
-        const to = this.idlePose[i];
-        if (to) b.quaternion.slerp(to, this.idle);
+        const to = this.clipPose[i];
+        if (to) b.quaternion.slerp(to, this.upper[i] ? away : this.whole);
       });
-      this.hip?.position.lerp(this.idleHip, this.idle);
+      this.hip?.position.lerp(this.clipHip, this.whole);
     });
   }
 

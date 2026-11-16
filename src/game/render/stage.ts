@@ -13,6 +13,10 @@ import { Cinema, FILM, type FilmLook, PLAY } from "./cinema";
 import { COLORS } from "./palette";
 import { LIGHT_DISTANCE, Sky } from "./sky";
 
+const snapRight = new THREE.Vector3();
+const snapUp = new THREE.Vector3();
+const snapAt = new THREE.Vector3();
+
 /** How sharp a fight is at each step of quality: any more only costs battery on a phone. */
 const PIXEL_RATIOS = [1.5, 1.3, 1.15, 1.15];
 /** The steps of quality a fixed graphics setting sits at, the last of them dropping to 1. */
@@ -61,6 +65,8 @@ export class Stage {
   height = 1;
   /** Keeps full quality however slow frames are, for screenshots in test browsers. */
   holdQuality = false;
+  /** Shadows redrawn every frame (see render). */
+  liveShadows = false;
   /** What the settings ask for; anything but auto stays where it's put. */
   private graphics: Graphics = "auto";
 
@@ -112,8 +118,19 @@ export class Stage {
 
   /** Keeps crisp shadows around what the camera is looking at. */
   focusShadows(target: THREE.Vector3, size: number): void {
-    this.sun.position.copy(target).addScaledVector(this.sky.direction, LIGHT_DISTANCE);
-    this.sun.target.position.copy(target);
+    // Kept on the shadow map's own grid of pixels as it follows something moving: otherwise every
+    // edge in the map shifts by part of a pixel each frame and shadows shimmer and flicker.
+    const d = this.sky.direction;
+    const right = snapRight.set(-d.z, 0, d.x);
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+    right.normalize();
+    const up = snapUp.crossVectors(d, right).normalize();
+    const texel = (2 * size) / this.sun.shadow.mapSize.x;
+    const a = Math.round(target.dot(right) / texel) * texel - target.dot(right);
+    const b = Math.round(target.dot(up) / texel) * texel - target.dot(up);
+    const at = snapAt.copy(target).addScaledVector(right, a).addScaledVector(up, b);
+    this.sun.position.copy(at).addScaledVector(d, LIGHT_DISTANCE);
+    this.sun.target.position.copy(at);
     const cam = this.sun.shadow.camera;
     if (cam.right !== size) {
       cam.left = -size;
@@ -271,7 +288,10 @@ export class Stage {
     if (this.preparing) return;
     this.frameNumber++;
     const pace = this.calm ? CALM_SHADOWS : 1;
-    const shadowEvery = (this.sky.moonShadows ? this.shadowEvery * 2 : this.shadowEvery) * pace;
+    // Something big moving through a close shot (the boat setting out) needs its shadows every
+    // frame, or they lag it in steps.
+    const every = this.liveShadows ? 1 : this.shadowEvery;
+    const shadowEvery = (this.sky.moonShadows ? every * 2 : every) * pace;
     const dueShadows = this.sky.shadows && this.frameNumber % shadowEvery === 0;
     if (this.shadowsStale || dueShadows) {
       this.renderer.shadowMap.needsUpdate = true;
