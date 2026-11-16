@@ -116,8 +116,9 @@ These were explicitly left out to keep the first version to a basic structure:
   raid can follow in the boat at night. With a crew, the old ending stays for now.
 - **Animation from the stock clips (Proposed):** the ActorCore clips the owner downloaded are
   converted to the Captain's skeleton, with blends between them chosen by what each move is
-  (`render/clipLibrary.ts`, `docs/ANIMATION.md`). Only the Captain's idle is used so far, and the
-  clips are not to be committed until their licence is confirmed for a public repo.
+  (`render/clipLibrary.ts`, `docs/ANIMATION.md`). The clips are in the repo (the owner's
+  call: the game isn't sold for profit). The Captain stands on the stock idle aboard the boat and in
+  cutscenes, easing onto the game's own walk when he moves; in a raid he follows the Rifleman.
 - **The Captain aboard (Decided):** the full-detail Captain stands on the boat in the Rifleman's
   place, named "The Captain", with his face, hands and wind-blown hair (`render/captain.ts`).
 

@@ -452,7 +452,8 @@ export class BoatScene {
             speed: moving ? (c.holder.parent === this.hull ? DECK_WALK : BEACH_WALK) : 0,
           };
       shown.animator?.update(dt, move);
-      c.captain?.update(dt);
+      // Standing about aboard, the Captain's on his own idle; walking, he follows the game's walk.
+      c.captain?.update(dt, !moving);
     }
   }
 

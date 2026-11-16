@@ -51,8 +51,8 @@ behind the tree screen, the picture starts a little softer, and there are fewer 
   costs about twice the old one's 0.3 ms on a desktop graphics card. With `?testhooks`,
   `setOut()`, `readyUp()`, `boat()`, `win()` and `filmAt(seconds)` walk through it.
 - The Captain aboard (full model, ~490,000 triangles, plus five detailed heroes) hasn't been timed
-  on a phone. `public/models/anims/` and
-  `new work/` are git-ignored until the ActorCore licence is confirmed for a public repo.
+  on a phone. The converted stock clips (`public/models/anims/`) are committed, with the owner's
+  OK; the raw downloads (`new work/`) stay git-ignored.
 - Battery use hasn't been measured on a phone. One frame costs about 125,000 triangles in a raid
   and 430,000 on the crew island, whose forest is the heavy part.
 - Team-up, rival raids, account switching and shared upgrades were run on `npx wrangler dev` with

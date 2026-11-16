@@ -10,10 +10,10 @@ coverage/
 .DS_Store
 __pycache__/
 
-# Work in progress and stock content whose licence isn't confirmed for a public repo.
+# Work in progress, and the raw downloads (the converted stock clips in public/models/anims are
+# in the repo: the owner confirmed the licence allows it, 2026-11-16).
 .claude/
 models-wip/
 new work/
-public/models/anims/
 docs/ui-preview*.jpg
 my-pwa-game.zip

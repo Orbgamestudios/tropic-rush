@@ -32,8 +32,9 @@ In the game since 2026-11-16: the full Captain stands aboard the boat in the Rif
 his face, the stock idle, his hands and his hair; picked, he says his line and eases his hands, and
 on Ready closes them into fists. He plays Steele's part in the cutscenes too: his own face says each
 line, lips in time with the words, his expression set by the line's mood (`MOOD_FACE`). In a raid
-he's still the old Rifleman. Without the stock clips (they aren't in the repo, so not on the live site until their licence
-is confirmed) he stands at ease on a pose of his own: arms down, breathing, his weight shifting.
+he wears the Rifleman's moves (`render/captainRaid.ts`). Standing aboard and in cutscenes he's on
+the stock idle (the clips are in the repo since 2026-11-16); without them he stands at ease on a
+pose of his own: arms down, breathing, his weight shifting.
 Offline, where his model can't be fetched, the Rifleman stands in his place.
 `models-wip/debug/captain/captain.html` shows him under a still camera.
 
@@ -49,7 +50,7 @@ Checked on the Captain against the owner's list and `docs/concept/tpose/captain-
 | Hair chunks in the breeze                    | Met for a sculpted style. The locks of the quiff and fringe move in gusts, each on its own phase, up to about 3.5 cm at the tips, without tearing. They're part of the sculpted mesh, not separate cards, so they sway as clumps rather than strands.                                                                                                                                                                                           |
 | In the style of the images, fitting the game | Close. The silhouette, quiff, beard, rolled-sleeve blue shirt, belt, white trousers, boat shoes and watch all match the concept. The hair is a deeper gold than the concept's pale blond, and the eyes are bigger and glossier (as the face spec asked).                                                                                                                                                                                        |
 | Interesting textures                         | Met. Each material gets its own relief in the shader, laid on the body from three sides (the paint's layout is too broken up to lay patterns across): an oxford weave and heathered slubs in the shirt, a diagonal twill in the trousers, pebbled grain, mottling and a worn sheen on the belt and shoes, pores in the skin, strands in the hair and beard. Two scales, so there's texture both at arm's length and up close. No stitching yet. |
-| Game ready, $50 standard                     | For close-ups, yes: a rigged, textured, full-detail model with a face and hands, on the boat and in the cutscenes. Not yet for play: in a raid he's still the old Rifleman (his running and shooting would come from the stock clips, which can't go in the public repo until their licence is confirmed), the other heroes and the Shaman haven't been through this pipeline, and he hasn't run on a phone.                                    |
+| Game ready, $50 standard                     | For close-ups, yes: a rigged, textured, full-detail model with a face and hands, on the boat and in the cutscenes. In a raid he wears the Rifleman's moves, hands on the rifle. Not yet: the other heroes and the Shaman haven't been through this pipeline, and he hasn't run on a phone.                                                                                                                                                      |
 
 Godot or Unreal: no, as above. Everything here runs in three.js inside the game as it is.
 

@@ -4,7 +4,7 @@ The Captain's animation clips: what's in the library, how they were made, how th
 blends them, and a study of how the stock animations move, measured off the clips, for making new
 ones by hand or in code.
 
-**Before anything here is committed, read [Licence](#licence).**
+The converted clips are in the repo: see [Licence](#licence).
 
 ## What's in the library
 
@@ -244,14 +244,9 @@ A slow, thoughtful walk, not a brisk one:
 
 ## Licence
 
-ActorCore content is licensed for use in products, but this repository is public on GitHub, and
-putting the animation files in it publishes them for anyone to take. **The converted clips must not
-be committed until the owner confirms the ActorCore licence allows it.** Until then these stay out of
-any commit:
-
-- `public/models/anims/` (the 13 clip GLBs and `clips.json`)
-- `new work/stock animations/` (the downloaded zips: untracked, but not ignored either, so a
-  careless `git add .` would take them)
+The owner confirmed on 2026-11-16 that the converted clips can go in this public repository (the
+game isn't sold for profit), so `public/models/anims/` (the 13 clip GLBs and `clips.json`) is
+committed. The raw downloads stay out: `new work/` is git-ignored.
 
 Their unpacked copies (`models-wip/anims/raw/`) are excluded locally with the rest of
 `models-wip/`, and must stay out too. The code (`scripts/blender/convert_clips.py`,

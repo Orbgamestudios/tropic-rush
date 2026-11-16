@@ -69,6 +69,14 @@ export class CaptainInRaid {
   private readonly hipRest = new THREE.Vector3();
   private readonly leadHipRest = new THREE.Vector3();
   private readonly lead: THREE.Object3D;
+  /** What the Rifleman holds: hidden while the Captain's on his own idle, which holds nothing. */
+  private readonly rifle: THREE.Object3D;
+  /** Every bone, and where the stock idle put each this frame, to blend towards. */
+  private readonly bones: THREE.Object3D[] = [];
+  private readonly idlePose: THREE.Quaternion[] = [];
+  private readonly idleHip = new THREE.Vector3();
+  /** 0 following the Rifleman, 1 on the stock idle; eased between, so the change never pops. */
+  private idle = 0;
 
   private constructor(
     private readonly captain: Captain,
@@ -76,7 +84,14 @@ export class CaptainInRaid {
     rig: HeroRig,
   ) {
     this.lead = model.root;
+    this.rifle = rig.rifle;
     const body = captain.model;
+    body.traverse((o) => {
+      if (o instanceof THREE.Bone) {
+        this.bones.push(o);
+        this.idlePose.push(new THREE.Quaternion());
+      }
+    });
     this.frame.add(body);
     this.root.add(this.frame);
     // His own facing turned to the Rifleman's (+x), and his height made the Rifleman's.
@@ -185,8 +200,12 @@ export class CaptainInRaid {
     return this.captain;
   }
 
-  /** Call after the Rifleman's been moved this frame. */
-  update(dt: number): void {
+  /**
+   * Call after the Rifleman's been moved this frame. `still`, where there's no fighting to do (on
+   * the boat): standing still, he eases onto the stock idle (when the clips are there), the rifle
+   * put away, and back onto the Rifleman's moves when he walks.
+   */
+  update(dt: number, still = false): void {
     const { lead, root } = this;
     root.visible = lead.visible;
     if (!lead.visible) return;
@@ -194,7 +213,30 @@ export class CaptainInRaid {
     root.quaternion.copy(lead.quaternion);
     lead.updateMatrixWorld(true);
     root.updateMatrixWorld(true);
-    this.captain.update(dt, () => this.pose());
+    const player = this.captain.player;
+    const want = still && player ? 1 : 0;
+    this.idle += (want - this.idle) * (1 - Math.exp(-dt * 4));
+    const idling = this.idle > 0.001 && player !== null;
+    this.rifle.visible = this.idle < 0.5;
+    const grip = 0.8 - 0.55 * this.idle;
+    this.captain.hands.clasp("L", grip);
+    this.captain.hands.clasp("R", grip);
+    this.captain.update(dt, () => {
+      if (idling && player) {
+        player.update(dt);
+        this.bones.forEach((b, i) => {
+          this.idlePose[i]?.copy(b.quaternion);
+        });
+        if (this.hip) this.idleHip.copy(this.hip.position);
+      }
+      this.pose();
+      if (!idling) return;
+      this.bones.forEach((b, i) => {
+        const to = this.idlePose[i];
+        if (to) b.quaternion.slerp(to, this.idle);
+      });
+      this.hip?.position.lerp(this.idleHip, this.idle);
+    });
   }
 
   private pose(): void {
