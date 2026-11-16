@@ -128,6 +128,10 @@ interface LavaCourse {
   mouths: LavaMouth[];
 }
 
+/** How quickly a drawn hero closes on where the rules have them, and how far counts as a jump. */
+const EASE_RATE = 13;
+const EASE_JUMP = 3.5;
+
 /** Meters between the lamps glowing on the ground along a lava river. */
 const LAVA_LAMP_GAP = 14;
 /** Billows of steam a second where a river meets the sea. */
@@ -366,6 +370,10 @@ export class RaidView {
   between = 1;
   private readonly mines = new Map<number, THREE.Mesh>();
   private readonly boat: GunboatModel;
+  /** Heroes aboard the gunboat in the landing or the way home, and not to be drawn. */
+  readonly aboard = new Set<number>();
+  /** A film's being shot over the raid: the rings under the heroes and every health bar stay hidden. */
+  filming = false;
   /** How far the gunboat's barrel is kicked back, and where it rests. */
   private boatKick = 0;
   private readonly boatGunsRest: number;
@@ -526,6 +534,8 @@ export class RaidView {
           const fromBarrel = hero && distance(hero.pos, e.pos) < 2;
           if (shooter?.animator && fromBarrel) {
             shooter.animator.shot();
+            // What's thrown leaves a hand, not a barrel: no flash, and no spent case.
+            if (shooter.animator.throws) break;
             const barrel = shooter.animator.muzzle(new THREE.Vector3());
             this.effects.muzzle(barrel, 0xffe08a, 0.25);
             const a = shooter.facing;
@@ -639,6 +649,11 @@ export class RaidView {
     const south = this.ground(x, y + SLOPE_SPAN) - this.ground(x, y - SLOPE_SPAN);
     slope.set(-east, SLOPE_SPAN * 2, -south).normalize();
     mesh.quaternion.setFromUnitVectors(UP, slope);
+  }
+
+  /** How high the land is at a place, for anything else that stands on it. */
+  heightAt(x: number, y: number): number {
+    return this.ground(x, y);
   }
 
   private groundUnderGem(gem: THREE.Group): number {
@@ -997,6 +1012,9 @@ export class RaidView {
     this.lightBuildings(state);
   }
 
+  /** Where each hero's drawn, a little behind where the rules have them (see ease). */
+  private readonly eased = new Map<number, Vec2>();
+
   /** Notes where every hero stands, just before the rules take a step. */
   remember(state: RaidState): void {
     for (const h of state.heroes) {
@@ -1009,13 +1027,43 @@ export class RaidView {
   }
 
   /** Where a hero is drawn: between where it stood before the last step and where it is now. */
+  /** The gunboat, for a film to move. */
+  get gunboat(): THREE.Object3D {
+    return this.boat.root;
+  }
+
   drawnAt(h: RaidHero): Vec2 {
+    return this.eased.get(h.id) ?? this.steppedAt(h);
+  }
+
+  /** Where the rules have a hero just now, between their last step and this one. */
+  private steppedAt(h: RaidHero): Vec2 {
     const slid = this.sliding(h);
     if (slid) return slid;
     const before = this.before.get(h.id);
     if (!before || this.between >= 1) return h.pos;
     const t = this.between;
     return { x: before.x + (h.pos.x - before.x) * t, y: before.y + (h.pos.y - before.y) * t };
+  }
+
+  /**
+   * The rules start and stop a hero dead, which is right for a stick but wrong for a body. So the
+   * hero that's drawn gathers speed over its first steps and takes a step or two to pull up,
+   * following where the rules have it from a little behind. Anything further off than a body
+   * could have gone (a retry, a rewind) is a jump, and it jumps.
+   */
+  private ease(h: RaidHero, dt: number): Vec2 {
+    const at = this.steppedAt(h);
+    const shown = this.eased.get(h.id);
+    if (!shown || Math.hypot(at.x - shown.x, at.y - shown.y) > EASE_JUMP) {
+      const fresh = { x: at.x, y: at.y };
+      this.eased.set(h.id, fresh);
+      return fresh;
+    }
+    const near = 1 - Math.exp(-dt * EASE_RATE);
+    shown.x += (at.x - shown.x) * near;
+    shown.y += (at.y - shown.y) * near;
+    return shown;
   }
 
   private updateHeroes(state: RaidState, dt: number): void {
@@ -1034,15 +1082,15 @@ export class RaidView {
         running?.power === "record" && !running.replaying && running.heroId === h.id,
       );
       const { model, ring } = view;
-      // Nobody lies about: a fallen hero has gone up in smoke.
-      model.root.visible = h.alive;
+      // Nobody lies about: a fallen hero has gone up in smoke. Aboard the boat in a film, out of sight.
+      model.root.visible = h.alive && !this.aboard.has(h.id);
       if (!h.alive) {
         ring.visible = false;
         continue;
       }
-      const pos = this.drawnAt(h);
+      const pos = this.ease(h, dt);
       model.root.position.set(pos.x, this.ground(pos.x, pos.y), pos.y);
-      ring.visible = h.alive && !this.defending;
+      ring.visible = h.alive && !this.defending && !this.filming;
       ring.position.set(pos.x, this.ground(pos.x, pos.y) + 0.06, pos.y);
       this.layOnSlope(ring, pos.x, pos.y);
       ring.scale.setScalar(1 + Math.sin(this.ringPulse * 0.9) * 0.04);
@@ -1061,7 +1109,7 @@ export class RaidView {
         }
       }
       if (view.animator) {
-        this.animateHero(view, view.animator, h, state, dt);
+        this.animateHero(view, view.animator, h, pos, state, dt);
         continue;
       }
       const speed = HEROES[h.kind].speed;
@@ -1081,25 +1129,28 @@ export class RaidView {
     view: HeroView,
     animator: HeroAnimator,
     h: RaidHero,
+    pos: Vec2,
     state: RaidState,
     dt: number,
   ): void {
     if (dt <= 0) return;
-    const gone = distance(h.pos, view.last);
+    // How fast the body that's drawn is going, which is what its legs have to keep up with.
+    const gone = distance(pos, view.last);
     view.speed += (gone / dt - view.speed) * Math.min(1, dt * 12);
-    const heading = gone > 1e-4 ? angleDiff(angleOf(sub(h.pos, view.last)), view.facing) : 0;
-    view.last = { ...h.pos };
+    const heading = gone > 1e-4 ? angleDiff(angleOf(sub(pos, view.last)), view.facing) : 0;
+    view.last = { ...pos };
     if (h.hp < view.lastHp - 0.5 && h.alive) animator.flinch();
     view.lastHp = h.hp;
     const { attack } = HEROES[h.kind];
     const reloadTime = (attack.kind === "burst" ? attack.reload : 1) * h.mods.reload;
     animator.update(dt, {
-      moving: h.moving,
+      // Still moving until the body's pulled up, whatever the stick says.
+      moving: h.moving || view.speed > 0.6,
       speed: view.speed,
       heading,
       aiming: h.firing || (this.aim !== null && h === state.heroes[this.seat]),
       reload: attack.kind === "burst" && h.burstLeft === 0 ? Math.min(1, h.reload / reloadTime) : 0,
-      cheering: state.status === "won" || state.conquest !== null,
+      cheering: (state.status === "won" || state.conquest !== null) && !h.moving,
       turn: view.turn,
     });
   }
@@ -1379,7 +1430,7 @@ export class RaidView {
   ): void {
     this.labels.begin();
     // The menu's island has no crew; keep it free of health bars.
-    if (!this.showBars || state.heroes.length === 0) {
+    if (!this.showBars || this.filming || state.heroes.length === 0) {
       this.labels.end();
       return;
     }

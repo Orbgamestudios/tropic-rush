@@ -6,13 +6,7 @@
 // the map.
 
 import { HERO_KINDS, HEROES, type HeroKind } from "../logic/heroes";
-import {
-  HERO_NAMES,
-  HERO_UNLOCK_HQ,
-  heroStats,
-  statBars,
-  treeProgress,
-} from "../logic/heroProgress";
+import { HERO_NAMES, heroStats, statBars, treeProgress } from "../logic/heroProgress";
 import { UPGRADES_PER_HERO } from "../logic/heroTrees";
 import {
   addToLoadout,
@@ -224,7 +218,8 @@ export class HeroSelect {
       tile.querySelector(".ui-tile-lock")?.remove();
       if (isLocked) {
         const lock = el("span", "ui-tile-lock");
-        lock.append(icon("lock"), el("span", "ui-tile-lock-text", `HQ ${HERO_UNLOCK_HQ[k]}`));
+        // Heroes come home by being rescued: the radar picks up their signals (docs/STORY.md).
+        lock.append(icon("lock"), el("span", "ui-tile-lock-text", "Missing"));
         tile.append(lock);
       } else if (save.upgrades[k].length > 0) {
         tile.append(levelBadge(save.upgrades[k].length));
@@ -247,10 +242,10 @@ export class HeroSelect {
     this.bars.speed.set(bars.speed, now.speed.toFixed(1));
     this.bars.range.set(bars.range, `${now.range} m`);
 
-    // What's in their tree, or which headquarters brings this hero in.
+    // What's in their tree, or how this hero comes to join.
     this.upgrades.disabled = !unlocked;
     setLabel(this.upgrades, unlocked ? "Upgrades" : "Locked");
-    this.upgradeCount.textContent = unlocked ? treeProgress(owned) : `HQ ${HERO_UNLOCK_HQ[kind]}`;
+    this.upgradeCount.textContent = unlocked ? treeProgress(owned) : "Answer their signal";
     this.start.disabled = !unlocked;
     setLabel(this.start, this.attacking ? "Attack" : "Raid");
     this.gold.set(this.host.gold());

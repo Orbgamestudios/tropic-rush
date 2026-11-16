@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { withDetail } from "./detail";
 
 // Colors from the art direction in docs/DESIGN.md: blue is the crew's color, the enemy is
 // charcoal and painted rust-orange, and nothing on the enemy side uses blue.
@@ -64,7 +65,7 @@ export function material(color: number, options: MaterialOptions = {}): THREE.Me
   const key = `${color}|${emissive}`;
   let m = cache.get(key);
   if (!m) {
-    m = new THREE.MeshLambertMaterial({ color, emissive });
+    m = withDetail(new THREE.MeshLambertMaterial({ color, emissive }));
     cache.set(key, m);
   }
   return m;

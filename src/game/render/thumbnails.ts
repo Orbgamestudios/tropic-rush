@@ -7,6 +7,7 @@ import type { BuildingType } from "../logic/buildings";
 import type { HeroKind } from "../logic/heroes";
 import { kitVersion, stageFor } from "./buildingKit";
 import { menuHero, visibleBox } from "./heroAssets";
+import { type StoryFigure, storyFigure } from "./heroModels";
 import { buildingModel } from "./models";
 import { SKY } from "./sky";
 
@@ -111,6 +112,24 @@ function snapshot(object: THREE.Object3D, camera: THREE.PerspectiveCamera): stri
   renderer.render(scene, camera);
   const url = renderer.domElement.toDataURL("image/png");
   scene.remove(object);
+  return url;
+}
+
+const figures = new Map<StoryFigure, string>();
+
+/** A head-and-shoulders picture of one of the story's people, for dialogue. */
+export function figurePortrait(who: StoryFigure): string {
+  let url = figures.get(who);
+  if (!url) {
+    const { root } = storyFigure(who);
+    root.rotation.y = -Math.PI / 2 + 0.45;
+    const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
+    const target = new THREE.Vector3(0, 1.9, 0);
+    camera.position.set(0.15, 2.0, 0.95 / (2 * Math.tan(THREE.MathUtils.degToRad(14))));
+    camera.lookAt(target);
+    url = snapshot(root, camera);
+    figures.set(who, url);
+  }
   return url;
 }
 

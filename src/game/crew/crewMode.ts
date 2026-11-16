@@ -76,7 +76,7 @@ import {
   weaponUpGold,
 } from "../logic/gunboat";
 import type { HeroKind } from "../logic/heroes";
-import { HERO_NAMES, heroesAt, heroesJoining } from "../logic/heroProgress";
+import { HERO_NAMES } from "../logic/heroProgress";
 import { breakBlocker, breakCrystal, hourglassKnown } from "../logic/hourglass";
 import { type NightRaid, raidingShip, runNightRaid } from "../logic/nightRaid";
 import { nextShip, raiderShip, shipDay } from "../logic/raiderShip";
@@ -88,6 +88,7 @@ import {
   needsBlueprint,
 } from "../logic/spoils";
 import { STATUE_CRYSTALS, STATUE_STONE, STATUES, statueBefore } from "../logic/statues";
+import { crewHeroes, type StoryChange, shamanHome, storyHeroes } from "../logic/story/progress";
 import type { TimePower } from "../logic/timeShards";
 import { distance, vec } from "../logic/vec";
 import { dailyCargo, retakeIslands } from "../logic/worldMap";
@@ -100,6 +101,7 @@ import {
   normalizeCrewCode,
 } from "../net/protocol";
 import { CrewIslandView } from "../render/crewIslandView";
+import type { Islander } from "../render/homeHeroes";
 import type { Stage } from "../render/stage";
 import { loadLocalLayout, type SaveData, writeLocalLayout } from "../save";
 import { CrewUi, type ResearchRow } from "../ui/crewUi";
@@ -125,7 +127,7 @@ type Gesture =
       startY: number;
       hitId: string | null;
       obstacleId: string | null;
-      hero: HeroKind | null;
+      hero: Islander | null;
       statue: boolean;
       hourglass: boolean;
     }
@@ -157,6 +159,8 @@ export interface CrewModeHost {
   onReplay(raid: NightRaid): void;
   /** Takes the fight to the base a raid that got through came from. */
   onStrikeBack(raid: NightRaid): void;
+  /** The Shaman was tapped. */
+  onShaman(): void;
 }
 
 export class CrewMode {
@@ -455,16 +459,31 @@ export class CrewMode {
     this.refreshEconomy();
   }
 
+  /** Everyone strolling round the island: the crew's heroes, and the story's people living here. */
+  private islanders(): Islander[] {
+    const { story } = this.layout;
+    const joined = storyHeroes(story);
+    return [
+      ...this.host.save().unlocked,
+      // He's here until he sails; if the ending brings Theo and Clara back, they stay.
+      ...(shamanHome(story) ? (["shaman"] as const) : []),
+      ...(joined.includes("theo") ? (["theo", "clara"] as const) : []),
+    ];
+  }
+
+  /** The story moves on, for the whole crew. */
+  tellStory(change: StoryChange): boolean {
+    return this.commit({ kind: "story", change });
+  }
+
   /**
-   * Who's available goes by the crew's headquarters and nothing else: new heroes join as soon as
-   * it reaches their level, and a hero it hasn't reached yet isn't kept, whatever a save says.
+   * Who's available goes by the crew's story and nothing else: Sergeant Steele, and every hero
+   * the crew has brought home, whatever a save says.
    */
   private welcomeHeroes(save: SaveData): void {
-    const hq = hqLevel(this.layout);
-    const available = heroesAt(hq);
-    if (available.length === save.unlocked.length && heroesJoining(save.unlocked, hq).length === 0)
-      return;
-    const joining = heroesJoining(save.unlocked, hq);
+    const available = crewHeroes(this.layout.story);
+    const joining = available.filter((k) => !save.unlocked.includes(k));
+    if (available.length === save.unlocked.length && joining.length === 0) return;
     const hero = available.includes(save.hero) ? save.hero : "rifleman";
     this.host.updateSave({ unlocked: available, hero });
     if (joining.length === 0) return;
@@ -702,7 +721,7 @@ export class CrewMode {
     const hidden = this.drag?.kind === "move" ? this.drag.building.id : null;
     this.view.sync(this.layout, hidden, others);
     this.welcomeHeroes(save);
-    this.view.syncHeroes(this.host.save().unlocked, this.layout);
+    this.view.syncHeroes(this.islanders(), this.layout);
     const selected = this.selected();
     this.view.showSelection(this.drag ? null : (selected ?? null));
     this.view.update(dt, time);
@@ -1408,8 +1427,10 @@ export class CrewMode {
     }
     const gesture = this.gesture;
     if (gesture?.kind === "pending" && this.pointers.size === 1 && e.type === "pointerup") {
-      if (gesture.hero) this.view?.waveHero(gesture.hero);
-      else if (gesture.statue) this.showStatues();
+      if (gesture.hero) {
+        this.view?.waveHero(gesture.hero);
+        if (gesture.hero === "shaman") this.host.onShaman();
+      } else if (gesture.statue) this.showStatues();
       else if (gesture.hourglass) this.showHourglass();
       else if (gesture.obstacleId) this.showClearing(gesture.obstacleId);
       // A producer with its tab up collects when it's tapped anywhere, not just on the tab.

@@ -16,9 +16,9 @@ import { HOME_SHAPE } from "./island";
 import { createRaid } from "./raid";
 import { distance, vec } from "./vec";
 
-/** Raiders don't research anything. */
+/** Raiders don't research anything, and have nobody to listen for. */
 const RAIDER_BUILDINGS = (Object.keys(BUILDINGS) as BuildingType[]).filter(
-  (type) => type !== "laboratory",
+  (type) => type !== "laboratory" && type !== "radar",
 );
 
 const SEEDS = [1, 2, 3, 42, 1234, 98765];
@@ -152,8 +152,9 @@ describe("enemy base layout", () => {
 });
 
 describe("generateIsland", () => {
-  it("leaves the laboratory to the crews", () => {
-    expect(enemyBase(1, 20).some((b) => b.type === "laboratory")).toBe(false);
+  it("leaves the laboratory and the radar to the crews", () => {
+    const base = enemyBase(1, 20);
+    expect(base.some((b) => b.type === "laboratory" || b.type === "radar")).toBe(false);
   });
 
   it("is deterministic for a seed", () => {

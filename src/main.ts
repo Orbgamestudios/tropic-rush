@@ -4,9 +4,12 @@ import "./styles/screens.css";
 import "./styles/hud.css";
 import "./styles/crew.css";
 import "./styles/upgrades.css";
+import "./styles/story.css";
+import "./styles/boat.css";
 import { maybeLoadDebugConsole } from "./debug";
 import { Game } from "./game/Game";
 import { setupPwa } from "./pwa";
+import { keepLandscape } from "./screenFit";
 
 maybeLoadDebugConsole();
 
@@ -15,5 +18,6 @@ document.addEventListener("gesturestart", (event) => event.preventDefault());
 
 const container = document.getElementById("game");
 if (!container) throw new Error("Missing #game container");
+keepLandscape(container);
 new Game(container);
 setupPwa();

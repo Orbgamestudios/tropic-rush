@@ -77,6 +77,20 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - `src/game/audio/`: `music.ts` (a track per part of the game), `samples.ts` (recorded effects),
   `raidSounds.ts` (raid events to sounds and haptics), `haptics.ts`. Files are in `public/audio/`,
   with sources in `CREDITS.md`: only CC0.
+- The story (`docs/STORY.md`): the script and its rules are in `src/game/logic/story/`
+  (`progress.ts` is where a crew is in it, kept on their island as `CrewLayout.story` and changed
+  with the `story` layout op). `src/game/story/director.ts` decides which scene plays where and
+  when, `ui/storyUi.ts` shows dialogue boxes, raid talk and a cutscene's bars,
+  `render/cutsceneStage.ts` stands a cutscene's cast, cuts its camera and lights each shot,
+  and `render/lipSync.ts` works a mouth out from the words. Tapping the Shaman goes to
+  `StoryDirector.talkToShaman`. The story's people are block figures from `storyFigure` in
+  `render/heroModels.ts` until they have models. How cutscenes are directed is
+  `docs/DIRECTING.md`; how characters are built, `docs/CHARACTERS.md`.
+- The picture: `render/cinema.ts` is the lens (bloom, the sun's flare, soft focus, grade), which
+  `Stage` uses while the phone keeps up and always in cutscenes; `render/detail.ts` gives plain
+  materials their surface detail (`withDetail`). `render/springBones.ts` swings chains of bones
+  named `hair<n>_<k>`. `src/screenFit.ts` keeps the game landscape and sized to the screen, and
+  hands every pointer event and `getBoundingClientRect` over in the game's own frame.
 - `src/game/controls.ts`: touch sticks, mouse and keyboard turned into `HeroInput`.
 - `src/game/Game.ts`: wires controls → rules (fixed 60 Hz steps) → view.
 - Crew island (real-time building with up to 5 crewmates):
@@ -132,6 +146,9 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
 - Models face +x; a facing angle `a` becomes `rotation.y = -a`.
 - Cameras look north-east from over the beach (`VIEW_YAW` in `src/game/config.ts`), so the base
   reads as a diamond. Screen-facing quads and anything relative to the view must turn with it.
+- Held upright, the whole game is turned a quarter turn (`html.turned`): measure with
+  `clientX`/`clientY` and `getBoundingClientRect`, which come back in the game's frame, never
+  with `screen.*` or `touches` directly.
 - `.hud`, `.screens` and `.crew-layer` are inset by the safe area and scaled by the UI size
   setting, so anything placed over the 3D view inside them works from fractions of the screen
   through `layerPlacer` in `ui/kit/dom.ts`, not canvas pixels.
@@ -147,15 +164,22 @@ at the design doc's real sizes, waiting for GLB models from the art pipeline.
   the owner tests on their iPhone through the deployed Cloudflare URL.
 - Software-rendered test browsers manage only a few frames per second, so real-time play is in slow
   motion there. Open the game with `?testhooks` to get `window.tropicRush.{state, teleport,
-  advance, boom, sky}` for screenshot scripts: place the hero, fast-forward the rules, set off a
+  advance, boom, sky, story, shaman}` for screenshot scripts: place the hero, fast-forward the rules, set off a
   blast, show an hour of the day.
+
+## The story in tests
+
+A new phone opens on the story's first cutscene, which takes the screen. Anything that isn't
+testing the story turns it off: `?nostory` in the URL, `localStorage["tropic-rush:story-off"] =
+"1"` before the game loads (the e2e tests do this), or `tropicRush.story(false)`.
 
 ## iOS constraints
 
 - Touch only: make hit areas generous, no hover states.
 - Audio starts only after a user gesture; no Vibration API (`audio/haptics.ts` has the workaround
   and its limits); no element fullscreen on iPhone.
-- iOS ignores the manifest's orientation; a "turn your phone sideways" overlay covers portrait.
+- iOS ignores the manifest's orientation, so the game turns itself to stay landscape
+  (`src/screenFit.ts`).
 - The 3D view fills the whole screen. `.hud`, `.screens` and `.crew-layer` sit inside the safe area
   (`src/styles/base.css`), so overlays placed over the 3D view go through `layerPlacer` in
   `ui/kit/dom.ts`. A full-screen backdrop joins the list in `base.css` that reaches past the safe

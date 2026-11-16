@@ -1,11 +1,15 @@
-// The WebGL renderer, scene, sky and sunlight. Everything draws straight to the screen, with no
-// passes over the finished picture: each of those is a whole screen of extra work for the phone on
-// every frame. The touch more color is part of tone mapping, in each material, and the vignette is
-// a page element laid over the canvas. One Stage lives for the whole session; each raid adds its
-// own world to the scene and removes it afterwards.
+// The WebGL renderer, scene, sky and sunlight. While the phone's keeping up, the picture goes
+// through a lens on its way to the screen (cinema.ts: bloom, the sun's flare, a little grade), and
+// a cutscene gets the whole film look, soft focus and all, at Ultra's sharpness and shadows. The
+// moment frames run slow, or on the lower graphics settings, everything draws straight to the
+// screen instead, with no passes over the finished picture: each of those is a screen of extra
+// work on every frame. Drawn straight, the touch more color is part of tone mapping, in each
+// material. One Stage lives for the whole session; each raid adds its own world to the scene and
+// removes it afterwards.
 
 import * as THREE from "three";
 import type { Graphics } from "../save";
+import { Cinema, FILM, type FilmLook, PLAY } from "./cinema";
 import { COLORS } from "./palette";
 import { LIGHT_DISTANCE, Sky } from "./sky";
 
@@ -24,6 +28,9 @@ const LIGHT_PIXEL_RATIO = 2;
  * phone in low power mode holds the game to exactly that, and that's no reason to spoil the picture.
  */
 const SLOW_FRAME = 1 / 27;
+/** With the lens on, frames slower than this for this long in a row turn it off. */
+const LENS_FRAME = 1 / 45;
+const LENS_SECONDS = 1.2;
 /** Quality steps down after this many seconds of slow frames. */
 const SLOW_SECONDS = 1.5;
 /** A single frame counts for at most this long, so one hitch can't cost a whole quality step. */
@@ -130,7 +137,12 @@ export class Stage {
    */
   adaptQuality(dt: number): void {
     this.elapsed += dt;
-    if (this.holdQuality || this.light || this.graphics !== "auto") return;
+    if (this.holdQuality || this.light || this.filming || this.graphics !== "auto") return;
+    // The lens goes well before anything else does: it's wanted at a smooth rate or not at all.
+    if (!this.lensOff && !this.flat && this.elapsed > 3) {
+      this.lensSlow = dt > LENS_FRAME ? this.lensSlow + Math.min(dt, WORST_FRAME) : 0;
+      if (this.lensSlow > LENS_SECONDS) this.lensOff = true;
+    }
     if (this.elapsed < 3 || this.quality >= PIXEL_RATIOS.length - 1) return; // skip start-up compiling
     const frame = Math.min(dt, WORST_FRAME);
     this.slowSeconds =
@@ -151,7 +163,8 @@ export class Stage {
   /** Each step down: resolution, then a smaller shadow map drawn less often, then no shadows. */
   private setQuality(quality: number): void {
     this.quality = quality;
-    const ultra = this.graphics === "ultra";
+    // A cutscene is short, and comes in close: it gets Ultra's shadows whatever the setting.
+    const ultra = this.graphics === "ultra" || this.filming;
     const shadowSize = ultra ? ULTRA_SHADOW_MAP : quality >= 2 ? 1024 : 1536;
     if (this.sun.shadow.mapSize.x !== shadowSize) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
@@ -159,7 +172,7 @@ export class Stage {
       this.sun.shadow.map = null;
     }
     this.shadowEvery = ultra ? 1 : quality >= 2 ? 4 : 3;
-    this.sun.castShadow = quality < 3;
+    this.sun.castShadow = quality < 3 || this.filming;
     this.shadowsStale = true;
     this.setPixelRatio();
   }
@@ -172,8 +185,9 @@ export class Stage {
   }
 
   private setPixelRatio(): void {
-    const ratio =
-      this.graphics === "low"
+    const ratio = this.filming
+      ? ULTRA_PIXEL_RATIO
+      : this.graphics === "low"
         ? LOW_PIXEL_RATIO
         : this.graphics === "ultra"
           ? ULTRA_PIXEL_RATIO
@@ -182,6 +196,30 @@ export class Stage {
             : (PIXEL_RATIOS[this.quality] ?? 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ratio));
     this.resize();
+  }
+
+  /** A cutscene's starting or over: the film look, at its sharpest, for as long as it's on. */
+  setFilming(on: boolean): void {
+    if (on === this.filming) return;
+    this.filming = on;
+    this.lens.fade = 1;
+    this.setQuality(this.quality);
+  }
+
+  /** The lens the picture goes through, for whoever's pulling its focus. */
+  get lens(): Cinema {
+    this.cinema ??= new Cinema();
+    return this.cinema;
+  }
+
+  /** What the picture gets on its way to the screen just now, or nothing if it's drawn straight. */
+  private look(): FilmLook | null {
+    if (this.filming) return FILM;
+    if (this.flat || this.graphics === "low" || this.graphics === "medium") return null;
+    if (this.graphics === "auto" && this.lensOff) return null;
+    // The first thing to go when frames run slow: it's a few screens of work the game can do without.
+    if (this.graphics === "auto" && this.quality > 0) return null;
+    return PLAY;
   }
 
   /** Draws shadows on the next frame: for when a light that casts them has just appeared. */
@@ -193,6 +231,7 @@ export class Stage {
   ignoreSlowFrames(): void {
     this.elapsed = 0;
     this.slowSeconds = 0;
+    this.lensSlow = 0;
   }
 
   /**
@@ -235,8 +274,36 @@ export class Stage {
       this.shadowsStale = false;
     }
     this.renderer.info.reset();
-    this.renderer.render(this.scene, this.camera);
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - this.lastRender) / 1000);
+    this.lastRender = now;
+    const look = this.look();
+    if (!look) {
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    const sun = this.sky.sunDirection;
+    this.lens.render(
+      this.renderer,
+      this.scene,
+      this.camera,
+      look,
+      sun.y > -0.03 ? sun : null,
+      this.sky.sunColor,
+      dt,
+      now / 1000,
+    );
   }
+
+  /** A screen seen from straight above, which the lens has nothing to add to. */
+  flat = false;
+  /** The phone couldn't hold a smooth rate with the lens on, so it's off until the game's reopened. */
+  private lensOff = false;
+  private lensSlow = 0;
+  private cinema: Cinema | null = null;
+  private filming = false;
+  private lastRender = performance.now();
 
   /** Draw calls and triangles in the last frame, shadows included. */
   frameCost(): { calls: number; triangles: number; programs: number; geometries: number } {

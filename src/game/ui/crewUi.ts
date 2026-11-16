@@ -197,7 +197,7 @@ const CATEGORIES: Record<Category, { label: string; icon: IconName; types: Build
   research: {
     label: "Research",
     icon: "flask",
-    types: ["laboratory"],
+    types: ["laboratory", "radar"],
   },
 };
 

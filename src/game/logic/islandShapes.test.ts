@@ -150,7 +150,7 @@ describe("island shapes", () => {
       // A puzzle island has its own defenses; everything else is as usual.
       const puzzle = puzzleFor(seed, hq);
       for (const type of types) {
-        if (type === "landmine" || type === "laboratory") continue;
+        if (type === "landmine" || type === "laboratory" || type === "radar") continue;
         if (puzzle && BUILDINGS[type].attack) continue;
         const have = island.buildings.filter((b) => b.type === type).length;
         expect(have, `${kind} hq ${hq}: ${type}`).toBe(allowedCount(type, rated));

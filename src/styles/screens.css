@@ -172,7 +172,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  border: 2px solid var(--ink);
+  border: 1.5px solid var(--ink);
   border-radius: 6px;
   padding: 6px 9px 7px;
   /* Worn cream paper. */
@@ -417,7 +417,7 @@
   gap: 6px;
   width: min(520px, 92vw);
   padding: 10px 16px 14px;
-  border: 3px solid #4a6187;
+  border: 2px solid #4a6187;
   border-radius: 10px;
   background:
     repeating-linear-gradient(135deg, rgb(255 255 255 / 0.015) 0 2px, transparent 2px 6px),
@@ -653,7 +653,7 @@
   position: relative;
   width: min(320px, 80vw);
   padding: 6px 12px 8px 46px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 10px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -711,7 +711,7 @@
   left: 50%;
   z-index: 3;
   padding: 7px 18px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -746,7 +746,7 @@
   left: 66px;
   top: 18px;
   padding: 4px 12px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 7px;
   background: rgb(14 28 52 / 0.82);
   font-size: 12px;
@@ -770,7 +770,7 @@
   flex-direction: column;
   align-items: center;
   padding: 3px 10px 4px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 7px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow:
@@ -868,7 +868,7 @@
   gap: 5px;
   width: 310px;
   padding: 10px 12px 12px;
-  border: 3px solid #4a6187;
+  border: 2px solid #4a6187;
   border-radius: 10px;
   background: linear-gradient(180deg, var(--navy-700), var(--navy-900));
   box-shadow:
@@ -977,7 +977,7 @@
   z-index: -1;
   transform: translateY(-50%);
   padding: 7px 16px 7px 18px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 0 8px 8px 0;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow:
@@ -1014,7 +1014,7 @@
   left: 14px;
   top: 12px;
   padding: 7px 14px 8px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 9px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow:
@@ -1055,7 +1055,7 @@
   position: relative;
   width: 74px;
   height: 74px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 9px;
   background: linear-gradient(180deg, var(--navy-500), var(--navy-800));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -1097,7 +1097,7 @@
   max-width: 50%;
   padding: 7px 14px;
   pointer-events: none;
-  border: 2px solid #4a6187;
+  border: 1.5px solid #4a6187;
   border-radius: 9px;
   background: rgb(10 22 42 / 0.9);
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -1124,7 +1124,7 @@
   gap: 6px;
   max-width: 320px;
   padding: 4px 12px 4px 7px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 9px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -1159,7 +1159,7 @@
   align-items: center;
   gap: 14px;
   padding: 6px 10px 6px 14px;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   border-radius: 10px;
   background: linear-gradient(180deg, rgb(19 34 59 / 0.94), rgb(7 14 27 / 0.94));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -1279,7 +1279,7 @@
   width: 100%;
   height: 14px;
   margin: 0;
-  border: 2px solid #4a6187;
+  border: 1.5px solid #4a6187;
   border-radius: 6px;
   background:
     repeating-linear-gradient(
@@ -1299,7 +1299,7 @@
   appearance: none;
   width: 26px;
   height: 26px;
-  border: 2.5px solid var(--ink);
+  border: 2px solid var(--ink);
   border-radius: 50%;
   /* A brass knob with a grip groove down the middle. */
   background:
@@ -1318,7 +1318,7 @@
 .pause-slider-input::-moz-range-thumb {
   width: 26px;
   height: 26px;
-  border: 2.5px solid var(--ink);
+  border: 2px solid var(--ink);
   border-radius: 50%;
   background: radial-gradient(circle at 40% 30%, #fff3c4, #e3b55e 50%, #8a5e24);
 }
@@ -1456,7 +1456,7 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px 8px 14px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 10px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow:
@@ -1516,7 +1516,7 @@
   align-items: center;
   gap: 10px;
   padding: 6px 8px 6px 14px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 9px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow:
@@ -1569,7 +1569,7 @@
   align-items: center;
   gap: 5px;
   padding: 2px 10px 2px 6px;
-  border: 2px solid var(--brass);
+  border: 1.5px solid var(--brass);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--navy-500), var(--navy-800));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -1697,7 +1697,7 @@
   flex: none;
   width: 84px;
   height: 84px;
-  border: 3px solid var(--brass);
+  border: 2px solid var(--brass);
   border-radius: 50%;
   background: var(--navy-700);
   box-shadow: 0 0 0 2px var(--ink);
@@ -1720,7 +1720,7 @@
   min-width: 0;
   padding: 0;
   overflow: hidden;
-  border: 2px solid #4a6187;
+  border: 1.5px solid #4a6187;
   border-radius: 50%;
   background: #fff;
 }
@@ -1964,4 +1964,34 @@
   font-size: 14px;
   color: var(--gold-text);
   text-shadow: var(--outline);
+}
+
+/* The story's islands on the map: the Professor's are tagged red, a call for help glows green. */
+.map-pin.story {
+  border-color: #ff7a5c;
+  background: linear-gradient(180deg, #7a1d16, #2c0b0b);
+}
+
+.map-pin.story::after {
+  background: #2c0b0b;
+  border-color: #ff7a5c;
+}
+
+.map-pin.signal {
+  border-color: #8cf0a8;
+  background: linear-gradient(180deg, #17553a, #0a2419);
+  animation: map-signal 1.6s ease-in-out infinite;
+}
+
+.map-pin.signal::after {
+  background: #0a2419;
+  border-color: #8cf0a8;
+}
+
+@keyframes map-signal {
+  50% {
+    box-shadow:
+      0 0 0 1.5px var(--ink),
+      0 0 18px rgb(140 240 168 / 0.9);
+  }
 }

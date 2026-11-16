@@ -1,0 +1,291 @@
+/* The story: dialogue boxes, and a cutscene's subtitles and choices over its picture. */
+
+.story {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Talking over a raid never gets in the way of the sticks. */
+.story.bark {
+  pointer-events: none;
+}
+
+.story-subtitle,
+.story-box,
+.story-choice {
+  display: none;
+}
+
+/* ---------- The dialogue box ---------- */
+
+.story.talk {
+  background: linear-gradient(180deg, rgb(4 9 18 / 0) 45%, rgb(4 9 18 / 0.55) 100%);
+}
+
+.story.talk .story-box,
+.story.bark .story-box {
+  display: flex;
+}
+
+.story-box {
+  position: absolute;
+  left: calc(var(--safe-left) + 5%);
+  right: calc(var(--safe-right) + 5%);
+  bottom: calc(var(--safe-bottom) + 12px);
+  align-items: flex-end;
+  gap: 12px;
+  animation: story-rise 220ms ease-out;
+}
+
+.story-portrait {
+  flex: none;
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+  border: 2px solid var(--brass-mid);
+  background: linear-gradient(180deg, #33507e, #162544);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 6px 14px rgb(0 0 0 / 0.5);
+  object-fit: cover;
+}
+
+.story-words {
+  position: relative;
+  flex: 1;
+  min-height: 86px;
+  padding: 20px 20px 16px;
+  border-radius: 14px;
+  border: 2px solid var(--brass-mid);
+  background: linear-gradient(180deg, rgb(13 24 43 / 0.96), rgb(7 14 27 / 0.96));
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 8px 18px rgb(0 0 0 / 0.5);
+}
+
+.story-name {
+  position: absolute;
+  left: 14px;
+  top: -15px;
+  padding: 3px 12px 4px;
+  border-radius: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--brass-grad);
+  color: #22180a;
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.story-text {
+  color: var(--cream);
+  font: 700 18px / 1.35 var(--body);
+  text-shadow: 0 1px 0 rgb(0 0 0 / 0.6);
+}
+
+.story-unseen {
+  visibility: hidden;
+}
+
+.story-text.mood-shout,
+.story-subtitle.mood-shout .story-sub-text {
+  font-size: 1.14em;
+}
+
+.story-text.mood-whisper,
+.story-subtitle.mood-whisper .story-sub-text {
+  font-size: 0.92em;
+  opacity: 0.82;
+}
+
+.story-text.mood-radio,
+.story-subtitle.mood-radio .story-sub-text {
+  color: #c9f0cd;
+  letter-spacing: 0.02em;
+}
+
+.story-box.radio .story-words {
+  border-style: dashed;
+}
+
+.story-more {
+  position: absolute;
+  right: 12px;
+  bottom: 6px;
+  color: var(--gold-text);
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0;
+}
+
+.story-more.on {
+  opacity: 1;
+  animation: story-nudge 900ms ease-in-out infinite;
+}
+
+/* Over a raid: smaller, along the top, clear of the sticks and the buttons. */
+.story.bark .story-box {
+  left: 26%;
+  right: 26%;
+  top: calc(var(--safe-top) + 58px);
+  bottom: auto;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.story.bark .story-portrait {
+  width: 56px;
+  height: 56px;
+  border-width: 2px;
+  border-radius: 10px;
+}
+
+.story.bark .story-words {
+  min-height: 0;
+  padding: 14px 12px 8px;
+  border-width: 2px;
+  background: linear-gradient(180deg, rgb(13 24 43 / 0.82), rgb(7 14 27 / 0.82));
+}
+
+.story.bark .story-name {
+  top: -12px;
+  left: 10px;
+  padding: 1px 8px 2px;
+  font-size: 12px;
+}
+
+.story.bark .story-text {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.story.bark .story-more {
+  display: none;
+}
+
+/* ---------- A cutscene ---------- */
+
+/*
+ * The picture has the whole screen: no bars, and nothing on it but the line being said, sitting
+ * low over a shade just dark enough to read it against sand or sky.
+ */
+.story.film {
+  background: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 0) 62%,
+    rgb(0 0 0 / 0.34) 86%,
+    rgb(0 0 0 / 0.5) 100%
+  );
+}
+
+.story.film .story-subtitle.on {
+  display: block;
+}
+
+.story-subtitle {
+  position: absolute;
+  left: calc(var(--safe-left) + 12%);
+  right: calc(var(--safe-right) + 12%);
+  bottom: calc(var(--safe-bottom) + 22px);
+  color: #fffaf0;
+  font: 700 20px / 1.3 var(--body);
+  text-align: center;
+  text-shadow:
+    0 2px 3px rgb(0 0 0 / 0.9),
+    0 0 14px rgb(0 0 0 / 0.65);
+}
+
+.story-sub-name {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--gold-text);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---------- A choice, put to the crew inside the cutscene ---------- */
+
+.story.asking .story-choice {
+  display: flex;
+}
+
+.story-choice {
+  position: absolute;
+  left: calc(var(--safe-left) + 10%);
+  right: calc(var(--safe-right) + 10%);
+  bottom: calc(var(--safe-bottom) + 20px);
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: story-rise 500ms ease-out;
+}
+
+.story-ask {
+  margin-bottom: 4px;
+  color: #fffaf0;
+  font: 700 19px / 1.3 var(--body);
+  text-align: center;
+  text-shadow:
+    0 2px 3px rgb(0 0 0 / 0.9),
+    0 0 14px rgb(0 0 0 / 0.65);
+}
+
+/* An answer is a line of the film, not a button: lit a little, and brighter under a finger. */
+.story-answer {
+  min-width: 46%;
+  padding: 10px 26px 11px;
+  border: 0;
+  border-top: 1px solid rgb(255 244 214 / 0.55);
+  border-bottom: 1px solid rgb(255 244 214 / 0.55);
+  background: linear-gradient(
+    90deg,
+    rgb(0 0 0 / 0) 0%,
+    rgb(8 12 20 / 0.6) 22%,
+    rgb(8 12 20 / 0.6) 78%,
+    rgb(0 0 0 / 0) 100%
+  );
+  color: #fff3cf;
+  font: 700 21px / 1.2 var(--display);
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 3px rgb(0 0 0 / 0.9);
+  transition:
+    color 120ms,
+    transform 120ms;
+}
+
+.story-answer:active {
+  color: #ffffff;
+  transform: scale(1.04);
+}
+
+@keyframes story-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes story-nudge {
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+/* A cutscene has the screen to itself. */
+#game.filming > .crew-layer,
+#game.filming > .hud,
+#game.filming > .labels,
+#game.filming > .controls,
+#game.filming > .screens,
+#game.filming > .stage-vignette {
+  visibility: hidden;
+}

@@ -29,6 +29,7 @@
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
+    "@gradio/client": "^2.8.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.5",
     "@types/three": "^0.186.0",

@@ -1,0 +1,84 @@
+/* Choosing who goes, aboard the boat: the scene is the screen, so everything sits at the edges. */
+
+.screen-boat {
+  pointer-events: none;
+}
+
+.screen-boat > * {
+  pointer-events: auto;
+}
+
+.boat-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.boat-left {
+  left: max(14px, var(--safe-left, 0px));
+}
+
+.boat-right {
+  right: max(14px, var(--safe-right, 0px));
+}
+
+/* The same arrow, pointing the other way. */
+.boat-right .ui-btn-icon {
+  transform: scaleX(-1);
+}
+
+.boat-card {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #fff;
+  text-shadow:
+    0 2px 0 rgb(0 0 0 / 0.35),
+    0 0 14px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+.boat-name {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.boat-role {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.boat-ready {
+  position: absolute;
+  right: max(18px, var(--safe-right, 0px));
+  bottom: 16px;
+}
+
+.boat-crew {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.boat-mate {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.35);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1.5px solid rgb(255 255 255 / 0.3);
+}
+
+.boat-mate.ready {
+  background: rgb(46 160 82 / 0.8);
+  border-color: rgb(190 255 200 / 0.7);
+}

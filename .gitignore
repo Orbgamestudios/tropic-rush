@@ -9,3 +9,11 @@ coverage/
 *.local
 .DS_Store
 __pycache__/
+
+# Work in progress and stock content whose licence isn't confirmed for a public repo.
+.claude/
+models-wip/
+new work/
+public/models/anims/
+docs/ui-preview*.jpg
+my-pwa-game.zip

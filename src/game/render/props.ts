@@ -11,6 +11,7 @@ import { HOME_SHAPE, homeHeight, type IslandLayout, type IslandShape } from "../
 import { createRng, type Rng } from "../logic/rng";
 import { lotTide, TIDE_LOTS } from "../logic/tides";
 import { smoothstep, type Vec2 } from "../logic/vec";
+import { withDetail } from "./detail";
 import { meadowTint } from "./meadow";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
@@ -87,6 +88,7 @@ export function swaying(dissolve = true, stiff = false): THREE.MeshLambertMateri
       );
   };
   m.customProgramCacheKey = () => `tropic-sway-${key}`;
+  withDetail(m);
   swayMaterials.set(key, m);
   return m;
 }

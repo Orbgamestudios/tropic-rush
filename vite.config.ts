@@ -46,11 +46,19 @@ export default defineConfig({
       workbox: {
         // Precache everything the game needs so it runs fully offline once installed.
         globPatterns: [
-          "**/*.{js,css,html,svg,png,webp,jpg,ico,json,glb,gltf,bin,ktx2,mp3,ogg,m4a,wav,woff2,ttf}",
+          "**/*.{js,css,html,svg,png,webp,jpg,ico,json,glb,gltf,bin,ktx2,mp3,ogg,m4a,wav,woff,woff2,ttf}",
         ],
         // The ?debug console is only fetched on demand, the big icon is only a source for the
-        // generated sizes, and the detailed heroes are fetched as they're looked at.
-        globIgnores: ["**/eruda-*.js", "icon.png", "**/*-hi.glb"],
+        // generated sizes, and the detailed heroes are fetched as they're looked at. So is the
+        // Captain's full model, aboard the boat (the Rifleman stands in offline), and the stock
+        // clips aren't in the repo.
+        globIgnores: [
+          "**/eruda-*.js",
+          "icon.png",
+          "**/*-hi.glb",
+          "models/captain-*",
+          "models/anims/**",
+        ],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       },
     }),

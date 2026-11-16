@@ -1,5 +1,6 @@
 // The crew's unlocked heroes, strolling round the base between jobs: each ambles to a random open
-// spot, stands about for a while, and sets off again. Tap one and they stop, turn and wave.
+// spot, stands about for a while, and sets off again. Tap one and they stop, turn and wave. The
+// story's people who live on the island (the Shaman, and whoever the ending brings) stroll too.
 
 import * as THREE from "three";
 import {
@@ -16,7 +17,17 @@ import type { HeroKind } from "../logic/heroes";
 import { homeHeight } from "../logic/island";
 import { angleDiff, type Vec2, vec } from "../logic/vec";
 import { AT_EASE, HeroAnimator } from "./heroAnimator";
+import { type StoryFigure, storyFigure } from "./heroModels";
 import { type HeroModel, heroModel } from "./models";
+
+/** Anyone who walks about the island: a hero, or one of the story's people. */
+export type Islander = HeroKind | StoryFigure;
+
+const FIGURES: readonly string[] = ["shaman", "terror", "youngTerror", "theo", "clara"];
+
+function isFigure(who: Islander): who is StoryFigure {
+  return FIGURES.includes(who);
+}
 
 /** Meters per second: a stroll, not a march. */
 const WALK_SPEED = 1.5;
@@ -28,7 +39,7 @@ const TAP_RADIUS = 46;
 const WAVE_SECONDS = 2;
 
 interface Walker {
-  kind: HeroKind;
+  kind: Islander;
   model: HeroModel;
   pos: Vec2;
   target: Vec2 | null;
@@ -42,7 +53,7 @@ interface Walker {
 
 export class HomeHeroes {
   readonly root = new THREE.Group();
-  private readonly walkers = new Map<HeroKind, Walker>();
+  private readonly walkers = new Map<Islander, Walker>();
   private open = new Set<string>();
   private spots: Vec2[] = [];
   private openKey = "";
@@ -50,7 +61,7 @@ export class HomeHeroes {
   constructor(private readonly stage: { camera: THREE.Camera; width: number; height: number }) {}
 
   /** Keeps one walker per unlocked hero, and tracks where's free to walk. */
-  sync(kinds: readonly HeroKind[], layout: Pick<CrewLayout, "cleared" | "buildings">): void {
+  sync(kinds: readonly Islander[], layout: Pick<CrewLayout, "cleared" | "buildings">): void {
     const key = `${layout.cleared.length}:${layout.buildings.map((b) => `${b.x}.${b.y}`).join()}`;
     if (key !== this.openKey) {
       this.openKey = key;
@@ -64,9 +75,15 @@ export class HomeHeroes {
         this.spots.push(center);
       }
     }
+    // Anyone who's left the island is gone from it.
+    for (const [kind, walker] of this.walkers) {
+      if (kinds.includes(kind)) continue;
+      this.root.remove(walker.model.root);
+      this.walkers.delete(kind);
+    }
     for (const kind of kinds) {
       if (this.walkers.has(kind) || this.spots.length === 0) continue;
-      const model = heroModel(kind);
+      const model = isFigure(kind) ? storyFigure(kind) : heroModel(kind);
       if (kind === "tank") model.root.scale.setScalar(0.6);
       this.root.add(model.root);
       const start = this.randomSpot();
@@ -106,7 +123,7 @@ export class HomeHeroes {
   }
 
   /** A hero's been tapped: they stop where they are, turn to the camera and wave. */
-  wave(kind: HeroKind): void {
+  wave(kind: Islander): void {
     const w = this.walkers.get(kind);
     if (!w) return;
     w.target = null;
@@ -181,8 +198,8 @@ export class HomeHeroes {
   }
 
   /** The hero nearest a screen point (relative to the canvas), if one's close enough. */
-  heroAt(x: number, y: number): HeroKind | null {
-    let best: HeroKind | null = null;
+  heroAt(x: number, y: number): Islander | null {
+    let best: Islander | null = null;
     let bestGap = TAP_RADIUS;
     for (const w of this.walkers.values()) {
       const s = this.screen(w, 1);

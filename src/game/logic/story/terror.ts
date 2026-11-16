@@ -2,36 +2,78 @@
 // three boss islands, each ending with his escape, and what the crew learns about him on the way:
 // the photograph, Clara, and the storm fifty years ago.
 
-import { type Scene, together } from "./script";
+import { type Scene, shot, together } from "./script";
 
 export const TERROR: readonly Scene[] = [
   {
+    // The first time the crew sees Professor Terror himself.
     id: "terror1Appears",
     when: { on: "island", island: "terror1", stage: "appears" },
+    cutscene: true,
     lines: [
-      ["rifleman", "New island on the map. Red flag. His flag."],
+      shot("The map. Cloud parts over a dark island under a red skull flag.", 2.5),
+      [
+        "rifleman",
+        "New island on the map. Red flag. His flag.",
+        { how: "low and wary, reading the map slowly" },
+      ],
       [
         "shaman",
         "Not one of his little outposts. One of his own islands. He works on islands like that.",
+        { how: "grave and careful, a warning in it" },
       ],
+      shot(
+        "Cut to a dim laboratory full of glowing jars. A bald old man in half-moon glasses leans to a brass microphone.",
+        3,
+      ),
       [
         "terror",
         "I see you've been busy, little crew. Freeing my prisoners. Emptying my storehouses.",
-        "radio",
+        {
+          mood: "radio",
+          how: "light and amused, sing-song, ticking the crimes off on his fingers",
+        },
       ],
-      ["terror", "Thieves, every one of you.", "radio"],
+      [
+        "terror",
+        "Thieves, every one of you.",
+        { mood: "radio", how: "the smile gone, suddenly flat and cold, very quiet", before: 0.5 },
+      ],
       [
         "terror",
         "Every gun on my islands is there to stop people like you taking what's mine.",
-        "radio",
+        { mood: "radio", how: "crisp and precise, rising and sharpening on 'what's mine'" },
       ],
-      ["rifleman", "The crystals don't belong to you, Professor."],
-      ["terror", "Everything belongs to someone, Sergeant. These belong to me.", "radio"],
+      [
+        "rifleman",
+        "The crystals don't belong to you, Professor.",
+        { how: "steady and firm, unimpressed" },
+      ],
+      shot("Terror smiles at the microphone, almost fondly.", 1.5),
+      [
+        "terror",
+        "Everything belongs to someone, Sergeant. These belong to me.",
+        {
+          mood: "radio",
+          how: "patient, as to a child, a little giggle before the last four words, then stone",
+          after: 0.8,
+        },
+      ],
+      [
+        "shaman",
+        "That is the Professor. His own men call him Terror, and they mean it.",
+        { how: "quiet and grim, saying the name aloud as if it costs him something", before: 0.6 },
+      ],
       [
         "shaman",
         "His own islands are harder. He's there himself, thinking. Before you go, come with me.",
+        { how: "urgent but calm, already turning toward the forest" },
       ],
-      ["shaman", "There's something in the forest I need to tell you about."],
+      [
+        "shaman",
+        "There's something in the forest I need to tell you about.",
+        { how: "quieter, mysterious" },
+      ],
     ],
   },
   {
@@ -64,18 +106,46 @@ export const TERROR: readonly Scene[] = [
     ],
   },
   {
+    // The Hourglass wakes up.
     id: "hourglassRepaired",
     when: { on: "hourglass", stage: "repaired" },
+    cutscene: true,
     lines: [
-      ["engineer", "It's humming! Is it meant to hum? I didn't do anything, I swear."],
-      ["shaman", "It's happy.", "happy"],
-      ["shaman", "Now. Put a crystal on the altar, any kind, and strike it."],
-      ["shaman", "Not too hard, not too soft. Like knocking on a friend's door."],
+      shot(
+        "Deep forest. The last stone settles into place on the cracked hourglass-shaped ruin.",
+        2.5,
+      ),
+      shot("Sand begins to fall upward inside it, glittering. A low hum fills the clearing.", 3),
+      [
+        "engineer",
+        "It's humming! Is it meant to hum? I didn't do anything, I swear.",
+        { mood: "scared", how: "nervous and fast, backing away, hands up" },
+      ],
+      [
+        "shaman",
+        "It's happy.",
+        { mood: "happy", how: "simple, delighted, a soft laugh", before: 0.5 },
+      ],
+      [
+        "shaman",
+        "Now. Put a crystal on the altar, any kind, and strike it.",
+        { how: "a teacher's patience, slow and clear" },
+      ],
+      [
+        "shaman",
+        "Not too hard, not too soft. Like knocking on a friend's door.",
+        { how: "gentle and playful, miming a soft knock" },
+      ],
       [
         "shaman",
         "Usually it breaks into two shards, or three, or four. Five, if the island likes you.",
+        { how: "counting, easy rhythm, a wink on 'five'" },
       ],
-      ["shaman", "One, if it doesn't. The island has moods. Like me."],
+      [
+        "shaman",
+        "One, if it doesn't. The island has moods. Like me.",
+        { mood: "laugh", how: "dry, then a chuckle at himself", after: 0.6 },
+      ],
     ],
   },
   {
@@ -247,14 +317,48 @@ export const TERROR: readonly Scene[] = [
   {
     id: "creationAppears",
     when: { on: "island", island: "creation", stage: "appears" },
+    cutscene: true,
     lines: [
-      ["shaman", "That island. There's light coming up out of the ground.", "scared"],
-      ["shaman", "He's done it. He's pressed nature and fire together. A crystal of creation."],
-      ["shaman", "With it, he can make things out of nothing."],
-      ["rifleman", "Things like what?"],
-      ["shaman", "Whatever he can imagine. Let's hope he hasn't much imagination."],
-      ["terror", "Come and see, little crew. Come and see what the world could be.", "radio"],
-      ["terror", "If only one mind were in charge of it.", "radio"],
+      shot(
+        "Night. Out on the map, an island glows from underneath, green and red light pulsing up through the trees.",
+        3.5,
+      ),
+      [
+        "shaman",
+        "That island. There's light coming up out of the ground.",
+        { mood: "scared", how: "hushed and afraid, breath catching" },
+      ],
+      [
+        "shaman",
+        "He's done it. He's pressed nature and fire together. A crystal of creation.",
+        { how: "slow, heavy dread, each sentence its own weight" },
+      ],
+      ["shaman", "With it, he can make things out of nothing.", { how: "almost a whisper" }],
+      ["rifleman", "Things like what?", { how: "tense, quick" }],
+      [
+        "shaman",
+        "Whatever he can imagine. Let's hope he hasn't much imagination.",
+        { how: "grim, with a thin, tired humour on the second sentence" },
+      ],
+      shot(
+        "Terror in his workshop, bathed in green and red light, arms spread like a showman.",
+        2.5,
+      ),
+      [
+        "terror",
+        "Come and see, little crew. Come and see what the world could be.",
+        { mood: "radio", how: "giddy and grand, like a ringmaster, savouring every word" },
+      ],
+      [
+        "terror",
+        "If only one mind were in charge of it.",
+        {
+          mood: "radio",
+          how: "dropping to a soft, intimate purr, slow and certain",
+          before: 0.4,
+          after: 1,
+        },
+      ],
     ],
   },
   {
@@ -284,40 +388,146 @@ export const TERROR: readonly Scene[] = [
     when: { on: "island", island: "creation", stage: "won" },
     cutscene: true,
     lines: [
-      ["terror", "Enough!", "shout"],
-      ["terror", "You think you've won? You've broken a few glass jars."],
-      ["terror", "This is the only one that matters. Watch."],
-      ["terror", "Creation, my dears. From nothing, anything."],
-      ["rifleman", "A boat. He made a boat out of thin air!", "shout"],
-      ["terror", "I'll be seeing you. Do try to keep up."],
-      ["rifleman", "He's getting away!", "shout"],
+      shot(
+        "The workshop in ruins, jars smashed, smoke everywhere. The crew advance through it.",
+        3,
+      ),
+      shot("Terror stands at the far end, one crystal glowing in his fist.", 2),
+      [
+        "terror",
+        "Enough!",
+        { mood: "shout", how: "a sudden furious shriek that cuts everything off" },
+      ],
+      [
+        "terror",
+        "You think you've won? You've broken a few glass jars.",
+        {
+          how: "instantly calm again, amused and mocking, brushing dust off his sleeve",
+          before: 0.6,
+        },
+      ],
+      [
+        "terror",
+        "This is the only one that matters. Watch.",
+        { how: "quiet and pleased, a magician before a trick" },
+      ],
+      shot(
+        "He raises the crystal. Light pours out of it onto the water and folds itself into a sleek speedboat.",
+        3.5,
+      ),
+      [
+        "terror",
+        "Creation, my dears. From nothing, anything.",
+        { how: "a delighted sing-song, almost giggling", before: 0.3 },
+      ],
+      [
+        "rifleman",
+        "A boat. He made a boat out of thin air!",
+        { mood: "shout", how: "disbelief, shouting over the engine" },
+      ],
+      shot("Terror steps aboard and gives a little wave.", 1.5),
+      [
+        "terror",
+        "I'll be seeing you. Do try to keep up.",
+        { how: "airy and bored, almost singing it", before: 0.2 },
+      ],
+      shot("The boat tears away across the bay.", 2),
+      [
+        "rifleman",
+        "He's getting away!",
+        { mood: "shout", how: "frustrated, running to the shore, too late" },
+      ],
+      shot("The wake fades. Silence and smoke.", 2),
     ],
   },
   {
     id: "creationHome",
     when: { on: "after", scene: "creationEscape" },
+    cutscene: true,
     lines: [
-      ["rifleman", "Found this on his desk, in the workshop. Under all the plans."],
+      shot(
+        "The crew's island, evening. Steele turns a small, old photograph over in his hands by the fire.",
+        3,
+      ),
+      [
+        "rifleman",
+        "Found this on his desk, in the workshop. Under all the plans.",
+        { how: "puzzled, quiet, almost reluctant to show it" },
+      ],
+      shot(
+        "Close on the photograph: black and white, a young man and a woman on a beach, laughing.",
+        3,
+      ),
       [
         "rifleman",
         "An old photograph. Black and white. A young man and a woman on a beach, laughing.",
+        { how: "slow, describing it carefully, softening on 'laughing'" },
       ],
-      ["medic", "Is that... him? With hair?"],
-      ["bazooka", "He was kind of handsome. Don't tell anyone I said that."],
-      ["shaman", "...Let me see.", "sad"],
-      ["shaman", "Keep it safe, Sergeant. I think he'll want it back."],
-      ["rifleman", "You know who she is."],
-      ["shaman", "I know a lot of things. Not all of them are mine to tell yet."],
+      [
+        "medic",
+        "Is that... him? With hair?",
+        { mood: "surprised", how: "squinting, half amused, half disbelieving" },
+      ],
+      [
+        "bazooka",
+        "He was kind of handsome. Don't tell anyone I said that.",
+        { how: "a casual drawl, then quickly defensive" },
+      ],
+      shot("The Shaman goes very still.", 1.5),
+      [
+        "shaman",
+        "...Let me see.",
+        { mood: "sad", how: "quiet and careful, a catch in the voice", before: 0.6 },
+      ],
+      shot("He holds the photograph for a long moment, then hands it back.", 2.5),
+      [
+        "shaman",
+        "Keep it safe, Sergeant. I think he'll want it back.",
+        { how: "gentle and heavy, looking away" },
+      ],
+      ["rifleman", "You know who she is.", { how: "not a question, quiet", before: 0.5 }],
+      [
+        "shaman",
+        "I know a lot of things. Not all of them are mine to tell yet.",
+        { how: "kind but closed, slow, the fire crackling between the sentences", after: 1 },
+      ],
     ],
   },
   {
     id: "terror3Appears",
     when: { on: "island", island: "terror3", stage: "appears" },
+    cutscene: true,
     lines: [
-      ["terror", "You have something of mine. A photograph.", "radio"],
-      ["terror", "Give it back. It's worth nothing to you. It's worth everything to me.", "radio"],
-      ["rifleman", "Then come and get it, Professor."],
-      ["terror", "...I will.", "radio"],
+      shot("Terror's laboratory. He holds an empty silver frame, turning it over and over.", 3),
+      [
+        "terror",
+        "You have something of mine. A photograph.",
+        {
+          mood: "radio",
+          how: "very quiet and controlled, dangerously calm, a long breath before speaking",
+          before: 0.6,
+        },
+      ],
+      [
+        "terror",
+        "Give it back. It's worth nothing to you. It's worth everything to me.",
+        { mood: "radio", how: "the control slipping, voice rising and cracking on 'everything'" },
+      ],
+      shot(
+        "The crew's island. Steele takes the photograph out of his top pocket and looks at it.",
+        2,
+      ),
+      ["rifleman", "Then come and get it, Professor.", { how: "quiet, unafraid, almost gentle" }],
+      [
+        "terror",
+        "...I will.",
+        {
+          mood: "radio",
+          how: "a whisper, barely audible, no performance in it at all",
+          before: 1.2,
+          after: 1,
+        },
+      ],
     ],
   },
   {
@@ -386,19 +596,44 @@ export const TERROR: readonly Scene[] = [
   {
     id: "chaosAppears",
     when: { on: "island", island: "chaos", stage: "appears" },
+    cutscene: true,
     lines: [
-      ["shaman", "The sky over that island is wrong. Look how the clouds turn round it."],
+      shot(
+        "On the map, a slow hurricane turns over one island, lightning flickering inside it.",
+        3.5,
+      ),
+      [
+        "shaman",
+        "The sky over that island is wrong. Look how the clouds turn round it.",
+        { how: "uneasy, slow, looking up" },
+      ],
       [
         "shaman",
         "Ice and the Deep together. A crystal of chaos. Storms that think. Seas that bite.",
+        { how: "low and ominous, a pause before each short sentence" },
       ],
-      ["terror", "You've come so far. It almost touches me. Almost.", "radio"],
+      shot(
+        "Terror at the window of a tower inside the storm, wind tugging his long white hair.",
+        2.5,
+      ),
+      [
+        "terror",
+        "You've come so far. It almost touches me. Almost.",
+        {
+          mood: "radio",
+          how: "mock-sentimental, a hand on his heart, then cold on the last 'almost'",
+        },
+      ],
       [
         "terror",
         "Come to my island. I'll show you a storm to tell your grandchildren about.",
-        "radio",
+        { mood: "radio", how: "bright and theatrical, a showman's invitation" },
       ],
-      ["terror", "If you ever have any.", "radio"],
+      [
+        "terror",
+        "If you ever have any.",
+        { mood: "radio", how: "flat, quiet, deadly, after a beat", before: 0.6, after: 1 },
+      ],
     ],
   },
   {
@@ -427,70 +662,252 @@ export const TERROR: readonly Scene[] = [
     when: { on: "island", island: "chaos", stage: "won" },
     cutscene: true,
     lines: [
-      ["terror", "Clever children. You keep on breaking my jars."],
-      ["terror", "But I always save the one that matters."],
-      ["terror", "Chaos, my dears. Even the sky takes my side."],
-      ["bazooka", "There's a helicopter in that storm! I can't get a lock on it!", "shout"],
-      ["rifleman", "Hold your fire. We'll lose him in the clouds either way."],
-      ["terror", "Give my regards to your Shaman."],
-      ["terror", "Ask him about the storm. The first one."],
+      shot(
+        "Rain lashing sideways. The storm tower is cracked open, its crystals smashed. Terror on the rooftop, coat whipping.",
+        3.5,
+      ),
+      [
+        "terror",
+        "Clever children. You keep on breaking my jars.",
+        { how: "shouting over the wind but amused, almost proud of them" },
+      ],
+      [
+        "terror",
+        "But I always save the one that matters.",
+        { how: "sly, holding up a crackling purple-blue crystal" },
+      ],
+      shot(
+        "He lifts it. The storm answers, swirling down round the tower until it's a wall of rain.",
+        3,
+      ),
+      [
+        "terror",
+        "Chaos, my dears. Even the sky takes my side.",
+        { how: "ecstatic, laughing into the storm, arms wide" },
+      ],
+      shot("Somewhere inside the rain, rotor blades start to thump.", 1.5),
+      [
+        "bazooka",
+        "There's a helicopter in that storm! I can't get a lock on it!",
+        { mood: "shout", how: "shouting, frustrated, launcher on her shoulder, tracking nothing" },
+      ],
+      [
+        "rifleman",
+        "Hold your fire. We'll lose him in the clouds either way.",
+        { mood: "shout", how: "commanding over the wind, steady" },
+      ],
+      shot("A shape rises through the rain. Terror's voice comes from somewhere above.", 2),
+      [
+        "terror",
+        "Give my regards to your Shaman.",
+        { how: "intimate and quiet despite the storm, as if right beside them", before: 0.4 },
+      ],
+      [
+        "terror",
+        "Ask him about the storm. The first one.",
+        { how: "slow and cold, every word placed, no laughter left", after: 1.5 },
+      ],
+      shot("The helicopter is gone. The rain slowly eases.", 2.5),
     ],
   },
   {
+    // Told over a flashback in black and white, grained like the photograph.
     id: "chaosHome",
     when: { on: "after", scene: "chaosEscape" },
+    cutscene: true,
     lines: [
-      ["rifleman", "He said to ask you about a storm. The first one."],
-      ["shaman", "...Sit down, all of you. This one is long."],
-      ["shaman", "Fifty years ago, when I was a boy, two strangers came to my village."],
-      ["shaman", "A young man with black hair, and a young woman who loved flowers."],
+      shot(
+        "The crew's island, night. The Shaman sits by the fire, the crew around him, soaked and quiet.",
+        3,
+      ),
+      [
+        "rifleman",
+        "He said to ask you about a storm. The first one.",
+        { how: "careful and gentle, not pushing" },
+      ],
+      [
+        "shaman",
+        "...Sit down, all of you. This one is long.",
+        { how: "a long breath out first, tired and heavy, resigned", before: 1 },
+      ],
+      shot(
+        "The picture drains to black and white. Fifty years ago: the same beach, a village of huts, a small boy on the sand.",
+        4,
+      ),
+      [
+        "shaman",
+        "Fifty years ago, when I was a boy, two strangers came to my village.",
+        { how: "the storyteller's voice, slow and low, far away in memory" },
+      ],
+      shot(
+        "A young man with black hair and a young woman with a sketchbook step off a little boat.",
+        3,
+      ),
+      [
+        "shaman",
+        "A young man with black hair, and a young woman who loved flowers.",
+        { how: "warm, fond, a smile you can hear" },
+      ],
       [
         "shaman",
         "She drew every flower on our island. He asked my grandmother about the glowing stones.",
+        { how: "lighter on her, darker and slower on 'the glowing stones'" },
       ],
       together(
-        ["grenadier", "A young woman who drew flowers? Fifty years ago?", "surprised"],
-        ["grenadier", "Clara Marlowe. My book. 'The Flowers of the Southern Isles.' She was here?"],
-        ["shaman", "She was. She laughed like the sea on a calm day."],
+        [
+          "grenadier",
+          "A young woman who drew flowers? Fifty years ago?",
+          { mood: "surprised", how: "sitting up, breathless, half to himself" },
+        ],
+        [
+          "grenadier",
+          "Clara Marlowe. My book. 'The Flowers of the Southern Isles.' She was here?",
+          { how: "wonder and disbelief, voice unsteady, clutching the worn book" },
+        ],
+        [
+          "shaman",
+          "She was. She laughed like the sea on a calm day.",
+          { how: "soft and tender, remembering" },
+        ],
       ),
-      ["shaman", "Her name was Clara. His name was Theodore."],
+      [
+        "shaman",
+        "Her name was Clara. His name was Theodore.",
+        { how: "slow, giving each name its own weight", before: 0.6 },
+      ],
+      shot(
+        "Black and white: the sky darkening over the sea. The young man pulling a boat to the water. An old woman shaking her head.",
+        4,
+      ),
       [
         "shaman",
         "He heard of a crystal on the reef island, three hours' sail. A storm was coming.",
+        { how: "the pace tightening, tension building" },
       ],
-      ["shaman", "My grandmother told him to wait. He would not wait."],
+      [
+        "shaman",
+        "My grandmother told him to wait. He would not wait.",
+        { how: "firm, then hard and final on 'would not wait'" },
+      ],
       [
         "shaman",
         "He was afraid another man would find it first. Clara went with him, because she loved him.",
+        { how: "the anger leaving, sorrow taking its place, softest on 'because she loved him'" },
       ],
-      ["shaman", "The storm threw their boat onto the reef. I was on the beach that night."],
-      ["shaman", "I pulled Theodore out of the waves."],
-      ["shaman", "We never found Clara.", "sad"],
-      ["medic", "Oh, no...", "sad"],
-      ["shaman", "When he woke, all he had was that photograph, in his shirt pocket."],
-      ["shaman", "He looked at it for three days. He didn't eat. Then he sailed away."],
-      ["shaman", "When he came back, years later, he wasn't Theodore anymore."],
-      ["shaman", "He had ships and raiders and guns. And he wanted every crystal in the sea."],
-      ["rifleman", "He wants to bring her back."],
-      ["shaman", "The oldest story says the eternal crystal can undo anything. Even the sea."],
-      ["heavy", "Shaman... that's the saddest thing I've ever heard.", "sad"],
-      ["shaman", "It's the saddest thing I know."],
-      ["shaman", "And it doesn't change what will happen if he holds that much power."],
-      ["shaman", "A whole world remade by one broken heart. Nobody else would get a say."],
-      ["rifleman", "So we stop him."],
-      ["shaman", "We stop him. And we don't hate him while we do it. That's the hard part."],
+      shot(
+        "Black and white: the storm. Waves over the reef. The little boat thrown against the rocks.",
+        4,
+      ),
+      [
+        "shaman",
+        "The storm threw their boat onto the reef. I was on the beach that night.",
+        { how: "quiet, hollow, reliving it" },
+      ],
+      [
+        "shaman",
+        "I pulled Theodore out of the waves.",
+        { how: "barely above a whisper, a small boy's fear still in it" },
+      ],
+      [
+        "shaman",
+        "We never found Clara.",
+        {
+          mood: "sad",
+          how: "breaking, a long pause before it, almost no voice left",
+          before: 1.4,
+          after: 1.4,
+        },
+      ],
+      ["medic", "Oh, no...", { mood: "sad", how: "a small, stricken breath" }],
+      shot(
+        "Black and white: the young man on the sand, staring at a photograph in his shaking hands.",
+        3.5,
+      ),
+      [
+        "shaman",
+        "When he woke, all he had was that photograph, in his shirt pocket.",
+        { how: "gentle and sad, slow" },
+      ],
+      [
+        "shaman",
+        "He looked at it for three days. He didn't eat. Then he sailed away.",
+        { how: "plain and heavy, a pause between each sentence" },
+      ],
+      [
+        "shaman",
+        "When he came back, years later, he wasn't Theodore anymore.",
+        { how: "darker, colder", before: 0.6 },
+      ],
+      shot("Colour floods back: the fire, the crew's faces.", 2),
+      [
+        "shaman",
+        "He had ships and raiders and guns. And he wanted every crystal in the sea.",
+        { how: "grim, matter-of-fact" },
+      ],
+      [
+        "rifleman",
+        "He wants to bring her back.",
+        { how: "quiet realisation, almost to himself", before: 0.8 },
+      ],
+      [
+        "shaman",
+        "The oldest story says the eternal crystal can undo anything. Even the sea.",
+        { how: "slow and grave, a hush on 'even the sea'" },
+      ],
+      [
+        "heavy",
+        "Shaman... that's the saddest thing I've ever heard.",
+        { mood: "sad", how: "a big man's voice gone small and thick with tears" },
+      ],
+      ["shaman", "It's the saddest thing I know.", { how: "simple, very quiet", before: 0.6 }],
+      [
+        "shaman",
+        "And it doesn't change what will happen if he holds that much power.",
+        { how: "steadier, the elder again, firm" },
+      ],
+      [
+        "shaman",
+        "A whole world remade by one broken heart. Nobody else would get a say.",
+        { how: "grave, deliberate, a long breath before the second sentence" },
+      ],
+      ["rifleman", "So we stop him.", { how: "quiet, resolved, no anger in it", before: 0.8 }],
+      [
+        "shaman",
+        "We stop him. And we don't hate him while we do it. That's the hard part.",
+        { how: "gentle and certain, each sentence slower than the last", after: 1.5 },
+      ],
     ],
   },
   {
     id: "terror5Appears",
     when: { on: "island", island: "terror5", stage: "appears" },
+    cutscene: true,
     lines: [
-      ["terror", "So. Now you know. Do you understand me a little better, little crew?", "radio"],
-      ["rifleman", "We understand, Professor. We're still not letting you do it."],
+      shot(
+        "Terror, lit by his glowing jars, speaking softly into the microphone. The empty frame stands beside it.",
+        3,
+      ),
+      [
+        "terror",
+        "So. Now you know. Do you understand me a little better, little crew?",
+        {
+          mood: "radio",
+          how: "almost tender, mocking underneath, a sing-song lilt on 'little crew'",
+        },
+      ],
+      [
+        "rifleman",
+        "We understand, Professor. We're still not letting you do it.",
+        { how: "calm, sorry for him, but immovable" },
+      ],
       [
         "terror",
         "Letting me? I don't need your permission, Sergeant. I've never needed anyone's.",
-        "radio",
+        {
+          mood: "radio",
+          how: "a shriek of laughter on 'Letting me?', then dropping instantly to a cold, slow, flat finish",
+          after: 0.8,
+        },
       ],
     ],
   },
@@ -559,18 +976,36 @@ export const TERROR: readonly Scene[] = [
   {
     id: "timeAppears",
     when: { on: "island", island: "time", stage: "appears" },
+    cutscene: true,
     lines: [
+      shot(
+        "The Hourglass in the forest. Its glittering sand slows, hangs in the air, and stops.",
+        3.5,
+      ),
       [
         "shaman",
         "The Hourglass has stopped humming. Something is pulling at time itself.",
-        "scared",
+        { mood: "scared", how: "frightened, hushed, listening hard to the silence" },
       ],
       [
         "shaman",
         "He's making the crystal of time. When it's done, every shard will answer to him.",
+        { how: "urgent and low, fear barely held down" },
       ],
-      ["terror", "Last chance, little crew. Stay at home. Hold your shards close.", "radio"],
-      ["terror", "In a few days, none of this will ever have happened.", "radio"],
+      shot(
+        "Terror before a great clock-like machine, its gears turning backwards. He speaks without looking at the microphone.",
+        3,
+      ),
+      [
+        "terror",
+        "Last chance, little crew. Stay at home. Hold your shards close.",
+        { mood: "radio", how: "soft and almost kind, like a lullaby, sing-song" },
+      ],
+      [
+        "terror",
+        "In a few days, none of this will ever have happened.",
+        { mood: "radio", how: "dreamy and quietly thrilled, trailing off", after: 1.2 },
+      ],
     ],
   },
   {
@@ -599,23 +1034,77 @@ export const TERROR: readonly Scene[] = [
     when: { on: "island", island: "time", stage: "won" },
     cutscene: true,
     lines: [
-      ["terror", "Stop."],
-      ["youngTerror", "Ahh. I'd forgotten how this felt. Knees that don't creak."],
-      ["youngTerror", "You can hear me, can't you? Frozen, but listening. Good."],
-      ["youngTerror", "You think I'm a monster."],
+      shot(
+        "The clock machine shatters. Gears fly. Terror, cornered, lifts a crystal of swirling silver light.",
+        3,
+      ),
+      ["terror", "Stop.", { how: "one word, quiet, absolutely calm", before: 0.4 }],
+      shot(
+        "Everything freezes: flying gears, falling sparks, the crew mid-stride. Only Terror moves.",
+        3.5,
+      ),
+      shot(
+        "A purple mist curls round him as he walks between them. His white hair darkens. His face loses fifty years.",
+        4,
+      ),
+      [
+        "youngTerror",
+        "Ahh. I'd forgotten how this felt. Knees that don't creak.",
+        { how: "a long, luxurious sigh, then playful and delighted with himself" },
+      ],
+      [
+        "youngTerror",
+        "You can hear me, can't you? Frozen, but listening. Good.",
+        { how: "leaning close to Steele's frozen face, a mocking whisper, then pleased" },
+      ],
+      [
+        "youngTerror",
+        "You think I'm a monster.",
+        { how: "flat and quiet, no performance", before: 0.6 },
+      ],
       [
         "youngTerror",
         "I'm a man who made one mistake on one stormy night, and paid for it every day since.",
+        { how: "raw and bitter, slow, the theatre stripped away, cracking on 'every day'" },
       ],
-      ["youngTerror", "When I'm finished, there will be no storm. No mistake."],
-      ["youngTerror", "And none of you will remember any of this."],
-      ["youngTerror", "She'll know me now. That's all I ever wanted."],
+      [
+        "youngTerror",
+        "When I'm finished, there will be no storm. No mistake.",
+        { how: "recovering, fervent, almost tender" },
+      ],
+      [
+        "youngTerror",
+        "And none of you will remember any of this.",
+        { how: "back to a light sing-song, a little giggle at the end" },
+      ],
+      shot(
+        "He stops at the shore, touches his young face, and looks at his reflection in the still water.",
+        3,
+      ),
+      [
+        "youngTerror",
+        "She'll know me now. That's all I ever wanted.",
+        {
+          mood: "whisper",
+          how: "barely a whisper, utterly sincere, almost a prayer",
+          before: 0.8,
+          after: 1,
+        },
+      ],
+      shot(
+        "He climbs into a seaplane. The pause breaks: gears crash down, sparks fall, the engine roars.",
+        3,
+      ),
       [
         "bazooka",
         "That's a seaplane! That's a beautiful seaplane! He's getting away in a beautiful—",
-        "shout",
+        { mood: "shout", how: "shouting, torn between outrage and admiration, cut off mid-word" },
       ],
-      ["rifleman", "He's gone. And did everyone see his face? He's young."],
+      [
+        "rifleman",
+        "He's gone. And did everyone see his face? He's young.",
+        { how: "shaken, slow, disbelief growing", before: 0.6, after: 1.2 },
+      ],
     ],
   },
   {
@@ -637,6 +1126,18 @@ export const TERROR: readonly Scene[] = [
       ["rifleman", "Shaman, you're—"],
       ["shaman", "Old? So is he, under that face."],
       ["shaman", "Somebody has to talk to him who remembers Theodore."],
+      [
+        "shaman",
+        "I keep dreaming about my grandmother.",
+        { how: "quieter, almost to himself", before: 0.8 },
+      ],
+      [
+        "shaman",
+        "She stands on the beach and waves me in from the sea, the way she did when I was small.",
+        { how: "soft and faraway" },
+      ],
+      ["rifleman", "Good dream or bad dream?", { how: "gentle" }],
+      ["shaman", "Both, I think. The best ones usually are.", { how: "a small, peaceful smile" }],
     ],
   },
 ];

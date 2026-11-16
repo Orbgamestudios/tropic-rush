@@ -57,6 +57,7 @@ const DEFAULTS: SaveData = {
   world: NEW_WORLD,
   loot: {},
   lostIslands: [],
+  storySeen: [],
 };
 
 describe("the player's place, for the sky", () => {
@@ -287,6 +288,7 @@ describe("save", () => {
       },
       loot: { timber: 250 },
       lostIslands: ["Skull Rock"],
+      storySeen: ["prologue"],
     };
     expect(writeSave(data, storage)).toBe(true);
     expect(loadSave(storage)).toEqual(data);

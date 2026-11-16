@@ -77,6 +77,130 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Map:** every island to raid just says Raid, the map doesn't say which crystal an island holds,
   and the crew's own island has a Home tag.
 
+## Added 2026-11-16 (owner's requests)
+
+- **The sky follows the game's scenes, not the clock (Decided, the owner's call):** bright midday
+  on the crew's own island; late afternoon in the boat while the crew is chosen, the sun lowering
+  and the first color coming into the sky; golden evening into the first colors of sunset for a
+  raid; dusk, the sun just down and the sky full of color, as the boat lands or after a win; and
+  moonlit night with stars for being raided, and for a cutscene in the boat after a raid. A change
+  of scene eases over a few seconds, and inside a scene the sun drifts a few degrees over five
+  minutes. Without a scene the sky still follows the real sun and moon (`render/sky.ts`).
+- **Clouds in layers, as real ones are (Decided):** high cirrus streaks, slowest, the first to
+  catch the sunset and the last to lose it; patches of small altocumulus cloudlets; and low
+  cumulus, scattered overhead and in banks round the horizon with flat bases and sunlit tops.
+  Clouds towards the sun glow at their edges; after sunset the Earth's shadow and the pink band
+  over it rise opposite (`render/skyClouds.ts`). `Game.skyScene()` picks the scene for each phase.
+  Night raids are shown at night now, not at the hour the raiders came.
+- **Setting out from the boat (Decided, the owner's call):** choosing a hero for a raid happens
+  aboard the gunboat out at sea, in the late afternoon, with the island ahead. The whole crew stands
+  aboard in full detail; arrows either side swing the camera round the boat from one hero to the
+  next, and Ready sets her running in to the island. Alone for now: a party still goes through the
+  map's lobby, and the squad-ready step aboard is still to do (`render/boatScene.ts`,
+  `ui/boatSelect.ts`).
+- **The landing (Decided):** every raid opens with the crew going over the side and up the beach,
+  the camera low by the boat rising to sit over the player's hero; the fight starts when they're
+  there, about three and a half seconds (`render/raidShots.ts`).
+- **The way home (Decided):** a win alone no longer sits on the burning base. Three shots at dusk:
+  close on a hero carrying a crate of loot down the beach, from the water as the crates come over
+  the side and the crew climbs in, and wide as she pulls away; then the results. A cutscene after a
+  raid can follow in the boat at night. With a crew, the old ending stays for now.
+- **Animation from the stock clips (Proposed):** the ActorCore clips the owner downloaded are
+  converted to the Captain's skeleton, with blends between them chosen by what each move is
+  (`render/clipLibrary.ts`, `docs/ANIMATION.md`). Only the Captain's idle is used so far, and the
+  clips are not to be committed until their licence is confirmed for a public repo.
+- **The Captain aboard (Decided):** the full-detail Captain stands on the boat in the Rifleman's
+  place, named "The Captain", with his face, hands and wind-blown hair (`render/captain.ts`).
+
+- **The Captain** is the character the player plays as, in place of Sgt. Steele, and mans the
+  gunboat; the Shaman has a new design. Both are to be built as separate pieces so they can act in
+  close-up: see `docs/CHARACTERS.md`. **Decided** (the scripts change when they're gone over). The
+  generated models of the two didn't reach the owner's bar, so they're to be built from scratch in
+  Blender: **Proposed**, waiting for the owner's go-ahead.
+- **The Randoshape font** for every word in the game (`public/fonts/`), with the old two only
+  filling in the few marks it hasn't got (dashes, bullets, the times sign).
+- **Always landscape:** the turn-your-phone notice is gone. Held upright, the game turns itself a
+  quarter turn to lie along the screen, so it's landscape either way and there's nothing to turn
+  (`src/screenFit.ts`). A home-screen app is sized from the screen itself, which fixes the black
+  strip along the bottom after starting sideways.
+- **Talking to the Shaman:** tap him and he answers the next thing there is to ask, round and round:
+  his advice on what to do next, then each question the story's given the crew so far. No panel, and
+  no extra buttons: a rescue signal and the Professor's next island are islands on the world map,
+  picked like any other, with a green Signal or a red Professor tag.
+- **Cutscenes** fill the screen with no black bars and no words for what a shot shows; the line
+  being said sits low over the picture, and a choice is put inside the cutscene as lines to tap. The
+  camera, light and acting are in `docs/DIRECTING.md` (Built so far): a lens with bloom, the
+  sun's flare, soft focus, a grade and grain; key, rim and fire light that move with each cut;
+  the sun set where each scene wants it; mouths that keep time with the words.
+- **The picture in play:** bloom and the sun's flare while the phone keeps up (they turn
+  themselves off after a second and a bit of slow frames, before anything else does); clouds
+  drifting across the sky; the open sea rising and falling in a long swell, reflecting the sky and
+  breaking the sun into a road of light towards wherever it really is; and surface detail on
+  everything that was a flat color (grain in bark and planks, flecks of light in leaves, speckle in
+  sand), worked out from one small noise texture with no new draw calls.
+- **The world map** is drawn at the game's own sharpness, not the hero screen's: its sea and cloud
+  are each a shader over the whole screen, and at that sharpness they were what made it lag.
+- **Running:** upright once going, leaning into setting off and back on pulling up; heroes gather
+  speed over their first steps and take a step or two to stop; the Grenadier's throws no longer
+  flash a muzzle. In cutscenes people also kneel, pray, sit, point, nod, shake their heads and
+  salute.
+- **Fingers:** three bones in every finger and the thumb, found on the model, so a hand closes a
+  finger at a time and can point (the Medic so far; the others next).
+- **The UI** is finer: thinner brass frames, outlines and corner brackets, the brackets sitting on
+  the corners instead of floating off them, and a locked build card no longer prints over the
+  building's name.
+
+## Added 2026-11-13 (owner's requests)
+
+- **The story plays (first pass):** every scene in the script now plays in the game, set off by
+  what `docs/STORY.md` says sets it off. A scene plays once for the whole crew: the crew's island
+  keeps what's been set off, which of the Professor's islands are won, who's been rescued and how
+  it ended, and each phone keeps what it has shown, so a crewmate who was away is caught up (asked
+  first if more than three scenes are waiting when the game opens). What's built:
+  - **Dialogue boxes** along the bottom with the speaker's portrait and name, typed out fast; tap
+    finishes the line, tap again for the next. Over a raid a smaller box along the top talks
+    without stopping anything, and is cut off when the raid ends.
+  - **Cutscenes** with black bars, the lines as subtitles and, until each is staged for real, what
+    happens in each shot told in words on the top bar. Whoever speaks stands in a loose ring (on
+    the landing beach at home, or in front of the fallen headquarters after a raid) and the camera
+    cuts close on the speaker and wide for a shot, on the script's own pacing. A tap moves on a
+    line. A cutscene watched again from the log can be skipped.
+  - **The Shaman** lives on the island from the first raid won until he sails (or for good, in the
+    "let them rest" ending). Tap him for advice (the most pressing of the script's hints, a new
+    saying each time), for the things he can be asked about so far, and for the story so far: every
+    scene this phone has shown, to watch again. A Story button on the island opens the same list.
+  - **The radar** is a building from headquarters 3 (six levels, one a headquarters level up to 8).
+    Each level hears one more signal: the Medic's at headquarters 3, the Heavy's at 5, the other
+    four at 8, 10, 12 and 15 in an order that's different for every crew. A signal plays its call
+    for help, then an Unknown signal button on the island leads to the raid; winning it brings the
+    hero home. **Heroes now join by being rescued, not by headquarters level.** A crew from before
+    this keeps every hero its headquarters had already brought it.
+  - **Professor Terror's islands** turn up one at a time, each once the last is won and the
+    headquarters is at its level, as a red button on the island once its scene has played. Each is
+    a raider base 2 headquarters levels above the level it appears at (4 for the three great works
+    and the fire mountain), Hard or Extreme. They aren't on the map and can't be held.
+  - **The finale and the choice:** winning the fire mountain plays the finale, the Shaman's return
+    and the choice. Whoever's phone answers first answers for the crew (the vote in `docs/STORY.md`
+    isn't built). Each ending's scenes follow, the later ones at headquarters 44 to 48.
+  - **Stand-ins:** the Shaman, the Professor (old and young), Theo and Clara are block figures
+    like the heroes' old placeholders, dressed to be told apart. Lines aren't voiced, and nothing
+    in a cutscene is acted out beyond standing, turning and the camera.
+  - **Not built:** Theo and the Shaman as heroes to play (their kits are Proposed), the builders,
+    the Professor's raiders as their own models, hand-laid bases and magic ammunition on his
+    islands, the credits, voices, and the story's islands on the world map itself.
+- **Bodies that move like bodies:** the heroes' joints were measured in every move against what a
+  real body can do, and the animator rewritten where they left it. An elbow is now a hinge: the
+  upper arm rolls in the shoulder until the hinge lies square to the way the arm bends, where
+  before the forearm bent out of the side of it by up to 90 degrees. A forearm rolls no more than
+  about a quarter turn either way and a wrist bends no more than about 65 degrees and doesn't roll
+  at all, where forearms spun right round and wrists folded to 100. That roll is spread along the
+  limb by three extra bones in each upper arm and forearm, added as a model loads, so nothing
+  wrings like a cloth at the elbow. Ankles stay between 50 degrees pointed and 23 raised (they
+  folded to 90 with the heel kicked up); the waist twists no more than about 45 degrees (it reached
+  99 strafing), with the legs stepping sideways for the rest; a runner's thigh comes further
+  forward than back; a thrower's elbow leads out to the side. A grip that asks for more than a
+  wrist has is left a little short of it.
+
 ## Added 2026-11-09 (owner's requests)
 
 **Decided.**

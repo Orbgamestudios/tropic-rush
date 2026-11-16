@@ -1,177 +1,284 @@
-// The opening: the crew lands, hears from Professor Terror, frees the Shaman on their first raid
-// and settles in, and the Shaman tells them the old story of the crystals.
+// The opening: the crew lands on an island whose village was burned, frees the Shaman on their
+// first raid and brings him home, and he tells them the old story of the crystals. Professor
+// Terror is only a name and a flag here; he isn't seen or heard until his first island appears.
 
-import type { Scene } from "./script";
+import { type Scene, shot } from "./script";
 
 export const OPENING: readonly Scene[] = [
   {
     id: "prologue",
     when: { on: "start" },
+    cutscene: true,
     lines: [
-      ["rifleman", "Land ho. Well, sand ho. Close enough."],
+      shot(
+        "Dawn. Mist on the water. A small boat threads a gap in the reef toward a long white beach.",
+        4,
+      ),
       [
         "rifleman",
-        "Nobody on the beach, nobody in the trees. Looks like this island's ours, crew.",
-      ],
-      ["terror", "Attention, little boat.", "radio"],
-      [
-        "terror",
-        "These islands, and everything that glitters underneath them, belong to Professor Terror.",
-        "radio",
-      ],
-      ["terror", "Build your huts. Catch your fish. Enjoy the sunsets.", "radio"],
-      [
-        "terror",
-        "But touch one crystal of mine, and you will find out how I earned my name.",
-        "radio",
-      ],
-      ["rifleman", "...Friendly neighbor."],
-      [
-        "rifleman",
-        "Where's that voice even coming from? Is there a loudspeaker in that palm tree?",
+        "That's the one. Long beach, deep cove, fresh water up in the hills.",
+        { how: "quiet and sure, studying the shore from the bow" },
       ],
       [
         "rifleman",
-        "Right. Headquarters first. Then we find out who he is and what he's sitting on.",
+        "Charts say nobody's lived here for years.",
+        { how: "a little puzzled, half to himself" },
       ],
+      shot(
+        "Steele and two army builders wade ashore, hauling crates of tools. Past the palms, the grass is full of blackened posts: the bones of a village.",
+        4,
+      ),
+      [
+        "rifleman",
+        "Charts are wrong. Somebody lived here. A whole village.",
+        { how: "slowing, the ease gone out of him, crouching by a charred post", before: 0.6 },
+      ],
+      [
+        "rifleman",
+        "And not long ago. This wood's still black.",
+        { how: "low and grim, rubbing soot between his fingers" },
+      ],
+      shot(
+        "He looks up. Across the water, on a darker island, a red flag flies over a fortified camp: a skull wearing small round glasses.",
+        4,
+      ),
+      [
+        "rifleman",
+        "Whoever did this didn't go far.",
+        { how: "very quiet, eyes on the flag", before: 0.8 },
+      ],
+      shot("He turns back to the builders, already prising open their crates.", 2),
+      [
+        "rifleman",
+        "We build. Shelter first, then walls, then a headquarters we can hold.",
+        { how: "brisk and steady, taking charge, a breath before he starts" },
+      ],
+      [
+        "rifleman",
+        "Then we find out who's flying that flag.",
+        { how: "flat and quiet, a promise", after: 1 },
+      ],
+      shot(
+        "Wide: the empty beach, the first post going into the sand, and the red flag far across the water.",
+        3,
+      ),
     ],
   },
   {
     id: "firstRaid",
     when: { on: "first", thing: "raid" },
     lines: [
-      ["rifleman", "Gun turrets, a headquarters, and a flag on top. A skull wearing... glasses?"],
-      ["rifleman", "That's his flag, alright. Stay low and keep moving."],
-      ["shaman", "Hello? Whoever is out there making all that noise?", "shout"],
-      ["shaman", "The doors in here are very thick, and the guards are very lazy. Knock loudly."],
-      ["rifleman", "Someone's locked in the headquarters. Change of plan, crew."],
-      ["rifleman", "We're not just taking his gold. We're taking his prisoner."],
+      [
+        "rifleman",
+        "Same flag we saw from the beach. This is one of theirs.",
+        { how: "low, focused" },
+      ],
+      [
+        "rifleman",
+        "Turrets on the ridge, headquarters in the middle. Stay low and stay together.",
+        { how: "calm orders, quick" },
+      ],
+      [
+        "shaman",
+        "Is someone out there? Please. There's a man locked in here.",
+        { mood: "shout", how: "muffled through a thick wall, old and hoarse, calm but urgent" },
+      ],
+      [
+        "rifleman",
+        "There's a prisoner. We take the headquarters, and we get him out.",
+        { how: "decisive, the plan changing as he says it", before: 0.5 },
+      ],
     ],
   },
   {
     id: "shamanFreed",
     when: { on: "first", thing: "raidWon" },
+    cutscene: true,
     lines: [
-      ["shaman", "Ha! The roof falls in and the sky comes back. Thank you, strangers.", "laugh"],
-      ["rifleman", "You alright? Who are you, and why was Terror keeping you in a box?"],
-      ["shaman", "My name is very long, and your tongues are very short. Call me Shaman."],
-      ["shaman", "The Professor kept me because I know the old stories of these islands."],
+      shot("The headquarters' roof caves in. Dust settles. In the rubble, something moves.", 3),
+      shot("An old man climbs out, face paint smeared, shading his eyes against the sun.", 2.5),
       [
         "shaman",
-        "Where the crystals sleep. What they can do. He wanted me to tell him everything.",
+        "Sunlight. I was starting to forget what it looked like.",
+        { how: "hoarse and slow, a long breath of relief, close to laughing" },
       ],
-      ["rifleman", "Did you?"],
-      ["shaman", "I told him many stories. Not one of them was true.", "laugh"],
-      ["shaman", "His raiders scattered my village years ago. I have nowhere to go home to."],
+      [
+        "rifleman",
+        "Easy. You're safe now. Who locked you in there?",
+        { how: "gentle, steadying him, then firm on the question" },
+      ],
       [
         "shaman",
-        "If you will have an old man, I'll live on your island. I can be useful. Sometimes.",
+        "The men who sail under that flag. They work for a man they call the Professor.",
+        { how: "tired, weighing the name carefully before he says it", before: 0.4 },
       ],
-      ["rifleman", "We could use someone who knows these waters. Welcome to the crew."],
       [
         "shaman",
-        "Then bring home what his headquarters was hiding. I'll tell you what it is.",
-        "happy",
+        "He wants the crystals that sleep under these islands. My people's stories say where they lie.",
+        { how: "plain and serious" },
       ],
+      [
+        "shaman",
+        "So he kept me. He thought if he asked often enough, I would tell him.",
+        { how: "quiet, a flicker of defiance under it" },
+      ],
+      ["rifleman", "Did you?", { how: "low, searching his face", before: 0.4 }],
+      [
+        "shaman",
+        "I told him stories. Never the true ones.",
+        { how: "a small, tired smile, no triumph in it", before: 0.6 },
+      ],
+      shot("He looks out across the water toward the crew's island.", 2.5),
+      [
+        "shaman",
+        "You've built on my island. That was my village, before his raiders came.",
+        { mood: "sad", how: "soft and steady, not accusing" },
+      ],
+      [
+        "rifleman",
+        "We found the houses. What's left of them.",
+        { how: "quiet, respectful", before: 0.6 },
+      ],
+      ["shaman", "Then you know what kind of man he is.", { how: "low and heavy", after: 0.6 }],
+      [
+        "shaman",
+        "If you'll take an old man home, I can teach you that island. Its paths, its weather, its stories.",
+        { how: "hopeful but careful, offering rather than asking" },
+      ],
+      [
+        "rifleman",
+        "We'd be glad of it. Come on. Let's get you home.",
+        { how: "warm, offering his arm", after: 1 },
+      ],
+      shot(
+        "The boat pulls away from the broken camp. The old man looks back at it once, then ahead.",
+        3,
+      ),
     ],
   },
   {
     id: "shamanArrives",
     when: { on: "after", scene: "shamanFreed" },
     lines: [
-      ["shaman", "Ahh. Sand that has never felt one of his boots. Good sand.", "happy"],
       [
         "shaman",
-        "You chose well. This island was my grandmother's, and her grandmother's before her.",
+        "My grandmother's house stood about here. The forest's already taking it back.",
+        { mood: "sad", how: "quiet, looking at the ground, not dwelling" },
       ],
-      ["shaman", "Clear the forest a little at a time. There are old things under the vines."],
-      ["rifleman", "Old things like what?"],
-      ["shaman", "Patience, Sergeant. A story told too early is only noise."],
-      ["shaman", "I'll be on the beach. Come and find me when you want me. Usually I'm praying."],
-      ["shaman", "Or sleeping. From the outside, they look exactly the same.", "laugh"],
+      [
+        "shaman",
+        "That's all right. The forest keeps things safe until someone comes back for them.",
+        { how: "a little warmer, accepting" },
+      ],
+      ["rifleman", "Tell us where to build, and we'll build there."],
+      [
+        "shaman",
+        "Near the beach, where the old fires were. The ground is good, and you'll see boats coming.",
+      ],
+      [
+        "shaman",
+        "Clear the forest slowly. My people carved things deep in there, long ago.",
+        { how: "lower, a little mysterious, but plain" },
+      ],
+      ["shaman", "When you find them, come and get me."],
+      ["rifleman", "We will."],
+      [
+        "shaman",
+        "I'll be on the beach, if you need me. I think better with the sea in front of me.",
+        { mood: "happy", how: "easy and content, settling in" },
+      ],
     ],
   },
   {
+    // Told over the spirits making the islands, in shapes of firelight.
     id: "firstCrystal",
     when: { on: "first", thing: "crystal" },
+    cutscene: true,
     lines: [
-      ["shaman", "Ah. Hold it up to the light. See how it moves inside, as if it's breathing?"],
+      shot(
+        "Night, the campfire. The Shaman turns a crystal in his fingers. Light moves inside it.",
+        3,
+      ),
       [
         "shaman",
-        "My people say that four spirits made these islands, long before anyone was here.",
+        "Hold it up to the light. See how it moves inside, as if it's breathing?",
+        { mood: "whisper", how: "hushed wonder, slow, as if not to wake it" },
+      ],
+      shot(
+        "The firelight swells into the shapes of the old story: four great spirits over an empty sea.",
+        3,
+      ),
+      [
+        "shaman",
+        "My people say four spirits made these islands, long before anyone lived here.",
+        { how: "the storyteller's voice, low and rolling, unhurried" },
       ],
       [
         "shaman",
         "Nature grew them. Fire raised them. Ice cooled them. And the Deep holds them up.",
+        {
+          how: "slow and rhythmic like a chant, a breath between each spirit, deepest on 'the Deep'",
+        },
       ],
-      ["shaman", "When the spirits went to sleep, they left a little of themselves in the stone."],
       [
         "shaman",
-        "Crystals. Green for nature, red for fire, blue for ice, and purple for the Deep.",
+        "When the spirits went to sleep, they left a little of themselves in the stone.",
+        { how: "gentle, softer, almost tender" },
       ],
-      ["rifleman", "And Terror wants them because...?"],
-      ["shaman", "Because two crystals pressed together make something stronger than both."],
+      shot("Back at the fire. The crew are leaning in.", 1.5),
+      [
+        "rifleman",
+        "And the Professor wants them for what?",
+        { how: "practical, quiet, a little wary" },
+      ],
+      [
+        "shaman",
+        "Two crystals pressed together make something stronger than either.",
+        { how: "grave, slower, the warmth gone out of it" },
+      ],
       [
         "shaman",
         "Ice and the Deep make a crystal of chaos. Nature and fire make a crystal of creation.",
+        { how: "measured, weighing each word, ominous on 'chaos'" },
       ],
       [
         "shaman",
-        "And the oldest story says that chaos and creation, joined with time, make one more.",
+        "And the oldest story says chaos and creation, joined with time, make one more.",
+        { how: "lower and slower, a hush creeping in" },
+      ],
+      shot("The fire flares white for a moment.", 1),
+      [
+        "shaman",
+        "The eternal crystal. Whoever held it could remake the world however they pleased.",
+        { mood: "whisper", how: "an awed, frightened whisper", before: 0.4 },
+      ],
+      ["rifleman", "That's the one he's after.", { how: "quiet realisation, not a question" }],
+      [
+        "shaman",
+        "It's the only one he's ever been after.",
+        { mood: "sad", how: "very quiet, final, heavy", before: 0.8, after: 0.8 },
       ],
       [
         "shaman",
-        "The eternal crystal. Whoever holds it could remake the whole world as they please.",
+        "Use these the way the spirits meant: a little strength for the people who fight. Never more.",
+        { how: "firm and kind, a teacher's voice" },
       ],
-      ["rifleman", "Let me guess. He wants that one."],
-      ["shaman", "He wants nothing else.", "sad"],
       [
         "shaman",
-        "Use these the way the spirits meant: a little strength for your heroes, never more.",
+        "No one should hold that much power. Not him. Not you. Not me.",
+        { how: "slow and deliberate, a pause before each 'not', softest on 'me'", after: 1 },
       ],
-      ["shaman", "No one should hold that much power. Not him. Not you. Not me."],
-    ],
-  },
-  {
-    id: "hq2",
-    when: { on: "hq", level: 2 },
-    lines: [
-      ["shaman", "Your headquarters grows. Good. The Professor's raiders will have noticed."],
-      ["rifleman", "Let them notice."],
-      [
-        "shaman",
-        "When it grows a little more, build a radar. Some of the people he took are still out there.",
-      ],
-      ["shaman", "Shouting into the sea, hoping somebody is listening. We should be listening."],
     ],
   },
   {
     id: "radar",
     when: { on: "first", thing: "radar" },
     lines: [
-      ["rifleman", "Radar's up. Mostly static. And... is that whale song?"],
+      ["rifleman", "Radar's up. Nothing but static so far."],
+      ["shaman", "Give it time. The sea is noisy. Under the noise there are voices."],
       [
         "shaman",
-        "Listen longer. The sea is full of voices, and some of them are calling for help.",
-      ],
-      [
-        "shaman",
-        "Every time your headquarters grows, the dish hears a little further. Keep it turning.",
-      ],
-    ],
-  },
-  {
-    id: "hq4",
-    when: { on: "hq", level: 4 },
-    lines: [
-      [
-        "shaman",
-        "Last night the radar was humming a song. A cooking song, I think. A very deep voice.",
-      ],
-      ["rifleman", "You think someone's out there singing into a radio?"],
-      [
-        "shaman",
-        "I think someone is very bored and very hungry. Grow a little more and we'll hear him.",
+        "The taller your headquarters grows, the further the dish will hear. Keep it turning.",
       ],
     ],
   },
@@ -180,51 +287,56 @@ export const OPENING: readonly Scene[] = [
     when: { on: "first", thing: "raiderShip" },
     lines: [
       [
-        "brack",
-        "Ahoy there, little island! Captain Brack speaking, from the deck of my lovely ship.",
-        "radio",
+        "shaman",
+        "A dark sail, out past the reef. One of the Professor's raider ships.",
+        { how: "quiet and watchful, eyes on the horizon" },
       ],
-      [
-        "brack",
-        "The Professor pays me to keep his seas tidy. And you, my friends, are untidy.",
-        "radio",
-      ],
-      ["brack", "See you tonight! Leave the lights on.", "radio"],
-      ["rifleman", "Who's that clown?"],
-      ["shaman", "Brack. His raiders burned my village. He works for the Professor, for gold."],
-      ["shaman", "He would work for anyone, for more gold. Remember that about him."],
       [
         "shaman",
-        "His ship lands tonight. Tap it on your map to see when, and how hard. Then get ready.",
+        "Those are the men who burned my village. Hired hands, paid in his gold.",
+        { how: "controlled anger, every word steady" },
       ],
+      ["shaman", "Tonight they'll come for this island. The map will tell you when, and how many."],
+      ["rifleman", "Then we'll be ready for them.", { how: "flat and certain" }],
     ],
   },
   {
     id: "nightRaidHeld",
     when: { on: "first", thing: "nightRaidHeld" },
     lines: [
-      ["brack", "Back to the boat! BACK TO THE BOAT! This isn't over, island!", "radio"],
+      [
+        "rifleman",
+        "They're running. Back to the boats.",
+        { how: "breathing hard, grim satisfaction" },
+      ],
       [
         "shaman",
-        "Hear that? That's the sound of a man counting everything he didn't steal.",
-        "laugh",
+        "I watched those ships burn my village from the trees. Tonight I watched them run.",
+        { how: "quiet, close to wonder, a long breath out" },
       ],
-      ["rifleman", "And holding them off pays. I could get used to Brack."],
+      [
+        "rifleman",
+        "And whatever they were carrying, they left on our beach.",
+        { how: "dry, pleased" },
+      ],
     ],
   },
   {
     id: "nightRaidLost",
     when: { on: "first", thing: "nightRaidLost" },
     lines: [
-      ["brack", "Thanks for the gold, island! Same time tomorrow?", "radio"],
-      ["rifleman", "They got through. Took what they could carry."],
-      ["shaman", "Don't hang your heads. Walls fall. Walls are built again."],
+      [
+        "rifleman",
+        "They got through. Took what they could carry.",
+        { mood: "angry", how: "angry at himself, clipped" },
+      ],
       [
         "shaman",
-        "Look at what they broke first, and make that stronger. And remember where his ship came from.",
+        "Walls fall. Walls get built again. Look where they broke through first, and build that stronger.",
+        { how: "calm and steadying" },
       ],
-      ["rifleman", "His own base. We could return the visit."],
-      ["shaman", "Brack hates visitors.", "laugh"],
+      ["shaman", "And their ship came from somewhere. Raiders aren't so brave at home."],
+      ["rifleman", "Then maybe we pay them a visit.", { how: "quiet, decided" }],
     ],
   },
   {
@@ -233,27 +345,44 @@ export const OPENING: readonly Scene[] = [
     lines: [
       [
         "shaman",
-        "One of the islands you freed has his flag on it again. Raiders came in the night.",
+        "One of the islands you freed is flying his flag again. His raiders went back in the night.",
       ],
-      ["shaman", "It will be stronger now. The Professor learns from you. You must learn faster."],
+      ["shaman", "They'll have built it stronger. He learns from every island he loses."],
+      ["rifleman", "So do we."],
     ],
   },
   {
     id: "raidLost",
     when: { on: "first", thing: "raidLost" },
     lines: [
-      ["shaman", "You came home with more bruises than gold. That isn't a loss. It's a lesson."],
-      ["rifleman", "Expensive lesson."],
-      ["shaman", "The good ones always are. What hit you hardest? Go back, and hit that first."],
+      [
+        "rifleman",
+        "We pulled back. Too much fire on that ridge.",
+        { how: "frustrated, catching his breath" },
+      ],
+      [
+        "shaman",
+        "Everyone came home. That matters more than the island.",
+        { how: "warm and firm" },
+      ],
+      ["shaman", "Think about what stopped you. Go back when you know how to break it."],
     ],
   },
   {
     id: "threeStars",
     when: { on: "first", thing: "threeStars" },
     lines: [
-      ["shaman", "Every building flat, the headquarters too. Three stars!", "happy"],
-      ["shaman", "In my village we would have danced until morning."],
-      ["rifleman", "Don't tempt me."],
+      [
+        "shaman",
+        "Every building down, the headquarters too. Nothing left standing.",
+        { mood: "happy" },
+      ],
+      [
+        "shaman",
+        "In my village we'd have lit a fire on the beach and told the story until morning.",
+        { how: "fond, remembering" },
+      ],
+      ["rifleman", "Then tell it tonight. We'll listen.", { how: "warm, a rare smile" }],
     ],
   },
   {
@@ -262,12 +391,9 @@ export const OPENING: readonly Scene[] = [
     lines: [
       [
         "shaman",
-        "A plan for one of his raiders' machines. And they left it lying about. Careless.",
+        "Plans for one of their machines. Their engineers draw everything before they build it.",
       ],
-      [
-        "shaman",
-        "Paper won't shoot anybody, though. Build a laboratory to turn it into the real thing.",
-      ],
+      ["shaman", "On paper it's no use to anyone. A laboratory could turn it into the real thing."],
     ],
   },
   {
@@ -276,102 +402,104 @@ export const OPENING: readonly Scene[] = [
     lines: [
       [
         "shaman",
-        "A laboratory! Glass and bubbles and very serious faces. The Professor would approve.",
+        "A laboratory. The Professor's islands are full of them. Glass, smoke and quiet men.",
       ],
-      [
-        "shaman",
-        "Bring it the plans you find on raids. Every one is a weapon turned to your side.",
-      ],
-      [
-        "shaman",
-        "It can make your boat's weapons stronger, too. Even an old boat can learn new tricks.",
-      ],
+      ["shaman", "Bring it the plans you take on raids. Each one is a weapon turned to your side."],
+      ["shaman", "It can teach your boat new things, too."],
     ],
   },
   {
     id: "firstGunboatWeapon",
     when: { on: "first", thing: "gunboatWeapon" },
     lines: [
-      ["shaman", "Your boat has a new voice. Call it on the radio from anywhere on an island."],
-      [
-        "shaman",
-        "But while you talk into that radio, you stand still in the open. Choose your moment.",
-      ],
-      ["rifleman", "Noted. Duck first, call second."],
+      ["shaman", "Your boat has something new. Call it on the radio from anywhere on an island."],
+      ["shaman", "But while you're calling, you're standing still in the open. Pick your moment."],
     ],
   },
   {
     id: "firstHeroUpgrade",
     when: { on: "first", thing: "heroUpgrade" },
     lines: [
-      ["shaman", "The crystal sinks into you like warm rain. Can you feel it?"],
-      ["shaman", "Nature gives health. Fire gives a harder blow. Ice gives quicker feet."],
-      ["shaman", "And the Deep teaches new tricks. Each is a gift. Don't waste them."],
+      ["shaman", "Feel that? The crystal goes in like warm rain."],
+      ["shaman", "Nature gives the strength to stand, fire a harder blow, ice quicker feet."],
+      [
+        "shaman",
+        "And the Deep teaches new things. Each is a gift from the spirits. Spend them on those who fight.",
+      ],
     ],
   },
   {
     id: "firstChest",
     when: { on: "first", thing: "chest" },
     lines: [
-      ["rifleman", "A treasure chest. An actual, honest-to-goodness treasure chest."],
-      ["shaman", "The raiders bury them and forget where. Open it before they remember.", "laugh"],
+      ["rifleman", "A chest, buried behind their stores. Heavy."],
+      ["shaman", "Raiders bury what they steal, and then forget where. Open it."],
+      ["shaman", "Whatever's inside was somebody's once."],
     ],
   },
   {
     id: "firstBeachFind",
     when: { on: "first", thing: "beachFind" },
     lines: [
+      ["shaman", "The tide has left something on the sand. It brings things in every few hours."],
       [
         "shaman",
-        "The tide brought you something. The sea gives, and a few hours later, it takes back.",
+        "And it takes them back again. Walk the beaches when you can. The sea doesn't wait.",
       ],
-      ["shaman", "Don't leave its gifts lying on the sand. Come and look whenever the tide turns."],
     ],
   },
   {
     id: "firstPuzzleIsland",
     when: { on: "first", thing: "puzzleIsland" },
     lines: [
-      ["rifleman", "These defenses aren't in rings. Somebody laid this island out on purpose."],
-      ["shaman", "Some of his islands are riddles. A field of mortars. A horseshoe of towers."],
-      ["shaman", "Don't charge in. Look first. Then find the way in that he didn't think of."],
+      ["rifleman", "These defenses aren't scattered. Somebody laid this island out on purpose."],
+      [
+        "shaman",
+        "Some of his islands are built like riddles. A field of mortars, a ring of towers.",
+      ],
+      ["shaman", "Don't charge in. Watch it a while, and look for the way in he didn't think of."],
     ],
   },
   {
     id: "firstRivalCrew",
     when: { on: "first", thing: "rivalCrew" },
     lines: [
-      ["rifleman", "That island's not one of Terror's. No skull flag."],
-      ["shaman", "Another crew lives there, the way you live here."],
+      ["rifleman", "No skull on this one. Different flag."],
+      ["shaman", "Another crew lives there, the way you live here. They aren't his."],
       [
         "shaman",
-        "Raid them if you must. They'll raid you back. They're not your enemies, only your rivals.",
+        "Raid them if you must, and they'll raid you back. Just remember they aren't the enemy.",
       ],
-      ["shaman", "Try to remember the difference. Most of the time."],
     ],
   },
   {
     id: "firstPickaxe",
     when: { on: "first", thing: "pickaxe" },
     lines: [
-      ["shaman", "A pickaxe. Those rocks have sat there since my grandmother's grandmother."],
-      ["shaman", "Let's see what they've been sitting on."],
+      [
+        "shaman",
+        "A pickaxe. Some of these rocks haven't moved since my grandmother's grandmother.",
+      ],
+      ["shaman", "My people hid things among the rocks. See what they've been keeping."],
     ],
   },
   {
     id: "firstChainsaw",
     when: { on: "first", thing: "chainsaw" },
     lines: [
-      ["shaman", "That noisy thing will open the deep forest, where the oldest trees are."],
-      ["shaman", "Cut gently. Some of those trees are older than the Professor's grudges."],
+      ["shaman", "That will open the deep forest, where the oldest trees grow."],
+      [
+        "shaman",
+        "Go carefully in there. Some of those trees were old when the first canoes landed.",
+      ],
     ],
   },
   {
     id: "firstDynamite",
     when: { on: "first", thing: "dynamite" },
     lines: [
-      ["shaman", "Dynamite. For the rocks that won't listen to a pickaxe."],
-      ["shaman", "Please warn me before you use it. I'm fond of my eyebrows.", "laugh"],
+      ["shaman", "Dynamite. For the stones that won't move any other way."],
+      ["shaman", "Tell me before you light it. My ears are old.", { mood: "happy" }],
     ],
   },
   {
@@ -380,25 +508,27 @@ export const OPENING: readonly Scene[] = [
     lines: [
       [
         "shaman",
-        "You found her! The Mother of Green. My people carved her when the first tree grew.",
+        "You found her. The Mother of Green. My people carved her when the first tree grew here.",
+        { how: "moved, hushed" },
       ],
       [
         "shaman",
-        "She's tired, and covered in moss. Bring her ten nature crystals and plenty of stone.",
+        "She's asleep under all that moss. Bring her ten nature crystals and plenty of stone.",
       ],
-      ["shaman", "Wake her, and your buildings will stand stronger, with her watching over them."],
-      ["shaman", "There are three more, you know. The old carvings say where. Keep clearing."],
+      [
+        "shaman",
+        "Wake her, and your buildings will stand stronger. There are three more. The old carvings say where.",
+      ],
     ],
   },
   {
     id: "statueIce",
     when: { on: "first", thing: "statueIce" },
     lines: [
-      ["shaman", "The Old Cold! He lives at the top of the sky and breathes out the rain."],
-      ["shaman", "Wake him, and your mills will work as if he were blowing on their sails."],
+      ["shaman", "The Old Cold. He lives at the top of the sky and breathes out the rain."],
       [
         "shaman",
-        "And your raids will bring home more. He was always generous, for a cold old man.",
+        "Wake him, and your mills will work harder, and you'll bring more home from every raid.",
       ],
     ],
   },
@@ -406,7 +536,7 @@ export const OPENING: readonly Scene[] = [
     id: "statueFire",
     when: { on: "first", thing: "statueFire" },
     lines: [
-      ["shaman", "The Smith. He forged these islands in his furnace under the sea."],
+      ["shaman", "The Smith. He forged these islands in a furnace under the sea."],
       ["shaman", "Wake him, and your defenses will hit like his hammer."],
     ],
   },
@@ -414,47 +544,58 @@ export const OPENING: readonly Scene[] = [
     id: "statueDark",
     when: { on: "first", thing: "statueDark" },
     lines: [
-      ["shaman", "The Deep. Nobody ever carved her face, because nobody has ever seen it."],
-      ["shaman", "She keeps everything the sea takes. Every ship. Every coin. Every lost thing."],
-      ["shaman", "Wake her, and the islands will give up their treasures to you more often."],
+      [
+        "shaman",
+        "The Deep. Nobody ever carved her face, because nobody has ever seen it.",
+        { how: "low, a little afraid of her even now" },
+      ],
+      ["shaman", "She keeps everything the sea takes. Every ship, every coin, every lost thing."],
+      ["shaman", "Wake her, and the islands will give their treasures up to you more often."],
     ],
   },
   {
     id: "statueRestored",
     when: { on: "first", thing: "statueRestored" },
     lines: [
-      ["shaman", "Listen. Can you hear it? The stone is singing.", "whisper"],
+      ["shaman", "Listen. Do you hear that? The stone is humming.", { mood: "whisper" }],
       [
         "shaman",
-        "She remembers my people's songs. I didn't think I'd hear that again in my life.",
-        "happy",
+        "It's one of my people's songs. I didn't think I'd ever hear it again.",
+        { how: "moved, voice unsteady" },
       ],
     ],
   },
   {
     id: "allStatues",
     when: { on: "first", thing: "allStatues" },
+    cutscene: true,
     lines: [
-      ["shaman", "All four of them, awake. All four spirits watching over this island again."],
-      ["shaman", "My grandmother told me about this day. She never got to see it.", "sad"],
-      ["shaman", "Thank you. From her, and from me.", "happy"],
-      ["rifleman", "You alright, Shaman?"],
-      ["shaman", "I'm better than alright, Sergeant. I'm home."],
-    ],
-  },
-  {
-    id: "hq7",
-    when: { on: "hq", level: 7 },
-    lines: [
+      shot(
+        "The fourth statue's eyes glow. Across the island, the other three answer, one after another.",
+        4,
+      ),
+      shot("A low hum rolls over the forest, like a choir far away.", 2.5),
       [
         "shaman",
-        "The radar keeps waking me with its beeping. Four more voices out there. At least four.",
+        "All four of them, awake. All four spirits watching over this island again.",
+        { mood: "whisper", how: "breathless, overwhelmed, voice trembling" },
       ],
       [
         "shaman",
-        "One honks. One complains very politely. One talks about engines. One talks about herself.",
+        "My grandmother told me about this day. She never got to see it.",
+        { mood: "sad", how: "tears close, swallowing between the sentences", before: 0.8 },
       ],
-      ["rifleman", "Sounds like a crew."],
+      [
+        "shaman",
+        "Thank you. From her, and from me.",
+        { mood: "happy", how: "crying and smiling at once, soft and full", before: 0.6 },
+      ],
+      ["rifleman", "You alright?", { how: "gentle, quiet, a hand on his shoulder", before: 0.8 }],
+      [
+        "shaman",
+        "Better than alright, Sergeant. I'm home.",
+        { mood: "happy", how: "a wet laugh, then calm and certain on 'I'm home'", after: 1.2 },
+      ],
     ],
   },
 ];

@@ -15,14 +15,27 @@ import { passwordProblem, usernameProblem } from "./logic/account";
 import { BUILDINGS, type BuildingType } from "./logic/buildings";
 import { createCoopRaid, MAX_SEATS, type Seat } from "./logic/coop";
 import { gunboatWeapons, hqLevel, type LayoutOp } from "./logic/crewIsland";
-import { addCrystals, type CrystalKind, payCrystals, swapCrystals } from "./logic/crystals";
+import {
+  addCrystals,
+  CRYSTAL_KINDS,
+  type CrystalKind,
+  payCrystals,
+  swapCrystals,
+} from "./logic/crystals";
 import { RAIDERS } from "./logic/difficulty";
 import { allowedCount, emptyPurse, PROGRESSION, type Purse, RESOURCES } from "./logic/economy";
 import { enemyBase, generateIsland, rivalIsland, scoutReport } from "./logic/enemyBase";
 import { HERO_KINDS, type HeroKind } from "./logic/heroes";
 import { raidReward } from "./logic/heroProgress";
 import { heroMods, noUpgrades, readOwned, type TreeUpgrade, trimUpgrades } from "./logic/heroTrees";
-import { BASE_CENTER, HOME_SHAPE, type IslandLayout } from "./logic/island";
+import {
+  BASE_CENTER,
+  BEACH_DIRECTION,
+  HOME_SHAPE,
+  homeHeight,
+  type IslandLayout,
+  landingPoints,
+} from "./logic/island";
 import { archetypeFor } from "./logic/islandShapes";
 import { type NightRaid, nightIsland, startNightRaid, stepNightRaid } from "./logic/nightRaid";
 import { puzzleFor } from "./logic/puzzles";
@@ -38,7 +51,7 @@ import {
   type RaidState,
   stepRaid,
 } from "./logic/raid";
-import { shipAtSea } from "./logic/raiderShip";
+import { nextShip, shipAtSea, shipDay } from "./logic/raiderShip";
 import {
   type Blueprint,
   blueprintName,
@@ -48,7 +61,15 @@ import {
   type Spoils,
 } from "./logic/spoils";
 import { statueBuffs } from "./logic/statues";
-import type { Place } from "./logic/sun";
+import {
+  type First,
+  isHero,
+  islandWaiting,
+  type NextStep,
+  type StoryEvent,
+  signal,
+} from "./logic/story";
+import { type Place, sunPosition, sunRising } from "./logic/sun";
 import { packShards, readShards, type Shards, type TimePower } from "./logic/timeShards";
 import { angleOf, distance, lerp, vec } from "./logic/vec";
 import {
@@ -56,10 +77,13 @@ import {
   islandSpot,
   type MapIsland,
   raiderHome,
+  rescueMission,
   settleRivals,
   shipSpot,
   snowAt,
+  storyMission,
   takeIsland,
+  withMissions,
   worldIslands,
 } from "./logic/worldMap";
 import { logIn, logOut, pullSave, pushSave, signUp, verifyPassword } from "./net/account";
@@ -67,17 +91,26 @@ import { CoopSession, HOST_TIMEOUT } from "./net/coopSession";
 import { CrewClient } from "./net/crewClient";
 import type { Member, RaidMessage } from "./net/protocol";
 import { fetchRivals, reportRaid } from "./net/world";
+import { BoatScene } from "./render/boatScene";
 import { loadBuildingKit, STAGES } from "./render/buildingKit";
 import { CameraRig } from "./render/cameraRig";
 import { DangerMap } from "./render/dangerMap";
 import { AT_EASE, type HeroMove } from "./render/heroAnimator";
 import { heroModel } from "./render/models";
 import { setSolidPlants, updateWind } from "./render/props";
+import {
+  DEPARTURE_SECONDS,
+  departure,
+  LANDING_SECONDS,
+  landing,
+  lootCrate,
+} from "./render/raidShots";
 import { RaidView } from "./render/raidView";
-import { loadRigs } from "./render/riggedHeroes";
+import { loadMenuBody, loadRigs, loadStoryBody } from "./render/riggedHeroes";
 import { Showcase } from "./render/showcase";
+import type { SkyScene } from "./render/sky";
 import { Stage } from "./render/stage";
-import { buildingIcon, heroPortrait } from "./render/thumbnails";
+import { buildingIcon, figurePortrait, heroPortrait } from "./render/thumbnails";
 import { WorldMapView } from "./render/worldMap";
 import {
   type AccountSession,
@@ -96,6 +129,8 @@ import {
   writePlace,
   writeSave,
 } from "./save";
+import { StoryDirector, type StoryPlace, type StorySet } from "./story/director";
+import { BoatSelect } from "./ui/boatSelect";
 import { ControlsEditor } from "./ui/controlsEditor";
 import { CrystalSwap } from "./ui/crystalSwap";
 import { HeroSelect } from "./ui/heroSelect";
@@ -113,7 +148,7 @@ import { TimeTint } from "./ui/timeTint";
 import { UpgradeTree } from "./ui/upgradeTree";
 import { type CrewRaid, WorldMapScreen } from "./ui/worldMapScreen";
 
-type Phase = "heroes" | "tree" | "map" | "scout" | "raid" | "ended" | "crew" | "replay";
+type Phase = "heroes" | "tree" | "map" | "scout" | "boat" | "raid" | "ended" | "crew" | "replay";
 
 /** A crewmate's raid, as this phone last heard about it. */
 interface HeardRaid {
@@ -163,8 +198,14 @@ const HINT_WINS = 3;
 /** The slowest the picture needs to run in a fight, and on a screen nobody's touching. */
 const CALM_FRAME_MS = 1000 / 30;
 const FRAME_SLACK_MS = 2;
-/** Screens with so little on them that they can be sharper for less than a fight costs. */
-const LIGHT_PHASES: readonly string[] = ["heroes", "tree", "map"];
+/**
+ * Screens with so little on them that they can be sharper for less than a fight costs. The world
+ * map isn't one: its sea and its cloud are each a shader over the whole screen, and at a light
+ * screen's sharpness that was most of what made it lag.
+ */
+const LIGHT_PHASES: readonly string[] = ["heroes", "tree"];
+/** Screens seen from straight above, with no sun or sky in them for a lens to do anything with. */
+const FLAT_PHASES: readonly string[] = ["map", "tree"];
 /** How long after the last touch a screen counts as sitting still. */
 const CALM_AFTER_MS = 1500;
 
@@ -255,6 +296,18 @@ export class Game {
   private replaySpeed = 1;
   private readonly hud: Hud;
   private readonly heroes: HeroSelect;
+  /** Choosing who goes, aboard the boat on the way out, and the boat itself while it's there. */
+  private readonly boatSelect: BoatSelect;
+  private boatScene: BoatScene | null = null;
+  /** Seconds into the landing film, or -1 when there isn't one. */
+  private landingT = -1;
+  /** Where the raid's crew starts on the beach, which the landing walks them to. */
+  private landSpawn = vec(0, 0);
+  /** Seconds into the way home after a win (below 0 while the base still falls), or null. */
+  private departT: number | null = null;
+  private departFrom: { x: number; y: number }[] = [];
+  private crates: THREE.Object3D[] = [];
+  private readonly boatHome = new THREE.Vector3();
   private readonly tree: UpgradeTree;
   private readonly crystalSwap: CrystalSwap;
   private readonly results: ResultsScreen;
@@ -262,6 +315,15 @@ export class Game {
   private readonly skyCard: SkyCard;
   private readonly showcase: Showcase;
   private readonly crew: CrewMode;
+  private readonly story: StoryDirector;
+  private rigsLoaded = false;
+  /**
+   * Tests that aren't about the story turn it off, or its opening would have the screen before
+   * they could do anything: `?nostory` in the URL, or this key in storage.
+   */
+  private storyOff =
+    new URLSearchParams(location.search).has("nostory") ||
+    localStorage.getItem("tropic-rush:story-off") === "1";
   private readonly wipe: HTMLDivElement;
   private save: SaveData = loadSave();
   private phase: Phase = "crew";
@@ -297,6 +359,11 @@ export class Game {
     });
     const screens = layer(container, "screens");
     this.showcase = new Showcase(this.stage);
+    this.boatSelect = new BoatSelect(screens, {
+      step: (by) => this.boatScene?.step(by) ?? null,
+      ready: (hero) => this.sail(hero),
+      nameOf: (hero) => this.boatScene?.nameOf(hero) ?? null,
+    });
     this.heroes = new HeroSelect(screens, this.showcase, {
       save: () => this.save,
       gold: () => this.crew.gold(),
@@ -421,8 +488,6 @@ export class Game {
       },
       onSkip: () => this.go(() => this.endReplay()),
     });
-    const rotate = layer(container, "rotate");
-    rotate.textContent = "Turn your phone sideways to play";
     this.crew = new CrewMode(
       this.stage,
       layer(container, "crew-surface"),
@@ -447,6 +512,7 @@ export class Game {
             this.treeFromLab = true;
           }),
         sendOp: (op) => this.link?.sendOp(op),
+        onShaman: () => this.story.talkToShaman(),
         onReplay: (raid) => this.go(() => this.startReplay(raid)),
         onStrikeBack: (raid) => {
           if (!raid.ship) return;
@@ -457,6 +523,36 @@ export class Game {
         },
       },
     );
+    this.story = new StoryDirector(container, {
+      story: () => this.crew.snapshot().layout.story,
+      tell: (change) => void this.crew.tellStory(change),
+      seen: () => this.save.storySeen,
+      markSeen: (ids) =>
+        this.updateSave({ storySeen: [...new Set([...this.save.storySeen, ...ids])] }),
+      hq: () => hqLevel(this.crew.snapshot().layout),
+      place: () => this.storyPlace(),
+      set: () => this.storySet(),
+      standing: () => this.storyStanding(),
+      nextSteps: () => this.nextSteps(),
+      ready: () => this.rigsLoaded && !this.storyOff,
+      loadCast: (cast) =>
+        Promise.all(
+          cast.map((who) =>
+            who === "shaman"
+              ? loadStoryBody("shaman")
+              : who === "rifleman"
+                ? Promise.all([loadMenuBody("rifleman"), this.story.stage.loadCaptain()])
+                : isHero(who)
+                  ? loadMenuBody(who)
+                  : undefined,
+          ),
+        ),
+      filming: (on, scene) => this.setFilming(on, scene),
+      portrait: (who) => (isHero(who) ? heroPortrait(who) : Promise.resolve(figurePortrait(who))),
+      camera: this.stage.camera,
+    });
+    this.stage.scene.add(this.story.stage.root);
+    this.story.stage.lens = this.stage.lens;
     this.wipe = layer(container, "wipe");
 
     this.applySettings();
@@ -484,7 +580,9 @@ export class Game {
     if (loadPlace() === undefined && !params.has("testhooks")) this.offerSkyCard();
     if (params.has("testhooks")) this.installTestHooks();
     this.stage.holdQuality = params.has("fullquality");
-    void loadRigs();
+    void loadRigs().then(() => {
+      this.rigsLoaded = true;
+    });
     void loadBuildingKit();
     for (const type of ["pointerdown", "pointermove", "wheel"]) {
       window.addEventListener(type, () => (this.touched = performance.now()), {
@@ -552,6 +650,12 @@ export class Game {
       online: () => this.crewOnline(),
       seat: () => this.seat,
       /** Makes a change to the crew's island, the way a real one would arrive. */
+      /** Turns the story's scenes on or off. */
+      story: (on: boolean) => {
+        this.storyOff = !on;
+      },
+      /** Opens the Shaman as a tap on him would. */
+      shaman: () => this.story.talkToShaman(),
       crewOp: (op: LayoutOp) => this.crew.applyForTest(op),
       /** Skips the island's clock on, finishing whatever would be done by then. */
       crewAhead: (ms: number) => this.crew.skipForTest(ms),
@@ -617,6 +721,29 @@ export class Game {
       snapshot: () => {
         this.stage.render();
         return this.stage.renderer.domElement.toDataURL("image/jpeg", 0.92);
+      },
+      /** Sets out for the first island there is, aboard the boat, as attacking it from the map does. */
+      setOut: () => {
+        const [island] = worldIslands(this.save.world, 1).filter((i) => !i.taken && !i.rival);
+        if (island) this.showBoat(island);
+      },
+      /** Readies up aboard the boat, as the Ready button does, with whoever the camera's on. */
+      readyUp: () => {
+        const hero = this.boatScene?.current;
+        if (hero) this.sail(hero);
+      },
+      /** Swings round the boat to the next hero (+1) or the one before (-1). */
+      boatStep: (by: number) => this.boatSelect.set(this.boatScene?.step(by) ?? null),
+      boat: () => this.boatScene,
+      /** Skips the films either side of a raid to `seconds` in. */
+      filmAt: (seconds: number) => {
+        if (this.landingT >= 0) this.landingT = seconds;
+        else if (this.departT !== null) this.departT = seconds;
+      },
+      camera: () => this.stage.camera,
+      /** Looks straight down on the boat, to see where the crew stands. */
+      boatOverview: (on: boolean) => {
+        if (this.boatScene) this.boatScene.overview = on;
       },
       /** Starts a raid with any hero, even one who can't go alone, for looking at them in one. */
       raidAs: (kind: HeroKind) => {
@@ -697,6 +824,7 @@ export class Game {
       case "map":
         return "map";
       case "scout":
+      case "boat":
         return "scout";
       case "raid":
         return "raid";
@@ -704,6 +832,29 @@ export class Game {
         return "night";
       case "ended":
         return this.state?.status === "won" ? "win" : null;
+    }
+  }
+
+  /**
+   * The light for wherever the player is (docs/DESIGN.md, Added 2026-11-16): day at home, late
+   * afternoon setting out, evening on a raid, dusk on the way home, night when raided. Elsewhere,
+   * the real clock.
+   */
+  private skyScene(): SkyScene | null {
+    switch (this.phase) {
+      case "crew":
+        return "day";
+      case "boat":
+        return "afternoon";
+      case "scout":
+      case "raid":
+        return "evening";
+      case "ended":
+        return this.departT !== null ? "dusk" : "evening";
+      case "replay":
+        return "night";
+      default:
+        return null;
     }
   }
 
@@ -1082,7 +1233,67 @@ export class Game {
   /** Attack from the map or a scout: a last look at who's going, or a team scouts and readies up. */
   private attack(island: MapIsland): void {
     if (this.withParty()) this.openLobby(island);
-    else this.go(() => this.showHeroes(this.mapHero, island));
+    else this.go(() => this.showBoat(island));
+  }
+
+  /**
+   * Setting out: the island's loaded, the crew stands aboard the boat out at sea, and the player
+   * swings round them to choose who goes (docs/DESIGN.md, Added 2026-11-16).
+   */
+  private showBoat(island: MapIsland): void {
+    if (this.crew.active) this.crew.exit();
+    this.endRaidWorld();
+    this.hideScreens();
+    this.attacking = island;
+    const { layout } = this.loadRaid(this.mapHero, island);
+    // The island waits empty: the crew and the boat that land them are this scene's.
+    if (this.view && this.state) {
+      this.view.filming = true;
+      this.view.gunboat.visible = false;
+      for (const h of this.state.heroes) this.view.aboard.add(h.id);
+    }
+    // Out to sea along the line from the beach through the gunboat's mooring.
+    const dx = layout.boat.x - layout.spawn.x;
+    const dy = layout.boat.y - layout.spawn.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const at = (out: number) =>
+      vec(layout.boat.x + (dx / length) * out, layout.boat.y + (dy / length) * out);
+    const scene = new BoatScene(at(46), at(16));
+    this.boatScene = scene;
+    this.stage.scene.add(scene.root);
+    this.phase = "boat";
+    const crew = this.save.unlocked.length > 0 ? this.save.unlocked : [this.save.hero];
+    void scene.board(crew, this.mapHero).then(() => {
+      if (this.boatScene === scene && this.phase === "boat") this.boatSelect.show(scene.current);
+    });
+  }
+
+  /** Ready: the boat gets under way, and lands the chosen hero once she's run in. */
+  private sail(hero: HeroKind): void {
+    this.mapHero = hero;
+    this.boatSelect.hide();
+    this.boatScene?.sail();
+  }
+
+  private boatFrame(dt: number): void {
+    const scene = this.boatScene;
+    const { state, view } = this;
+    if (!scene) return;
+    scene.update(dt, this.stage.camera);
+    if (state && view)
+      view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
+    const island = this.attacking;
+    if (scene.progress >= 1 && island) {
+      const hero = scene.current ?? this.mapHero;
+      this.endBoat();
+      this.startRaid(hero, island);
+    }
+  }
+
+  private endBoat(): void {
+    this.boatSelect.hide();
+    this.boatScene?.dispose();
+    this.boatScene = null;
   }
 
   /** The hero screen's big button: on to the island if one's been picked, or else to the map. */
@@ -1378,6 +1589,7 @@ export class Game {
 
   private hideScreens(): void {
     this.heroes.hide();
+    this.boatSelect.hide();
     this.tree.hide();
     this.mapScreen.hide();
     this.scout.hide();
@@ -1414,7 +1626,7 @@ export class Game {
   private drawMap(): void {
     const { world, crystals } = this.save;
     const hq = hqLevel(this.crew.snapshot().layout);
-    const islands = worldIslands(world, hq);
+    const islands = withMissions(worldIslands(world, hq), world, this.storyTargets());
     const ship = shipAtSea(Date.now(), hq);
     const raiders = ship ? { ship, ...shipSpot(world, islands, ship.spotSeed) } : null;
     this.mapView.setWorld(islands, world, this.reveal !== null);
@@ -1484,6 +1696,12 @@ export class Game {
   }
 
   private endRaidWorld(): void {
+    this.story.stop();
+    this.endBoat();
+    this.landingT = -1;
+    this.departT = null;
+    for (const crate of this.crates) crate.removeFromParent();
+    this.crates = [];
     this.coop = null;
     this.hud.show(false);
     this.setControlMode("off");
@@ -1615,7 +1833,10 @@ export class Game {
     this.rig.mode = "follow";
     this.rig.zoomOut = 0;
     this.rig.snap(layout.spawn);
-    this.setControlMode("hero");
+    this.landSpawn = vec(layout.spawn.x, layout.spawn.y);
+    this.landingT = 0;
+    if (this.view) this.view.filming = true;
+    this.setControlMode("off");
     this.hud.setHero(heroPortrait(hero), this.save.upgrades[hero].length);
     this.hud.setSquad(
       (team?.seats ?? []).flatMap((s, i) =>
@@ -1635,8 +1856,12 @@ export class Game {
     this.stopHinted = false;
     this.baseTaken = false;
     this.lockedOn = null;
-    this.hud.show(true);
-    this.hud.flash("Destroy the headquarters!");
+    this.hud.show(false);
+    this.story.note({ on: "first", thing: "raid" });
+    if (target.story) this.story.note({ on: "island", island: target.story, stage: "landing" });
+    if (target.rescue) this.story.note({ on: "rescue", hero: target.rescue, stage: "landing" });
+    if (target.puzzle) this.story.note({ on: "first", thing: "puzzleIsland" });
+    if (target.rival) this.story.note({ on: "first", thing: "rivalCrew" });
   }
 
   /** Watches a night raid play out on the island as it stood that night. */
@@ -1646,8 +1871,6 @@ export class Game {
     this.hideScreens();
     const state = startNightRaid(raid, raid.seed);
     const layout = nightIsland(raid, raid.seed);
-    // The sky as it was when the raiders came.
-    this.stage.sky.holdClock(raid.ship?.at ?? null);
     this.state = state;
     this.view = new RaidView(layout, state, this.labels, raid);
     this.stage.scene.add(this.view.root);
@@ -1739,7 +1962,12 @@ export class Game {
 
   /** Outside a fight, a screen nobody's touching runs at half speed: it looks the same at rest. */
   private calmNow(now: number): boolean {
-    const fighting = this.phase === "raid" || this.phase === "replay" || this.phase === "ended";
+    // A film runs at full speed whether or not anyone's touching the screen.
+    const fighting =
+      this.phase === "raid" ||
+      this.phase === "replay" ||
+      this.phase === "ended" ||
+      this.phase === "boat";
     return !fighting && now - this.touched > CALM_AFTER_MS;
   }
 
@@ -1755,9 +1983,11 @@ export class Game {
     this.time += dt;
     this.stage.calm = calm;
     this.stage.setLight(LIGHT_PHASES.includes(this.phase));
+    this.stage.flat = FLAT_PHASES.includes(this.phase);
     // The real frame time, so a device that's struggling badly drops quality straight away.
     if (!calm) this.stage.adaptQuality(frameTime);
     music.play(this.trackForPhase());
+    this.stage.sky.setScene(this.skyScene(), this.phase === "ended" ? 6 : 3);
     this.tickRally(dt);
     this.syncIn -= dt;
     if (this.syncIn <= 0) {
@@ -1781,8 +2011,12 @@ export class Game {
       this.mapScreen.update();
       updateWind(this.time, null);
     } else if (this.phase === "scout") this.scoutFrame(dt);
+    else if (this.phase === "boat") this.boatFrame(dt);
     else this.raidFrame(dt, now);
     this.tint.update(this.phase === "raid" ? this.state : null);
+    this.story.update(dt);
+    // A cutscene's cast gets the crisp shadows, wherever the island's own camera was looking.
+    if (this.story.stage.active) this.stage.focusShadows(this.story.stage.middle, 16);
     this.stage.render();
   };
 
@@ -1791,6 +2025,15 @@ export class Game {
     const view = this.view;
     const hero = this.player();
     if (!state || !view || !hero) return;
+    if (this.landingT >= 0) {
+      this.landingFrame(dt, state, view, hero);
+      return;
+    }
+    if (this.departT !== null && this.departT >= 0) {
+      this.departureFrame(dt, now, state, view);
+      return;
+    }
+    if (this.departT !== null) this.departT += dt;
     const { coop } = this;
     if (coop && !coop.isHost) {
       // A guest's phone follows the host: the raid doesn't stop for anyone's pause menu.
@@ -1812,6 +2055,7 @@ export class Game {
         view.handleEvents(state.events, state);
         playRaidEvents(state.events, state, this.player());
         this.spendShards(state.events);
+        this.storyEvents(state.events);
         coop?.collect(state.events);
         this.accumulator -= SIM_STEP;
       }
@@ -1844,7 +2088,11 @@ export class Game {
       }
     }
     if (this.phase === "raid" && state.status !== "playing") this.endRaid();
-    if (this.phase === "ended" && !this.resultShown && now >= this.resultsAt) this.showResults();
+    // The results wait for whatever the story has to say about how it went.
+    const told = !this.story.blocking && (this.coop !== null || !this.story.owedAtRaidEnd);
+    if (this.phase === "ended" && !this.resultShown && now >= this.resultsAt && told) {
+      this.showResults();
+    }
 
     // Firing all but stops a hero, so new players need to know how to get moving again.
     if (!this.stopHinted && hero.targetId !== null && this.save.wins < HINT_WINS) {
@@ -1890,11 +2138,141 @@ export class Game {
     this.hudTime = 0;
   }
 
+  /**
+   * The crew comes ashore: down off the boat and up the beach, the camera rising from the water
+   * to sit over the player's hero. The fight starts when they're there.
+   */
+  private landingFrame(dt: number, state: RaidState, view: RaidView, hero: RaidHero): void {
+    this.landingT += dt;
+    const { places, shot } = landing(
+      this.landingT,
+      state.boat.pos,
+      this.landSpawn,
+      state.heroes.length,
+    );
+    this.placeCrew(state.heroes, places, view);
+    this.rig.update(dt, view.drawnAt(hero), vec(0, -3), null, false);
+    this.blendCamera(shot.camera, shot.look, shot.weight);
+    view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
+    if (this.landingT < LANDING_SECONDS) return;
+    this.landingT = -1;
+    state.heroes.forEach((h, i) => {
+      const p = places[i];
+      if (p) h.pos = { ...p.pos };
+      h.moving = false;
+    });
+    view.aboard.clear();
+    view.filming = false;
+    this.setControlMode("hero");
+    this.hud.show(true);
+    this.hud.flash("Destroy the headquarters!");
+  }
+
+  /** Puts the crew where a film says, walking or still, and hides whoever's aboard. */
+  private placeCrew(
+    heroes: readonly RaidHero[],
+    places: readonly {
+      pos: { x: number; y: number };
+      facing: number;
+      moving: boolean;
+      aboard: boolean;
+    }[],
+    view: RaidView,
+  ): void {
+    heroes.forEach((h, i) => {
+      const p = places[i];
+      if (!p) return;
+      h.pos = { ...p.pos };
+      h.facing = p.facing;
+      h.moving = p.moving;
+      if (p.aboard) view.aboard.add(h.id);
+      else view.aboard.delete(h.id);
+    });
+  }
+
+  /** Moves the camera part of the way (by `weight`) from where the rig put it to a film's shot. */
+  private blendCamera(at: THREE.Vector3, look: THREE.Vector3, weight: number): void {
+    if (weight <= 0) return;
+    const camera = this.stage.camera;
+    const from = camera.quaternion.clone();
+    const place = camera.position.clone();
+    camera.position.copy(at);
+    camera.lookAt(look);
+    const to = camera.quaternion.clone();
+    camera.position.lerpVectors(place, at, weight);
+    camera.quaternion.slerpQuaternions(from, to, weight);
+  }
+
+  /**
+   * The way home after a win: the crew carries the loot down to the boat, throws it aboard and
+   * climbs in, and she pulls away as the light goes; then the results.
+   */
+  private departureFrame(dt: number, now: number, state: RaidState, view: RaidView): void {
+    this.departT = (this.departT ?? 0) + dt;
+    this.hud.show(false);
+    const crew = state.heroes.filter((h) => h.alive);
+    const { places, crates, boatOut, shot } = departure(
+      this.departT,
+      state.boat.pos,
+      this.landSpawn,
+      this.departFrom,
+    );
+    this.placeCrew(crew, places, view);
+    crates.forEach((c, i) => {
+      const crate = this.crates[i];
+      const carrier = crew[i];
+      if (!crate || !carrier) return;
+      crate.visible = c !== null;
+      if (!c) return;
+      crate.position.copy(c.at);
+      // In their arms: where they're drawn, which trails where the film puts them.
+      if (c.held) {
+        const at = view.drawnAt(carrier);
+        crate.position.set(
+          at.x + Math.cos(carrier.facing) * 0.55,
+          c.at.y,
+          at.y + Math.sin(carrier.facing) * 0.55,
+        );
+        crate.rotation.y = -carrier.facing;
+      }
+    });
+    const away = Math.atan2(
+      state.boat.pos.y - this.landSpawn.y,
+      state.boat.pos.x - this.landSpawn.x,
+    );
+    view.gunboat.position.set(
+      this.boatHome.x + Math.cos(away) * boatOut,
+      this.boatHome.y,
+      this.boatHome.z + Math.sin(away) * boatOut,
+    );
+    this.stage.camera.position.copy(shot.camera);
+    this.stage.camera.lookAt(shot.look);
+    view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
+    const told = !this.story.blocking && (this.coop !== null || !this.story.owedAtRaidEnd);
+    if (this.departT >= DEPARTURE_SECONDS && !this.resultShown && now >= this.resultsAt && told) {
+      this.showResults();
+    }
+  }
+
   private endRaid(): void {
     const state = this.state;
     if (!state) return;
     this.phase = "ended";
     this.resultsAt = performance.now() + RESULTS_DELAY * 1000;
+    // A win alone ends with the way home, once the base has finished falling.
+    if (state.status === "won" && !this.coop && this.view) {
+      const crew = state.heroes.filter((h) => h.alive);
+      this.departT = -1.6;
+      this.departFrom = crew.map((h) => ({ ...h.pos }));
+      this.crates = crew.map(() => {
+        const crate = lootCrate();
+        this.view?.root.add(crate);
+        return crate;
+      });
+      this.boatHome.copy(this.view.gunboat.position);
+      this.view.filming = true;
+      this.resultsAt = performance.now() + (DEPARTURE_SECONDS + 1.6) * 1000;
+    }
     this.setControlMode("off");
     const won = state.status === "won";
     const percent = destructionPercent(state);
@@ -1904,7 +2282,9 @@ export class Game {
     const { rival } = target ?? { rival: null };
     // A raider ship's own base can't be held: winning there wins back what its raid took.
     const revenge = won ? target?.revenge : undefined;
-    let world = won && target && !target.revenge ? takeIsland(before, target.id) : before;
+    // A raider ship's base and the story's islands aren't on the map to hold.
+    const onMap = target && !target.revenge && !target.story && !target.rescue;
+    let world = won && target && onMap ? takeIsland(before, target.id) : before;
     if (won && target && rival) {
       // Keep a note of who was beaten here: what the island pays goes by their strength.
       world = beatRival({ ...world, rivals: { ...world.rivals, [target.id]: rival } }, rival);
@@ -1953,6 +2333,208 @@ export class Game {
       });
     }
     this.view?.dropCrystal(state, spoils);
+    this.tellRaidEnd(won, percent, target, spoils);
+  }
+
+  /** What the story makes of how a raid ended. */
+  private tellRaidEnd(
+    won: boolean,
+    percent: number,
+    target: MapIsland | null,
+    spoils: Spoils | null,
+  ): void {
+    const { story } = this;
+    this.storyWaitFrom = performance.now();
+    if (!won) {
+      story.note({ on: "first", thing: "raidLost" });
+      if (target?.story) story.note({ on: "island", island: target.story, stage: "lost" });
+      return;
+    }
+    story.note({ on: "first", thing: "raidWon" });
+    if (percent >= 100) story.note({ on: "first", thing: "threeStars" });
+    if (target?.story) {
+      story.note({ on: "island", island: target.story, stage: "won" }, { won: target.story });
+    }
+    if (target?.rescue) {
+      const hero = target.rescue;
+      story.note({ on: "rescue", hero, stage: "won" }, { rescued: hero });
+      story.note({ on: "rescue", hero, stage: "home" });
+    }
+    if (spoils && CRYSTAL_KINDS.some((k) => (spoils.crystals[k] ?? 0) > 0)) {
+      story.note({ on: "first", thing: "crystal" });
+    }
+    if (spoils?.blueprint) story.note({ on: "first", thing: "blueprint" });
+    if (spoils && spoils.chest > 0) story.note({ on: "first", thing: "chest" });
+  }
+
+  /** The first time anyone uses each time power, the Shaman has something to say. */
+  private storyEvents(events: readonly RaidEvent[]): void {
+    for (const event of events) {
+      if (event.type === "timePower") this.story.note({ on: "power", power: event.power });
+    }
+  }
+
+  private storyWaitFrom = 0;
+
+  /** Where the game is, for the story: what can play now. */
+  private storyPlace(): StoryPlace {
+    if (this.phase === "crew") return this.crew.active ? "home" : "away";
+    if (this.phase === "raid") {
+      return this.state?.status === "playing" && !this.paused ? "raid" : "away";
+    }
+    // As a base falls the camera sweeps over it first: the story waits for that.
+    if (this.phase === "ended" && !this.resultShown && !this.coop) {
+      return performance.now() - this.storyWaitFrom > RESULTS_DELAY * 600 ? "raidEnd" : "away";
+    }
+    return "away";
+  }
+
+  /** Where a cutscene's cast stands: on the landing beach at home, or before a fallen base. */
+  private storySet(): StorySet {
+    const front = Math.atan2(BEACH_DIRECTION.y, BEACH_DIRECTION.x);
+    const hq = this.state?.buildings.find((b) => b.type === "headquarters");
+    const { view } = this;
+    if (this.phase !== "crew" && hq && view) {
+      const center = vec(hq.pos.x + BEACH_DIRECTION.x * 9, hq.pos.y + BEACH_DIRECTION.y * 9);
+      return { center, front, ground: (x, y) => view.heightAt(x, y) };
+    }
+    return {
+      center: landingPoints().spawn,
+      front,
+      ground: (x, y) => Math.max(0, homeHeight(x, y)),
+    };
+  }
+
+  /** Firsts that are true of the crew's island and this player as they stand. */
+  private storyStanding(): StoryEvent[] {
+    const { layout } = this.crew.snapshot();
+    const { save } = this;
+    const out: StoryEvent[] = [];
+    const first = (thing: First) => out.push({ on: "first", thing });
+    const built = (type: BuildingType) =>
+      layout.buildings.some((b) => b.type === type && b.level > 0);
+    if (built("radar")) first("radar");
+    if (built("laboratory")) first("laboratory");
+    if (Object.keys(layout.weaponLevels).length > 0) first("gunboatWeapon");
+    if (HERO_KINDS.some((k) => layout.upgrades[k].length > 0)) first("heroUpgrade");
+    if (layout.blueprints.length + layout.researched.length > 0) first("blueprint");
+    for (const tool of ["pickaxe", "chainsaw", "dynamite"] as const) {
+      if (layout.tools[tool] > 0) first(tool);
+    }
+    const STATUES = {
+      nature: "statueNature",
+      ice: "statueIce",
+      fire: "statueFire",
+      dark: "statueDark",
+    } as const;
+    for (const kind of CRYSTAL_KINDS) if (layout.statues[kind].found) first(STATUES[kind]);
+    if (CRYSTAL_KINDS.some((k) => layout.statues[k].restored)) first("statueRestored");
+    if (CRYSTAL_KINDS.every((k) => layout.statues[k].restored)) first("allStatues");
+    if (layout.hourglass.found) out.push({ on: "hourglass", stage: "found" });
+    if (layout.hourglass.mended) out.push({ on: "hourglass", stage: "repaired" });
+    if (CRYSTAL_KINDS.some((k) => save.crystals[k] > 0)) first("crystal");
+    // A new phone starts counting nights at once: the ships are news once there's been a raid.
+    if (save.nightChecked > 0 && save.wins > 0) first("raiderShip");
+    if (save.nightRaid) first(save.nightRaid.report.survived ? "nightRaidHeld" : "nightRaidLost");
+    if (Object.keys(save.world.retaken).length > 0) first("islandRetaken");
+    if (layout.story.rescued.length >= HERO_KINDS.length - 1) first("fullCrew");
+    // A call for help comes in over the radar as soon as it can hear it.
+    const calling = signal(layout.story, hqLevel(layout), this.radarLevel(), layout.relicSeed);
+    if (calling) out.push({ on: "rescue", hero: calling.hero, stage: "signal" });
+    return out;
+  }
+
+  /** The radar's level, or 0 if the crew hasn't one. */
+  private radarLevel(): number {
+    const { layout } = this.crew.snapshot();
+    return Math.max(0, ...layout.buildings.filter((b) => b.type === "radar").map((b) => b.level));
+  }
+
+  /**
+   * The signal being picked up now, and the story's island waiting, if there are any. They're
+   * islands on the map like any other, to pick and raid from there.
+   */
+  private storyTargets(): { rescue: MapIsland | null; island: MapIsland | null } {
+    const { layout } = this.crew.snapshot();
+    const hq = hqLevel(layout);
+    const calling = signal(layout.story, hq, this.radarLevel(), layout.relicSeed);
+    const waiting = islandWaiting(layout.story, hq);
+    // An island's there to raid once the crew's been told about it, and a signal once it's heard.
+    const told = waiting && this.save.storySeen.includes(`${waiting}Appears`);
+    const heard = calling && this.save.storySeen.includes(`${calling.hero}Signal`);
+    return {
+      rescue: calling && heard ? rescueMission(calling.hero, calling.hq, layout.relicSeed) : null,
+      island: waiting && told ? storyMission(waiting, layout.relicSeed) : null,
+    };
+  }
+
+  /**
+   * A cutscene's starting or over. While one's on, the game's buttons go, the picture gets the film
+   * look, and the hour is whichever suits the scene: the sun low over the island in the morning, or
+   * going down over the sea, so there's always long light, a flare and a glitter on the water.
+   */
+  private setFilming(on: boolean, scene?: string): void {
+    this.container.classList.toggle("filming", on);
+    this.stage.setFilming(on);
+    this.stage.sky.holdClock(on ? this.filmHour(scene ?? "") : null);
+    this.stage.sky.setFilming(on);
+    this.stage.refreshShadows();
+  }
+
+  /** The moment today the sun's where a scene wants it, at the player's own place on Earth. */
+  private filmHour(scene: string): number {
+    const evening =
+      /Home$|Arrives$|fullCrew|rested|shamanJoins|shamanLeaves|homecoming|proposal|wedding/.test(
+        scene,
+      );
+    const night = scene === "fullCrew";
+    const want = night ? -2 : evening ? 11 : scene === "prologue" ? 12 : 21;
+    const place = this.skyPlace();
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    let best = midnight.getTime() + 8 * 3600_000;
+    let off = Number.POSITIVE_INFINITY;
+    for (let minutes = 0; minutes < 24 * 60; minutes += 4) {
+      const ms = midnight.getTime() + minutes * 60_000;
+      if (sunRising(ms, place) === evening) continue;
+      const gap = Math.abs(sunPosition(ms, place).elevation - want);
+      if (gap < off) {
+        off = gap;
+        best = ms;
+      }
+    }
+    return best;
+  }
+
+  /** What the crew could do next, for the Shaman's advice. */
+  private nextSteps(): Set<NextStep> {
+    const { layout } = this.crew.snapshot();
+    const { save } = this;
+    const hq = hqLevel(layout);
+    const steps = new Set<NextStep>(["rest"]);
+    const now = Date.now();
+    if (shipDay(nextShip(now, hq).at) === shipDay(now)) steps.add("raidersTonight");
+    const { rescue, island } = this.storyTargets();
+    if (rescue) steps.add("answerSignal");
+    if (island) steps.add(island.difficulty === "Extreme" ? "bossIsland" : "terrorIsland");
+    if (Object.keys(save.world.retaken).length > 0) steps.add("retakeIsland");
+    const night = save.nightRaid;
+    if (night && !night.report.survived && night.ship && !night.avenged) steps.add("strikeBack");
+    if (hq >= PROGRESSION.radar.unlockHq && this.radarLevel() === 0) steps.add("buildRadar");
+    const { hourglass, statues } = layout;
+    if (hourglass.found && !hourglass.mended && hourglass.doneAt === null) {
+      steps.add("repairHourglass");
+    }
+    const crystals = CRYSTAL_KINDS.some((k) => save.crystals[k] > 0);
+    if (hourglass.mended && crystals) steps.add("breakCrystals");
+    if (CRYSTAL_KINDS.some((k) => statues[k].found && !statues[k].restored)) {
+      steps.add("restoreStatue");
+    }
+    if (layout.blueprints.some((b) => !layout.researched.includes(b)))
+      steps.add("researchBlueprint");
+    if (crystals) steps.add("spendCrystals");
+    if (save.world.taken.length < 3) steps.add("exploreMap");
+    return steps;
   }
 
   private rollWin(target: MapIsland, state: RaidState, luck: number): Spoils {

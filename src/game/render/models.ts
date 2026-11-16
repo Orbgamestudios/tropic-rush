@@ -68,6 +68,7 @@ const STRETCH: Partial<Record<BuildingType, readonly [number, number]>> = {
   stoneYard: [1.2, 1],
   scrapBin: [1.2, 1],
   laboratory: [1.2, 1],
+  radar: [1.2, 1],
 };
 
 function stretch(root: THREE.Object3D, across: number, up: number): void {
@@ -406,6 +407,21 @@ function makeBuilding(type: BuildingType): BuildingModel {
       root.add(at(rbox(1.1, 1.7, 0.16, C.enemyRust), -0.9, 0.85, 1.84));
       root.add(at(rbox(1.2, 0.8, 0.14, 0xbff4ff), 0.9, 1.35, 1.84));
       root.add(at(cyl(0.26, 0.32, 1.5, C.darkMetal, 10), 1.4, 3.2, -1.1));
+      break;
+    }
+    case "radar": {
+      // A hut for the set, a lattice mast, and a dish turned to the sea.
+      root.add(at(rbox(3.6, 1.9, 3.2, C.enemyDark), 0, 0.95, 0));
+      root.add(at(rbox(3.9, 0.3, 3.5, C.enemyRust), 0, 2.0, 0));
+      root.add(at(rbox(0.9, 1.4, 0.14, C.enemyRust), -0.8, 0.7, 1.64));
+      root.add(at(rbox(1.1, 0.6, 0.12, 0x9ff4c8), 0.8, 1.2, 1.64));
+      root.add(at(cyl(0.12, 0.2, 3.6, C.metal, 8), 0.6, 3.9, -0.4));
+      for (const y of [2.8, 3.8, 4.8])
+        root.add(at(rbox(0.5, 0.06, 0.5, C.darkMetal), 0.6, y, -0.4));
+      const dish = cyl(1.5, 0.3, 0.5, 0xd8dde3, 20);
+      root.add(at(dish, 0.2, 5.6, -0.1, 0, 0, 0.9));
+      root.add(at(barrel(0.05, 1.1, C.metal, 6), -0.25, 5.95, -0.1, 0, 0, 0.9 - Math.PI / 2));
+      root.add(at(ball(0.16, 0xff5a4a, 8), -0.7, 6.3, -0.1));
       break;
     }
     case "refinery": {

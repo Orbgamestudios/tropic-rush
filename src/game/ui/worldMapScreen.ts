@@ -228,8 +228,12 @@ export class WorldMapScreen {
         const pin = el("button", `map-pin map-${rating}`);
         pin.setAttribute("aria-label", island.name);
         pin.classList.toggle("rival", island.rival !== null);
+        // The story's islands say what they are: a call for help, or the Professor's own.
+        pin.classList.toggle("story", island.story !== undefined);
+        pin.classList.toggle("signal", island.rescue !== undefined);
+        const title = island.rescue ? "Signal" : island.story ? "Professor" : "Raid";
         pin.append(
-          el("span", "map-pin-title", "Raid"),
+          el("span", "map-pin-title", title),
           el("span", "map-pin-rating", `HQ ${island.hq} · ${island.difficulty}`),
         );
         pin.addEventListener("click", () => {
@@ -288,7 +292,11 @@ export class WorldMapScreen {
     this.cardName.textContent = island.rival?.name ?? island.name;
     this.cardKind.textContent = island.rival
       ? `${island.name} · ${archetypeLabel(island)}`
-      : archetypeLabel(island);
+      : island.rescue
+        ? "Someone's calling for help from here"
+        : island.story
+          ? "Professor Terror's own island"
+          : archetypeLabel(island);
     this.cardRating.className = `map-card-rating map-${island.difficulty.toLowerCase()}`;
     this.cardRating.textContent = `${island.difficulty} · Headquarters ${island.hq}`;
     const loot = el("span", "map-fact");

@@ -2,16 +2,24 @@ import { describe, expect, it } from "vitest";
 import { HERO_KINDS } from "../heroes";
 import {
   allLines,
-  CHATTER,
+  deliveryOf,
+  type Ending,
   FIRSTS,
-  isHero,
+  HINTS,
+  type Line,
   linesFor,
+  MOOD_DELIVERY,
+  pace,
   QUESTIONS,
   SCENES,
+  type Scene,
   STORY_ISLANDS,
   scene,
+  shot,
+  spokenSeconds,
   type TimePower,
   together,
+  voiceDirection,
   voiceKey,
 } from ".";
 
@@ -19,11 +27,9 @@ const nobody = new Set<never>();
 
 describe("the story's script", () => {
   it("gives everything its own id, so every recording has its own key", () => {
-    const ids = [...SCENES, ...QUESTIONS, ...CHATTER].map((s) => s.id);
+    const ids = [...SCENES, ...QUESTIONS].map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    const keys = [...SCENES, ...CHATTER].flatMap((s) =>
-      allLines(s.lines).map((_, i) => voiceKey(s.id, i)),
-    );
+    const keys = SCENES.flatMap((s) => allLines(s.lines).map((_, i) => voiceKey(s.id, i)));
     const answers = QUESTIONS.flatMap((q) => allLines(q.answer).map((_, i) => voiceKey(q.id, i)));
     expect(new Set([...keys, ...answers]).size).toBe(keys.length + answers.length);
   });
@@ -34,7 +40,7 @@ describe("the story's script", () => {
       if (s.needs) expect(scene(s.needs), s.id).toBeDefined();
       for (const option of s.choice?.options ?? []) expect(scene(option.next), s.id).toBeDefined();
     }
-    for (const q of [...QUESTIONS, ...CHATTER]) expect(scene(q.after), q.id).toBeDefined();
+    for (const q of QUESTIONS) expect(scene(q.after), q.id).toBeDefined();
   });
 
   it("plays a chosen scene only when the crew chooses it", () => {
@@ -55,8 +61,13 @@ describe("the story's script", () => {
   });
 
   it("keeps every line short enough for a dialogue box", () => {
-    const lines = [...SCENES, ...CHATTER].flatMap((s) => allLines(s.lines));
-    for (const [who, says] of [...lines, ...QUESTIONS.flatMap((q) => allLines(q.answer))]) {
+    const lines = SCENES.flatMap((s) => allLines(s.lines));
+    const hints = HINTS.flatMap((h) => h.sayings.flat());
+    for (const [who, says] of [
+      ...lines,
+      ...hints,
+      ...QUESTIONS.flatMap((q) => allLines(q.answer)),
+    ]) {
       expect(says.length, `${who}: ${says}`).toBeLessThanOrEqual(100);
     }
   });
@@ -73,13 +84,19 @@ describe("the story's script", () => {
     }
   });
 
-  it("has something for every story island, as it appears, is landed on and is won", () => {
+  it("has something for every story island, as it appears, is landed on and is won, whichever way it ended", () => {
     for (const { id } of STORY_ISLANDS) {
       for (const stage of ["appears", "landing", "won"]) {
-        const found = SCENES.filter(
-          (s) => s.when.on === "island" && s.when.island === id && s.when.stage === stage,
-        );
-        expect(found.length, `${id} ${stage}`).toBe(1);
+        for (const ending of ["revived", "rested"]) {
+          const found = SCENES.filter(
+            (s) =>
+              s.when.on === "island" &&
+              s.when.island === id &&
+              s.when.stage === stage &&
+              (s.only === undefined || s.only === ending),
+          );
+          expect(found.length, `${id} ${stage} ${ending}`).toBe(1);
+        }
       }
     }
     const levels = STORY_ISLANDS.map((i) => i.hq);
@@ -98,17 +115,103 @@ describe("the story's script", () => {
     }
   });
 
-  it("lets Captain Brack's islands come only after Terror is brought back", () => {
-    for (const island of STORY_ISLANDS.filter((i) => i.id.startsWith("brack"))) {
-      expect("only" in island && island.only).toBe("revived");
+  it("gives the crew Theo to play if they bring him back, or else the Shaman", () => {
+    const ending = (s: Scene): Ending | undefined => {
+      if (s.only) return s.only;
+      if (s.when.on === "chosen") {
+        const id = s.id;
+        return SCENES.flatMap((c) => c.choice?.options ?? []).find((o) => o.next === id)?.ending;
+      }
+      const before = s.when.on === "after" ? scene(s.when.scene) : undefined;
+      return before && ending(before);
+    };
+    const joining = SCENES.filter((s) => s.joins).map((s) => [s.joins, ending(s)]);
+    expect(joining.sort()).toEqual([
+      ["shaman", "rested"],
+      ["theo", "revived"],
+    ]);
+    const leaving = SCENES.filter((s) => s.leaves).map((s) => [s.leaves, ending(s)]);
+    expect(leaving).toEqual([["shaman", "revived"]]);
+  });
+});
+
+describe("cutscenes", () => {
+  const cutscenes = SCENES.filter((s) => s.cutscene);
+
+  it("show what the camera sees, and say how every line is delivered", () => {
+    expect(cutscenes.length).toBeGreaterThan(30);
+    for (const s of cutscenes) {
+      expect(
+        s.lines.some((b) => "shot" in b),
+        s.id,
+      ).toBe(true);
+      for (const line of allLines(s.lines))
+        expect(deliveryOf(line).how, `${s.id}: ${line[1]}`).toBeTruthy();
     }
   });
 
-  it("gives every chatter a hero to talk to", () => {
-    for (const c of CHATTER) {
-      expect(
-        allLines(c.lines).some(([who]) => isHero(who) || who === "theo" || who === "clara"),
-      ).toBe(true);
+  it("are paced in order, with every shot and line in its place", () => {
+    for (const s of cutscenes) {
+      const cues = pace(s.lines, nobody, s.cast);
+      for (let i = 1; i < cues.length; i++) {
+        const before = cues[i - 1];
+        const cue = cues[i];
+        expect(before && cue && cue.at >= before.at + before.seconds, s.id).toBe(true);
+      }
+    }
+  });
+});
+
+describe("delivery", () => {
+  const whispered: Line = ["shaman", "Take care of the island, and each other.", "whisper"];
+  const shouted: Line = ["shaman", "Take care of the island, and each other.", "shout"];
+
+  it("speaks a whisper slower than a shout", () => {
+    expect(spokenSeconds(whispered)).toBeGreaterThan(spokenSeconds(shouted) * 1.5);
+  });
+
+  it("leaves a longer silence before a sad or whispered line than an angry one", () => {
+    expect(MOOD_DELIVERY.whisper.gap).toBeGreaterThan(MOOD_DELIVERY.angry.gap * 3);
+    expect(MOOD_DELIVERY.sad.gap).toBeGreaterThan(MOOD_DELIVERY.shout.gap * 3);
+  });
+
+  it("waits longer for someone answering than for the same person carrying on", () => {
+    const one = (who: Line[0]): Line => [who, "Yes."];
+    const answered = pace([one("rifleman"), one("shaman")], nobody, [], () => 1);
+    const carriedOn = pace([one("shaman"), one("shaman")], nobody, [], () => 1);
+    expect(answered[1]?.at).toBeGreaterThan(carriedOn[1]?.at ?? 0);
+  });
+
+  it("holds a shot for its length, and a line's own pauses before and after it", () => {
+    const cues = pace(
+      [
+        shot("The sea.", 3),
+        ["shaman", "Hm.", { how: "thinking", before: 1, after: 2 }],
+        ["shaman", "Yes."],
+      ],
+      nobody,
+      [],
+      () => 1,
+    );
+    expect(cues.map((c) => c.at)).toEqual([0, 4, 7 + 0.5 * 0.6]);
+  });
+
+  it("tells the voice who's speaking, how they feel and anything the line asks", () => {
+    const direction = voiceDirection(["shaman", "Hm.", { mood: "whisper", how: "dying" }]);
+    expect(direction).toContain("old island elder");
+    expect(direction).toContain(MOOD_DELIVERY.whisper.voice);
+    expect(direction).toContain("dying");
+  });
+});
+
+describe("the Shaman's hints", () => {
+  it("has a few ways of saying each, in his voice, with something for when nothing's pressing", () => {
+    const steps = HINTS.map((h) => h.step);
+    expect(new Set(steps).size).toBe(steps.length);
+    expect(steps.at(-1)).toBe("rest");
+    for (const h of HINTS) {
+      expect(h.sayings.length, h.step).toBeGreaterThanOrEqual(2);
+      for (const [who] of h.sayings.flat()) expect(who).toBe("shaman");
     }
   });
 });

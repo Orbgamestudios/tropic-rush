@@ -225,6 +225,14 @@ export const PROGRESSION: Record<BuildingType, Progression> = {
     counts: [[1, 1]],
     cost: { gold: 300, timber: 200, stone: 100 },
   },
+  // Picks up the signals of heroes trapped on islands, one more for each level (docs/STORY.md).
+  radar: {
+    unlockHq: 3,
+    maxLevel: 6,
+    early: 6,
+    counts: [[3, 1]],
+    cost: { gold: 600, timber: 400, stone: 200 },
+  },
   // The raid's old shared storehouse: not built on crew islands.
   storehouse: { unlockHq: MAX_HQ_LEVEL + 1, maxLevel: 1, early: 1, counts: [], cost: {} },
 };
@@ -307,6 +315,7 @@ const scale = (cost: Partial<Purse>, factor: number): Partial<Purse> => {
 /** What the next level of a building adds, in a few words. */
 export function nextLevelGain(type: BuildingType, level: number): string {
   if (type === "headquarters") return "more of everything";
+  if (type === "radar") return "hears one more signal";
   if (PRODUCERS[type]) {
     const gain = productionPerHour(level + 1) - productionPerHour(level);
     return `+${formatAmount(gain)} an hour`;

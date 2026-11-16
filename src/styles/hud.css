@@ -184,7 +184,7 @@
   margin: 5px 0 0 -8px;
   padding: 4px 10px 6px 18px;
   min-width: 168px;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   border-left: 0;
   border-radius: 0 8px 8px 0;
   background:
@@ -291,7 +291,7 @@
   transform: translateX(-50%);
   padding: 5px 14px 7px;
   border-radius: 8px;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   background: linear-gradient(180deg, rgb(19 34 59 / 0.92), rgb(7 14 27 / 0.92));
   box-shadow:
     0 0 0 1.5px var(--ink),
@@ -535,7 +535,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   border-radius: 8px;
   padding: 3px 0 0;
   background: linear-gradient(180deg, #2c3b58, #141f35);
@@ -595,7 +595,7 @@
   display: grid;
   place-items: center;
   background: var(--brass-grad);
-  border: 2px solid var(--ink);
+  border: 1.5px solid var(--ink);
   font-family: var(--display);
   font-size: 11px;
   color: var(--ink);
@@ -837,7 +837,7 @@
   height: 8px;
   border-radius: 5px;
   background: #3a2626;
-  border: 2px solid var(--ink);
+  border: 1.5px solid var(--ink);
   overflow: hidden;
   display: none;
   box-shadow: 0 2px 4px rgb(0 0 0 / 0.4);
@@ -945,7 +945,7 @@
   left: 0;
   top: 0;
   padding: 3px 9px 4px;
-  border: 2px solid var(--ink);
+  border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: linear-gradient(180deg, #8fd0ff, #2f86ee);
   font-family: var(--display);

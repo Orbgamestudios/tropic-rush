@@ -9,7 +9,10 @@ Read `CLAUDE.md` first, then `docs/DESIGN.md` before any gameplay or art work.
 
 - **iPhone feedback:** nothing below has been tried on a real iPhone. Ask about game speed, sound,
   haptics, the notch, the location card, how dark nights are, and battery.
-- **Hero unlock spacing:** a hero joins every three HQ levels: Heavy 3, Medic 6, Grenadier 9,
+- **The story's first pass (2026-11-13):** it all plays, with stand-in figures, no voices and
+  cutscenes told partly in words. Ask how it reads on a phone, whether a tap should move a first
+  viewing on (it does now), and about Theo's and the Shaman's kits before building them.
+- **Hero unlock spacing (replaced 2026-11-13: heroes are rescued now, see `docs/DESIGN.md`):** a hero joined every three HQ levels: Heavy 3, Medic 6, Grenadier 9,
   Bazooka 12, Engineer 15, Tank 18. The owner asked for "every few", and the spacing was Claude's
   choice. It's a stand-in until the game has a story arc.
 - **Building sizes:** the owner said "mines and refinery 4x4". The refinery is still a Proposed
@@ -43,6 +46,13 @@ behind the tree screen, the picture starts a little softer, and there are fewer 
 
 ## Not checked yet
 
+- The boat, the landing, the way home and the scene skies (2026-11-16) were only seen in a desktop
+  browser, much of it with the pane hidden and running slowly; nothing on a phone. The new sky dome
+  costs about twice the old one's 0.3 ms on a desktop graphics card. With `?testhooks`,
+  `setOut()`, `readyUp()`, `boat()`, `win()` and `filmAt(seconds)` walk through it.
+- The Captain aboard (full model, ~490,000 triangles, plus five detailed heroes) hasn't been timed
+  on a phone. `public/models/anims/` and
+  `new work/` are git-ignored until the ActorCore licence is confirmed for a public repo.
 - Battery use hasn't been measured on a phone. One frame costs about 125,000 triangles in a raid
   and 430,000 on the crew island, whose forest is the heavy part.
 - Team-up, rival raids, account switching and shared upgrades were run on `npx wrangler dev` with
@@ -104,6 +114,11 @@ hosted `Upsampler/trellis-2` Space, which asks for only 45 seconds of GPU a run.
 after a run or so a day. Signed in on huggingface.co, the Space page's own `zerogpu-headers` message
 gives headers that count against the owner's free allowance: that's how the five latest were made.
 Never buy anything there.
+
+Since 2026-11-14 the script also finds every finger and the thumb on the model and gives each
+three bones (`scripts/rig-extras.mjs`); a hero with `hair` in its entry gets chains of spring bones
+down whatever hair hangs free, but only use that on hair that's its own piece: on a fused shell it
+tears (see `docs/CHARACTERS.md`). Only the Medic has been re-rigged with fingers so far.
 
 Save the output in `models-wip/`, which is never committed, then add the joints to
 `scripts/rig-hero.mjs` and run `node scripts/rig-hero.mjs <hero>`. Joints are shares of the model's

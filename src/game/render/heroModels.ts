@@ -5,9 +5,12 @@
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
+import { FacePaint } from "./facePaint";
+import { FaceShapes } from "./faceShapes";
 import {
   AT_EASE,
   BOTTLE_POSES,
+  EMPTY_POSES,
   GRENADE_POSES,
   HeroAnimator,
   type HeroPoses,
@@ -18,8 +21,9 @@ import {
   WRENCH_POSES,
 } from "./heroAnimator";
 import { COLORS as C, material } from "./palette";
-import { riggedBody } from "./riggedHeroes";
+import { riggedBody, type StoryBody, storyBody, storyFace, TWIST_STEPS } from "./riggedHeroes";
 import { at, ball, barrel, capsule, cone, cyl, flatten, mesh, rbox } from "./shapes";
+import { LONG_HAIR, SHORT_HAIR, SpringChains } from "./springBones";
 
 type Pair = [THREE.Object3D, THREE.Object3D];
 
@@ -31,17 +35,33 @@ export interface HeroArm {
   hand: THREE.Object3D;
   upperLength: number;
   foreLength: number;
-  /** On a skinned model the arm is bones, and these are the ways they lie at rest. */
-  bones: { upperRest: THREE.Vector3; foreRest: THREE.Vector3; handRest: THREE.Vector3 } | null;
+  /**
+   * On a skinned model the arm is bones: the ways they lie at rest, the axis the elbow bends
+   * about, and the bones that carry the upper arm's roll down to the elbow and the forearm's down
+   * to the wrist, a share more each (see addTwistBones).
+   */
+  bones: {
+    upperRest: THREE.Vector3;
+    foreRest: THREE.Vector3;
+    handRest: THREE.Vector3;
+    hingeRest: THREE.Vector3;
+    upperTwist: THREE.Object3D[];
+    foreTwist: THREE.Object3D[];
+  } | null;
   /** The bone that closes the hand round what it's holding, on a skinned model. */
   fingers: THREE.Object3D | null;
   /** From the wrist to the middle of the palm. */
   palm: number;
+  /** Each finger's three bones, root first, on a model that has them. */
+  digits?: Record<Digit, THREE.Object3D[]> | null;
   /** 1 on the hero's right, -1 on their left. */
   side: number;
 }
 
 /** The joints heroAnimator.ts moves. */
+export type Digit = "thumb" | "index" | "middle" | "ring" | "pinky";
+export const DIGITS: readonly Digit[] = ["thumb", "index", "middle", "ring", "pinky"];
+
 export interface HeroRig {
   outer: THREE.Object3D;
   /** Hips and legs, which turn towards the way he's going. */
@@ -64,6 +84,28 @@ export interface HeroRig {
   lift: number;
   /** How much further out to hold things, for arms longer than the poses expect. */
   stretch: number;
+  /** The jaw, on a model whose mouth can open: it turns down about its hinge. */
+  jaw?: THREE.Object3D | null;
+  /** On a block figure, the dark of an open mouth, which grows as it opens. */
+  mouth?: THREE.Object3D | null;
+  /** Hair that swings, on a model that has chains of bones down it. */
+  springs?: SpringChains | null;
+  /** Eyes that turn to look, and lids that close over them: on a model built in pieces. */
+  eyes?: readonly THREE.Object3D[] | null;
+  lids?: readonly THREE.Object3D[] | null;
+  /** How far a lid turns to close, in radians, about its own sideways axis. */
+  blink?: number;
+  /** Lower lids, which come up a little to meet the upper ones, and how far. */
+  lowLids?: readonly THREE.Object3D[] | null;
+  lowBlink?: number;
+  /** Brows, left then right, each turning from its inner end. */
+  brows?: readonly THREE.Object3D[] | null;
+  /** A face that changes shape: lids, jaw, lips and brows, on a character built from scratch. */
+  face?: FaceShapes | null;
+  /** A face that's painted: eyes and a mouth repainted as they blink, look and speak. */
+  paint?: FacePaint | null;
+  /** Things worn or held that can come off: a hat, a toothpick. Each hangs on a bone. */
+  props?: Record<string, THREE.Object3D>;
 }
 
 export interface HeroModel {
@@ -200,6 +242,11 @@ function face(
   const nose = new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 10, 8), material(skin));
   nose.scale.set(1, 0.9, 1.1);
   head.add(at(nose, r * 1.0, -r * 0.1, 0));
+  // The dark of an open mouth, shut to nothing until they speak.
+  const open = new THREE.Mesh(new THREE.SphereGeometry(r * 0.15, 12, 8), material(0x2a0f0c));
+  open.name = "mouth";
+  open.scale.set(0.35, 0.02, 1.15);
+  head.add(at(open, r * 0.9, -r * 0.3, 0));
   const mouthStyle = options.mouth ?? "smile";
   if (mouthStyle === "line") {
     head.add(at(rbox(r * 0.06, r * 0.05, r * 0.36, 0x7a3a2e), r * 0.93, -r * 0.38, 0));
@@ -252,8 +299,12 @@ interface Built {
 }
 
 /** The shared body: boots, legs, belt, torso, neck, head with a face, arms reaching the grip. */
-function person(kind: Human, grip: THREE.Vector3, faceOptions: Parameters<typeof face>[3]): Built {
-  const look = LOOKS[kind];
+function person(
+  kind: Human | Look,
+  grip: THREE.Vector3,
+  faceOptions: Parameters<typeof face>[3],
+): Built {
+  const look = typeof kind === "string" ? LOOKS[kind] : kind;
   const k = look.bulk;
   const outer = new THREE.Group();
   const lower = new THREE.Group();
@@ -779,6 +830,113 @@ const POSED_ARM = 0.7;
 const HAND_SIZE = 0.78;
 
 /** A TRELLIS model with a skeleton in place of the block figure, moved by the same animator. */
+/** One of the story's people as a rigged body built in pieces, or null if it hasn't arrived. */
+export function storyRigged(who: StoryBody): HeroModel | null {
+  const model = storyBody(who);
+  if (!model) return null;
+  const { scene, bone } = model;
+  const upper = bone("upper");
+  const spine = upper.position.y;
+  const hands = new THREE.Group();
+  upper.add(at(hands, 0, -spine, 0));
+  const arm = (suffix: "R" | "L", side: number): HeroArm => {
+    const shoulderBone = bone(`arm${suffix}`);
+    const foreBone = bone(`fore${suffix}`);
+    const handBone = bone(`hand${suffix}`);
+    const shoulder = shoulderBone.position.clone();
+    shoulder.y += spine;
+    return {
+      shoulder,
+      upper: shoulderBone,
+      fore: foreBone,
+      hand: handBone,
+      upperLength: foreBone.position.length(),
+      foreLength: handBone.position.length(),
+      fingers: bone(`tips${suffix}`),
+      palm: bone(`tips${suffix}`).position.length(),
+      side,
+      digits: digitsOf(scene, suffix),
+      bones: {
+        upperRest: foreBone.position.clone().normalize(),
+        foreRest: handBone.position.clone().normalize(),
+        handRest: bone(`tips${suffix}`).position.clone().normalize(),
+        hingeRest: new THREE.Vector3()
+          .crossVectors(foreBone.position, new THREE.Vector3(1, 0, 0))
+          .normalize(),
+        upperTwist: twistsOf(scene, `arm${suffix}`),
+        foreTwist: twistsOf(scene, `fore${suffix}`),
+      },
+    };
+  };
+  const right = arm("R", 1);
+  const left = arm("L", -1);
+  const find = (name: string) => scene.getObjectByName(name) ?? null;
+  const pair = (a: string, b: string) => {
+    const l = find(a);
+    const r = find(b);
+    return l && r ? [l, r] : null;
+  };
+  const lid = find("lidL");
+  const notes = storyFace(who);
+  const springs = SpringChains.from(scene, bone("head"));
+  if (springs) springs.feel = who === "shaman" ? LONG_HAIR : SHORT_HAIR;
+  const props: Record<string, THREE.Object3D> = {};
+  for (const name of ["hat", "toothpick"]) {
+    const p = find(name);
+    if (p) props[name] = p;
+  }
+  const rig: HeroRig = {
+    outer: bone("root"),
+    lower: bone("lower"),
+    upper,
+    spine,
+    head: bone("head"),
+    legs: [bone("legR"), bone("legL")],
+    knees: [bone("kneeR"), bone("kneeL")],
+    feet: [bone("footR"), bone("footL")],
+    rifle: hands,
+    muzzle: new THREE.Object3D(),
+    right,
+    left,
+    poses: EMPTY_POSES,
+    lift: right.shoulder.y - POSED_SHOULDER,
+    stretch: (right.upperLength + right.foreLength) / POSED_ARM,
+    jaw: find("jaw"),
+    springs,
+    eyes: pair("eyeL", "eyeR"),
+    lids: pair("lidL", "lidR"),
+    blink: typeof lid?.userData.close === "number" ? lid.userData.close : 1.2,
+    lowLids: pair("lidlowL", "lidlowR"),
+    lowBlink: (find("lidlowL")?.userData.close as number | undefined) ?? 0.35,
+    brows: pair("browL", "browR"),
+    face: FaceShapes.from(scene),
+    paint: notes ? FacePaint.on(scene, notes) : null,
+    props,
+  };
+  hands.add(rig.muzzle);
+  new HeroAnimator(rig).update(0, AT_EASE);
+  const root = new THREE.Group();
+  root.add(scene);
+  return { root, body: root, legs: null, rig, height: 2.45 };
+}
+
+function twistsOf(scene: THREE.Object3D, name: string): THREE.Object3D[] {
+  return Array.from({ length: TWIST_STEPS }, (_, i) =>
+    scene.getObjectByName(`${name}Twist${i + 1}`),
+  ).filter((b): b is THREE.Object3D => Boolean(b));
+}
+
+/** A hand's fingers, if the model was rigged with them. */
+function digitsOf(scene: THREE.Object3D, side: "R" | "L"): Record<Digit, THREE.Object3D[]> | null {
+  const out = {} as Record<Digit, THREE.Object3D[]>;
+  for (const digit of DIGITS) {
+    const bones = [1, 2, 3].map((k) => scene.getObjectByName(`${digit}${side}${k}`));
+    if (bones.some((b) => !b)) return null;
+    out[digit] = bones as THREE.Object3D[];
+  }
+  return out;
+}
+
 function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
   const model = riggedBody(kind, detailed);
   if (!model) return null;
@@ -789,6 +947,8 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
   upper.add(body);
   const { gun, poses, muzzle } = WEAPONS[kind]();
   body.add(gun);
+  const twists = (name: string) =>
+    Array.from({ length: TWIST_STEPS }, (_, i) => bone(`${name}Twist${i + 1}`));
   const arm = (suffix: "R" | "L", side: number): HeroArm => {
     const shoulderBone = bone(`arm${suffix}`);
     const foreBone = bone(`fore${suffix}`);
@@ -806,10 +966,17 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
       fingers: bone(`tips${suffix}`),
       palm: bone(`tips${suffix}`).position.length() * HAND_SIZE,
       side,
+      digits: digitsOf(scene, suffix),
       bones: {
         upperRest: foreBone.position.clone().normalize(),
         foreRest: handBone.position.clone().normalize(),
         handRest: bone(`tips${suffix}`).position.clone().normalize(),
+        // Arms out to the side, an elbow bends to bring the hand forward.
+        hingeRest: new THREE.Vector3()
+          .crossVectors(foreBone.position, new THREE.Vector3(1, 0, 0))
+          .normalize(),
+        upperTwist: twists(`arm${suffix}`),
+        foreTwist: twists(`fore${suffix}`),
       },
     };
   };
@@ -831,6 +998,8 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
     poses,
     lift: right.shoulder.y - POSED_SHOULDER,
     stretch: (right.upperLength + right.foreLength) / POSED_ARM,
+    jaw: scene.getObjectByName("jaw") ?? null,
+    springs: SpringChains.from(scene, bone("head")),
   };
   gun.add(rig.muzzle);
   new HeroAnimator(rig).update(0, AT_EASE);
@@ -897,6 +1066,171 @@ function tank(detailed: boolean): HeroModel {
   turret.add(driver);
   body.add(turret);
   return { root, body, legs: null, rig: null, height: 2.9 };
+}
+
+/** The story's people who aren't heroes. */
+export type StoryFigure = "shaman" | "terror" | "youngTerror" | "theo" | "clara";
+
+const BLACK_SUIT: Look = {
+  shirt: 0x1d1f24,
+  pants: 0x2a2d33,
+  skin: 0xf0cdb4,
+  bulk: 0.95,
+  bareArms: false,
+  boots: 0x17181b,
+};
+
+/** A white shirt front and a black tie under an open coat. */
+function shirtAndTie(built: Built): void {
+  built.body.add(at(rbox(0.06, 0.5, 0.22, WHITE), 0.21, 1.2, 0));
+  built.body.add(at(rbox(0.03, 0.4, 0.07, INK), 0.245, 1.2, 0));
+  built.body.add(at(rbox(0.04, 0.07, 0.1, INK), 0.245, 1.43, 0));
+}
+
+/**
+ * Stand-ins for the story's people, until they have models of their own: the same jointed block
+ * figures as the heroes' placeholders, dressed so each can be told at a glance, with empty hands.
+ */
+export function storyFigure(who: StoryFigure, detailed = false): HeroModel {
+  // Up close, the real model built in pieces once it's here; the block figure until then, and
+  // wherever it's only seen from afar, as he is strolling round the island.
+  const real = detailed && who === "shaman" ? storyRigged("shaman") : null;
+  if (real) return real;
+  let built: Built;
+  switch (who) {
+    case "shaman": {
+      const skin = 0x8a5a3c;
+      built = person(
+        { shirt: skin, pants: 0x9a4a2e, skin, bulk: 0.95, bareArms: true, boots: skin },
+        v(0, 1, 0),
+        { brows: "kind", mouth: "smile", brow: 0xd8d8d8 },
+      );
+      const { head, headRadius: r, body } = built;
+      // A mohawk, paint across the cheeks and brow, and gold in his ears.
+      for (let i = 0; i < 5; i++) {
+        const spike = cone(r * 0.2, r * 0.55, 0x2a2420, 6);
+        const a = -0.9 + i * 0.5;
+        head.add(at(spike, Math.sin(-a) * r * 0.95, Math.cos(a) * r * 1.05, 0, 0, 0, a));
+      }
+      for (const side of [1, -1]) {
+        head.add(at(rbox(r * 0.05, r * 0.07, r * 0.3, WHITE), r * 0.86, -r * 0.14, side * r * 0.5));
+        head.add(
+          at(rbox(r * 0.05, r * 0.07, r * 0.3, 0xc8402e), r * 0.84, -r * 0.3, side * r * 0.5),
+        );
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(r * 0.13, r * 0.03, 5, 10),
+          material(C.gold),
+        );
+        head.add(at(ring, -r * 0.05, -r * 0.3, side * r * 1.02));
+      }
+      head.add(at(rbox(r * 0.05, r * 0.07, r * 0.9, WHITE), r * 0.82, r * 0.62, 0));
+      // A necklace of shark teeth, with a red time shard hanging from it.
+      for (let i = -3; i <= 3; i++) {
+        const tooth = cone(0.025, 0.08, WHITE, 5);
+        body.add(at(tooth, 0.24, 1.36 - Math.abs(i) * 0.012, i * 0.07, 0, 0, Math.PI));
+      }
+      const shard = cone(0.05, 0.14, 0xff4a4a, 6);
+      shard.material = material(0xff5a5a, { emissive: 0x7a1010 });
+      body.add(at(shard, 0.26, 1.26, 0, 0, 0, Math.PI));
+      break;
+    }
+    case "terror": {
+      built = person(BLACK_SUIT, v(0, 1, 0), { brows: "stern", mouth: "line", brow: 0xe8e8e8 });
+      const { head, headRadius: r } = built;
+      // Bald on top, long white hair down the sides, and small black half-moon glasses.
+      for (const side of [1, -1]) {
+        const hair = capsule(r * 0.3, r * 1.1, 0xf2f2f2);
+        head.add(at(hair, -r * 0.3, -r * 0.35, side * r * 0.86));
+        const lens = new THREE.Mesh(
+          new THREE.TorusGeometry(r * 0.2, r * 0.045, 5, 12, Math.PI),
+          material(INK),
+        );
+        head.add(at(lens, r * 0.98, r * 0.02, side * r * 0.36, 0, Math.PI / 2, Math.PI));
+      }
+      head.add(at(capsule(r * 0.28, r * 1.2, 0xf2f2f2), -r * 0.8, -r * 0.2, 0, Math.PI / 2, 0, 0));
+      shirtAndTie(built);
+      break;
+    }
+    case "youngTerror":
+    case "theo": {
+      const suit =
+        who === "theo" ? { ...BLACK_SUIT, shirt: 0x3d4654, pants: 0x4a5261 } : BLACK_SUIT;
+      built = person(suit, v(0, 1, 0), {
+        brows: who === "theo" ? "kind" : "stern",
+        mouth: who === "theo" ? "smile" : "line",
+        brow: 0x1c1c20,
+      });
+      const { head, headRadius: r } = built;
+      // The same long hair, full and black, and a little stubble.
+      const hair = ball(r * 1.07, C.hairBlack, 18);
+      hair.scale.set(1, 0.95, 1.04);
+      head.add(at(hair, -r * 0.16, r * 0.14, 0));
+      for (const side of [1, -1]) {
+        head.add(at(capsule(r * 0.3, r * 1.0, C.hairBlack), -r * 0.3, -r * 0.3, side * r * 0.86));
+      }
+      const stubble = ball(r * 0.8, 0x6a5a52, 12);
+      stubble.scale.set(0.62, 0.5, 1.02);
+      head.add(at(stubble, r * 0.42, -r * 0.52, 0));
+      shirtAndTie(built);
+      break;
+    }
+    case "clara": {
+      built = person(
+        {
+          shirt: 0xf4ecd8,
+          pants: 0x6f9a7a,
+          skin: 0xf6cfb0,
+          bulk: 0.88,
+          bareArms: false,
+          boots: 0x6a4a34,
+        },
+        v(0, 1, 0),
+        { brows: "kind", mouth: "smile", brow: 0x6a4028 },
+      );
+      const { head, headRadius: r, lower } = built;
+      // Brown hair pinned up under a straw sun hat, and a long green skirt.
+      const hair = ball(r * 1.06, C.hairBrown, 18);
+      hair.scale.set(1, 0.95, 1.04);
+      head.add(at(hair, -r * 0.14, r * 0.12, 0));
+      head.add(at(ball(r * 0.42, C.hairBrown, 12), -r * 0.95, r * 0.1, 0));
+      head.add(at(cyl(r * 1.7, r * 1.75, r * 0.07, 0xe6cf8a, 20), -r * 0.05, r * 0.62, 0));
+      head.add(at(cyl(r * 0.8, r * 0.95, r * 0.5, 0xe6cf8a, 16), -r * 0.05, r * 0.85, 0));
+      head.add(at(cyl(r * 0.97, r * 0.97, r * 0.12, 0x6f9a7a, 16), -r * 0.05, r * 0.7, 0));
+      lower.add(at(cyl(0.3, 0.46, 0.62, 0x6f9a7a, 14), 0, 0.5, 0));
+      break;
+    }
+  }
+  const root = new THREE.Group();
+  root.add(built.outer);
+  const [right, left] = built.arms;
+  if (!right || !left) throw new Error("A figure needs two arms");
+  const hands = new THREE.Group();
+  built.body.add(hands);
+  // Bare hands, not a soldier's gloves.
+  for (const arm of built.arms) {
+    ((arm.hand as THREE.Mesh).material as THREE.Material) = material(built.look.skin);
+  }
+  const rig: HeroRig = {
+    outer: built.outer,
+    lower: built.lower,
+    upper: built.upper,
+    spine: built.spine,
+    head: built.head,
+    legs: built.legs,
+    knees: built.knees,
+    feet: built.feet,
+    rifle: hands,
+    muzzle: new THREE.Object3D(),
+    right,
+    left,
+    poses: EMPTY_POSES,
+    lift: 0,
+    stretch: 1,
+    mouth: built.head.getObjectByName("mouth") ?? null,
+  };
+  hands.add(rig.muzzle);
+  new HeroAnimator(rig).update(0, AT_EASE);
+  return { root, body: built.outer, legs: built.legs, rig, height: 2.35 };
 }
 
 export function heroModel(kind: HeroKind, detailed = false): HeroModel {

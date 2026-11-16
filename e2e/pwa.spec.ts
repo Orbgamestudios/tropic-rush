@@ -1,6 +1,42 @@
 import { expect, type Page, test } from "@playwright/test";
 import { preview } from "vite";
 
+// The story's opening takes the screen on a new phone, so tests that aren't about it turn it off.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("tropic-rush:story-off", "1"));
+});
+
+test("opens with the story, then talks over the first raid", async ({ page }) => {
+  // The opening draws at one or two frames a second in a software-drawn test browser.
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => localStorage.removeItem("tropic-rush:story-off"));
+  await page.goto("/?testhooks");
+  await hooksReady(page);
+  // The prologue is a cutscene: black bars, and Sergeant Steele's first line as a subtitle.
+  await expect(page.locator(".story.film")).toBeVisible({ timeout: 60_000 });
+  // A test browser draws too slowly to wait a shot out, so a tap moves it on to his line.
+  await expect(async () => {
+    await page.mouse.click(300, 150);
+    await expect(page.locator(".story-sub-name")).toHaveText("Sgt. Steele", { timeout: 1500 });
+  }).toPass({ timeout: 60_000 });
+  // A tap moves it on a line; enough of them see it out.
+  await expect(async () => {
+    await page.mouse.click(300, 150);
+    await expect(page.locator(".story")).toBeHidden({ timeout: 250 });
+  }).toPass({ timeout: 60_000 });
+  type Hooks = { tropicRush: { raidAs(kind: string): void; save(): { storySeen: string[] } } };
+  expect(
+    await page.evaluate(() => (window as unknown as Hooks).tropicRush.save().storySeen),
+  ).toEqual(["prologue"]);
+  await page.evaluate(() => (window as unknown as Hooks).tropicRush.raidAs("rifleman"));
+  await expect(page.locator(".story.bark .story-name")).toHaveText("Sgt. Steele", {
+    timeout: 60_000,
+  });
+  expect(errors).toEqual([]);
+});
+
 test("boots without errors and fills the screen", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -42,8 +78,8 @@ test("gets through to a raid with block figures when no models load", async ({ p
   await openMap(page);
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
-  await page.locator(".heroes-start").click();
-  await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
+  await page.locator(".boat-ready").click({ timeout: 90_000 });
+  await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 90_000 });
   expect(errors).toEqual([]);
 });
 
@@ -61,10 +97,11 @@ test("picks a hero and starts a raid", async ({ page }) => {
   await page.getByRole("button", { name: "Raid", exact: true }).click();
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
-  await page.locator(".heroes-start").click();
+  await page.locator(".boat-ready").click({ timeout: 90_000 });
 
   const timer = page.locator(".hud-objective-time");
-  await expect(timer).toBeVisible();
+  // After the run in and the landing.
+  await expect(timer).toBeVisible({ timeout: 90_000 });
   await expect(timer).toHaveText(/^4:\d\d$/, { timeout: 40_000 });
   await expect(page.locator(".hud-objective-pct")).toHaveText("0%");
   // The hero's health bar floats over them.
@@ -90,7 +127,7 @@ test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
   await openMap(page);
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();
-  await page.locator(".heroes-start").click();
+  await page.locator(".boat-ready").click({ timeout: 90_000 });
   const boat = page.locator(".hud-boat");
   await expect(boat).toBeVisible({ timeout: 60_000 });
   await boat.click();
@@ -123,7 +160,7 @@ test("scouts an island, then attacks it", async ({ page }) => {
   await expect(page.locator(".scout-tile").first()).toBeVisible({ timeout: 60_000 });
 
   await page.locator(".scout-attack").click();
-  await page.locator(".heroes-start").click();
+  await page.locator(".boat-ready").click({ timeout: 90_000 });
   await expect(page.locator(".hud-objective-time")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".scout-tile").first()).toBeHidden();
   expect(errors).toEqual([]);

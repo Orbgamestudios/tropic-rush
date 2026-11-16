@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { withDetail } from "./detail";
 import { type MaterialOptions, material } from "./palette";
 
 export function mesh(
@@ -138,7 +139,7 @@ let vertexColorMaterial: THREE.MeshLambertMaterial | null = null;
 
 /** The one material shared by every merged, vertex-colored prop. */
 export function vertexColored(): THREE.MeshLambertMaterial {
-  vertexColorMaterial ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+  vertexColorMaterial ??= withDetail(new THREE.MeshLambertMaterial({ vertexColors: true }));
   return vertexColorMaterial;
 }
 

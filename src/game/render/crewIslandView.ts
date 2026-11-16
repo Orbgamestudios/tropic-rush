@@ -23,7 +23,6 @@ import {
 } from "../logic/crewIsland";
 import type { CrystalKind } from "../logic/crystals";
 import { formatDuration, PRODUCERS, producerHold } from "../logic/economy";
-import type { HeroKind } from "../logic/heroes";
 import { hourglassKnown } from "../logic/hourglass";
 import { HOME_SHAPE, homeHeight, landingPoints, supplyDock } from "../logic/island";
 import { statueBefore } from "../logic/statues";
@@ -34,7 +33,7 @@ import { kitVersion, lampSpots, levelSize, stageFor } from "./buildingKit";
 import { type CloudView, homeClouds } from "./clouds";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
-import { HomeHeroes } from "./homeHeroes";
+import { HomeHeroes, type Islander } from "./homeHeroes";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
 import { Lookout } from "./lookout";
 import { buildingModel, GunboatScenery } from "./models";
@@ -824,17 +823,17 @@ export class CrewIslandView {
   }
 
   /** Keeps the unlocked heroes strolling round the base. */
-  syncHeroes(kinds: readonly HeroKind[], layout: CrewLayout): void {
+  syncHeroes(kinds: readonly Islander[], layout: CrewLayout): void {
     this.heroes.sync(kinds, layout);
   }
 
   /** The hero under a canvas point, if any. */
-  heroAt(x: number, y: number): HeroKind | null {
+  heroAt(x: number, y: number): Islander | null {
     return this.heroes.heroAt(x, y);
   }
 
   /** A hero tapped on the island waves back. */
-  waveHero(kind: HeroKind): void {
+  waveHero(kind: Islander): void {
     this.heroes.wave(kind);
   }
 

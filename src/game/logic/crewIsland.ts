@@ -39,7 +39,8 @@ import {
   WEAPON_LEVEL_HQ,
   weaponUpGold,
 } from "./gunboat";
-import { HERO_KINDS, type HeroKind } from "./heroes";
+import { HERO_KINDS, type HeroKind, STARTER_HEROES } from "./heroes";
+import { heroesAt } from "./heroProgress";
 import { heroTree, lockedBy, noUpgrades, trimUpgrades } from "./heroTrees";
 import {
   HOURGLASS_COST,
@@ -64,6 +65,7 @@ import {
   statueBuffs,
   statueSpots,
 } from "./statues";
+import { advance, newStory, readStory, type StoryChange, type StoryState } from "./story/progress";
 import type { Vec2 } from "./vec";
 
 /** One tile is 2 m square. */
@@ -169,6 +171,7 @@ export const FOOTPRINTS: Record<BuildingType, { w: number; h: number }> = {
   scrapBin: { w: 3, h: 3 },
   refinery: { w: 4, h: 4 },
   laboratory: { w: 3, h: 3 },
+  radar: { w: 3, h: 3 },
 };
 
 export interface PlacedBuilding {
@@ -214,6 +217,8 @@ export interface CrewLayout {
   statues: Statues;
   /** The ruin where crystals break into time shards. */
   hourglass: HourglassState;
+  /** Where the crew is in the story: everyone in it sees the same one. */
+  story: StoryState;
   /** Decides which patches hide the statues, so every crew's island hides them differently. */
   relicSeed: number;
   /** The last night's raid taken off the books, so several phones can't count it twice. */
@@ -283,6 +288,8 @@ export type LayoutOp =
   | { kind: "restore"; statue: CrystalKind }
   /** Starts mending the Hourglass, once it's found. */
   | { kind: "mendHourglass" }
+  /** The story moves on: scenes set off, an island of it won, a hero brought home, the ending. */
+  | { kind: "story"; change: StoryChange }
   /** The island's gold for a crystal trade; the crystals are whoever's trading's own. */
   | { kind: "crystalSwap" }
   /** Last night's raid: what the raiders took, and what holding them off paid (older phones: gold). */
@@ -1335,6 +1342,10 @@ export function tryOp(
         },
       };
     }
+    case "story": {
+      if (typeof op.change !== "object" || op.change === null) return { error: "Nothing to tell" };
+      return { layout: { ...layout, story: advance(layout.story, op.change) } };
+    }
     case "mendHourglass": {
       const blocker = mendBlocker(layout);
       if (blocker) return { error: blocker };
@@ -1480,6 +1491,7 @@ export function starterLayout(now = Date.now()): CrewLayout {
     upgrades: noUpgrades(),
     statues: newStatues(),
     hourglass: newHourglass(),
+    story: newStory(),
     relicSeed: Math.floor(now / 1000) % 2 ** 31,
     lastNight: 0,
     raidLog: [],
@@ -1567,6 +1579,7 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     upgrades?: Partial<Record<HeroKind, unknown>>;
     statues?: unknown;
     hourglass?: unknown;
+    story?: unknown;
     relicSeed?: unknown;
     lastNight?: unknown;
     raidLog?: unknown;
@@ -1716,6 +1729,10 @@ export function sanitizeLayout(value: unknown, now = Date.now()): CrewLayout {
     upgrades: heroes.upgrades,
     statues: readStatues(data?.statues),
     hourglass: readHourglass(data?.hourglass),
+    // An island from before the story keeps the heroes its headquarters had already brought it.
+    story: data?.story
+      ? readStory(data.story)
+      : { ...newStory(), rescued: heroesAt(hq).filter((k) => !STARTER_HEROES.includes(k)) },
     relicSeed,
     lastNight,
     raidLog: readRaidLog(data?.raidLog),

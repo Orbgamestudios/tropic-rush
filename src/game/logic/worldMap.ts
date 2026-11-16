@@ -11,10 +11,12 @@ import type { PlacedBuilding } from "./crewIsland";
 import { type CrystalKind, islandCrystal } from "./crystals";
 import { type Difficulty, difficultyOf, hqInBand, rollBand } from "./difficulty";
 import { allowedCount, MAX_HQ_LEVEL, type Purse } from "./economy";
+import type { HeroKind } from "./heroes";
 import { type RaidReward, raidReward } from "./heroProgress";
 import { ARCHETYPES, type Archetype, archetypeFor } from "./islandShapes";
 import { type Puzzle, puzzleDefenses, puzzleFor } from "./puzzles";
 import { createRng } from "./rng";
+import { STORY_ISLANDS, type StoryIsland } from "./story/script";
 
 /** Another crew's base, standing on a player island of the map. */
 export interface Rival {
@@ -62,6 +64,10 @@ export interface MapIsland {
   tribute: number;
   /** A raider ship's own base, struck back at: what its raid took, won back along with it. */
   revenge?: Partial<Purse>;
+  /** One of the story's islands: Professor Terror's own. */
+  story?: StoryIsland;
+  /** The island an unknown signal's coming from, and the hero who's sending it. */
+  rescue?: HeroKind;
 }
 
 /** What a crew has done to the map. */
@@ -423,6 +429,107 @@ export function raiderHome(
     tribute: 0,
     revenge: stolen,
   };
+}
+
+/** The story's islands that end with Terror getting away: his great works, and the hardest. */
+const BOSS_ISLANDS: readonly StoryIsland[] = ["creation", "chaos", "time", "eternal"];
+
+const STORY_NAMES: Record<StoryIsland, string> = {
+  terror1: "The Professor's outpost",
+  terror2: "The Professor's foundry",
+  creation: "The Works of Creation",
+  terror3: "The Professor's proving ground",
+  terror4: "The Professor's armory",
+  chaos: "The Engine of Chaos",
+  terror5: "The Professor's clockworks",
+  terror6: "The Professor's last wall",
+  time: "The Tower of Time",
+  eternal: "The Fire Mountain",
+};
+
+export function isBossIsland(id: StoryIsland): boolean {
+  return BOSS_ISLANDS.includes(id);
+}
+
+/**
+ * The islands on the map, with the story's on it too: a signal's island and the Professor's next
+ * one each get a place of their own in open water under clear sky, the same place every time the
+ * map's opened. They can be picked, scouted and raided like any island, but never held.
+ */
+export function withMissions(
+  islands: readonly MapIsland[],
+  world: WorldProgress,
+  missions: { rescue: MapIsland | null; island: MapIsland | null },
+): MapIsland[] {
+  const all = [...islands];
+  for (const mission of [missions.rescue, missions.island]) {
+    if (!mission) continue;
+    const { x, y } = shipSpot(world, all, mission.seed ^ 0x51ed);
+    const { column, row } = regionAt(x, y);
+    all.push({ ...mission, x, y, region: regionKey(column, row) });
+  }
+  return all;
+}
+
+/** An island the story sends the crew to: it can't be held, and isn't in the world's own seed. */
+function mission(
+  id: string,
+  name: string,
+  seed: number,
+  hq: number,
+  difficulty: Difficulty,
+): MapIsland {
+  const rated = Math.min(Math.max(1, hq), MAX_HQ_LEVEL);
+  const tier = islandTier(rated);
+  return {
+    id,
+    name,
+    x: 0,
+    y: 0,
+    size: 1,
+    region: "",
+    seed,
+    hq: rated,
+    tier,
+    difficulty,
+    defenses: DEFENSES.reduce((sum, t) => sum + allowedCount(t, rated), 0),
+    reward: raidReward(true, 100, tier),
+    taken: false,
+    retaken: false,
+    archetype: archetypeFor(seed, rated),
+    puzzle: null,
+    crystal: islandCrystal(seed),
+    rival: null,
+    tribute: 0,
+  };
+}
+
+/**
+ * One of Professor Terror's islands, as a raid: built a few headquarters levels above the level it
+ * turns up at, and further above for the three great works and the fire mountain. A first pass:
+ * its base is laid out like any raider base of that level, not by hand yet.
+ */
+export function storyMission(id: StoryIsland, crewSeed: number): MapIsland {
+  const at = STORY_ISLANDS.find((i) => i.id === id)?.hq ?? 1;
+  const boss = isBossIsland(id);
+  const seed =
+    (crewSeed ^ Math.imul(STORY_ISLANDS.findIndex((i) => i.id === id) + 1, 0x9e3779b1)) >>> 0;
+  return {
+    ...mission(
+      `story:${id}`,
+      STORY_NAMES[id],
+      seed,
+      at + (boss ? 4 : 2),
+      boss ? "Extreme" : "Hard",
+    ),
+    story: id,
+  };
+}
+
+/** The island an unknown signal comes from: win there and whoever's sending it comes home. */
+export function rescueMission(hero: HeroKind, hq: number, crewSeed: number): MapIsland {
+  const seed = (crewSeed ^ Math.imul(hq + 11, 0x85ebca6b)) >>> 0;
+  return { ...mission(`rescue:${hero}`, "Unknown signal", seed, hq, "Medium"), rescue: hero };
 }
 
 /** The short name of an island's kind, for its card. */

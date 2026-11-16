@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { HOME_SHAPE, type IslandShape, lavaWidth, shoreRadius } from "../logic/island";
 import { smoothstep, type Vec2 } from "../logic/vec";
+import { withDetail } from "./detail";
 import { bladeTexture, swathes } from "./meadow";
 import { NOISE_CELLS, noiseTexture } from "./noiseTexture";
 import { COLORS } from "./palette";
@@ -551,6 +552,7 @@ function buildGround(map: SceneryMap, options: TerrainOptions): THREE.Mesh {
   };
   material.customProgramCacheKey = () =>
     `tropic-ground-${shade ? "shaded" : "plain"}-${sand ? "sanded" : "bare"}`;
+  withDetail(material);
   const ground = new THREE.Mesh(geometry, material);
   ground.receiveShadow = true;
   ground.renderOrder = GROUND_ORDER;
@@ -580,11 +582,43 @@ function shoreTexture(shape: IslandShape): THREE.DataTexture {
   return texture;
 }
 
+/**
+ * The swell: three long waves crossing each other, and the slope of the water under them. Both
+ * shaders use it, the one to lift the sea and the other to light it, so they always agree.
+ */
+const SWELL = /* glsl */ `
+  const float SWELL_HEIGHT = 0.26;
+  vec3 swell(vec2 p, float t) {
+    vec2 a = vec2(0.11, 0.07);
+    vec2 b = vec2(-0.05, 0.16);
+    vec2 c = vec2(0.21, -0.13);
+    float pa = dot(p, a) + t * 0.9;
+    float pb = dot(p, b) + t * 1.15 + 1.7;
+    float pc = dot(p, c) + t * 1.6 + 4.0;
+    float height = sin(pa) * 0.5 + sin(pb) * 0.3 + sin(pc) * 0.2;
+    vec2 slope = a * cos(pa) * 0.5 + b * cos(pb) * 0.3 + c * cos(pc) * 0.2;
+    return vec3(slope * SWELL_HEIGHT, height * SWELL_HEIGHT);
+  }
+  // How far out to sea a spot is, in meters, from the map baked for this island.
+  float seaward(sampler2D shore, vec2 p) {
+    vec2 uv = (p + ${MAP_HALF.toFixed(1)}) / ${(2 * MAP_HALF).toFixed(1)};
+    float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+    return mix(64.0, -(texture2D(shore, uv).r * 72.0 - 64.0), inside);
+  }
+`;
+
 const WATER_VERTEX = /* glsl */ `
   #include <fog_pars_vertex>
+  uniform float uTime;
+  uniform sampler2D uShore;
   varying vec3 vWorld;
+  ${SWELL}
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
+    // The open sea rises and falls. It flattens out towards the beach, where the boat sits and
+    // the heroes wade, so nothing that stands in the shallows is ever left floating or sunk.
+    float open = smoothstep(4.0, 30.0, seaward(uShore, world.xz));
+    world.y += swell(world.xz, uTime).z * open;
     vWorld = world.xyz;
     vec4 mvPosition = viewMatrix * world;
     gl_Position = projectionMatrix * mvPosition;
@@ -603,18 +637,19 @@ const WATER_FRAGMENT = /* glsl */ `
   uniform vec3 uUnlit;
   uniform vec3 uGlint;
   uniform vec3 uHorizon;
+  uniform vec3 uZenith;
+  uniform vec3 uSunAt;
   uniform float uIce;
   varying vec3 vWorld;
+  ${SWELL}
 
   uniform sampler2D uNoise;
   float noise(vec2 p) { return texture2D(uNoise, p / ${NOISE_CELLS.toFixed(1)}).r; }
 
   void main() {
     vec2 p = vWorld.xz;
-    vec2 uv = (p + ${MAP_HALF.toFixed(1)}) / ${(2 * MAP_HALF).toFixed(1)};
-    float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
     // Distance out to sea in meters (0 at the shore).
-    float dist = mix(64.0, -(texture2D(uShore, uv).r * 72.0 - 64.0), inside);
+    float dist = seaward(uShore, p);
 
     float t = uTime;
     vec3 color = mix(uShallow, uMid, smoothstep(0.0, 14.0, dist));
@@ -623,11 +658,20 @@ const WATER_FRAGMENT = /* glsl */ `
     // Ripples: a normal from two drifting noise layers, with glints where it catches the sun.
     float n1 = noise(p * 0.5 + vec2(t * 0.32, t * 0.18));
     float n2 = noise(p * 1.25 - vec2(t * 0.22, -t * 0.37));
-    vec3 normal = normalize(vec3((n1 - 0.5) * 0.4 + (n2 - 0.5) * 0.22, 1.0,
-                                 (n2 - 0.5) * 0.4 - (n1 - 0.5) * 0.22));
+    // ... tipped over by the swell under them, out where there is one.
+    float open = smoothstep(4.0, 30.0, dist);
+    vec3 rise = swell(p, t) * open;
+    vec3 normal = normalize(vec3((n1 - 0.5) * 0.4 + (n2 - 0.5) * 0.22 - rise.x * 1.6, 1.0,
+                                 (n2 - 0.5) * 0.4 - (n1 - 0.5) * 0.22 - rise.y * 1.6));
     vec3 view = normalize(cameraPosition - vWorld);
-    vec3 halfDir = normalize(uSunDir + view);
-    vec3 glint = uGlint * pow(max(dot(normal, halfDir), 0.0), 160.0) * 1.1;
+    // The sun on the water: a wide soft sheen, and inside it a hard glitter that breaks up with
+    // the ripples into a road of light towards wherever the sun really is. It's far brighter
+    // than the picture can show, which is what lets it bloom.
+    vec3 halfDir = normalize(uSunAt + view);
+    float facing = max(dot(normal, halfDir), 0.0);
+    float sparkle = smoothstep(0.35, 0.9, noise(p * 3.1 + vec2(t * 0.6, -t * 0.45)));
+    vec3 glint = uGlint * (pow(facing, 60.0) * 0.22 + pow(facing, 420.0) * (1.5 + sparkle * 5.5));
+    glint *= smoothstep(-0.02, 0.12, uSunAt.y);
     // Caustic shimmer over the sand in the shallows.
     float caustic = pow(1.0 - abs(noise(p * 0.9 + t * 0.4) - noise(p * 0.9 - t * 0.3 + 7.0)), 6.0);
     color += vec3(0.85, 1.0, 0.95) * caustic * 0.22 * (1.0 - smoothstep(0.0, 10.0, dist));
@@ -649,9 +693,15 @@ const WATER_FRAGMENT = /* glsl */ `
     float ice = clamp(shelf + floes, 0.0, 1.0) * uIce;
     vec3 iceColor = mix(vec3(0.83, 0.92, 0.97), vec3(0.97, 0.99, 1.0), noise(p * 2.2));
     color = mix(color, iceColor, ice);
-    // Lit by the hour, reflecting more of the sky the flatter you look across it.
-    float edgeOn = 1.0 - max(view.y, 0.0);
-    color = mix(color * uUnlit, uHorizon, edgeOn * edgeOn * edgeOn * 0.5) + glint;
+    // The tops of the swell let more light through, and its troughs are darker.
+    color *= 1.0 + rise.z * 0.5;
+    // Lit by the hour, reflecting more of the sky the flatter you look across it: the horizon's
+    // color where the water tips away, the color overhead where it tips towards you.
+    float edgeOn = 1.0 - max(dot(view, normal), 0.0);
+    float mirror = 0.04 + 0.96 * edgeOn * edgeOn * edgeOn * edgeOn;
+    vec3 seen = reflect(-view, normal);
+    vec3 sky = mix(uHorizon, uZenith, clamp(seen.y * 1.8, 0.0, 1.0));
+    color = mix(color * uUnlit, sky, mirror * 0.72) + glint;
 
     // Clear over the sand, more solid in deep water.
     float alpha = mix(0.38, 0.95, smoothstep(0.0, 18.0, dist));
@@ -662,6 +712,28 @@ const WATER_FRAGMENT = /* glsl */ `
     #include <fog_fragment>
   }
 `;
+
+let sea: THREE.BufferGeometry | null = null;
+
+/**
+ * The sea's surface: a sheet with enough points in it to rise and fall, packed close round the
+ * island where the waves are seen up close and spread wide towards the horizon, where one triangle
+ * covers what would be thousands. Every island's sea shares the one sheet.
+ */
+function seaGeometry(): THREE.BufferGeometry {
+  if (sea) return sea;
+  const across = 132;
+  const half = 450;
+  const geometry = new THREE.PlaneGeometry(2, 2, across, across);
+  geometry.rotateX(-Math.PI / 2);
+  const at = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const spread = (u: number) => Math.sign(u) * Math.abs(u) ** 2.1 * half;
+  for (let i = 0; i < at.count; i++) at.setXYZ(i, spread(at.getX(i)), 0, spread(at.getZ(i)));
+  geometry.computeBoundingSphere();
+  if (geometry.boundingSphere) geometry.boundingSphere.radius += 2;
+  sea = geometry;
+  return geometry;
+}
 
 export interface TerrainView {
   root: THREE.Group;
@@ -710,8 +782,9 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
   material.uniforms.uUnlit = SKY.unlit;
   material.uniforms.uGlint = SKY.glint;
   material.uniforms.uHorizon = SKY.horizon;
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), material);
-  water.rotation.x = -Math.PI / 2;
+  material.uniforms.uZenith = SKY.zenith;
+  material.uniforms.uSunAt = SKY.sun;
+  const water = new THREE.Mesh(seaGeometry(), material);
   water.renderOrder = 1;
   root.add(water);
 
@@ -725,7 +798,8 @@ export function buildTerrain(map: SceneryMap, options: TerrainOptions = {}): Ter
       shore.dispose();
       root.traverse((o) => {
         if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
+          // The sea's sheet is every island's: it stays.
+          if (o.geometry !== sea) o.geometry.dispose();
           (o.material as THREE.Material).dispose();
         }
       });

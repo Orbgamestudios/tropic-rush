@@ -1,5 +1,19 @@
 /* Fonts, colors and the page's layers. */
 
+/*
+ * The game's typeface, for everything (the owner's choice, 2026-11-13). It has one weight, so it's
+ * declared for all of them: otherwise the browser smears a bold of its own out of it. The two
+ * fonts after it only fill in the few marks it hasn't got (dashes, bullets, the times sign).
+ */
+@font-face {
+  font-family: "Randoshape";
+  src:
+    url("/fonts/Randoshape.woff") format("woff"),
+    url("/fonts/Randoshape.ttf") format("truetype");
+  font-weight: 100 1000;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Lilita One";
   src: url("/fonts/LilitaOne-Regular.ttf") format("truetype");
@@ -45,8 +59,8 @@
     0 calc(100% - var(--cut, 9px)),
     0 var(--cut, 9px)
   );
-  --display: "Lilita One", "Trebuchet MS", system-ui, sans-serif;
-  --body: "Nunito", "Trebuchet MS", system-ui, -apple-system, sans-serif;
+  --display: "Randoshape", "Lilita One", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Randoshape", "Nunito", "Trebuchet MS", system-ui, -apple-system, sans-serif;
   --slate: #2a3446;
   --slate-deep: #182030;
   --steel-hi: #dfe7f1;
@@ -64,15 +78,32 @@
   --orange: #f08a1c;
   --gold: #ffd84a;
   --red: #e5503a;
-  /* An outline for display lettering, plus a chunky drop. */
+  /* An outline for display lettering, and a drop under it: fine enough to read as a line. */
   --outline:
-    2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 2px 0 var(--ink), 0 -2px 0 var(--ink),
-    1.5px 1.5px 0 var(--ink), -1.5px 1.5px 0 var(--ink), 1.5px -1.5px 0 var(--ink),
-    -1.5px -1.5px 0 var(--ink), 0 3.5px 0 var(--ink);
-  --outline-thin:
     1.4px 0 0 var(--ink), -1.4px 0 0 var(--ink), 0 1.4px 0 var(--ink), 0 -1.4px 0 var(--ink),
     1px 1px 0 var(--ink), -1px 1px 0 var(--ink), 1px -1px 0 var(--ink), -1px -1px 0 var(--ink),
-    0 2.4px 0 var(--ink);
+    0 2.6px 0 var(--ink);
+  --outline-thin:
+    1px 0 0 var(--ink), -1px 0 0 var(--ink), 0 1px 0 var(--ink), 0 -1px 0 var(--ink),
+    0.7px 0.7px 0 var(--ink), -0.7px 0.7px 0 var(--ink), 0.7px -0.7px 0 var(--ink),
+    -0.7px -0.7px 0 var(--ink), 0 1.7px 0 var(--ink);
+}
+
+/*
+ * A phone held upright: the game is turned to lie along it, so it's landscape whichever way the
+ * phone thinks it is (screenFit.ts). What was the top of the screen, with its notch, is now the
+ * game's left, and so on round.
+ */
+html.turned {
+  --safe-left: env(safe-area-inset-top, 0px);
+  --safe-top: env(safe-area-inset-right, 0px);
+  --safe-right: env(safe-area-inset-bottom, 0px);
+  --safe-bottom: env(safe-area-inset-left, 0px);
+}
+
+html.turned #game {
+  transform-origin: 0 0;
+  transform: rotate(90deg) translateY(-100%);
 }
 
 html,
@@ -95,13 +126,11 @@ body {
 /* The 3D view runs right to the edges of the screen, round the notch and the home indicator. */
 #game {
   position: fixed;
-  inset: 0;
-  /*
-   * A home-screen app can start a strip short of the screen in landscape on iPhones, until it's
-   * turned, leaving the page's background showing along the bottom. The large viewport is the
-   * whole screen, so the game always reaches it.
-   */
-  min-height: 100lvh;
+  left: 0;
+  top: 0;
+  /* screenFit.ts gives it its real size in pixels: what the page is told can be a strip short. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   /* How far the safe area is from the edge of the screen, in the UI layers' own scaled pixels. */
   --bleed-top: calc(var(--safe-top) / var(--ui-scale, 1));
@@ -213,37 +242,13 @@ img {
   z-index: 30;
 }
 
-/* ---------- Turn-your-phone hint (touch screens held upright) ---------- */
-
-.rotate {
-  position: absolute;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  text-align: center;
-  font-family: var(--display);
-  font-size: 28px;
-  text-shadow: var(--outline);
-  color: white;
-  background: radial-gradient(circle at 50% 40%, #3a4a66, #121a26);
-  z-index: 50;
-}
-
-@media (orientation: portrait) and (pointer: coarse) {
-  .rotate {
-    display: flex;
-  }
-}
-
 .update-banner {
   position: fixed;
   left: 50%;
   bottom: calc(env(safe-area-inset-bottom) + 16px);
   transform: translateX(-50%);
   padding: 12px 20px;
-  border: 2.5px solid var(--ink);
+  border: 2px solid var(--ink);
   border-radius: 999px;
   background: linear-gradient(#ffe794, #e9a91d);
   color: var(--ink);

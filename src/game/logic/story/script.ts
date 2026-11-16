@@ -12,8 +12,7 @@ export type Speaker =
   | "youngTerror"
   /** The same man, brought back at the end, if the crew chooses to. */
   | "theo"
-  | "clara"
-  | "brack";
+  | "clara";
 
 export interface SpeakerInfo {
   /** As the dialogue box shows it. */
@@ -61,16 +60,17 @@ export const SPEAKERS: Record<Speaker, SpeakerInfo> = {
   shaman: {
     name: "The Shaman",
     voice:
-      "An old island elder: deep, slow and warm, always half smiling. Tells everything like a story.",
+      "An old island elder: warm, slow and gravelly, always half smiling. Tells everything like a story.",
   },
   terror: {
     name: "Professor Terror",
     voice:
-      "An old scientist: precise, cultured and cold, never hurried. Crackly over his loudspeakers.",
+      "An old scientist with a crisp, posh South Dublin accent, theatrical and mercurial: a mocking sing-song one moment, flat and deadly quiet the next. Crackly over the radio.",
   },
   youngTerror: {
     name: "Professor Terror",
-    voice: "The same man fifty years younger: a richer, warmer voice, but every bit as cold.",
+    voice:
+      "The same man fifty years younger, the same strong Dublin bite: hyper-articulate, sneering, leaping from giggling glee to a smooth, quiet, lethal whisper. A natural male pitch, never shrill.",
   },
   theo: {
     name: "Theo",
@@ -81,11 +81,6 @@ export const SPEAKERS: Record<Speaker, SpeakerInfo> = {
     name: "Clara",
     voice:
       "A young botanist from fifty years ago: bright, curious and kind, a little old-fashioned.",
-  },
-  brack: {
-    name: "Captain Brack",
-    voice:
-      "A raider captain: gravelly, loud and greedy, laughs at his own jokes. Always over a radio.",
   },
 };
 
@@ -99,11 +94,48 @@ export type Mood =
   | "surprised"
   | "shout"
   | "whisper"
-  /** Heard over a radio or a loudspeaker. */
+  /** Heard over a radio. */
   | "radio";
 
+/**
+ * How a line's delivered, beyond its mood. `how` is for whoever voices it: the feeling, the pace,
+ * the pitch and loudness, which word takes the stress, where the breaths and catches go. `before`
+ * and `after` are seconds a cutscene holds in silence before and after it, on top of its usual
+ * pacing (see delivery.ts).
+ */
+export interface Delivery {
+  mood?: Mood;
+  how?: string;
+  before?: number;
+  after?: number;
+}
+
 /** One line: who says it, what they say, and how. */
-export type Line = readonly [Speaker, string] | readonly [Speaker, string, Mood];
+export type Line = readonly [Speaker, string] | readonly [Speaker, string, Mood | Delivery];
+
+export function moodOf(line: Line): Mood | undefined {
+  const how = line[2];
+  return typeof how === "object" ? how.mood : how;
+}
+
+export function deliveryOf(line: Line): Delivery {
+  const how = line[2];
+  return typeof how === "object" ? how : { mood: how };
+}
+
+/**
+ * In a cutscene: what the camera shows and what happens, held for this many seconds, and what the
+ * music or sound does from there, if it changes.
+ */
+export interface Shot {
+  shot: string;
+  seconds: number;
+  sound?: string;
+}
+
+export function shot(what: string, seconds: number, sound?: string): Shot {
+  return sound ? { shot: what, seconds, sound } : { shot: what, seconds };
+}
 
 /**
  * Lines that only make sense together, such as a question and its answer: all of them are left
@@ -113,7 +145,7 @@ export interface Together {
   together: readonly Line[];
 }
 
-export type Beat = Line | Together;
+export type Beat = Line | Together | Shot;
 
 export function together(...lines: Line[]): Together {
   return { together: lines };
@@ -124,27 +156,26 @@ export type TimePower = "rewind" | "fastForward" | "pause" | "record" | "slow" |
 /** How the story ends, which the crew chooses at the finale. */
 export type Ending = "revived" | "rested";
 
+/** Who the ending lets the crew play: Theo if they bring him back, the Shaman if they don't. */
+export type StoryHero = "theo" | "shaman";
+
 /**
  * The islands the story puts on the map, in order, and the headquarters level each turns up at: a
- * first pass. Captain Brack's turn up only if the crew brings Terror back, straight away for a crew
- * that's past their level by then.
+ * first pass, stretched so the story runs to headquarters 42 (the owner's call, 2026-11-08). Each
+ * turns up once the one before it is won and the headquarters is at its level.
  */
 export const STORY_ISLANDS = [
   { id: "terror1", hq: 6 },
-  { id: "terror2", hq: 9 },
-  { id: "creation", hq: 12 },
-  { id: "terror3", hq: 15 },
-  { id: "terror4", hq: 18 },
-  { id: "chaos", hq: 21 },
-  { id: "terror5", hq: 24 },
-  { id: "terror6", hq: 27 },
-  { id: "time", hq: 30 },
-  { id: "eternal", hq: 33 },
-  { id: "brack1", hq: 35, only: "revived" },
-  { id: "brack2", hq: 38, only: "revived" },
-  { id: "brack3", hq: 41, only: "revived" },
-  { id: "brackFort", hq: 45, only: "revived" },
-] as const satisfies readonly { id: string; hq: number; only?: Ending }[];
+  { id: "terror2", hq: 10 },
+  { id: "creation", hq: 14 },
+  { id: "terror3", hq: 18 },
+  { id: "terror4", hq: 22 },
+  { id: "chaos", hq: 26 },
+  { id: "terror5", hq: 30 },
+  { id: "terror6", hq: 34 },
+  { id: "time", hq: 38 },
+  { id: "eternal", hq: 42 },
+] as const satisfies readonly { id: string; hq: number }[];
 
 export type StoryIsland = (typeof STORY_ISLANDS)[number]["id"];
 
@@ -217,11 +248,18 @@ export interface Scene {
   /** Played as a cutscene in the engine rather than in dialogue boxes over the game. */
   cutscene?: true;
   lines: readonly Beat[];
+  /** Joins the crew as a hero to play once it's played. */
+  joins?: StoryHero;
+  /** Leaves the crew's island once it's played. */
+  leaves?: "shaman";
   /** The crew chooses at the end, and the scene for what they chose plays next. */
   choice?: { ask: string; options: readonly { say: string; next: string; ending?: Ending }[] };
 }
 
-/** Something to ask the Shaman about, once a scene has told the crew of it. */
+/**
+ * Something to ask the Shaman about, once a scene has told the crew of it, for as long as he's on
+ * the crew's island.
+ */
 export interface Question {
   id: string;
   ask: string;
@@ -229,20 +267,12 @@ export interface Question {
   answer: readonly Beat[];
 }
 
-/**
- * A few words between the Shaman and a hero as he wanders the island: any time after a scene, once
- * the crew has every hero in it, and only after one ending if it says so.
- */
-export interface Chatter {
-  id: string;
-  after: string;
-  only?: Ending;
-  lines: readonly Beat[];
-}
-
 /** Every line, in order, whoever's there to hear it. */
 export function allLines(beats: readonly Beat[]): Line[] {
-  return beats.flatMap((beat) => ("together" in beat ? beat.together : [beat]));
+  return beats.flatMap((beat) => {
+    if ("shot" in beat) return [];
+    return "together" in beat ? beat.together : [beat];
+  });
 }
 
 /**
@@ -262,10 +292,20 @@ export function linesFor(
   rescued: ReadonlySet<HeroKind>,
   cast: readonly HeroKind[] = [],
 ): Line[] {
+  return heard(beats, rescued, cast).flatMap((beat) => ("shot" in beat ? [] : [beat]));
+}
+
+/** The lines the crew hears, as `linesFor`, with a cutscene's shots kept in their places. */
+export function heard(
+  beats: readonly Beat[],
+  rescued: ReadonlySet<HeroKind>,
+  cast: readonly HeroKind[] = [],
+): (Line | Shot)[] {
   const here = ([who]: Line) =>
     !isHero(who) || who === "rifleman" || rescued.has(who) || cast.includes(who);
-  return beats.flatMap((beat) => {
-    if ("together" in beat) return beat.together.every(here) ? beat.together : [];
+  return beats.flatMap((beat): (Line | Shot)[] => {
+    if ("shot" in beat) return [beat];
+    if ("together" in beat) return beat.together.every(here) ? [...beat.together] : [];
     return here(beat) ? [beat] : [];
   });
 }
@@ -280,5 +320,4 @@ const NON_HEROES: Record<Exclude<Speaker, HeroKind>, true> = {
   youngTerror: true,
   theo: true,
   clara: true,
-  brack: true,
 };

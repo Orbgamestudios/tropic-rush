@@ -17,7 +17,7 @@
 // are listed for one side and mirrored. Every bone rests with no rotation, so the animator can turn
 // it about the hero's own axes whatever the model looks like.
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { meshopt } from "@gltf-transform/functions";
@@ -27,8 +27,44 @@ import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 import { Api } from "xatlasjs/dist/node/api.mjs";
 import createXAtlasModule from "xatlasjs/dist/node/xatlas.js";
+import {
+  fingerWeights,
+  hairBones,
+  hairChains,
+  hairWeights,
+  measureHand,
+  vertexColors,
+} from "./rig-extras.mjs";
 
 const HEROES = {
+  // The Captain (docs/CHARACTERS.md): generated standing with his arms down and out, so every
+  // finger came out its own. scripts/blender/join_head.py has given him a head made on its own,
+  // and noted where his eyes and mouth are: `face` is those notes. His face is left as it was
+  // made; the game paints his eyes and mouth on patches that lie on it, which this cuts to fit.
+  captain: {
+    source: "models-wip/captain-prepped.glb",
+    out: "public/models/captain",
+    face: "models-wip/captain-face.json",
+    copies: ["hi"],
+    // He was drawn with his palms facing forward.
+    palmsForward: true,
+    fingersApart: true,
+    // His picture is two side by side, the figure's and the head's: twice as wide.
+    texture: 2048,
+    joints: {
+      hip: [0.058, 0.33, 0.0],
+      knee: [0.065, 0.196, 0.0],
+      ankle: [0.075, 0.06, -0.02],
+      toe: [0.085, 0.02, 0.1],
+      waist: [0, 0.447, 0.0],
+      neck: [0, 0.693, 0.0],
+      top: [0, 1, 0.0],
+      shoulder: [0.135, 0.636, 0.0],
+      elbow: [0.219, 0.539, 0.01],
+      wrist: [0.304, 0.452, 0.03],
+      fingers: [0.39, 0.345, 0.05],
+    },
+  },
   rifleman: {
     source: "models-wip/rifleman-tpose-raw.glb",
     out: "public/models/rifleman",
@@ -764,6 +800,12 @@ function placed(mesh) {
   return out;
 }
 
+/** The hero's own meters back to [sideways, up, forward] as shares of height. */
+function share(p) {
+  const middle = hero.joints.ankle[2];
+  return [-p[2] / HERO_HEIGHT, p[1] / HERO_HEIGHT, p[0] / HERO_HEIGHT + middle];
+}
+
 /** [sideways, up, forward] as shares of height, to the hero's own meters. */
 function spot(joint, side) {
   const [across, up, forward] = joint;
@@ -852,6 +894,109 @@ function skeleton(joints) {
   return bones;
 }
 
+/**
+ * Turns the hands of a model that was made with its palms forward the way the animator expects
+ * every hero's: palms down along the arm, thumbs forward. Only the forearm turns, a quarter turn
+ * about its own length that comes on from below the elbow to the wrist, as a forearm's own does,
+ * and the hand goes with it. The arms stay as they were made: raising them tears a generated
+ * model at the armpits and the sleeves, where its one skin is folded close on itself.
+ */
+function palmsDown(mesh, joints) {
+  const rough = skeleton(joints);
+  const count = rough.length;
+  const shares = smoothWeights(mesh, skinWeights(mesh, rough), count);
+  const index = (n) => rough.findIndex((b) => b.name === n);
+  const v = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+  const moves = new Map();
+  for (const [suffix, side] of [
+    ["R", -1],
+    ["L", 1],
+  ]) {
+    const elbow = v(spot(joints.elbow, side));
+    const wrist = v(spot(joints.wrist, side));
+    const along = wrist.clone().sub(elbow);
+    const long = along.length();
+    along.normalize();
+    const turned = (p, much) =>
+      p
+        .clone()
+        .sub(elbow)
+        .applyAxisAngle(along, side * (Math.PI / 2) * much)
+        .add(elbow);
+    const lower = (p) => {
+      const t = Math.min(1, Math.max(0, (p.clone().sub(elbow).dot(along) / long - 0.3) / 0.7));
+      return turned(p, t * t * (3 - 2 * t));
+    };
+    const hand = (p) => turned(p, 1);
+    moves.set(index(`fore${suffix}`), lower);
+    moves.set(index(`hand${suffix}`), hand);
+    moves.set(index(`tips${suffix}`), hand);
+    if (side === 1) {
+      const tips = turned(v(spot(joints.fingers, side)), 1);
+      joints.fingers = share([tips.x, tips.y, tips.z]).map((c, i) => (i === 0 ? Math.abs(c) : c));
+    }
+  }
+  const p = new THREE.Vector3();
+  const sum = new THREE.Vector3();
+  for (let i = 0; i < mesh.positions.length / 3; i++) {
+    p.fromArray(mesh.positions, i * 3);
+    sum.set(0, 0, 0);
+    let moved = false;
+    for (let b = 0; b < count; b++) {
+      const w = shares[i * count + b];
+      if (w <= 0) continue;
+      const move = moves.get(b);
+      if (move) moved = true;
+      sum.addScaledVector(move ? move(p) : p, w);
+    }
+    if (moved) sum.toArray(mesh.positions, i * 3);
+  }
+  smoothNormals(mesh);
+  console.log(`  palms turned down: fingers now ${joints.fingers.map((c) => c.toFixed(3))}`);
+}
+
+/**
+ * A patch to paint on: a grid of points lying on the face, a little proud of it, about a middle
+ * and so wide and so tall. He faces +x, so each point is found by looking at him from the front.
+ * Rows run up; columns run from his right to his left, as he's seen.
+ */
+function facePatch(bvh, middle, halfWide, halfTall, columns, rows) {
+  const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(-1, 0, 0));
+  const lift = 0.004;
+  const points = [];
+  for (let r = 0; r < rows; r++) {
+    const line = [];
+    for (let c = 0; c < columns; c++) {
+      const y = middle[1] + halfTall * ((2 * r) / (rows - 1) - 1);
+      const z = middle[2] + halfWide * (1 - (2 * c) / (columns - 1));
+      ray.origin.set(middle[0] + 1, y, z);
+      const hit = bvh.raycastFirst(ray, THREE.DoubleSide);
+      // Only the face: a look that slips past it and lands on a shoulder isn't wanted.
+      line.push(hit && Math.abs(hit.point.x - middle[0]) < halfWide * 1.5 ? hit.point.x : null);
+    }
+    // Off the edge of the face, the patch carries on level with the last of it.
+    for (let c = 0; c < columns; c++) {
+      if (line[c] !== null) continue;
+      let near = null;
+      for (let d = 1; d < columns && near === null; d++) near = line[c - d] ?? line[c + d] ?? null;
+      line[c] = near ?? middle[0];
+    }
+    line.forEach((x, c) => {
+      const y = middle[1] + halfTall * ((2 * r) / (rows - 1) - 1);
+      const z = middle[2] + halfWide * (1 - (2 * c) / (columns - 1));
+      points.push(Number((x + lift).toFixed(4)), Number(y.toFixed(4)), Number(z.toFixed(4)));
+    });
+  }
+  return {
+    columns,
+    rows,
+    middle: middle.map((c) => Number(c.toFixed(4))),
+    halfWide: Number(halfWide.toFixed(4)),
+    halfTall: Number(halfTall.toFixed(4)),
+    points,
+  };
+}
+
 function distanceToBone(p, a, b) {
   const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
@@ -877,7 +1022,8 @@ function skinWeights(mesh, bones) {
     let best = -1;
     let bestScore = Number.POSITIVE_INFINITY;
     for (const b of shaped) {
-      if (!b.end) continue;
+      // Fingers and hair are given their skin afterwards, from what the hand and head have.
+      if (!b.end || b.extra) continue;
       // A limb only takes what's on its own side, and legs nothing above them.
       if (b.side && p[2] * b.side > 0 && Math.abs(p[2]) > 0.01) continue;
       if (b.below !== undefined && up > b.below) continue;
@@ -959,23 +1105,116 @@ const flat = flatMesh(source);
 console.log(`${name}: ${flat.indices.length / 3} triangles`);
 const full = placed(dropScraps(flat));
 smoothNormals(full);
+if (hero.palmsForward) palmsDown(full, hero.joints);
 const bones = hero.joints ? skeleton(hero.joints) : null;
+const face = hero.face ? JSON.parse(readFileSync(hero.face, "utf8")) : null;
+// Every finger, the thumb, and chains down any hair that hangs free, found on the model itself.
+const hands = [];
+let chains = [];
+if (bones) {
+  const at = (name, end) => {
+    const b = bones.find((x) => x.name === name);
+    return spot(end === "to" ? b.to : b.at, 1);
+  };
+  for (const [suffix, side] of [
+    ["R", -1],
+    ["L", 1],
+  ]) {
+    const measured = measureHand(
+      full,
+      at(`hand${suffix}`),
+      at(`tips${suffix}`, "to"),
+      side,
+      hero.fingersApart,
+    );
+    hands.push({ measured, side });
+    for (const b of measured.bones) {
+      bones.push({
+        name: b.name,
+        parent: b.parent,
+        at: share(b.at),
+        to: share(b.to),
+        reach: 0.02,
+        extra: true,
+      });
+    }
+  }
+  if (hero.hair) {
+    const colors = await vertexColors(full, flat.texture.getImage());
+    // Free hair is only ever what the head or the upper back would otherwise carry.
+    const nearest = skinWeights(full, bones);
+    const carriers = ["head", "upper"].map((n) => bones.findIndex((x) => x.name === n));
+    const onHead = (i) => carriers.some((b) => nearest[i * bones.length + b] === 1);
+    const found = hairChains(full, colors, at("head"), at("head", "to"), hero.hair, onHead);
+    chains = found.chains;
+    console.log(
+      `  hair: ${found.count} free vertices, ${chains.length} chains, color ${found.color.map((c) => c.toFixed(2))}`,
+    );
+    for (const b of hairBones(chains)) {
+      const to = b.to && share(b.to);
+      bones.push({ name: b.name, parent: b.parent, at: share(b.at), to, reach: 0.02, extra: true });
+    }
+  }
+  console.log(`  ${bones.length} bones`);
+}
 const hard = bones && skinWeights(full, bones);
-const skin =
-  bones &&
-  topFour(rigidHead(full, smoothWeights(full, hard, bones.length), hard, bones), bones.length);
+let blended = null;
+if (bones) {
+  blended = rigidHead(full, smoothWeights(full, hard, bones.length), hard, bones);
+  const names = bones.map((b) => b.name);
+  for (const { measured, side } of hands) fingerWeights(full, blended, names, measured, side);
+  hairWeights(blended, names, chains);
+}
+const skin = bones && topFour(blended, bones.length);
 for (const copy of COPIES) {
+  // A model that comes light already is only written whole.
+  if (hero.copies && !hero.copies.includes(copy.suffix)) continue;
   const made = copy.rebake
     ? await rebaked(full, flat, skin, copy)
     : reduced(full, skin, copy.triangles);
   const image =
     made.image ??
     (await sharp(flat.texture.getImage())
-      .resize(copy.texture, copy.texture, { fit: "inside" })
+      .resize(hero.texture ?? copy.texture, hero.texture ?? copy.texture, { fit: "inside" })
       .webp({ quality: copy.quality })
       .toBuffer());
   const glb = await write(made.mesh, made.skin, bones, image, made.reliefImage);
   const out = `${hero.out}-${copy.suffix}.glb`;
   writeFileSync(out, glb);
   console.log(`  ${out}: ${(glb.length / 1024) | 0} KB, texture ${(image.length / 1024) | 0} KB`);
+}
+// Where his eyes and mouth are in the game's own space, and a patch cut to lie on the face over
+// each, for the game to paint them on (render/facePaint.ts).
+if (face) {
+  const round = (p) => p.map((c) => Number(c.toFixed(4)));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(full.positions.slice(), 3));
+  geometry.setIndex(new THREE.BufferAttribute(full.indices.slice(), 1));
+  const bvh = new MeshBVH(geometry);
+  const eyes = face.eyes.map((e) => spot(e, 1));
+  const eyeHalf = face.eye_half * HERO_HEIGHT;
+  const mouth = spot(face.mouth, 1);
+  const mouthHalf = face.mouth_half * HERO_HEIGHT;
+  const between = eyes[0].map((c, i) => (c + eyes[1][i]) / 2);
+  const notes = {
+    eyes: eyes.map(round),
+    eyeHalf: Number(eyeHalf.toFixed(4)),
+    mouth: round(mouth),
+    mouthHalf: Number(mouthHalf.toFixed(4)),
+    skin: face.skin,
+    roundMouth: face.round_mouth,
+    patches: {
+      eyes: facePatch(
+        bvh,
+        between,
+        Math.abs(eyes[0][2] - eyes[1][2]) / 2 + eyeHalf * 2.1,
+        eyeHalf * 1.9,
+        20,
+        9,
+      ),
+      mouth: facePatch(bvh, mouth, mouthHalf * 1.35, mouthHalf * 0.8, 15, 8),
+    },
+  };
+  writeFileSync(`${hero.out}-face.json`, `${JSON.stringify(notes)}\n`);
+  console.log(`  ${hero.out}-face.json`);
 }

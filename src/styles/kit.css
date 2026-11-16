@@ -23,9 +23,9 @@
   --cut: 9px;
   position: relative;
   border: 0;
-  padding: 3px;
+  padding: 2px;
   background: none;
-  filter: drop-shadow(0 4px 0 #040a15) drop-shadow(0 7px 7px rgb(0 0 0 / 0.35));
+  filter: drop-shadow(0 3px 0 #040a15) drop-shadow(0 6px 6px rgb(0 0 0 / 0.32));
   transition:
     filter 0.12s,
     transform 0.08s;
@@ -51,9 +51,9 @@
   background: linear-gradient(180deg, var(--f-hi) 0%, var(--f-mid) 52%, var(--f-lo) 100%);
   clip-path: var(--chamfer);
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.28),
-    inset 0 0 0 2px rgb(5 10 20 / 0.35),
-    inset 0 -4px 0 rgb(0 0 0 / 0.22);
+    inset 0 1.5px 0 rgb(255 255 255 / 0.28),
+    inset 0 0 0 1px rgb(5 10 20 / 0.35),
+    inset 0 -3px 0 rgb(0 0 0 / 0.22);
   overflow: hidden;
 }
 
@@ -197,7 +197,7 @@
 
 /* Round buttons: a brass ring round a navy disc with an engraved inner ring. */
 .ui-btn-round {
-  padding: 3.5px;
+  padding: 2.5px;
   border-radius: 50%;
 }
 
@@ -213,10 +213,10 @@
   height: 44px;
   padding: 0;
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.28),
-    inset 0 0 0 2px rgb(5 10 20 / 0.45),
-    inset 0 0 0 5px rgb(220 174 90 / 0.28),
-    inset 0 -4px 0 rgb(0 0 0 / 0.22);
+    inset 0 1.5px 0 rgb(255 255 255 / 0.28),
+    inset 0 0 0 1px rgb(5 10 20 / 0.45),
+    inset 0 0 0 3.5px rgb(220 174 90 / 0.24),
+    inset 0 -3px 0 rgb(0 0 0 / 0.22);
 }
 
 .ui-btn-round .ui-btn-face::before {
@@ -248,22 +248,26 @@
 .ui-panel {
   position: relative;
   border-radius: 12px;
-  padding: 3px;
+  padding: 2px;
   background: linear-gradient(180deg, #5e7aa6 0%, #34496f 50%, #1e2d4a 100%);
   box-shadow:
-    0 0 0 2px var(--ink),
+    0 0 0 1.5px var(--ink),
     0 10px 22px rgb(0 0 0 / 0.5);
 }
 
-/* Brass L-brackets on every corner. */
+/*
+ * Brass L-brackets on every corner, sitting right on the frame's corner so they read as part of it,
+ * not as something floating just off it. The frame's corners are rounded, so they come in by as
+ * much as the rounding, to meet the steel rather than the empty corner beyond it.
+ */
 .ui-panel::before {
   content: "";
   position: absolute;
-  inset: -4px;
+  inset: -1.5px;
   z-index: 1;
   pointer-events: none;
-  --l: 20px;
-  --t: 5px;
+  --l: 15px;
+  --t: 3px;
   background:
     linear-gradient(var(--brass), var(--brass-mid)) top left / var(--l) var(--t) no-repeat,
     linear-gradient(var(--brass), var(--brass-mid)) top left / var(--t) var(--l) no-repeat,
@@ -273,7 +277,7 @@
     linear-gradient(var(--brass), var(--brass-mid)) bottom left / var(--t) var(--l) no-repeat,
     linear-gradient(var(--brass), var(--brass-mid)) bottom right / var(--l) var(--t) no-repeat,
     linear-gradient(var(--brass), var(--brass-mid)) bottom right / var(--t) var(--l) no-repeat;
-  filter: drop-shadow(0 1.5px 0 var(--ink));
+  filter: drop-shadow(0 1px 0 var(--ink));
 }
 
 .ui-panel-body {
@@ -292,7 +296,7 @@
     linear-gradient(180deg, var(--navy-700) 0%, var(--navy-800) 45%, var(--navy-900) 100%);
   box-shadow:
     inset 0 3px 8px rgb(0 0 0 / 0.5),
-    inset 0 0 0 1.5px rgb(0 0 0 / 0.4);
+    inset 0 0 0 1px rgb(0 0 0 / 0.4);
 }
 
 .ui-panel:has(> .ui-plate) {
@@ -406,7 +410,7 @@
   height: 30px;
   padding: 0 38px 0 14px;
   border-radius: 9px;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   background: linear-gradient(180deg, var(--navy-950), var(--navy-800));
   box-shadow:
     inset 0 2px 4px rgb(0 0 0 / 0.6),

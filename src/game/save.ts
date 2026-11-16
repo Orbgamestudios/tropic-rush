@@ -66,6 +66,8 @@ export interface SaveData {
   loot: Partial<Purse>;
   /** The latest islands raiders took back, to say so when the player next looks at the map. */
   lostIslands: string[];
+  /** The story's scenes this phone has shown, so a crewmate's progress is caught up on once. */
+  storySeen: string[];
 }
 
 /** Where a control rests: its middle as a share of the screen (0 to 1), and its size. */
@@ -209,6 +211,7 @@ const DEFAULT_SAVE: SaveData = {
   world: NEW_WORLD,
   loot: {},
   lostIslands: [],
+  storySeen: [],
 };
 
 function readNightRaid(value: unknown): NightRaid | null {
@@ -310,6 +313,12 @@ export function loadSave(storage: Storage = localStorage): SaveData {
       loot: readLoot(parsed.loot),
       lostIslands: Array.isArray(parsed.lostIslands)
         ? parsed.lostIslands.filter((n): n is string => typeof n === "string").slice(0, 8)
+        : [],
+      storySeen: Array.isArray(parsed.storySeen)
+        ? [...new Set(parsed.storySeen.filter((n): n is string => typeof n === "string"))].slice(
+            0,
+            400,
+          )
         : [],
     };
   } catch {

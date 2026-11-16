@@ -31,7 +31,7 @@
   align-items: center;
   gap: 8px;
   padding: 2px 10px 2px 6px;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   border-radius: 9px;
   background: linear-gradient(180deg, var(--navy-700), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -218,7 +218,7 @@
   justify-content: center;
   width: 48px;
   height: 48px;
-  border: 2px solid #3e4f6d;
+  border: 1.5px solid #3e4f6d;
   border-radius: 8px;
   background: linear-gradient(180deg, #27344c, #141c2d);
   box-shadow:
@@ -337,7 +337,7 @@
   gap: 5px;
   min-height: 0;
   padding: 26px 12px 12px;
-  border: 3px solid var(--brass-mid);
+  border: 2px solid var(--brass-mid);
   border-radius: 10px;
   background: linear-gradient(180deg, #f5ecd6, #e4d5b0);
   box-shadow:
@@ -356,7 +356,7 @@
   justify-content: center;
   width: 62px;
   height: 62px;
-  border: 3px solid var(--brass-mid);
+  border: 2px solid var(--brass-mid);
   border-radius: 10px;
   background: linear-gradient(180deg, #3f76c4, #1c3f80);
 }
@@ -607,7 +607,7 @@
   align-items: center;
   gap: 6px;
   padding: 3px 8px;
-  border: 2px solid #5cc452;
+  border: 1.5px solid #5cc452;
   border-radius: 8px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -635,7 +635,7 @@
 
 .lobby-hero {
   padding: 3px 9px;
-  border: 2px solid #3e4f6d;
+  border: 1.5px solid #3e4f6d;
   border-radius: 7px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   font-size: 12px;
@@ -654,7 +654,7 @@
   left: 50%;
   transform: translateX(-50%);
   padding: 3px 12px;
-  border: 2px solid #5cc452;
+  border: 1.5px solid #5cc452;
   border-radius: 8px;
   background: linear-gradient(180deg, var(--navy-600), var(--navy-900));
   box-shadow: 0 0 0 1.5px var(--ink);
@@ -696,7 +696,7 @@
   column-gap: 6px;
   align-items: center;
   padding: 3px 10px 3px 4px;
-  border: 2px solid #8fd4ff;
+  border: 1.5px solid #8fd4ff;
   border-radius: 8px;
   background: linear-gradient(180deg, #1f4a86, #122c55);
 }
@@ -773,7 +773,7 @@
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  border: 2px solid var(--brass-mid);
+  border: 1.5px solid var(--brass-mid);
   border-radius: 9px;
   background: linear-gradient(180deg, var(--navy-700), var(--navy-900));
   color: inherit;
