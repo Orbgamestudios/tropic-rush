@@ -52,9 +52,141 @@ Checked on the Captain against the owner's list and `docs/concept/tpose/captain-
 | Interesting textures                         | Met. Each material gets its own relief in the shader, laid on the body from three sides (the paint's layout is too broken up to lay patterns across): an oxford weave and heathered slubs in the shirt, a diagonal twill in the trousers, pebbled grain, mottling and a worn sheen on the belt and shoes, pores in the skin, strands in the hair and beard. Two scales, so there's texture both at arm's length and up close. No stitching yet. |
 | Game ready, $50 standard                     | For close-ups, yes: a rigged, textured, full-detail model with a face and hands, on the boat and in the cutscenes. In a raid he wears the Rifleman's moves, hands on the rifle. Not yet: the other heroes and the Shaman haven't been through this pipeline, and he hasn't run on a phone.                                                                                                                                                      |
 
-Godot or Unreal: no, as above. Everything here runs in three.js inside the game as it is.
+Godot or Unreal: no (see below, 2026-11-22). Everything here runs in three.js inside the game as it is.
 
 Only the owner can judge the look on the iPhone and sign this off.
+
+### The Rifleman, the Shaman and Professor Terror (2026-11-21)
+
+The owner remade the Rifleman and the Shaman and made the old Professor Terror, rigged in AccuRig on
+the Captain's skeleton, blank-faced as he was. Each went through the Captain's pipeline:
+
+1. `scripts/blender/retexture_rig.py`: the paint back on the rigged FBX (the UVs matched to within
+   0.0000005 on all three).
+2. A full copy for close-ups (`game_copy.py`, every triangle, pictures at 2048, AccuRig's face
+   shapes dropped), packed with meshopt: `public/models/rifleman-full.glb` 3.4 MB,
+   `shaman-full.glb` 5.3 MB, `terror-full.glb` 4.9 MB.
+3. A light copy for afar (`bake_game.py`), done as the owner's walkthrough has it: thinned to
+   8,000 triangles, its faces turned outward, unwrapped afresh, colour and normals baked from the
+   full model at 2048 in Cycles; about 1 MB each (`rifleman.glb`, `shaman.glb`, `terror.glb`). A
+   few small flecks of skin show through on the Rifleman's sleeves where the thinned mesh bridges
+   the armpit; it's only drawn when he's small on the screen.
+4. Their faces mapped (`face_map.py`): eye sockets, brow ridges and mouths found on the blank
+   faces. The Shaman's sculpted face hid his sockets from the finder (it took his temples); his are
+   given by hand (`eyes=0.024,0.899,0.922`), and the finder now looks only on bare skin.
+
+In the game (`render/captain.ts`, `loadPerson`) each is the Captain's equal: the full model up
+close and the light one afar on one skeleton, the stock clips, every finger bending on its own, a
+face drawn on in their own colours (brows and lashes from their hair, the iris, the lips) that
+blinks, glances and takes the eleven expressions, and their own hair found from its colour for the
+breeze: black for the Rifleman, white for the Shaman, grey for Terror, beards included, each lock
+held still at its roots (one that moved right up to the skin tore away from it). In cutscenes the Shaman and Professor
+Terror are played by them (`render/cutsceneStage.ts`). `models-wip/debug/heroes2/cast.html` shows
+all four, with their faces, expressions, hands and hair.
+
+Against the bar (Claude's assessment, 2026-11-22, desktop browser only):
+
+| The owner's bar                              | The Rifleman, the Shaman, Professor Terror                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Emotions                                     | Met, as the Captain's: the same face rig, eleven expressions on springs.                                                                                                                                                                                                                                                                  |
+| Blinking eyes                                | Met, as the Captain's.                                                                                                                                                                                                                                                                                                                    |
+| Fingers that move and clasp separately       | Met: the Captain's hands on the same skeleton; a fist was checked on the Shaman.                                                                                                                                                                                                                                                          |
+| Hair chunks in the breeze                    | Met. Each one's hair is found by its own colour (black, white, grey), down to the collar and the beards too, about 5,700 to 23,000 points each. Every lock is held still where it grows from the skin and loosens towards its tip, so nothing tears; long hair sways a little less, its locks more nearly together, so layers don't part. |
+| In the style of the images, fitting the game | Close: their silhouettes and outfits match the owner's concepts. The painted faces are in the Captain's style.                                                                                                                                                                                                                            |
+| Interesting textures                         | Their own generated paint at 2048 (the knit cuffs, camouflage, patchwork and its stitches, the suit), with a fine twill laid over their cloth in the shader, sharp up close and fading out at a distance; skin and hair are left alone. The Captain's richer relief (a weave per garment) is tuned to his colours.                        |
+| Game ready                                   | Rigged, textured, faced, two levels of detail. Not seen on a phone. Where the new Rifleman goes is the owner's call (the Captain stands in his place).                                                                                                                                                                                    |
+
+### Building them from scratch (Proposed, 2026-11-22)
+
+Claude's judgement against the owner's bar: the way now gets the faces, fingers and textures there,
+but it can't get the hair or the faces all the way to a $50 standard, so by the owner's own
+instruction ("if the models don't look good, abandon how we make them and plan to build them from
+scratch") this is the way forward. It waits on the owner's go-ahead, since it's about a week a
+character; until each new one is done, the current model stands in.
+
+The way now starts from a generated model (one sculpted surface, its paint, AccuRig's skeleton) and
+adds to it in the game. Its limits are the generated mesh's: the hair is one shell, so it can only
+bend, not part into strands; the face is painted on, not shaped; the topology is uneven, so it
+creases badly at the elbows and knees. If the owner judges them short of the bar on the phone, the
+plan is to keep the generated model only as the reference, and build each character again in
+Blender, the Captain first (the most seen), then the Shaman, Terror and the Rifleman:
+
+1. **Body, by retopology** over the generated model: clean quad loops round the eyes, mouth,
+   shoulders, elbows and knees, about 20,000 to 30,000 triangles for close-ups and 6,000 to 8,000
+   for raids. The generated sculpt's detail is baked into normal maps, as `bake_game.py` does now.
+2. **Face, as shapes:** the ARKit 52 face shapes (blinks, brows, jaw, lips, cheeks) sculpted on the
+   new head, with eyes as their own spheres with lids. three.js plays these as morph targets, and the
+   face rig drives them from the same expressions, blinks and lip sync it drives the painted
+   features with now.
+3. **Hair, as cards:** locks as separate strips on a few chains of bones, swung by spring physics
+   in the game (like the old block figures' `SpringChains`), so they part and lift, not only bend.
+   Tried on the generated models first (2026-11-22): their hair cut automatically into eight to ten
+   locks round the head, each on a spring chain. The locks swung well (the Rifleman's lifted in a
+   gust, the Shaman's streamed as he turned), but the generated hair is many thin overlapping
+   shells, not clean locks, so it tore where the locks met at the crown and loose strands stuck out
+   on long levers. It was taken out again. Clean chunks have to be made as chunks. Then (the same day)
+   locks grown over the Captain's sculpted hair in code: tapered tubes rooted on his scalp, combed
+   back along its shape, each on a spring chain. They swung without tearing, but sank into the
+   sculpt and showed only their tips, like little horns. Locks good enough for the bar are shaped
+   by hand in Blender, one by one, round the head they belong to: that's this step as it has to be
+   done, and it's artist's work more than code. A third try slimmed his sculpted hair to a cap
+   at load and laid the locks over it: the packed model can't be reshaped at load without its
+   shading breaking, and the locks read as wiry curls, not his chunky swept quiff. Three ways in code
+   (`models-wip/debug/heroes2/`) have now been tried and set aside.
+4. **Clothes, as their own pieces** over the body, with seams, collars, cuffs and pockets modelled.
+   They're painted in Blender (or Substance Painter) with fabric that has a weave, stitching and
+   wear, at 4096 for close-ups and 1024 for raids.
+5. **Hands:** five-fingered with three joints each, weighted by hand: the Captain's `Hands` drives
+   them as it does now.
+6. **The same skeleton** (AccuRig's CC_Base), so the stock clips, the raid moves and everything in
+   `render/captain.ts` carries over.
+
+It's about a week of work a character, against the hour or so the way now takes, and it's work
+done in Blender, not in an engine (see below).
+
+### The brief for the hair and faces (2026-11-22)
+
+The owner doesn't model in Blender. Whoever does this (an artist on commission, or the owner
+following a guide written from it), each character's delivery is:
+
+1. **The file:** one `.blend` or `.fbx` with the character on its present AccuRig skeleton
+   (`CC_Base_*` bones, unchanged names and rest pose), in the same size and place as
+   `models-wip/heroes2/<name>-rigged.glb`, which is the reference to start from.
+2. **The hair:** the sculpted hair replaced by 8 to 20 separate locks, chunky and in the shape of
+   the concept (the Captain's swept-back quiff, the Rifleman's swept black hair, the Shaman's long
+   white locks and beard, Terror's swept-back grey hair). Each lock is closed (no open edges), sits
+   on a hair-coloured cap over the scalp, and hangs from its own chain of 3 or 4 bones under
+   `CC_Base_Head`, named `hair<lock>_<n>` (`hair1_1`, `hair1_2`, ...), weighted smoothly from root
+   to tip. The game's springs (`render/springBones.ts`) swing chains named that way as they are.
+3. **The face:** the blank face given eyes (separate spheres with lids), a mouth and brows in the
+   concept's style, and the 52 ARKit face shapes (eyeBlinkLeft, jawOpen, mouthSmileLeft, browInnerUp
+   and the rest) as shape keys on the head. The face rig (`render/face/`) will drive those in place
+   of the painted features.
+4. **The fingers:** unchanged: AccuRig's three joints a finger already bend separately.
+5. **Pictures:** the clothes and skin painted at 4096 with the fabric's weave, stitching and wear
+   (colour, roughness and normal maps); the hair's with strands running along each lock.
+6. **Size:** about 30,000 triangles in all, hair included.
+
+What happens to it here: `retexture_rig.py` is no longer needed; `game_copy.py` and `bake_game.py`
+make the full and light copies as now; the face rig is pointed at the shape keys; the springs pick
+up the hair. Roughly: hair $30 to $80 and face shapes $50 to $150 a character on commission, or
+a long weekend each following a guide.
+
+
+
+Neither would make these models better, and both would cost the game.
+
+- **Making them:** neither engine models, rigs or paints a character. That's done in Blender,
+  AccuRig and the owner's generator whichever engine runs the game, and it's where the quality
+  comes from.
+- **Running them:** Unreal 5's characters are its strength (MetaHuman faces, groom hair), but
+  MetaHumans are realistic, not this style. Unreal builds a native iPhone app, not this web game,
+  so it would mean rewriting everything and leaving the PWA. Godot 4 can export to the web, but
+  only on its compatibility renderer, with a 30 to 40 MB download and threading limits on iPhone
+  Safari, for no gain in faces, fingers or hair over what three.js does here.
+- **What would lift them further, in this pipeline:** sculpted face shapes (ARKit's 52) made in
+  Blender in place of painted features; hair as separate cards on spring bones; 4096 pictures for
+  close-ups. All of these load into three.js as they are.
 
 ## Who
 

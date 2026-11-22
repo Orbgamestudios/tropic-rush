@@ -1,6 +1,9 @@
 """Maps a blank-faced character's face, for the painted features to sit in (docs/CHARACTERS.md).
 
-  blender -b -P scripts/blender/face_map.py -- <rigged.glb> <out.json> [<picture-prefix>]
+  blender -b -P scripts/blender/face_map.py -- <rigged.glb> <out.json> [<picture-prefix>] [eyes=<half>,<height>[,<brow>]]
+
+Where a face is sculpted so the sockets can't be found (the Shaman's), `eyes=` says where they
+are: half the distance between them, their height, and the brow's, in the model's own units.
 
 The Captain was made with a blank face: sculpted sockets where the eyes go, a brow ridge, a nose,
 and a pocket of skin in the beard where the mouth goes, all one skin. Nothing is cut into it. This
@@ -32,7 +35,8 @@ PICTURE = 256
 
 args = sys.argv[sys.argv.index("--") + 1 :]
 source, out = os.path.abspath(args[0]), os.path.abspath(args[1])
-pictures = os.path.abspath(args[2]) if len(args) > 2 else None
+pictures = os.path.abspath(args[2]) if len(args) > 2 and not args[2].startswith("eyes=") else None
+told = next((a[5:] for a in args[2:] if a.startswith("eyes=")), None)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=source)
@@ -123,6 +127,9 @@ for side in (1, -1):
             x = xs[i]
             if not (size * 0.1 < x * side - nose_x * side < size * 0.3) or np.isnan(depth[j, i]):
                 continue
+            # Only on bare skin: hair framing the face (the Shaman's) dips and overhangs too.
+            if not skinny[j, i]:
+                continue
             # How far back this is compared with the ring of skin round it.
             ring = []
             for dj, di in ((0, 18), (0, -18), (18, 0), (-18, 0), (13, 13), (-13, 13), (13, -13), (-13, -13)):
@@ -161,7 +168,7 @@ for x0, z0, dip in eyes:
     rows_up = [jj for jj in range(len(zs)) if z0 < zs[jj] < z0 + size * 0.2]
     over = []
     for i in range(len(xs)):
-        if not (0 < (xs[i] - nose_x) * side < size * 0.3) or np.isnan(depth[j, i]):
+        if not (0 < (xs[i] - nose_x) * side < size * 0.3) or np.isnan(depth[j, i]) or not skinny[j, i]:
             continue
         brow = np.nanmin(depth[rows_up, i]) if rows_up else np.nan
         if not np.isnan(brow):
@@ -173,6 +180,11 @@ for x0, z0, dip in eyes:
     widths.append((max(x for x, _ in strong) - min(x for x, _ in strong)) / 2)
     print("FACE socket", side, "overhang", round(most, 4), "strongest from", round(min(x for x, _ in strong), 4), "to", round(max(x for x, _ in strong), 4))
 eyes = sorted(refined, key=lambda e: -e[0])
+if told:
+    told_half, told_z = (float(v) for v in told.split(",")[:2])
+    eyes = [(nose_x + told_half, told_z, 0.0), (nose_x - told_half, told_z, 0.0)]
+    widths = [told_half * 0.75, told_half * 0.75]
+    print("FACE sockets as told", told_half, told_z)
 # Made symmetric: the two sockets mirror each other about the nose.
 mid = nose_x
 half = (abs(eyes[0][0] - mid) + abs(eyes[1][0] - mid)) / 2
@@ -183,6 +195,8 @@ print("FACE sockets", [(round(e[0], 4), round(e[1], 4), round(e[2], 4)) for e in
 ci = int(np.argmin(np.abs(xs - (mid + half))))
 column = [(zs[j], depth[j, ci]) for j in range(len(zs)) if eye_z < zs[j] < eye_z + size * 0.22 and not np.isnan(depth[j, ci])]
 brow_z = min(column, key=lambda c: c[1])[0]
+if told and len(told.split(",")) > 2:
+    brow_z = float(told.split(",")[2])
 print("FACE brow ridge at", round(float(brow_z), 4), "above the socket by", round(float(brow_z - eye_z), 4))
 
 # The mouth: below the nose, the band of bare skin in the beard nearest the middle.

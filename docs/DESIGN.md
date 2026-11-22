@@ -103,10 +103,21 @@ These were explicitly left out to keep the first version to a basic structure:
   aboard her for the raid, and the kit lies where it fell. Skip jumps to the end of the walk to the
   console, or of the run in and landing (`render/boatScene.ts`, `ui/boatSelect.ts`). Alone for now:
   a party still goes through the map's lobby, and the squad-ready step aboard is still to do.
-- **The crew's gunboat (Decided):** a new boat big enough for the whole crew at their raid size: an
-  open cabin with the helm, a bench and the crystal console, benches and crates to sit on aft, a
-  turret on the bow, a mast with the crew's flag. It's the same boat in the choosing, the landing,
-  the raid and the way home (`render/gunboat.ts`).
+- **The crew's gunboat (Decided; redesigned 2026-11-21 to the owner's concept views, kept out of the
+  repo):** a sleek charcoal-and-white walkaround dayboat big enough for the whole crew at their
+  raid size. Her hull is lofted along four lines: a near-plumb stem raking back into the forefoot,
+  and tall flat topsides with a sculpted channel that steps up aft and holds three dark hull
+  windows, under clearcoat. A teak cap rail with a stainless strip under it, white bulwarks and teak
+  decks; a white cuddy forward with slanted windows and a six-panel tan sunpad between grab rails;
+  a raked dark windscreen; a thick white hardtop on slim forward and broad aft pillars, with
+  skylights, downlights, the radar arch and a weapon station on top. Under it the open helm: dash
+  screens, the wheel, two helm seats, and the crystal console to port. Aft, a tan U-settee and a
+  teak swim platform over twin sterndrives. The crew walk forward along the side decks and go over
+  the bow. It's the same boat in the choosing, the landing, the raid and the way home
+  (`render/gunboat.ts`, parts in `boatFittings.ts`, surfaces in `boatParts.ts`). About 90,000
+  triangles in full for the boat scene; a light copy for raids (about 43,000, no clearcoat, no
+  screws), and only her big mouldings cast shadows. The crystals bend light only when the camera
+  is close to them.
 - **The landing film (Decided):** what a raid opens with when it doesn't come from the boat scene (a
   party, or a test): the crew going over the side and up the beach, the camera low by the boat
   rising to sit over the player's hero (`render/raidShots.ts`).
@@ -129,10 +140,15 @@ These were explicitly left out to keep the first version to a basic structure:
   Blender: **Proposed**, waiting for the owner's go-ahead.
 - **The Randoshape font** for every word in the game (`public/fonts/`), with the old two only
   filling in the few marks it hasn't got (dashes, bullets, the times sign).
-- **Always landscape:** the turn-your-phone notice is gone. Held upright, the game turns itself a
-  quarter turn to lie along the screen, so it's landscape either way and there's nothing to turn
-  (`src/screenFit.ts`). A home-screen app is sized from the screen itself, which fixes the black
-  strip along the bottom after starting sideways.
+- **Turn your phone (Decided 2026-11-21, replacing "always landscape"):** held upright, a phone
+  turning sideways with arrows round it is shown over a sunset sea with palms, and the game waits
+  underneath; the game no longer turns itself to lie along an upright phone (`src/screenFit.ts`).
+  The game is sized from the screen in a home-screen app and from the visual viewport in Safari, and
+  the page is held to the same height, against the strip along the bottom.
+- **Frames, memory and battery on screen (Added 2026-11-21):** a small readout under the top-right
+  pills: frames a second; the page's memory where the browser reports it, otherwise an estimate of
+  what the game has given the graphics chip (marked ≈, as on every iPhone); and the battery and how
+  fast it's falling where the browser allows it (not Safari) (`ui/perfMeter.ts`).
 - **Talking to the Shaman:** tap him and he answers the next thing there is to ask, round and round:
   his advice on what to do next, then each question the story's given the crew so far. No panel, and
   no extra buttons: a rescue signal and the Professor's next island are islands on the world map,

@@ -9,7 +9,7 @@ import "./styles/boat.css";
 import { maybeLoadDebugConsole } from "./debug";
 import { Game } from "./game/Game";
 import { setupPwa } from "./pwa";
-import { keepLandscape } from "./screenFit";
+import { fitToScreen } from "./screenFit";
 
 maybeLoadDebugConsole();
 
@@ -18,6 +18,6 @@ document.addEventListener("gesturestart", (event) => event.preventDefault());
 
 const container = document.getElementById("game");
 if (!container) throw new Error("Missing #game container");
-keepLandscape(container);
+fitToScreen(container);
 new Game(container);
 setupPwa();

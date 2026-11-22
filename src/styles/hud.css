@@ -1242,3 +1242,34 @@
     opacity: 0;
   }
 }
+
+/* The frames, memory and battery readout (ui/perfMeter.ts), under the top-right corner's pills. */
+.perf-meter {
+  position: fixed;
+  top: calc(var(--safe-top) + 40px);
+  right: calc(var(--safe-right) + 56px);
+  z-index: 9000;
+  display: flex;
+  gap: 8px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgb(7 14 27 / 0.62);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--cream);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.perf-meter [data-state="good"] {
+  color: #8ff58a;
+}
+
+.perf-meter [data-state="fair"] {
+  color: #ffd56a;
+}
+
+.perf-meter [data-state="poor"] {
+  color: #ff7a66;
+}

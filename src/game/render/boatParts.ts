@@ -1,16 +1,18 @@
-// The gunboat's surfaces (gunboat.ts), each painted once on a canvas and shared: deck planks with
-// their grain, seams and nails; the hull's paint, chipped and rust-streaked, with its waterline;
-// the cabin's red board siding; painted steel with seams and rivets; crate wood; rope. Drawn in the
-// game's hand-painted style rather than photographed, so they sit with everything else.
+// The gunboat's surfaces (gunboat.ts), each painted once on a canvas and shared, after the owner's
+// concept views (2026-11-21, kept out of the repo): charcoal topsides under a deep clearcoat,
+// black below the waterline with a faint line of dried salt along it; teak decks, light and
+// close-grained, with black caulking between the planks; white gelcoat; tan upholstery; dark tinted
+// glass. Each comes as a colour and, beside it, its finish: how glossy, how rough and how metallic
+// every part of it is, so the clearcoat stops at the waterline and the caulking is duller than the
+// wood.
 //
-// And what the gunboat's built from: geometry given UVs at a set size in metres, so every surface's
-// pattern is the same scale whatever it's on, and the parts that share a surface baked into one
-// mesh each (a few draw calls for the whole boat).
+// And her marks (her name), on one sheet; and what's built from them: geometry given UVs at a set
+// size in metres, the parts that share a surface baked into one mesh each.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
-type Painter = (g: CanvasRenderingContext2D, w: number, h: number) => void;
+type Ctx = CanvasRenderingContext2D;
 
 /** A seeded random, so every boat is painted the same. */
 function seeded(seed: number): () => number {
@@ -21,306 +23,387 @@ function seeded(seed: number): () => number {
   };
 }
 
-const painted = new Map<string, THREE.Texture>();
-
-function texture(name: string, w: number, h: number, paint: Painter): THREE.Texture {
-  const cached = painted.get(name);
-  if (cached) return cached;
+function canvasOf(w: number, h: number): [HTMLCanvasElement, Ctx | null] {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const g = canvas.getContext("2d");
-  if (g) paint(g, w, h);
+  return [canvas, canvas.getContext("2d")];
+}
+
+function textureOf(canvas: HTMLCanvasElement, color: boolean): THREE.Texture {
   const t = new THREE.CanvasTexture(canvas);
-  t.colorSpace = THREE.SRGBColorSpace;
+  if (color) t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  painted.set(name, t);
+  t.anisotropy = 8;
   return t;
 }
 
-const hex = (r: number, g: number, b: number, a = 1) =>
-  `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a})`;
+/** A surface's colour, and its finish: clearcoat in red, roughness in green, metalness in blue. */
+export interface SurfaceMaps {
+  map: THREE.Texture;
+  finish: THREE.Texture;
+  bump?: THREE.Texture;
+}
 
-/** Wood grain: long wavering lines along a board. */
-function grain(
-  g: CanvasRenderingContext2D,
-  x: number,
-  y: number,
+interface Layers {
+  c: Ctx;
+  f: Ctx;
+  b: Ctx | null;
+  w: number;
+  h: number;
+}
+
+const painted = new Map<string, SurfaceMaps>();
+
+function paint(
+  name: string,
+  w: number,
+  h: number,
+  draw: (l: Layers) => void,
+  bumped = false,
+): SurfaceMaps {
+  const cached = painted.get(name);
+  if (cached) return cached;
+  const [cc, c] = canvasOf(w, h);
+  const [fc, f] = canvasOf(w, h);
+  const [bc, b] = bumped ? canvasOf(w, h) : [null, null];
+  if (c && f) draw({ c, f, b, w, h });
+  const maps: SurfaceMaps = { map: textureOf(cc, true), finish: textureOf(fc, false) };
+  if (bc) maps.bump = textureOf(bc, false);
+  painted.set(name, maps);
+  return maps;
+}
+
+const rgba = (r: number, g: number, b: number, a = 1) =>
+  `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a})`;
+/** A finish, as the colour that carries it. */
+const finish = (coat: number, rough: number, metal = 0, a = 1) =>
+  rgba(coat * 255, rough * 255, metal * 255, a);
+
+function ellipse(g: Ctx, x: number, y: number, rx: number, ry: number, turn: number, fill: string) {
+  g.fillStyle = fill;
+  g.beginPath();
+  g.ellipse(x, y, rx, ry, turn, 0, Math.PI * 2);
+  g.fill();
+}
+
+/** Speckle: a fine scatter of lighter and darker dots, for the flake in paint or a fabric's tooth. */
+function speckle(
+  g: Ctx,
   w: number,
   h: number,
   rand: () => number,
+  n: number,
+  light: string,
   dark: string,
-): void {
-  g.save();
-  g.beginPath();
-  g.rect(x, y, w, h);
-  g.clip();
-  g.strokeStyle = dark;
-  for (let i = 0; i < h / 3; i++) {
-    const yy = y + rand() * h;
-    const amp = 0.6 + rand() * 1.6;
-    const freq = 0.01 + rand() * 0.03;
-    g.lineWidth = 0.6 + rand() * 1.1;
-    g.globalAlpha = 0.18 + rand() * 0.25;
-    g.beginPath();
-    for (let xx = x; xx <= x + w; xx += 6) {
-      const py = yy + Math.sin(xx * freq + i) * amp;
-      if (xx === x) g.moveTo(xx, py);
-      else g.lineTo(xx, py);
-    }
-    g.stroke();
+) {
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = rand() < 0.5 ? light : dark;
+    g.fillRect(rand() * w, rand() * h, 1, 1);
   }
-  // A knot or two.
-  if (rand() < 0.6) {
-    const kx = x + rand() * w;
-    const ky = y + h * (0.3 + rand() * 0.4);
-    g.globalAlpha = 0.35;
-    g.fillStyle = dark;
-    g.beginPath();
-    g.ellipse(kx, ky, 3 + rand() * 4, 1.5 + rand() * 2, 0, 0, Math.PI * 2);
-    g.fill();
-  }
-  g.restore();
 }
 
-/** Deck planks: warm teak, each board its own shade, dark caulked seams, nail heads at the joins. */
-export function deckWood(): THREE.Texture {
-  return texture("deck", 512, 512, (g, w, h) => {
-    const rand = seeded(7);
-    const rows = 8;
-    const ph = h / rows;
-    for (let r = 0; r < rows; r++) {
-      let x = -rand() * 200;
-      while (x < w) {
-        const len = 180 + rand() * 220;
-        const shade = 0.85 + rand() * 0.3;
-        g.fillStyle = hex(176 * shade, 122 * shade, 72 * shade);
-        g.fillRect(x, r * ph, len, ph);
-        grain(g, x, r * ph, len, ph, rand, "#5a3a1e");
-        // Worn lighter down the middle where feet go.
-        const wear = g.createLinearGradient(0, r * ph, 0, (r + 1) * ph);
-        wear.addColorStop(0, "rgba(255,230,190,0)");
-        wear.addColorStop(0.5, "rgba(255,230,190,0.08)");
-        wear.addColorStop(1, "rgba(255,230,190,0)");
-        g.fillStyle = wear;
-        g.fillRect(x, r * ph, len, ph);
-        // The butt joint and its nails.
-        g.fillStyle = "#2a1a0e";
-        g.fillRect(x + len - 1, r * ph, 2, ph);
-        g.fillStyle = "#3a3a3a";
-        for (const f of [0.3, 0.7]) {
-          g.beginPath();
-          g.arc(x + len - 6, r * ph + ph * f, 1.6, 0, Math.PI * 2);
-          g.fill();
+/**
+ * The hull: the picture's height is her height, `HULL_LOW` (bottom of the picture) to `HULL_HIGH`
+ * (top), the waterline at 0. Charcoal metallic paint under clearcoat above it, a faint haze of
+ * dried salt and water spots just above it, black antifouling below it with no coat.
+ */
+export const HULL_LOW = -1;
+export const HULL_HIGH = 2.9;
+export const hullV = (y: number) => (y - HULL_LOW) / (HULL_HIGH - HULL_LOW);
+
+export function hullMaps(): SurfaceMaps {
+  return paint("hull", 1024, 512, ({ c, f, w, h }) => {
+    const rand = seeded(11);
+    const line = h * (1 - hullV(0.04));
+    c.fillStyle = "#464c54";
+    c.fillRect(0, 0, w, line);
+    f.fillStyle = finish(1, 0.3, 0.55);
+    f.fillRect(0, 0, w, line);
+    // The flake in the paint, and long soft variations where it was sprayed.
+    speckle(c, w, line, rand, 26000, "rgba(255,255,255,0.05)", "rgba(0,0,0,0.06)");
+    for (let i = 0; i < 40; i++) {
+      const y = rand() * line;
+      const grad = c.createLinearGradient(0, y - 30, 0, y + 30);
+      grad.addColorStop(0, "rgba(120,130,140,0)");
+      grad.addColorStop(0.5, `rgba(120,130,140,${0.02 + rand() * 0.03})`);
+      grad.addColorStop(1, "rgba(120,130,140,0)");
+      c.fillStyle = grad;
+      c.fillRect(0, y - 30, w, 60);
+    }
+    // Salt: a haze along the waterline, thinning upward, and the rings of dried drops in it.
+    const haze = c.createLinearGradient(0, line - 70, 0, line);
+    haze.addColorStop(0, "rgba(220,224,226,0)");
+    haze.addColorStop(1, "rgba(220,224,226,0.22)");
+    c.fillStyle = haze;
+    c.fillRect(0, line - 70, w, 70);
+    const dull = f.createLinearGradient(0, line - 60, 0, line);
+    dull.addColorStop(0, finish(1, 0.3, 0.55, 0));
+    dull.addColorStop(1, finish(0.55, 0.62, 0.2, 1));
+    f.fillStyle = dull;
+    f.fillRect(0, line - 60, w, 60);
+    for (let i = 0; i < 420; i++) {
+      const up = rand() ** 2.2 * 140;
+      const x = rand() * w;
+      const r = 1.2 + rand() * 3.5;
+      c.strokeStyle = `rgba(226,230,232,${0.06 + rand() * 0.16})`;
+      c.lineWidth = 0.8;
+      c.beginPath();
+      c.arc(x, line - up, r, 0, Math.PI * 2);
+      c.stroke();
+    }
+    // Runs from the scuppers and the rail, faint.
+    for (let i = 0; i < 26; i++) {
+      const x = rand() * w;
+      const top = rand() * line * 0.6;
+      const long = 40 + rand() * 120;
+      const grad = c.createLinearGradient(0, top, 0, top + long);
+      grad.addColorStop(0, "rgba(200,206,210,0.08)");
+      grad.addColorStop(1, "rgba(200,206,210,0)");
+      c.fillStyle = grad;
+      c.fillRect(x, top, 2 + rand() * 3, long);
+    }
+    // Antifouling below.
+    c.fillStyle = "#121416";
+    c.fillRect(0, line, w, h - line);
+    speckle(c, w, h - line, rand, 9000, "rgba(255,255,255,0.03)", "rgba(0,0,0,0.1)");
+    f.fillStyle = finish(0, 0.78, 0);
+    f.fillRect(0, line, w, h - line);
+    c.fillStyle = "rgba(230,232,232,0.35)";
+    c.fillRect(0, line - 2, w, 2);
+  });
+}
+
+/**
+ * Teak, planks running along the picture's width: light honey, each plank its own shade, its grain
+ * close and wavering, black caulking between, the caulking dull and sunk a little.
+ */
+export function teakMaps(): SurfaceMaps {
+  return paint(
+    "teak",
+    1024,
+    1024,
+    ({ c, f, b, w, h }) => {
+      const rand = seeded(7);
+      const bump = b as Ctx;
+      const rows = 24;
+      const ph = h / rows;
+      bump.fillStyle = "#909090";
+      bump.fillRect(0, 0, w, h);
+      f.fillStyle = finish(0, 0.62, 0);
+      f.fillRect(0, 0, w, h);
+      for (let r = 0; r < rows; r++) {
+        const y = r * ph;
+        let x = -rand() * 400;
+        while (x < w) {
+          const long = 300 + rand() * 500;
+          const shade = 0.88 + rand() * 0.2;
+          const warm = rand() * 14;
+          c.fillStyle = rgba(196 * shade + warm, 152 * shade + warm * 0.5, 104 * shade);
+          c.fillRect(x, y, long, ph);
+          // Grain: fine wavering lines along the plank.
+          c.save();
+          c.beginPath();
+          c.rect(x, y, long, ph);
+          c.clip();
+          for (let i = 0; i < 9; i++) {
+            const yy = y + rand() * ph;
+            const amp = 0.4 + rand() * 1.2;
+            const freq = 0.006 + rand() * 0.02;
+            c.strokeStyle = `rgba(110,72,38,${0.12 + rand() * 0.2})`;
+            c.lineWidth = 0.6 + rand() * 0.9;
+            c.beginPath();
+            for (let xx = x; xx <= x + long; xx += 8) {
+              const py = yy + Math.sin(xx * freq + i * 3) * amp;
+              if (xx === x) c.moveTo(xx, py);
+              else c.lineTo(xx, py);
+            }
+            c.stroke();
+          }
+          // Lighter where the sun's bleached it, and here and there a darker streak.
+          c.fillStyle = `rgba(255,240,210,${rand() * 0.08})`;
+          c.fillRect(x, y, long, ph);
+          if (rand() < 0.3) {
+            c.fillStyle = "rgba(90,55,25,0.12)";
+            c.fillRect(x + rand() * long * 0.6, y + ph * 0.3, 40 + rand() * 120, ph * 0.3);
+          }
+          c.restore();
+          // The butt joint, caulked.
+          c.fillStyle = "#16120e";
+          c.fillRect(x + long - 2, y, 3, ph);
+          f.fillStyle = finish(0, 0.9, 0);
+          f.fillRect(x + long - 2, y, 3, ph);
+          bump.fillStyle = "#303030";
+          bump.fillRect(x + long - 2, y, 3, ph);
+          x += long;
         }
-        x += len;
+        // The caulked seam along the plank.
+        c.fillStyle = "#17130f";
+        c.fillRect(0, y, w, 4);
+        f.fillStyle = finish(0, 0.92, 0);
+        f.fillRect(0, y, w, 4);
+        bump.fillStyle = "#202020";
+        bump.fillRect(0, y, w, 4);
+        // The plank's edges, a touch rounded.
+        bump.fillStyle = "#7a7a7a";
+        bump.fillRect(0, y + 4, w, 2);
+        bump.fillRect(0, y + ph - 2, w, 2);
       }
-      // Caulked seam between rows.
-      g.fillStyle = "#1e130a";
-      g.fillRect(0, r * ph, w, 2.2);
+      // Water marks: darker where it's lain and dried.
+      for (let i = 0; i < 10; i++) {
+        const x = rand() * w;
+        const y = rand() * h;
+        const r = 30 + rand() * 80;
+        const grad = c.createRadialGradient(x, y, r * 0.6, x, y, r);
+        grad.addColorStop(0, "rgba(120,86,50,0.05)");
+        grad.addColorStop(0.9, "rgba(120,86,50,0.12)");
+        grad.addColorStop(1, "rgba(120,86,50,0)");
+        c.fillStyle = grad;
+        c.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+    },
+    true,
+  );
+}
+
+/** White gelcoat: glossy, faintly uneven, with a little grime settled low and in corners. */
+export function gelcoatMaps(): SurfaceMaps {
+  return paint("gelcoat", 512, 512, ({ c, f, w, h }) => {
+    const rand = seeded(19);
+    c.fillStyle = "#eff1ef";
+    c.fillRect(0, 0, w, h);
+    f.fillStyle = finish(0, 0.16, 0);
+    f.fillRect(0, 0, w, h);
+    for (let i = 0; i < 160; i++) {
+      const r = 20 + rand() * 70;
+      ellipse(
+        c,
+        rand() * w,
+        rand() * h,
+        r,
+        r * 0.6,
+        rand() * 3,
+        `rgba(${rand() < 0.5 ? "255,255,255" : "190,196,200"},${0.03 + rand() * 0.04})`,
+      );
+    }
+    speckle(c, w, h, rand, 4000, "rgba(255,255,255,0.05)", "rgba(120,126,130,0.05)");
+    for (let i = 0; i < 24; i++) {
+      const x = rand() * w;
+      const y = rand() * h;
+      const long = 30 + rand() * 90;
+      const grad = c.createLinearGradient(0, y, 0, y + long);
+      grad.addColorStop(0, "rgba(150,150,140,0.1)");
+      grad.addColorStop(1, "rgba(150,150,140,0)");
+      c.fillStyle = grad;
+      c.fillRect(x, y, 2 + rand() * 4, long);
+    }
+  });
+}
+
+/** Tan marine vinyl: a fine speckled grain, a soft sheen. */
+export function cushionMaps(): SurfaceMaps {
+  return paint("cushion", 256, 256, ({ c, f, w, h }) => {
+    const rand = seeded(29);
+    c.fillStyle = "#b89f86";
+    c.fillRect(0, 0, w, h);
+    f.fillStyle = finish(0, 0.7, 0);
+    f.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5000; i++) {
+      const r = 0.8 + rand() * 1.6;
+      const tone = rand() < 0.5 ? "255,240,220" : "90,70,50";
+      ellipse(c, rand() * w, rand() * h, r, r, 0, `rgba(${tone},0.06)`);
+    }
+  });
+}
+
+/** Tinted glass: almost black, with the rings of a few dried drops on it. */
+export function glassMaps(): SurfaceMaps {
+  return paint("glass", 256, 256, ({ c, f, w, h }) => {
+    const rand = seeded(83);
+    c.fillStyle = "#0c1015";
+    c.fillRect(0, 0, w, h);
+    f.fillStyle = finish(1, 0.04, 0.1);
+    f.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) {
+      const x = rand() * w;
+      const y = rand() * h;
+      const r = 1 + rand() * 3;
+      c.strokeStyle = `rgba(200,206,210,${0.05 + rand() * 0.08})`;
+      c.lineWidth = 0.8;
+      c.beginPath();
+      c.arc(x, y, r, 0, Math.PI * 2);
+      c.stroke();
+      ellipse(f, x, y, r, r, 0, finish(1, 0.3, 0.1, 0.6));
     }
   });
 }
 
 /**
- * The hull's paint from the keel (bottom of the picture) to the rail (top): red antifouling below
- * the waterline, a cream boot-top stripe, navy topsides, chipped and rust-streaked.
+ * What the boat's shiny surfaces reflect: a sky going pale to the horizon, a band of light there,
+ * and the sea below; painted as a panorama, so the glass, the paint and the steel shine without the
+ * cost of reflecting the real scene.
  */
-export function hullPaint(): THREE.Texture {
-  return texture("hull", 512, 512, (g, w, h) => {
-    const rand = seeded(11);
-    const band = (from: number, to: number, color: string) => {
-      g.fillStyle = color;
-      g.fillRect(0, h * (1 - to), w, h * (to - from));
-    };
-    band(0, 0.4, "#9c3a2c");
-    band(0.4, 0.47, "#e9e2cf");
-    band(0.47, 1, "#22406b");
-    // A darker sheer line under the rail.
-    band(0.94, 1, "#18294a");
-    // Mottling in the paint.
-    for (let i = 0; i < 1400; i++) {
-      const x = rand() * w;
-      const y = rand() * h;
-      g.fillStyle = rand() < 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.05)";
-      g.fillRect(x, y, 2 + rand() * 6, 1 + rand() * 3);
-    }
-    // Rust streaks running down from the rail and from the fender lines.
+let reflected: THREE.Texture | null = null;
+export function reflections(): THREE.Texture {
+  if (reflected) return reflected;
+  const [canvas, g] = canvasOf(1024, 512);
+  if (g) {
+    const w = 1024;
+    const h = 512;
+    const sky = g.createLinearGradient(0, 0, 0, h / 2);
+    sky.addColorStop(0, "#3a78c2");
+    sky.addColorStop(0.65, "#9cc8ee");
+    sky.addColorStop(1, "#f6eedb");
+    g.fillStyle = sky;
+    g.fillRect(0, 0, w, h / 2);
+    const sea = g.createLinearGradient(0, h / 2, 0, h);
+    sea.addColorStop(0, "#6aaec6");
+    sea.addColorStop(0.15, "#2f7894");
+    sea.addColorStop(1, "#0f2c40");
+    g.fillStyle = sea;
+    g.fillRect(0, h / 2, w, h / 2);
+    const rand = seeded(71);
     for (let i = 0; i < 26; i++) {
-      const x = rand() * w;
-      const top = h * (0.02 + rand() * 0.35);
-      const len = 20 + rand() * 90;
-      const grad = g.createLinearGradient(0, top, 0, top + len);
-      grad.addColorStop(0, "rgba(140,70,30,0.55)");
-      grad.addColorStop(1, "rgba(140,70,30,0)");
-      g.fillStyle = grad;
-      g.fillRect(x, top, 2 + rand() * 4, len);
+      ellipse(
+        g,
+        rand() * w,
+        h * (0.12 + rand() * 0.3),
+        30 + rand() * 70,
+        6 + rand() * 14,
+        0,
+        "rgba(255,255,255,0.45)",
+      );
     }
-    // A few chips through to the grey undercoat, with a dark edge, mostly low where fenders rub.
-    for (let i = 0; i < 22; i++) {
-      const x = rand() * w;
-      const y = h * (0.25 + rand() * 0.28);
-      const r = 2 + rand() * 4;
-      g.fillStyle = "rgba(20,20,25,0.4)";
-      g.beginPath();
-      g.ellipse(x, y, r + 1, r * 0.6 + 1, rand(), 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = "#5e6670";
-      g.beginPath();
-      g.ellipse(x, y, r, r * 0.6, rand(), 0, Math.PI * 2);
-      g.fill();
+    // The shore on the horizon, a dark band; the sun.
+    for (let x = 0; x < w; x += 4) {
+      const hill = 4 + Math.max(0, Math.sin(x * 0.012) * 10 + Math.sin(x * 0.031) * 5);
+      g.fillStyle = "rgba(40,70,50,0.55)";
+      g.fillRect(x, h / 2 - hill, 4, hill);
     }
-    // Weed and grime just above the waterline.
-    const grime = g.createLinearGradient(0, h * 0.55, 0, h * 0.62);
-    grime.addColorStop(0, "rgba(40,60,30,0)");
-    grime.addColorStop(1, "rgba(40,60,30,0.35)");
-    g.fillStyle = grime;
-    g.fillRect(0, h * 0.55, w, h * 0.07);
-  });
-}
-
-/** The cabin's siding: overlapping boards painted red, chipped to grey wood at the edges. */
-export function cabinBoards(): THREE.Texture {
-  return texture("cabin", 512, 512, (g, w, h) => {
-    const rand = seeded(23);
-    // Long boards running the length of the wall, each lapping over the one below.
-    const rows = 6;
-    const bh = h / rows;
-    for (let r = 0; r < rows; r++) {
-      const y = r * bh;
-      const shade = 0.94 + rand() * 0.1;
-      const board = g.createLinearGradient(0, y, 0, y + bh);
-      board.addColorStop(0, hex(200 * shade, 82 * shade, 60 * shade));
-      board.addColorStop(0.7, hex(184 * shade, 72 * shade, 52 * shade));
-      board.addColorStop(1, hex(128 * shade, 44 * shade, 32 * shade));
-      g.fillStyle = board;
-      g.fillRect(0, y, w, bh);
-      grain(g, 0, y, w, bh, rand, "#7a2a1c");
-      // The shadow line where the board above laps over this one, and its lit edge.
-      g.fillStyle = "rgba(40,10,5,0.6)";
-      g.fillRect(0, y, w, 3);
-      g.fillStyle = "rgba(255,200,170,0.25)";
-      g.fillRect(0, y + 3, w, 1.5);
-      // Now and then, paint worn through along the board's lower edge.
-      if (rand() < 0.55) {
-        const x = rand() * w;
-        const len = 20 + rand() * 60;
-        g.fillStyle = "rgba(185,171,149,0.85)";
-        g.beginPath();
-        g.ellipse(x, y + bh * 0.88, len / 2, 2 + rand() * 2.5, 0, 0, Math.PI * 2);
-        g.fill();
-      }
-    }
-  });
-}
-
-/** Painted steel: blue-grey, with panel seams, rows of rivets and a little rust at the edges. */
-export function paintedSteel(): THREE.Texture {
-  return texture("steel", 256, 256, (g, w, h) => {
-    const rand = seeded(31);
-    g.fillStyle = "#5b6a80";
+    const sun = g.createRadialGradient(w * 0.3, h * 0.26, 0, w * 0.3, h * 0.26, 90);
+    sun.addColorStop(0, "rgba(255,252,236,1)");
+    sun.addColorStop(0.25, "rgba(255,248,220,0.8)");
+    sun.addColorStop(1, "rgba(255,248,220,0)");
+    g.fillStyle = sun;
     g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 500; i++) {
-      g.fillStyle = rand() < 0.5 ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.06)";
-      g.fillRect(rand() * w, rand() * h, 3 + rand() * 10, 2 + rand() * 4);
-    }
-    g.strokeStyle = "rgba(20,25,35,0.7)";
-    g.lineWidth = 2;
-    for (const p of [0, 128]) {
-      g.beginPath();
-      g.moveTo(0, p + 1);
-      g.lineTo(w, p + 1);
-      g.moveTo(p + 1, 0);
-      g.lineTo(p + 1, h);
-      g.stroke();
-    }
-    for (const p of [8, 120, 136, 248]) {
-      for (let q = 8; q < w; q += 16) {
-        for (const [x, y] of [
-          [q, p],
-          [p, q],
-        ] as const) {
-          g.fillStyle = "rgba(0,0,0,0.4)";
-          g.beginPath();
-          g.arc(x + 0.8, y + 0.8, 2.2, 0, Math.PI * 2);
-          g.fill();
-          g.fillStyle = "#8a98ac";
-          g.beginPath();
-          g.arc(x, y, 1.8, 0, Math.PI * 2);
-          g.fill();
-        }
-      }
-    }
-    for (let i = 0; i < 12; i++) {
-      const x = rand() * w;
-      const y = rand() * h;
-      const grad = g.createRadialGradient(x, y, 0, x, y, 6 + rand() * 10);
-      grad.addColorStop(0, "rgba(130,60,25,0.55)");
-      grad.addColorStop(1, "rgba(130,60,25,0)");
-      g.fillStyle = grad;
-      g.fillRect(x - 16, y - 16, 32, 32);
-    }
-  });
-}
-
-/** Crate and bench wood: rough pale boards. */
-export function crateWood(): THREE.Texture {
-  return texture("crate", 256, 256, (g, w, h) => {
-    const rand = seeded(43);
-    const rows = 4;
-    const bh = h / rows;
-    for (let r = 0; r < rows; r++) {
-      const shade = 0.85 + rand() * 0.25;
-      g.fillStyle = hex(166 * shade, 118 * shade, 70 * shade);
-      g.fillRect(0, r * bh, w, bh);
-      grain(g, 0, r * bh, w, bh, rand, "#4e331c");
-      g.fillStyle = "#2a1a0e";
-      g.fillRect(0, r * bh, w, 2);
-    }
-  });
-}
-
-/** Rope: twisted strands. */
-export function ropeTwist(): THREE.Texture {
-  return texture("rope", 128, 32, (g, w, h) => {
-    g.fillStyle = "#c9a86b";
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = "rgba(90,60,25,0.55)";
-    g.lineWidth = 3;
-    for (let x = -h; x < w + h; x += 10) {
-      g.beginPath();
-      g.moveTo(x, 0);
-      g.lineTo(x + h, h);
-      g.stroke();
-    }
-  });
-}
-
-/** Brass: warm, a little tarnished. */
-export function brass(): THREE.Texture {
-  return texture("brass", 128, 128, (g, w, h) => {
-    const rand = seeded(53);
-    const grad = g.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, "#d8b45a");
-    grad.addColorStop(0.5, "#b48a36");
-    grad.addColorStop(1, "#e2c271");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 200; i++) {
-      g.fillStyle = `rgba(60,70,40,${0.05 + rand() * 0.08})`;
-      g.fillRect(rand() * w, rand() * h, 2 + rand() * 6, 2 + rand() * 6);
-    }
-  });
+  }
+  reflected = textureOf(canvas, true);
+  reflected.mapping = THREE.EquirectangularReflectionMapping;
+  return reflected;
 }
 
 /** The console's chart: sea blue, a grid, a coastline, a dotted course. */
+let chart: THREE.Texture | null = null;
 export function chartScreen(): THREE.Texture {
-  return texture("chart", 256, 128, (g, w, h) => {
-    g.fillStyle = "#0d3a44";
+  if (chart) return chart;
+  const [canvas, g] = canvasOf(256, 160);
+  if (g) {
+    const w = 256;
+    const h = 160;
+    g.fillStyle = "#0b2f3b";
     g.fillRect(0, 0, w, h);
-    g.strokeStyle = "rgba(120,240,220,0.25)";
+    g.strokeStyle = "rgba(120,240,220,0.22)";
     g.lineWidth = 1;
     for (let x = 0; x < w; x += 16) {
       g.beginPath();
@@ -334,127 +417,105 @@ export function chartScreen(): THREE.Texture {
       g.lineTo(w, y);
       g.stroke();
     }
-    g.fillStyle = "rgba(240,210,120,0.75)";
+    g.fillStyle = "rgba(240,210,120,0.8)";
     g.beginPath();
-    g.ellipse(190, 70, 38, 26, 0.4, 0, Math.PI * 2);
+    g.ellipse(190, 76, 40, 28, 0.4, 0, Math.PI * 2);
     g.fill();
     g.strokeStyle = "rgba(255,255,255,0.85)";
     g.setLineDash([4, 5]);
     g.lineWidth = 2;
     g.beginPath();
-    g.moveTo(30, 100);
-    g.quadraticCurveTo(90, 40, 160, 66);
+    g.moveTo(30, 120);
+    g.quadraticCurveTo(90, 46, 160, 72);
     g.stroke();
     g.setLineDash([]);
     g.fillStyle = "#ff6a4a";
     g.beginPath();
-    g.arc(30, 100, 4, 0, Math.PI * 2);
+    g.arc(30, 120, 4, 0, Math.PI * 2);
     g.fill();
-  });
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.fillRect(0, 0, w, 16);
+    g.fillStyle = "rgba(190,250,240,0.85)";
+    g.font = "bold 10px sans-serif";
+    g.fillText("12.4 kn   184°   ETA 00:42", 6, 12);
+  }
+  chart = textureOf(canvas, true);
+  return chart;
 }
 
-/** Non-slip deck: dark grey, a fine raised diamond pattern, a little scuffed. */
-export function nonSlip(): THREE.Texture {
-  return texture("nonslip", 256, 256, (g, w, h) => {
-    const rand = seeded(61);
-    g.fillStyle = "#565c63";
-    g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 8) {
-      for (let x = (y / 8) % 2 === 0 ? 0 : 4; x < w; x += 8) {
-        g.fillStyle = "rgba(255,255,255,0.08)";
-        g.fillRect(x, y, 3, 3);
-        g.fillStyle = "rgba(0,0,0,0.12)";
-        g.fillRect(x + 2, y + 2, 2, 2);
-      }
-    }
-    for (let i = 0; i < 40; i++) {
-      g.fillStyle = `rgba(0,0,0,${0.05 + rand() * 0.08})`;
-      g.beginPath();
-      g.ellipse(
-        rand() * w,
-        rand() * h,
-        6 + rand() * 18,
-        3 + rand() * 8,
-        rand() * 3,
-        0,
-        Math.PI * 2,
-      );
-      g.fill();
-    }
-  });
-}
+// -------------------------------------------------------------------------------------------------
+// Her name, on one sheet: light lettering (for her dark sides) and dark (for white).
 
-/**
- * What the boat's shiny surfaces reflect: a sky going pale to the horizon, a band of light there,
- * and the sea below; painted as a panorama, so the glass, the paint and the aluminium shine without
- * the cost of reflecting the real scene.
- */
-export function reflections(): THREE.Texture {
-  const t = texture("reflect", 512, 256, (g, w, h) => {
-    const sky = g.createLinearGradient(0, 0, 0, h / 2);
-    sky.addColorStop(0, "#3f7fc8");
-    sky.addColorStop(0.7, "#9ccaf0");
-    sky.addColorStop(1, "#f4ead2");
-    g.fillStyle = sky;
-    g.fillRect(0, 0, w, h / 2);
-    const sea = g.createLinearGradient(0, h / 2, 0, h);
-    sea.addColorStop(0, "#5fa9c4");
-    sea.addColorStop(1, "#173a52");
-    g.fillStyle = sea;
-    g.fillRect(0, h / 2, w, h / 2);
-    // Clouds, and the sun's glow.
-    const rand = seeded(71);
-    for (let i = 0; i < 14; i++) {
-      g.fillStyle = "rgba(255,255,255,0.5)";
-      g.beginPath();
-      g.ellipse(
-        rand() * w,
-        h * (0.15 + rand() * 0.25),
-        20 + rand() * 40,
-        5 + rand() * 9,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      g.fill();
-    }
-    const sun = g.createRadialGradient(w * 0.3, h * 0.28, 0, w * 0.3, h * 0.28, 60);
-    sun.addColorStop(0, "rgba(255,250,230,1)");
-    sun.addColorStop(1, "rgba(255,250,230,0)");
-    g.fillStyle = sun;
-    g.fillRect(0, 0, w, h);
-  });
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  return t;
-}
+const SHEET_W = 1024;
+const SHEET_H = 256;
+export const DECALS = {
+  nameLight: [0, 0, 1024, 128],
+  nameDark: [0, 128, 1024, 128],
+} as const;
+export type DecalName = keyof typeof DECALS;
 
-/** A name painted on the collar, white on transparent. */
-export function nameDecal(name: string): THREE.Texture {
-  return texture(`name:${name}`, 1024, 160, (g, w, h) => {
-    g.font = "900 104px 'Randoshape', 'Arial Black', sans-serif";
+let sheet: THREE.Texture | null = null;
+function decalSheet(): THREE.Texture {
+  if (sheet) return sheet;
+  const [canvas, g] = canvasOf(SHEET_W, SHEET_H);
+  if (g) {
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillStyle = "rgba(0,0,0,0.18)";
-    g.fillText(name, w / 2 + 4, h / 2 + 5);
-    g.fillStyle = "#ffffff";
-    g.fillText(name, w / 2, h / 2);
+    g.font = "italic 900 92px 'Arial Black', 'Arial', sans-serif";
+    const word = (y: number, fill: string, shade: string) => {
+      g.fillStyle = shade;
+      g.fillText("TROPIC RUSH", SHEET_W / 2 + 3, y + 3, SHEET_W - 40);
+      g.fillStyle = fill;
+      g.fillText("TROPIC RUSH", SHEET_W / 2, y, SHEET_W - 40);
+    };
+    word(64, "#d9dde0", "rgba(0,0,0,0.35)");
+    word(192, "#3b4047", "rgba(255,255,255,0.4)");
+  }
+  sheet = textureOf(canvas, true);
+  sheet.wrapS = THREE.ClampToEdgeWrapping;
+  sheet.wrapT = THREE.ClampToEdgeWrapping;
+  return sheet;
+}
+
+/** The decals' own surface: lit as what they're on is, and never fighting it for depth. */
+export function decalSurface(): THREE.MeshStandardMaterial {
+  return surface("b-decal", () => {
+    const m = new THREE.MeshStandardMaterial({
+      map: decalSheet(),
+      transparent: true,
+      depthWrite: false,
+      roughness: 0.3,
+      metalness: 0.6,
+      envMap: reflections(),
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -4,
+    });
+    m.userData.detail = true;
+    return m;
   });
 }
 
-/** A life ring's red and white quarters. */
-export function lifeRing(): THREE.Texture {
-  return texture("ring", 64, 16, (g, w, h) => {
-    for (let i = 0; i < 4; i++) {
-      g.fillStyle = i % 2 === 0 ? "#e8522f" : "#f3eee4";
-      g.fillRect((i * w) / 4, 0, w / 4, h);
-    }
-  });
+/** Puts a mark's part of the sheet on a geometry whose own UVs run 0 to 1 across it. */
+export function decalUV(geometry: THREE.BufferGeometry, name: DecalName): THREE.BufferGeometry {
+  const [x, y, w, h] = DECALS[name];
+  const uv = geometry.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, (x + uv.getX(i) * w) / SHEET_W, 1 - (y + (1 - uv.getY(i)) * h) / SHEET_H);
+  }
+  return geometry;
 }
+
+/** A mark, `w` by `h` metres, facing +z, its middle at the origin. */
+export function decal(name: DecalName, w: number, h: number): THREE.Mesh {
+  return new THREE.Mesh(decalUV(new THREE.PlaneGeometry(w, h), name), decalSurface());
+}
+
+// -------------------------------------------------------------------------------------------------
 
 /**
- * Gives a geometry UVs from where its points are, `size` metres to one repeat of the picture,
- * from whichever side each face mostly looks (so a box, a wedge or a hull side all get even,
- * unstretched patterns).
+ * Gives a geometry UVs `size` metres to a repeat, from whichever side each face mostly looks.
+ * Faces come out flat: for boxy parts only (smooth ones get UVs of their own).
  */
 export function metreUV(geometry: THREE.BufferGeometry, size: number): THREE.BufferGeometry {
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -485,23 +546,34 @@ export function metreUV(geometry: THREE.BufferGeometry, size: number): THREE.Buf
   return g;
 }
 
+/** UVs from where each point is, seen from above: `size` metres to a repeat. Keeps the normals. */
+export function planUV(geometry: THREE.BufferGeometry, size: number): THREE.BufferGeometry {
+  const p = geometry.getAttribute("position");
+  const uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    uv[i * 2] = p.getX(i) / size;
+    uv[i * 2 + 1] = p.getZ(i) / size;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  return geometry;
+}
+
 /** A surface: one shared material per name. */
 const surfaces = new Map<string, THREE.MeshStandardMaterial>();
-export function surface(
-  name: string,
-  make: () => THREE.MeshStandardMaterial,
-): THREE.MeshStandardMaterial {
+export function surface<T extends THREE.MeshStandardMaterial>(name: string, make: () => T): T {
   let m = surfaces.get(name);
   if (!m) {
     m = make();
+    m.name = name;
     surfaces.set(name, m);
   }
-  return m;
+  return m as T;
 }
 
 /**
  * Bakes every mesh under `root` that shares a material into one mesh per material (moving parts,
  * in `keep`, stay their own), so the boat's a handful of draw calls however many parts it has.
+ * A surface marked `detail` (screws, marks) neither casts a shadow nor stops a ray.
  */
 export function bakeByMaterial(root: THREE.Object3D, keep: readonly THREE.Object3D[] = []): void {
   root.updateMatrixWorld(true);
@@ -516,6 +588,7 @@ export function bakeByMaterial(root: THREE.Object3D, keep: readonly THREE.Object
       for (const name of Object.keys(g.attributes)) {
         if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
       }
+      if (!g.getAttribute("normal")) g.computeVertexNormals();
       if (!g.getAttribute("uv")) {
         const count = g.getAttribute("position").count;
         g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(count * 2), 2));
@@ -529,15 +602,15 @@ export function bakeByMaterial(root: THREE.Object3D, keep: readonly THREE.Object
     for (const c of [...o.children]) visit(c);
   };
   visit(root);
-  for (const m of baked) {
-    m.removeFromParent();
-  }
+  for (const m of baked) m.removeFromParent();
   for (const [material, parts] of groups) {
     const merged = mergeGeometries(parts, false);
     if (!merged) continue;
     const whole = new THREE.Mesh(merged, material);
-    whole.castShadow = true;
-    whole.receiveShadow = true;
+    const detail = material.userData.detail === true;
+    whole.castShadow = !detail && material.userData.noShadow !== true;
+    whole.receiveShadow = !material.transparent;
+    if (detail) whole.raycast = () => undefined;
     root.add(whole);
   }
 }

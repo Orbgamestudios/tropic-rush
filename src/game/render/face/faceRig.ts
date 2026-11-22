@@ -145,7 +145,7 @@ export function addFace(
   skin.colorSpace = THREE.SRGBColorSpace;
   skin.anisotropy = 4;
   // The face round the patches is lit as skin of this roughness.
-  const roughness = 0.62;
+  const roughness = 0.68;
   model.updateMatrixWorld(true);
   const toBone = new THREE.Matrix4().copy(head.matrixWorld).invert().multiply(model.matrixWorld);
   const eyes: [EyeUniforms, EyeUniforms] = [eyeUniforms(), eyeUniforms()];

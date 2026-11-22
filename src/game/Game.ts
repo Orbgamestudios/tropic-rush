@@ -112,11 +112,11 @@ import {
   lootCrate,
 } from "./render/raidShots";
 import { RaidView } from "./render/raidView";
-import { loadMenuBody, loadRigs, loadStoryBody } from "./render/riggedHeroes";
+import { loadMenuBody, loadRigs } from "./render/riggedHeroes";
 import { Showcase } from "./render/showcase";
 import type { SkyScene } from "./render/sky";
 import { Stage } from "./render/stage";
-import { buildingIcon, figurePortrait, heroPortrait } from "./render/thumbnails";
+import { buildingIcon, figurePortrait, heroPortrait, personPortrait } from "./render/thumbnails";
 import { WorldMapView } from "./render/worldMap";
 import {
   type AccountSession,
@@ -144,6 +144,7 @@ import { Hud } from "./ui/hud";
 import { audioContext, sfx } from "./ui/kit/fx";
 import { WorldLabels } from "./ui/labels";
 import { PauseMenu } from "./ui/pause";
+import { PerfMeter } from "./ui/perfMeter";
 import { ProfileScreen } from "./ui/profileScreen";
 import { RaidLobby } from "./ui/raidLobby";
 import { ReplayBar } from "./ui/replayBar";
@@ -349,6 +350,7 @@ export class Game {
 
   constructor(private readonly container: HTMLElement) {
     this.stage = new Stage(container);
+    new PerfMeter(() => this.stage.scene);
     this.tint = new TimeTint(container);
     this.rig = new CameraRig(this.stage);
     this.labels = new WorldLabels(layer(container, "labels"));
@@ -551,17 +553,23 @@ export class Game {
       loadCast: (cast) =>
         Promise.all(
           cast.map((who) =>
-            who === "shaman"
-              ? loadStoryBody("shaman")
-              : who === "rifleman"
-                ? Promise.all([loadMenuBody("rifleman"), this.story.stage.loadCaptain()])
-                : isHero(who)
-                  ? loadMenuBody(who)
-                  : undefined,
+            who === "shaman" || who === "terror" || who === "rifleman"
+              ? Promise.all([
+                  who === "rifleman" ? loadMenuBody("rifleman") : undefined,
+                  this.story.stage.loadCast(who),
+                ])
+              : isHero(who)
+                ? loadMenuBody(who)
+                : undefined,
           ),
         ),
       filming: (on, scene) => this.setFilming(on, scene),
-      portrait: (who) => (isHero(who) ? heroPortrait(who) : Promise.resolve(figurePortrait(who))),
+      portrait: (who) =>
+        isHero(who)
+          ? heroPortrait(who)
+          : who === "shaman" || who === "terror"
+            ? personPortrait(who)
+            : Promise.resolve(figurePortrait(who)),
       camera: this.stage.camera,
     });
     this.stage.scene.add(this.story.stage.root);

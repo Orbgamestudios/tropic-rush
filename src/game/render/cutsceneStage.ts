@@ -11,7 +11,7 @@ import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
 import { type Cue, isHero, type Mood, moodOf, type Speaker } from "../logic/story";
 import { angleDiff, type Vec2 } from "../logic/vec";
-import { type Captain, castCaptain, MOOD_FACE } from "./captain";
+import { type Captain, castPerson, MOOD_FACE, type Person } from "./captain";
 import { contactShadow } from "./contactShadow";
 import { type Acting, AT_EASE, HeroAnimator } from "./heroAnimator";
 import { type HeroModel, heroModel, type StoryFigure, storyFigure } from "./heroModels";
@@ -93,6 +93,13 @@ function modelFor(who: Speaker): HeroModel {
   return storyFigure(who as StoryFigure, true);
 }
 
+/** Who plays whom: the speakers with models of their own. */
+const PLAYED_BY: Partial<Record<Speaker, Person>> = {
+  rifleman: "captain",
+  shaman: "shaman",
+  terror: "terror",
+};
+
 export class CutsceneStage {
   readonly root = new THREE.Group();
   /** The middle of the cast, for whoever aims the shadows. */
@@ -135,13 +142,18 @@ export class CutsceneStage {
    * shadow map's pixels go on their faces (the beard on the neck, arms on the shirt).
    */
   shadowReach = 8;
-  /** The Captain, once he's loaded; null until then or if he can't be had, and Steele stands in. */
-  private captain: Captain | null = null;
+  /**
+   * The people with models of their own, once they've loaded: the Captain in Steele's part, the
+   * Shaman, Professor Terror. Until then (or if they can't be had) their stand-ins play them.
+   */
+  private readonly people = new Map<Speaker, Captain>();
 
-  /** Fetches the Captain for Steele's part (docs/CHARACTERS.md, The way now). */
-  loadCaptain(): Promise<void> {
-    return castCaptain().then((captain) => {
-      this.captain = captain;
+  /** Fetches one of the cast's models, if they have one (docs/CHARACTERS.md, The way now). */
+  loadCast(speaker: Speaker): Promise<void> {
+    const person = PLAYED_BY[speaker];
+    if (!person) return Promise.resolve();
+    return castPerson(person).then((model) => {
+      if (model) this.people.set(speaker, model);
     });
   }
 
@@ -198,7 +210,7 @@ export class CutsceneStage {
         return;
       }
       // The Captain plays Steele's part until the scripts are gone over.
-      const captain = who === "rifleman" ? this.captain : null;
+      const captain = this.people.get(who) ?? null;
       const model: HeroModel = captain
         ? { root: captain.holder, body: captain.holder, legs: null, rig: null, height: 1.8 }
         : modelFor(who);

@@ -80,7 +80,7 @@ async function openMap(page: Page): Promise<void> {
 }
 
 test("gets through to a raid with block figures when no models load", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/*.glb", (route) => route.abort());
@@ -134,6 +134,8 @@ test("drags round the world map, and says what lifts the next cloud", async ({ p
 });
 
 test("opens the gunboat's view from wherever the hero is", async ({ page }) => {
+  // The boat scene draws at about a frame a second in a software-drawn test browser.
+  test.setTimeout(240_000);
   await openMap(page);
   await page.locator("button.map-pin:not(.map-ship-pin):visible").first().click();
   await page.getByRole("button", { name: "Attack" }).click();

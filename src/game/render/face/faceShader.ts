@@ -355,6 +355,12 @@ export function facePatchMaterial(options: FacePatchMaterialOptions): THREE.Mesh
       .replace(
         "#include <roughnessmap_fragment>",
         "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.07, faceWet);",
+      )
+      // Only what's wet (the eyes, the inside of the mouth) reflects a lamp; the skin round them
+      // doesn't, as the rest of his face doesn't (captain.ts).
+      .replace(
+        "#include <lights_fragment_end>",
+        "#include <lights_fragment_end>\nreflectedLight.directSpecular *= mix(0.08, 1.0, faceWet);",
       );
   };
   // One program for every face that's the same kind of feature.

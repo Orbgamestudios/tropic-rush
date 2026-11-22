@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
 import type { HeroKind } from "../logic/heroes";
 import { kitVersion, stageFor } from "./buildingKit";
+import { loadPerson, type Person } from "./captain";
 import { menuHero, visibleBox } from "./heroAssets";
 import { type StoryFigure, storyFigure } from "./heroModels";
 import { buildingModel } from "./models";
@@ -131,6 +132,36 @@ export function figurePortrait(who: StoryFigure): string {
     figures.set(who, url);
   }
   return url;
+}
+
+const people = new Map<Person, Promise<string>>();
+
+/**
+ * A head-and-shoulders picture of one of the people with a model of their own (the Shaman,
+ * Professor Terror), their face on it, for dialogue; their block figure's if the model can't be had.
+ */
+export function personPortrait(who: Person & StoryFigure): Promise<string> {
+  let pending = people.get(who);
+  if (!pending) {
+    pending = loadPerson(who)
+      .then((person) => {
+        // Faced to the camera, then a little round to three-quarters; the face set going.
+        person.holder.rotation.y = -Math.atan2(person.forward.x, person.forward.z) + 0.4;
+        person.face?.express("neutral");
+        person.update(0.05, () => undefined);
+        const box = visibleBox(person.holder);
+        const height = box.max.y - box.min.y;
+        const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
+        const target = new THREE.Vector3(0, box.max.y - 0.36, 0);
+        const distance = 0.78 / (2 * Math.tan(THREE.MathUtils.degToRad(14)));
+        camera.position.set(target.x + 0.15, target.y + height * 0.06, target.z + distance);
+        camera.lookAt(target);
+        return snapshot(person.holder, camera);
+      })
+      .catch(() => figurePortrait(who));
+    people.set(who, pending);
+  }
+  return pending;
 }
 
 const portraits = new Map<HeroKind, Promise<string>>();

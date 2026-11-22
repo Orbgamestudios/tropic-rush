@@ -22,6 +22,9 @@ picture = int(args[3]) if len(args) > 3 else 4096
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=source)
 body = next(o for o in bpy.context.scene.objects if o.type == "MESH")
+# AccuRig's face shapes: the game paints a face on instead, and they'd double the points it stores.
+if body.data.shape_keys:
+    body.shape_key_clear()
 body.data.calc_loop_triangles()
 have = len(body.data.loop_triangles)
 if triangles and triangles < have:

@@ -78,6 +78,9 @@ export class Stage {
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIOS[0] ?? 1));
     this.renderer.info.autoReset = false;
+    // Glass that bends the light (the time crystals) draws the scene behind it again; at half the
+    // screen's resolution it costs a quarter as much and looks the same through a crystal.
+    this.renderer.transmissionResolutionScale = 0.5;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     // Redrawn every few frames: nothing casting a shadow moves fast enough to notice.
@@ -289,8 +292,9 @@ export class Stage {
     this.frameNumber++;
     const pace = this.calm ? CALM_SHADOWS : 1;
     // Something big moving through a close shot (the boat setting out) needs its shadows every
-    // frame, or they lag it in steps.
-    const every = this.liveShadows ? 1 : this.shadowEvery;
+    // frame, or they lag it in steps: unless the device is already struggling (two steps down), when
+    // a smooth picture matters more than a shadow keeping up.
+    const every = this.liveShadows && this.quality < 2 ? 1 : this.shadowEvery;
     const shadowEvery = (this.sky.moonShadows ? every * 2 : every) * pace;
     const dueShadows = this.sky.shadows && this.frameNumber % shadowEvery === 0;
     if (this.shadowsStale || dueShadows) {

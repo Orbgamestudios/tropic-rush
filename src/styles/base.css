@@ -90,26 +90,264 @@
 }
 
 /*
- * A phone held upright: the game is turned to lie along it, so it's landscape whichever way the
- * phone thinks it is (screenFit.ts). What was the top of the screen, with its notch, is now the
- * game's left, and so on round.
+ * A phone held upright: a picture of a phone turning sideways, over a sunset sea, covers the game
+ * until it's turned (screenFit.ts).
  */
-html.turned {
-  --safe-left: env(safe-area-inset-top, 0px);
-  --safe-top: env(safe-area-inset-right, 0px);
-  --safe-right: env(safe-area-inset-bottom, 0px);
-  --safe-bottom: env(safe-area-inset-left, 0px);
+#turn-phone {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0b1d38;
+  pointer-events: auto;
 }
 
-html.turned #game {
-  transform-origin: 0 0;
-  transform: rotate(90deg) translateY(-100%);
+html.upright #turn-phone {
+  display: flex;
+}
+
+html.upright #game {
+  visibility: hidden;
+}
+
+.turn-sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    #0d1f3f 0%,
+    #213a6e 30%,
+    #7a4b7c 52%,
+    #e8835a 66%,
+    #ffc77a 72%,
+    #ffe2a6 74%
+  );
+}
+
+.turn-sun {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  width: 46vw;
+  height: 46vw;
+  max-width: 260px;
+  max-height: 260px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff4cf 0%, #ffd27a 45%, rgba(255, 170, 90, 0) 70%);
+  animation: turn-sun 6s ease-in-out infinite alternate;
+}
+
+@keyframes turn-sun {
+  to {
+    transform: translate(-50%, -54%) scale(1.06);
+  }
+}
+
+.turn-isle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 52%;
+  width: 100%;
+  height: 22%;
+  fill: #10213a;
+  stroke: #10213a;
+}
+
+.turn-palm {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: turn-sway 4s ease-in-out infinite alternate;
+}
+
+@keyframes turn-sway {
+  from {
+    rotate: -2deg;
+  }
+  to {
+    rotate: 3deg;
+  }
+}
+
+.turn-sea {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 73.5%;
+  bottom: 0;
+  background: linear-gradient(180deg, #e7a26c 0%, #3f5f8f 18%, #173459 55%, #0b1d38 100%);
+  overflow: hidden;
+}
+
+.turn-sea i {
+  position: absolute;
+  left: -50%;
+  width: 200%;
+  height: 3px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 226, 166, 0.55) 0 38px,
+    transparent 38px 90px
+  );
+  animation: turn-wave 7s linear infinite;
+}
+
+.turn-sea i:nth-child(1) {
+  top: 9%;
+}
+
+.turn-sea i:nth-child(2) {
+  top: 22%;
+  opacity: 0.6;
+  animation-duration: 10s;
+  animation-direction: reverse;
+}
+
+.turn-sea i:nth-child(3) {
+  top: 40%;
+  opacity: 0.35;
+  animation-duration: 13s;
+}
+
+@keyframes turn-wave {
+  to {
+    transform: translateX(90px);
+  }
+}
+
+.turn-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: -18vh;
+  text-align: center;
+}
+
+.turn-stage {
+  position: relative;
+  width: 190px;
+  height: 190px;
+}
+
+.turn-arrows {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke: var(--gold-text);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 3px 0 var(--ink));
+  animation: turn-arrows 3.2s ease-in-out infinite;
+}
+
+.turn-device {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72px;
+  height: 126px;
+  margin: -63px 0 0 -36px;
+  filter: drop-shadow(0 6px 0 rgba(4, 10, 22, 0.55));
+  animation: turn-device 3.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.turn-case {
+  fill: #1b2a44;
+  stroke: var(--brass);
+  stroke-width: 4;
+}
+
+.turn-glass {
+  fill: #7cc6ff;
+}
+
+.turn-notch {
+  fill: #0a1222;
+}
+
+.turn-water {
+  fill: #1d6fc0;
+}
+
+.turn-boat {
+  fill: #f4ead2;
+}
+
+@keyframes turn-device {
+  0%,
+  18% {
+    transform: rotate(0deg);
+  }
+  52%,
+  82% {
+    transform: rotate(-90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes turn-arrows {
+  0%,
+  22% {
+    opacity: 0;
+    transform: rotate(18deg) scale(0.92);
+  }
+  45%,
+  80% {
+    opacity: 1;
+    transform: rotate(-30deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-60deg) scale(0.96);
+  }
+}
+
+.turn-title {
+  font-family: var(--display);
+  font-size: 30px;
+  color: var(--gold-text);
+  text-shadow: var(--outline);
+  letter-spacing: 0.5px;
+}
+
+.turn-text {
+  font-family: var(--body);
+  font-size: 15px;
+  color: var(--cream);
+  text-shadow: var(--outline-thin);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-device {
+    animation: none;
+    transform: rotate(-90deg);
+  }
+  .turn-arrows {
+    animation: none;
+    opacity: 1;
+  }
+  .turn-sun,
+  .turn-palm,
+  .turn-sea i {
+    animation: none;
+  }
 }
 
 html,
 body {
   margin: 0;
-  height: 100%;
+  /* The screen's real height (screenFit.ts): the page's own can lag behind iOS's toolbar. */
+  height: var(--screen-h, 100%);
   overflow: hidden;
   background: var(--navy-950);
   font-family: var(--body);

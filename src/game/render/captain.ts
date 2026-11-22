@@ -13,7 +13,8 @@ import { type GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import type { Expression } from "../logic/face/expressions";
 import { ClipLibrary, ClipPlayer } from "./clipLibrary";
-import { addFace, type FaceMap, FaceRig } from "./face/faceRig";
+import { addFace, CAPTAIN_PALETTE, type FaceMap, FaceRig } from "./face/faceRig";
+import type { FacePalette } from "./face/faceShader";
 
 const MODEL = "/models/captain-full.glb";
 const RAID_MODEL = "/models/captain-raid.glb";
@@ -36,8 +37,9 @@ function file(url: string): Promise<GLTF> {
   }
   return load;
 }
-let faceMap: Promise<FaceMap> | null = null;
-let faceSkin: Promise<THREE.Texture> | null = null;
+/** Each face map, and the picture of the skin under its patches, fetched once. */
+const faceMaps = new Map<string, Promise<FaceMap>>();
+const faceSkins = new Map<string, Promise<THREE.Texture>>();
 /** The hair found on each mesh, worked out once (it's the same mesh for every Captain). */
 const hairOf = new WeakMap<THREE.BufferGeometry, Float32Array>();
 
@@ -153,11 +155,37 @@ class Hands {
 }
 
 /**
- * The hair: which points of the mesh are loose hair, and how loose (more towards the tips), found
- * from the paint (the golden, saturated blond, above the brow, on the head). The breeze then moves
- * them in the vertex shader, each lock a little out of time with the next.
+ * Whose hair a colour is (0 to 1 each), and whether it hangs below the brow. `range`, for the
+ * shader: the least its darkest channel can be, the most its brightest can, and the most saturated
+ * it can be (the Captain's blond is told apart in his relief shader instead).
  */
-function looseHair(mesh: THREE.SkinnedMesh, browHeight: number): Float32Array | null {
+interface HairLook {
+  is: (r: number, g: number, b: number) => boolean;
+  long: boolean;
+  range?: readonly [number, number, number];
+}
+
+/** A hair colour test from a range: darkest channel at least, brightest at most, saturation at most. */
+const hairIn = (least: number, most: number, saturated: number, long: boolean): HairLook => ({
+  is: (r, g, b) =>
+    Math.min(r, g, b) >= least && Math.max(r, g, b) <= most && saturation(r, g, b) <= saturated,
+  long,
+  range: [least, most, saturated],
+});
+
+/** The bones a lock of hair can hang from: the head, and for long hair the neck. */
+const HAIR_BONES = ["CC_Base_Head", "CC_Base_NeckTwist01", "CC_Base_NeckTwist02"];
+
+/**
+ * The hair: which points of the mesh are loose hair, and how loose (more towards the tips), found
+ * from the paint (the person's hair colour, on the head; above the brow unless it's long). The
+ * breeze then moves them in the vertex shader, each lock a little out of time with the next.
+ */
+function looseHair(
+  mesh: THREE.SkinnedMesh,
+  browHeight: number,
+  look: HairLook,
+): Float32Array | null {
   const geometry = mesh.geometry;
   const position = geometry.getAttribute("position");
   const uv = geometry.getAttribute("uv");
@@ -166,6 +194,11 @@ function looseHair(mesh: THREE.SkinnedMesh, browHeight: number): Float32Array | 
   const material = mesh.material as THREE.MeshStandardMaterial;
   const image = material.map?.image as CanvasImageSource & { width: number; height: number };
   const head = mesh.skeleton.bones.findIndex((b) => b.name === "CC_Base_Head");
+  const hangs = new Set(
+    mesh.skeleton.bones.flatMap((b, i) =>
+      HAIR_BONES.includes(b.name) && (look.long || i === head) ? [i] : [],
+    ),
+  );
   if (!position || !uv || !skinIndex || !skinWeight || !image || head < 0) return null;
   const size = 512;
   const canvas = document.createElement("canvas");
@@ -179,22 +212,28 @@ function looseHair(mesh: THREE.SkinnedMesh, browHeight: number): Float32Array | 
   const hair = new Float32Array(count);
   const centre = new THREE.Vector3();
   let found = 0;
+  // The bare skin round the hair, for holding each lock's roots still (below).
+  const bare: number[] = [];
   for (let i = 0; i < count; i++) {
     let weight = 0;
     for (let k = 0; k < 4; k++)
-      if (skinIndex.getComponent(i, k) === head) weight += skinWeight.getComponent(i, k);
-    if (weight < 0.6 || position.getY(i) < browHeight) continue;
+      if (hangs.has(skinIndex.getComponent(i, k))) weight += skinWeight.getComponent(i, k);
+    const below = position.getY(i) < browHeight;
+    if (weight < 0.3) continue;
+    if (weight < 0.6 || (below && !look.long)) {
+      bare.push(i);
+      continue;
+    }
     const x = Math.min(size - 1, Math.max(0, Math.floor(uv.getX(i) * size)));
     const y = Math.min(size - 1, Math.max(0, Math.floor(uv.getY(i) * size)));
     const p = (y * size + x) * 4;
     const r = (pixels[p] ?? 0) / 255;
     const g = (pixels[p + 1] ?? 0) / 255;
     const b = (pixels[p + 2] ?? 0) / 255;
-    const high = Math.max(r, g, b);
-    const low = Math.min(r, g, b);
-    // Blond: saturated, red over green over blue, with green well up (skin's is lower and pinker).
-    const blond = high > 0.25 && (high - low) / high > 0.45 && r >= g && g > b && g / r > 0.62;
-    if (!blond) continue;
+    if (!look.is(r, g, b)) {
+      bare.push(i);
+      continue;
+    }
     hair[i] = 1;
     centre.x += position.getX(i);
     centre.y += position.getY(i);
@@ -211,14 +250,44 @@ function looseHair(mesh: THREE.SkinnedMesh, browHeight: number): Float32Array | 
     if (!hair[i]) continue;
     reach = Math.max(reach, p.fromBufferAttribute(position, i).distanceTo(centre));
   }
+  // And held still where it grows from the skin, loosening over the first `ROOTS` of its length:
+  // a lock (or a beard) that moved right up to the skin tore away from it.
+  const cells = new Map<number, number[]>();
+  const cellOf = (x: number, y: number, z: number) =>
+    (Math.floor(x / ROOTS) * 73856093) ^
+    (Math.floor(y / ROOTS) * 19349663) ^
+    (Math.floor(z / ROOTS) * 83492791);
+  for (const i of bare) {
+    const key = cellOf(position.getX(i), position.getY(i), position.getZ(i));
+    const list = cells.get(key);
+    if (list) list.push(i);
+    else cells.set(key, [i]);
+  }
+  const q = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
     if (!hair[i]) continue;
-    const out = p.fromBufferAttribute(position, i).distanceTo(centre) / reach;
+    p.fromBufferAttribute(position, i);
+    const out = p.distanceTo(centre) / reach;
     const t = Math.min(1, Math.max(0, (out - 0.55) / 0.45));
-    hair[i] = t * t * (3 - 2 * t);
+    let nearest = ROOTS;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const list = cells.get(cellOf(p.x + dx * ROOTS, p.y + dy * ROOTS, p.z + dz * ROOTS));
+          if (!list) continue;
+          for (const j of list)
+            nearest = Math.min(nearest, q.fromBufferAttribute(position, j).distanceTo(p));
+        }
+      }
+    }
+    const held = nearest / ROOTS;
+    hair[i] = t * t * (3 - 2 * t) * held * held * (3 - 2 * held);
   }
   return hair;
 }
+
+/** How far from the skin a lock of hair is held still, in the model's units (about 3 cm). */
+const ROOTS = 0.018;
 
 /**
  * Standing at ease without any clip: the arms brought down from the rig's pose to hang by his
@@ -370,9 +439,18 @@ const SURFACE_COLOR = /* glsl */ `
   // to: the twill's ribs, the leather's pebbles, slubs in the cotton, clumps in the hair.
   float cMid = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cTexel * 0.25)));
   float cMidStrength = cKind == 0 ? 0.4 : (cKind == 3 ? 0.5 : 1.0);
+  // The relief fades to nothing wherever it would otherwise step: where one kind of surface meets
+  // another (skin and hair at his hairline), and where the side it's laid from changes (across the
+  // curve of his forehead). A step in it tips the surface hard for a pixel or two, and that pixel
+  // catches the light: the spot that flashed on his forehead.
+  float cSure = smoothstep(0.5, 0.85, cTop);
+  float cMost = max(cN.x, max(cN.y, cN.z));
+  float cNext = cN.x + cN.y + cN.z - cMost - min(cN.x, min(cN.y, cN.z));
+  float cEven = smoothstep(0.02, 0.16, cMost - cNext);
+  float cShow = cTop * cSure * cEven;
   float cH = 0.0;
-  if (cFine > 0.0 && cKind != 3) cH += cRelief(cTexel, cKind) * cTop * cFine;
-  if (cMid > 0.0) cH += cRelief(cTexel * 0.25, cKind) * cTop * cMid * 2.5 * cMidStrength;
+  if (cFine > 0.0 && cKind != 3) cH += cRelief(cTexel, cKind) * cShow * cFine;
+  if (cMid > 0.0) cH += cRelief(cTexel * 0.25, cKind) * cShow * cMid * 2.5 * cMidStrength;
   // Heathered cotton: threads a shade lighter or darker, in slubs along the weave.
   diffuseColor.rgb *= 1.0 + (kShirt + kWhite * 0.5) * (cNoise(cTexel * vec2(0.02, 0.15)) - 0.5) * 0.12;
   // The threads' and the grain's own small changes of shade, and darker hollows.
@@ -403,7 +481,9 @@ const SURFACE_NORMAL = /* glsl */ `
     vec3 r1 = cross(dy, normal); vec3 r2 = cross(normal, dx);
     float det = dot(dx, r1);
     // The relief's depth: a tenth of a millimetre or so.
-    vec3 grad = sign(det) * (hx * r1 + hy * r2) * 0.00012;
+    // Skin takes none of it: its relief was too slight to see, and its highlights are the ones
+    // that show.
+    vec3 grad = sign(det) * (hx * r1 + hy * r2) * 0.00012 * (1.0 - kSkin);
     // Never tipped more than about 30 degrees: where the surface is nearly edge-on to the screen,
     // or a pixel steps across a hard change in the relief, the tip would be huge, and a wet-looking
     // spot of light flashes there as he moves (it did on his forehead).
@@ -415,11 +495,51 @@ const SURFACE_NORMAL = /* glsl */ `
 `;
 
 /** The surface's relief, and the loose hair (all zero if none was found) blowing in the breeze. */
-function dress(mesh: THREE.SkinnedMesh, loose: Float32Array): void {
+function dress(
+  mesh: THREE.SkinnedMesh,
+  loose: Float32Array,
+  relief: boolean,
+  hair: HairLook,
+): void {
   mesh.geometry.setAttribute("aHair", new THREE.BufferAttribute(loose, 1));
   const material = mesh.material as THREE.MeshStandardMaterial;
+  const [least, most, saturated] = hair.range ?? [2, 0, 0];
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uWindTime = windTime;
+    // Long hair sways less, and its locks more nearly together: locks that lie over each other
+    // and moved apart opened gaps between them.
+    shader.uniforms.uBreeze = {
+      value: new THREE.Vector2(hair.long ? 0.6 : 1, hair.long ? 0.3 : 1),
+    };
+    shader.uniforms.uHairRange = { value: new THREE.Vector3(least, most, saturated) };
+    // Kept to hand, for tuning the breeze and the hair's colours while looking (models-wip/debug).
+    material.userData.uniforms = shader.uniforms;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nattribute float aHair;\nuniform float uWindTime;\nuniform vec2 uBreeze;\nvarying vec3 vCPos;\nvarying vec3 vCNorm;\nvarying float vCHair;",
+      )
+      .replace("#include <skinning_vertex>", `#include <skinning_vertex>\n${BREEZE}`);
+    if (!relief) {
+      // The others: a fine twill in their cloth (everything that isn't skin or loose hair), and
+      // their shine held down (their generated paint can be glossy in patches, and a lamp's
+      // reflection would show as a spot).
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>\nvarying vec3 vCPos;\nvarying vec3 vCNorm;\nvarying float vCHair;\nuniform vec3 uHairRange;\n${SURFACE}`,
+        )
+        .replace("#include <map_fragment>", `#include <map_fragment>\n${CLOTH_COLOR}`)
+        .replace(
+          "#include <roughnessmap_fragment>",
+          "#include <roughnessmap_fragment>\nroughnessFactor = max(roughnessFactor, 0.6);",
+        )
+        .replace(
+          "#include <normal_fragment_maps>",
+          `#include <normal_fragment_maps>\n${SURFACE_NORMAL}`,
+        );
+      return;
+    }
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
@@ -437,29 +557,60 @@ function dress(mesh: THREE.SkinnedMesh, loose: Float32Array): void {
       .replace(
         "#include <normal_fragment_maps>",
         `#include <normal_fragment_maps>\n${SURFACE_NORMAL}`,
-      );
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        "#include <common>\nattribute float aHair;\nuniform float uWindTime;\nvarying vec3 vCPos;\nvarying vec3 vCNorm;",
       )
+      // A lamp's own reflection is all but taken off his skin (and softened in his hair): a
+      // cutscene's key light sits a couple of metres from his face, and its reflection was a spot
+      // of light on his forehead that jumped at each cut and wavered as the lamp moved.
       .replace(
-        "#include <skinning_vertex>",
-        `#include <skinning_vertex>
-        vCPos = position;
-        vCNorm = normal;
-        if (aHair > 0.0) {
-          // Each lock on its own phase; gusts that build and fall; a lean downwind, a lift, a sway.
-          float phase = dot(position, vec3(41.0, 23.0, 37.0));
-          float gust = 0.55 + 0.45 * sin(uWindTime * 0.37) * sin(uWindTime * 0.23 + 1.3);
-          float sway = sin(uWindTime * 2.3 + phase) * 0.6 + sin(uWindTime * 4.1 + phase * 1.7) * 0.4;
-          vec3 wind = normalize(vec3(0.85, 0.05, -0.5));
-          transformed += (wind * (0.55 + sway) * gust + vec3(0.0, 0.35 * sway, 0.0)) * aHair * 0.02;
-        }`,
+        "#include <lights_fragment_end>",
+        "#include <lights_fragment_end>\nreflectedLight.directSpecular *= 1.0 - 0.92 * kSkin - 0.5 * kHair;",
       );
   };
-  material.customProgramCacheKey = () => "captain-hair";
+  material.customProgramCacheKey = () => (relief ? "captain-hair" : "person-hair");
 }
+
+/**
+ * The others' cloth: everything that isn't skin (warm, a little saturated, not dark) or loose hair
+ * gets the Captain's twill, fine and at four times the scale, fading out before it's finer than a
+ * pixel; and the bump that goes with it (SURFACE_NORMAL, which leaves skin alone).
+ */
+const CLOTH_COLOR = /* glsl */ `
+  float kSkin;
+  float cH = 0.0;
+  {
+    vec3 cc = pow(max(diffuseColor.rgb, vec3(0.0)), vec3(1.0 / 2.2));
+    float hi = max(cc.r, max(cc.g, cc.b));
+    float lo = min(cc.r, min(cc.g, cc.b));
+    float sat = (hi - lo) / max(hi, 1e-3);
+    float warm = step(cc.b, cc.g) * step(cc.g, cc.r);
+    kSkin = warm * smoothstep(0.15, 0.25, sat) * (1.0 - smoothstep(0.62, 0.75, sat)) * smoothstep(0.28, 0.38, hi);
+    // Not their hair either, by its colour: hair woven like cloth reads as stripes.
+    float hairy = step(uHairRange.x, lo) * step(hi, uHairRange.y) * step(sat, uHairRange.z);
+    float cloth = (1.0 - kSkin) * (1.0 - hairy) * (1.0 - step(0.001, vCHair));
+    vec3 cAt = vCPos * 4800.0;
+    vec3 cN = abs(vCNorm);
+    vec2 cTexel = cN.x > cN.y && cN.x > cN.z ? cAt.yz : (cN.y > cN.z ? cAt.xz : cAt.xy);
+    float cFine = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cTexel)));
+    float cMid = 1.0 - smoothstep(0.7, 1.6, length(fwidth(cTexel * 0.25)));
+    if (cFine > 0.0) cH += cRelief(cTexel, 1) * cloth * cFine;
+    if (cMid > 0.0) cH += cRelief(cTexel * 0.25, 1) * cloth * cMid * 1.6;
+    diffuseColor.rgb *= 1.0 + cloth * 0.05 * cH * cFine;
+  }
+`;
+
+/** The breeze in the loose hair, in the vertex shader. */
+const BREEZE = /* glsl */ `
+  vCPos = position;
+  vCNorm = normal;
+  vCHair = aHair;
+  if (aHair > 0.0) {
+    // Each lock on its own phase; gusts that build and fall; a lean downwind, a lift, a sway.
+    float phase = dot(position, vec3(41.0, 23.0, 37.0)) * uBreeze.y;
+    float gust = 0.55 + 0.45 * sin(uWindTime * 0.37) * sin(uWindTime * 0.23 + 1.3);
+    float sway = sin(uWindTime * 2.3 + phase) * 0.6 + sin(uWindTime * 4.1 + phase * 1.7) * 0.4;
+    vec3 wind = normalize(vec3(0.85, 0.05, -0.5));
+    transformed += (wind * (0.55 + sway) * gust + vec3(0.0, 0.35 * sway, 0.0)) * aHair * 0.02 * uBreeze.x;
+  }`;
 
 export interface Captain {
   holder: THREE.Group;
@@ -557,15 +708,105 @@ class PoseFade {
   }
 }
 
-let cast: Promise<Captain | null> | null = null;
+const srgb = (r: number, g: number, b: number) =>
+  new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
+/** How saturated a colour is, 0 to 1. */
+const saturation = (r: number, g: number, b: number) => {
+  const high = Math.max(r, g, b);
+  return high > 0 ? (high - Math.min(r, g, b)) / high : 0;
+};
 
 /**
- * The Captain for cutscenes: one copy, loaded once and kept, since a cutscene can start any time
- * and his full model takes a moment. Null if he can't be had (offline), and Steele plays the part.
+ * The people rigged as the Captain is (AccuRig, on the same skeleton), each in full for close-ups
+ * and a light copy for afar (`scripts/blender/game_copy.py`, `bake_game.py`), with a face mapped
+ * onto their blank one (`face_map.py`), the colours it's painted in, and their hair's colour to
+ * find it by for the breeze. Only the Captain's cloth and skin get the relief made for his paint.
  */
+interface PersonLook {
+  model: string;
+  light?: string;
+  face?: string;
+  palette: FacePalette;
+  hair: HairLook;
+  relief?: boolean;
+}
+export type Person = "captain" | "shaman" | "terror" | "rifleman";
+const PEOPLE: Record<Person, PersonLook> = {
+  captain: {
+    model: MODEL,
+    light: RAID_MODEL,
+    face: FACE,
+    palette: CAPTAIN_PALETTE,
+    // Blond: saturated, red over green over blue, with green well up (skin's is lower and pinker).
+    hair: {
+      is: (r, g, b) =>
+        Math.max(r, g, b) > 0.25 && saturation(r, g, b) > 0.45 && r >= g && g > b && g / r > 0.62,
+      long: false,
+    },
+    relief: true,
+  },
+  rifleman: {
+    model: "/models/rifleman-full.glb",
+    light: "/models/rifleman.glb",
+    face: "/models/rifleman-face.json",
+    palette: {
+      iris: srgb(0.24, 0.16, 0.1),
+      hair: srgb(0.12, 0.1, 0.1),
+      hairShade: srgb(0.04, 0.035, 0.035),
+      lash: srgb(0.05, 0.04, 0.04),
+      lip: srgb(0.92, 0.64, 0.6),
+    },
+    // Black, swept back over his ears and down to his collar.
+    hair: hairIn(0, 0.32, 0.75, true),
+  },
+  shaman: {
+    model: "/models/shaman-full.glb",
+    light: "/models/shaman.glb",
+    face: "/models/shaman-face.json",
+    palette: {
+      iris: srgb(0.28, 0.19, 0.12),
+      hair: srgb(0.93, 0.92, 0.9),
+      hairShade: srgb(0.66, 0.65, 0.63),
+      lash: srgb(0.3, 0.26, 0.24),
+      lip: srgb(0.8, 0.52, 0.46),
+    },
+    // White, and long: the locks down his back, and his beard.
+    hair: hairIn(0.52, 1, 0.16, true),
+  },
+  terror: {
+    model: "/models/terror-full.glb",
+    light: "/models/terror.glb",
+    face: "/models/terror-face.json",
+    palette: {
+      iris: srgb(0.34, 0.38, 0.42),
+      hair: srgb(0.8, 0.8, 0.78),
+      hairShade: srgb(0.5, 0.5, 0.49),
+      lash: srgb(0.24, 0.22, 0.2),
+      lip: srgb(0.88, 0.6, 0.58),
+    },
+    // Grey to white, swept back to his collar.
+    hair: hairIn(0.45, 1, 0.16, true),
+  },
+};
+
+const cast = new Map<Person, Promise<Captain | null>>();
+
+/**
+ * One of them for cutscenes: one copy each, loaded once and kept, since a cutscene can start any
+ * time. Null if they can't be had (offline), and their stand-in plays the part.
+ */
+export function castPerson(who: Person): Promise<Captain | null> {
+  let load = cast.get(who);
+  if (!load) {
+    load = loadPerson(who).catch(() => null);
+    cast.set(who, load);
+  }
+  return load;
+}
+
+/** The Captain for cutscenes, in Steele's part (see `castPerson`). */
 export function castCaptain(): Promise<Captain | null> {
-  cast ??= loadCaptain().catch(() => null);
-  return cast;
+  return castPerson("captain");
 }
 
 /** The expression for a line said in each of the story's moods (logic/story/script.ts). */
@@ -581,28 +822,52 @@ export const MOOD_FACE: Record<string, Expression> = {
 };
 
 /** Loads the Captain, standing 1.8 m on y = 0 facing +x, as the menus' heroes do. */
-export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain> {
-  faceMap ??= fetch(FACE).then((r) => {
-    if (!r.ok) throw new Error("No face map");
-    return r.json() as Promise<FaceMap>;
-  });
-  faceSkin ??= faceMap.then((m) => new THREE.TextureLoader().loadAsync(`/models/${m.picture}`));
+export function loadCaptain(options: CaptainOptions = {}): Promise<Captain> {
+  return loadPerson("captain", options);
+}
+
+/** Loads one of the people rigged as the Captain is, standing 1.8 m on y = 0. */
+export async function loadPerson(who: Person, options: CaptainOptions = {}): Promise<Captain> {
+  const files = PEOPLE[who];
+  let faceMap: Promise<FaceMap | null> = Promise.resolve(null);
+  let faceSkin: Promise<THREE.Texture | null> = Promise.resolve(null);
+  if (files.face) {
+    const url = files.face;
+    let mapLoad = faceMaps.get(url);
+    if (!mapLoad) {
+      mapLoad = fetch(url).then((r) => {
+        if (!r.ok) throw new Error("No face map");
+        return r.json() as Promise<FaceMap>;
+      });
+      faceMaps.set(url, mapLoad);
+    }
+    let skinLoad = faceSkins.get(url);
+    if (!skinLoad) {
+      skinLoad = mapLoad.then((m) => new THREE.TextureLoader().loadAsync(`/models/${m.picture}`));
+      faceSkins.set(url, skinLoad);
+    }
+    // A face that can't be had leaves them blank-faced, not missing.
+    faceMap = mapLoad.catch(() => null);
+    faceSkin = skinLoad.catch(() => null);
+  }
   const [full, light, map, skin, clips] = await Promise.all([
-    options.raid ? null : file(MODEL),
-    file(RAID_MODEL),
+    options.raid && files.light ? null : file(files.model),
+    files.light ? file(files.light) : null,
     faceMap,
     faceSkin,
     // The owner's stock clips; without them (offline) he stands at ease on moves of his own.
     stockClips(),
   ]);
-  const model = clone((full ?? light).scene);
+  const base = full ?? light;
+  if (!base) throw new Error(`No model for ${who}`);
+  const model = clone(base.scene);
   const nearMeshes: THREE.SkinnedMesh[] = [];
   model.traverse((o) => {
     if (o instanceof THREE.SkinnedMesh) nearMeshes.push(o);
   });
   // The light copy on the same skeleton, beside the full one: for the shadow, and for afar.
   const farMeshes: THREE.SkinnedMesh[] = [];
-  if (full) {
+  if (full && light) {
     const extra = clone(light.scene);
     extra.traverse((o) => {
       if (o instanceof THREE.SkinnedMesh) farMeshes.push(o);
@@ -618,19 +883,20 @@ export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain
       m.bind(new THREE.Skeleton(bones as THREE.Bone[], m.skeleton.boneInverses), m.bindMatrix);
     }
   }
-  const parts = addFace(model, map, skin);
+  const parts = map && skin ? addFace(model, map, skin, files.palette) : null;
   const face = parts && new FaceRig(parts);
   const hands = new Hands(model);
   const farMaterial = new Map<THREE.SkinnedMesh, THREE.Material | THREE.Material[]>();
   for (const o of [...nearMeshes, ...farMeshes]) {
     o.frustumCulled = false;
+    // Their hair given the breeze, found from their own paint; the Captain's cloth its relief.
     let loose = hairOf.get(o.geometry);
     if (!loose) {
       const count = o.geometry.getAttribute("position")?.count ?? 0;
-      loose = looseHair(o, map.browZ) ?? new Float32Array(count);
+      loose = (map && looseHair(o, map.browZ, files.hair)) || new Float32Array(count);
       hairOf.set(o.geometry, loose);
     }
-    dress(o, loose);
+    dress(o, loose, files.relief === true, files.hair);
   }
   for (const o of nearMeshes) o.castShadow = farMeshes.length === 0;
   for (const o of farMeshes) {
@@ -658,8 +924,18 @@ export async function loadCaptain(options: CaptainOptions = {}): Promise<Captain
     fade.apply(dt);
   };
   if (face && (player || options.raid)) face.animated = true;
-  // Which way he faces: from the head to his eyes, at rest.
+  // Which way he faces: from the head to his eyes, at rest; without a face, from heel to toe.
   const forward = new THREE.Vector3(1, 0, 0);
+  const heel = model.getObjectByName("CC_Base_L_Foot");
+  const toe = model.getObjectByName("CC_Base_L_ToeBase");
+  if (!parts && heel && toe) {
+    model.updateMatrixWorld(true);
+    const step = toe
+      .getWorldPosition(new THREE.Vector3())
+      .sub(heel.getWorldPosition(new THREE.Vector3()));
+    step.y = 0;
+    if (step.lengthSq() > 1e-8) forward.copy(step.normalize());
+  }
   if (parts) {
     model.updateMatrixWorld(true);
     const eyes = new THREE.Vector3();

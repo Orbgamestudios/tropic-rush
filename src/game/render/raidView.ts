@@ -519,7 +519,8 @@ export class RaidView {
     this.reach = home ? null : new DefenseReach(state);
     if (this.reach) this.root.add(this.reach.mesh);
 
-    this.boat = crewBoatModel();
+    // Seen from above and some way off in a raid: the light copy.
+    this.boat = crewBoatModel("light");
     this.boatGunsRest = this.boat.guns?.position.x ?? 0;
     const toLand = sub(layout.spawn, layout.boat);
     this.boatHeading = angleOf(toLand);

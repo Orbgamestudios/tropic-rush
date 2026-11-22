@@ -270,8 +270,38 @@ function sign(power: TimePower): THREE.Texture {
 const shapes = new Map<TimePower, { body: THREE.BufferGeometry; core: THREE.BufferGeometry }>();
 const looks = new Map<
   TimePower,
-  { glass: THREE.MeshPhysicalMaterial; core: THREE.ShaderMaterial }
+  { glass: THREE.MeshPhysicalMaterial; far: THREE.MeshStandardMaterial; core: THREE.ShaderMaterial }
 >();
+
+/**
+ * The crystal from further off: no light bent through it (that draws the whole scene a second
+ * time, worth it only up close), just its colour lit from within and a glassy shine.
+ */
+function farGlass(color: THREE.Color): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: color.clone().lerp(new THREE.Color(1, 1, 1), 0.25),
+    emissive: color,
+    emissiveIntensity: 0.55,
+    roughness: 0.08,
+    metalness: 0.3,
+    envMap: reflections(),
+    envMapIntensity: 1.6,
+    flatShading: true,
+  });
+}
+
+/** Nearer than this (metres, camera to crystal) a crystal bends the light through it. */
+const NEAR = 3.5;
+const at = new THREE.Vector3();
+
+/** Shows a crystal in full glass when `camera` is close to it, and lighter when it isn't. */
+export function crystalDetail(crystal: THREE.Object3D, camera: THREE.Camera): void {
+  const body = crystal.userData.body as THREE.Mesh | undefined;
+  const look = crystal.userData.look as { glass: THREE.Material; far: THREE.Material } | undefined;
+  if (!body || !look) return;
+  const near = camera.position.distanceTo(crystal.getWorldPosition(at)) < NEAR;
+  body.material = near ? look.glass : look.far;
+}
 
 /** A time crystal `size` tall, its power's shape, colour and sign. Stands on its broken end at y = 0. */
 export function timeCrystal(power: TimePower, size = 0.34): THREE.Group {
@@ -283,7 +313,7 @@ export function timeCrystal(power: TimePower, size = 0.34): THREE.Group {
   const color = new THREE.Color(CRYSTAL_COLORS[power]);
   let look = looks.get(power);
   if (!look) {
-    look = { glass: glass(color), core: coreMaterial(color) };
+    look = { glass: glass(color), far: farGlass(color), core: coreMaterial(color) };
     looks.set(power, look);
   }
   const group = new THREE.Group();
@@ -294,6 +324,8 @@ export function timeCrystal(power: TimePower, size = 0.34): THREE.Group {
   const body = new THREE.Mesh(shape.body, look.glass);
   body.castShadow = true;
   scaled.add(body);
+  group.userData.body = body;
+  group.userData.look = look;
   // The sign, in its heart, always turned to whoever's looking.
   const mark = new THREE.Sprite(
     new THREE.SpriteMaterial({

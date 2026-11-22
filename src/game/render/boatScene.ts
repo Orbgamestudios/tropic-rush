@@ -34,7 +34,7 @@ import {
 import { AT_EASE, HeroAnimator, type HeroMove } from "./heroAnimator";
 import { type HeroModel, heroModel } from "./heroModels";
 import { loadMenuBody, loadRigs } from "./riggedHeroes";
-import { crystalTime, timeCrystal } from "./timeShard";
+import { crystalDetail, crystalTime, timeCrystal } from "./timeShard";
 
 /** Whose place the Captain takes aboard. */
 const CAPTAIN_KIND: HeroKind = "rifleman";
@@ -362,14 +362,19 @@ export class BoatScene {
   }
 
   /**
-   * The console shot, planned the same way inside the wheelhouse: over the shoulder of whoever's
-   * at it, seeing the cradles and their hands, from somewhere in the cabin (not in a wall).
+   * The console shot, planned the same way under the hardtop: over the shoulder of whoever's at
+   * it, seeing the cradles and their hands, from somewhere under the roof (not up in it).
    */
   private planConsole(c: Crew): Shot {
     const blockers = this.blockers(c).filter((b) => b !== this.boat.root);
     const s = this.boat.console.stand;
-    const { back, front, side } = this.boat.cabin;
-    const cradles = new THREE.Vector3(front - 0.75, s.y + 1.15, s.z);
+    const { back, front, side, roof } = this.boat.helm;
+    const holder = this.boat.console.holders[1];
+    const cradles = holder
+      ? this.hull
+          .worldToLocal(holder.getWorldPosition(new THREE.Vector3()))
+          .add(new THREE.Vector3(0, 0.12, 0))
+      : new THREE.Vector3(s.x + 0.75, s.y + 1.4, s.z);
     for (const [dx, dy, dz] of [
       [-1.4, 2.1, 1.25],
       [-1.1, 2.0, 1.6],
@@ -377,8 +382,8 @@ export class BoatScene {
       [-0.8, 2.15, 2.0],
     ] as const) {
       const eye = new THREE.Vector3(s.x + dx, s.y + dy, s.z + dz);
-      // Inside the walls, clear of the crew.
-      if (eye.x < back + 0.2 || eye.x > front - 0.4 || Math.abs(eye.z) > side - 0.15) continue;
+      // Under the roof, clear of the crew.
+      if (eye.x < back || eye.x > front || Math.abs(eye.z) > side || eye.y > roof - 0.15) continue;
       const w = this.hull.localToWorld(eye.clone());
       if (this.clear(w, this.hull.localToWorld(cradles.clone()), blockers)) {
         return { eye, look: cradles };
@@ -388,35 +393,33 @@ export class BoatScene {
   }
 
   /**
-   * The run in's camera, one move with no cut: from the console, out through the wheelhouse door,
-   * forward along her side low by the bow wave with the island ahead, up and back to a high chase,
-   * and down to the raid's camera over the hero. Each point is in the boat's space; the last is
-   * filled in each frame (it follows the hero and the beach).
+   * The run in's camera, one move with no cut: from the console, out from under the hardtop on the
+   * side the hero goes forward on, alongside them up the side deck, low by the bow wave with the
+   * island ahead, up and back to a high chase, and down to the raid's camera over the hero. Each
+   * point is in the boat's space; the last is filled in each frame (it follows the hero and the
+   * beach). `side` is +1 to starboard, -1 to port.
    */
-  private planRun(c: Crew): void {
+  private planRun(c: Crew, side: number): void {
     const shot = this.planConsole(c);
-    const { back } = this.boat.cabin;
+    const deck = deckY(0);
     const lane = this.boat.sideDeck;
-    const deck = deckY(back);
-    // Behind the hero up the aisle and out of the aft door, swinging out over the starboard
-    // quarter as they go forward along the side deck, then low by the bow wave, up, and back.
+    const mid = lane[Math.floor(lane.length / 2)] ?? { x: 2.8, z: 1.75 };
+    const z = (v: number) => v * side;
     const eyes = [
       shot.eye.clone(),
-      new THREE.Vector3(0.6, deck + 2.1, 0),
-      new THREE.Vector3(back + 0.6, deck + 2.2, 0),
-      new THREE.Vector3(back - 2.6, deck + 2.8, 1.2),
-      new THREE.Vector3(back - 1.5, deck + 3.2, lane + 2.2),
-      new THREE.Vector3(6.5, 2.4, 5.2),
-      new THREE.Vector3(-4, 7.5, 9.5),
-      new THREE.Vector3(-12, 10, 11),
+      new THREE.Vector3(-1.4, deck + 2.15, z(1.0)),
+      new THREE.Vector3(-1.6, deck + 2.0, z(3.6)),
+      new THREE.Vector3(mid.x - 1.2, deck + 2.6, z(4.9)),
+      new THREE.Vector3(8.0, 2.6, z(4.6)),
+      new THREE.Vector3(-4, 7.5, z(9.5)),
+      new THREE.Vector3(-12, 10, z(11)),
     ];
     const looks = [
       shot.look.clone(),
-      new THREE.Vector3(back, deck + 1.6, 0),
-      new THREE.Vector3(back - 1.2, deck + 1.5, 0.6),
-      new THREE.Vector3(back - 0.4, deck + 1.5, lane),
-      new THREE.Vector3(3, deck + 1.5, lane),
-      new THREE.Vector3(12, 1.5, -1),
+      new THREE.Vector3(0.2, deck + 1.6, z(1.6)),
+      new THREE.Vector3(1.6, deck + 1.5, z(1.9)),
+      new THREE.Vector3(mid.x + 1.2, deck + 1.4, z(mid.z)),
+      new THREE.Vector3(12, 1.5, z(-1)),
       new THREE.Vector3(4, 1.6, 0),
       new THREE.Vector3(6, 1.2, 0),
     ];
@@ -429,7 +432,7 @@ export class BoatScene {
   // ---------------------------------------------------------------------------------------------
   // The steps.
 
-  /** Ready: the one picked goes into the wheelhouse to the console. */
+  /** Ready: the one picked goes to the console at the helm. */
   ready(): void {
     const c = this.crew[this.chosen];
     if (!c || this.stage !== "choose") return;
@@ -453,40 +456,50 @@ export class BoatScene {
     });
   }
 
+  /** Where in the bow someone goes over the side, on their side of the boat. */
+  private overFor(c: Crew): CrewBoat["over"][number] {
+    const side = c.holder.position.z >= 0 ? 1 : -1;
+    const over = this.boat.over.find((o) => Math.sign(o.z) === side) ?? this.boat.over[0];
+    return over ?? { x: 7.45, z: 0.45 * side, top: 2.7, reach: 0.65 };
+  }
+
   /** Set off: she gets under way, and the hero goes forward to the bow. */
   setOff(): void {
     const c = this.crew[this.chosen];
     if (!c || this.stage !== "console") return;
-    this.planRun(c);
+    const over = this.overFor(c);
+    this.overUsed = over;
+    this.planRun(c, Math.sign(over.z) || 1);
     this.setStep("run");
-    const over = this.boat.over[0] ?? { x: 6.7, z: 1.15 };
     c.path = this.routeTo(c, over);
     c.captain?.self.face?.say("[tactical_focus] Bring her in. [pause:0.3] [look:ahead] Quietly.");
   }
 
-  /** The way along the deck from where someone is to a point, round the wheelhouse. */
+  /**
+   * The way along the deck from where someone is to a point: across the cockpit as the crow flies,
+   * and between the cockpit and the bow along a side deck past the cuddy (the side they're on).
+   */
   private routeTo(c: Crew, to: { x: number; z: number }): THREE.Vector3[] {
     const from = { x: c.holder.position.x, z: c.holder.position.z };
-    const { back, front, side } = this.boat.cabin;
-    // In through the aft door and up the aisle between the seats; along the starboard side deck
-    // (the port one has a crewmate on it) between the bow and the stern.
-    const lane = this.boat.sideDeck;
-    const inCabin = (p: { x: number; z: number }) =>
-      p.x > back && p.x < front && Math.abs(p.z) < side;
-    const aft = (p: { x: number; z: number }) => p.x < back;
-    const outside = { x: back - 0.75, z: 0 };
-    const doorway = { x: back + 0.5, z: 0 };
-    const sternLane = { x: back - 0.75, z: lane };
-    const bowLane = { x: front + 0.6, z: lane };
+    const fore = (p: { x: number; z: number }) => p.x > this.boat.foreOf;
+    const lane = (side: number) => this.boat.sideDeck.map((p) => ({ x: p.x, z: p.z * side }));
     const route: { x: number; z: number }[] = [];
-    if (inCabin(from)) {
-      route.push({ x: from.x, z: 0 }, doorway, outside);
-      if (!aft(to)) route.push(sternLane, bowLane);
-    } else if (inCabin(to)) {
-      if (!aft(from)) route.push(bowLane, sternLane);
-      route.push(outside, doorway, { x: to.x, z: 0 });
-    } else if (aft(from) !== aft(to)) {
-      route.push(...(aft(from) ? [sternLane, bowLane] : [bowLane, sternLane]));
+    if (fore(from) !== fore(to)) {
+      const side = Math.sign(fore(from) ? from.z : to.z) || Math.sign(from.z) || 1;
+      // Only the stretch of the side deck between where they are and where they're going.
+      const between = lane(side).filter(
+        (p) => p.x > Math.min(from.x, to.x) && p.x < Math.max(from.x, to.x),
+      );
+      route.push(...(fore(to) ? between : between.reverse()));
+    } else if (
+      fore(from) &&
+      Math.sign(from.z) !== Math.sign(to.z) &&
+      Math.min(from.x, to.x) < 5.8
+    ) {
+      // From one side deck to the other: round the cuddy's nose.
+      const out = lane(Math.sign(from.z) || 1).filter((p) => p.x > from.x);
+      const back = lane(Math.sign(to.z) || 1).filter((p) => p.x > to.x);
+      route.push(...out, ...back.reverse());
     }
     route.push(to);
     return route.map((p) => new THREE.Vector3(p.x, deckY(p.x), p.z));
@@ -521,7 +534,8 @@ export class BoatScene {
     this.placeBoat(0);
     this.root.updateMatrixWorld(true);
     if (this.stage === "run") {
-      const over = this.boat.over[0] ?? { x: 6.7, z: 1.15 };
+      const over = this.overFor(c);
+      this.overUsed = over;
       c.holder.position.set(over.x, deckY(over.x), over.z);
       c.path.length = 0;
       this.setStep("ashore");
@@ -587,6 +601,7 @@ export class BoatScene {
     if (this.stage === "ashore") this.ashore(dt);
     this.splash(dt);
     this.place(dt, camera);
+    for (const gem of this.gems) crystalDetail(gem, camera);
   }
 
   /** Where she is on her course, and how she rides. */
@@ -759,10 +774,14 @@ export class BoatScene {
       this.climbFrom.copy(c.holder.position);
     }
     const up = new THREE.Vector3(Math.cos(this.heading), 0, Math.sin(this.heading));
-    const landAt = this.climbFrom.clone().addScaledVector(up, 3.0);
+    // Up onto the bulwark ahead (as high above the deck as it is there), and over.
+    const over = this.overUsed ?? this.boat.over[0];
+    const reach = over?.reach ?? 0.6;
+    const climb = over ? over.top - deckY(over.x) : 0.95;
+    const landAt = this.climbFrom.clone().addScaledVector(up, reach + 2.4);
     landAt.y = Math.max(0, this.site.ground(landAt.x, landAt.z));
-    const top = this.climbFrom.clone().addScaledVector(up, 0.6);
-    top.y += 0.95;
+    const top = this.climbFrom.clone().addScaledVector(up, reach);
+    top.y += climb;
     c.facing = this.heading;
     let walking = false;
     let mode: "deck-walk" | "fight" = "deck-walk";
@@ -803,6 +822,8 @@ export class BoatScene {
   }
 
   private readonly climbFrom = new THREE.Vector3();
+  /** Where the hero went over the side. */
+  private overUsed: CrewBoat["over"][number] | null = null;
 
   // ---------------------------------------------------------------------------------------------
   // The camera.
