@@ -101,6 +101,7 @@ import { fetchRivals, reportRaid } from "./net/world";
 import { BoatScene, type LandingSite } from "./render/boatScene";
 import { loadBuildingKit, STAGES } from "./render/buildingKit";
 import { CameraRig } from "./render/cameraRig";
+import { fetchPerson, type Person } from "./render/captain";
 import { DangerMap } from "./render/dangerMap";
 import type { Station } from "./render/gunboat";
 import { AT_EASE, type HeroMove } from "./render/heroAnimator";
@@ -139,6 +140,7 @@ import { HeroSelect } from "./ui/heroSelect";
 import { Hud } from "./ui/hud";
 import { audioContext, sfx } from "./ui/kit/fx";
 import { WorldLabels } from "./ui/labels";
+import { frames, loadingScreen } from "./ui/loadingScreen";
 import { PauseMenu } from "./ui/pause";
 import { PerfMeter } from "./ui/perfMeter";
 import { ProfileScreen } from "./ui/profileScreen";
@@ -194,6 +196,8 @@ const FRAME_WOBBLE = 0.002;
 const SYNC_SECONDS = 20;
 /** How long the crew island gets before the game asks about the phone's location. */
 const SKY_CARD_MS = 12_000;
+/** The rigged people who can be about the crew's island, fetched before it's shown. */
+const ISLAND_PEOPLE: readonly Person[] = ["captain", "rifleman", "shaman", "terror"];
 
 /** Players stop being told how to stop firing after this many wins. */
 const HINT_WINS = 3;
@@ -551,17 +555,12 @@ export class Game {
       nextSteps: () => this.nextSteps(),
       ready: () => this.rigsLoaded && !this.storyOff,
       loadCast: (cast) =>
-        Promise.all(
-          cast.map((who) =>
-            who === "shaman" || who === "terror" || who === "rifleman"
-              ? Promise.all([
-                  who === "rifleman" ? loadMenuBody("rifleman") : undefined,
-                  this.story.stage.loadCast(who),
-                ])
-              : isHero(who)
-                ? loadMenuBody(who)
-                : undefined,
-          ),
+        loadingScreen().cover(
+          cast.flatMap((who) => [
+            this.story.stage.loadCast(who),
+            isHero(who) ? loadMenuBody(who) : Promise.resolve(),
+          ]),
+          "Setting the scene",
         ),
       filming: (on, scene) => this.setFilming(on, scene),
       portrait: (who) =>
@@ -601,10 +600,20 @@ export class Game {
     if (loadPlace() === undefined && !params.has("testhooks")) this.offerSkyCard();
     if (params.has("testhooks")) this.installTestHooks();
     this.stage.holdQuality = params.has("fullquality");
-    void loadRigs().then(() => {
-      this.rigsLoaded = true;
-    });
-    void loadBuildingKit();
+    // The island's heroes, its people and its buildings are all here before it's shown, behind the
+    // loading screen: nothing stands in for them (the owner's call, 2026-11-23). It comes off once
+    // the island's been drawn with them.
+    const ready = [
+      loadRigs().then(() => {
+        this.rigsLoaded = true;
+      }),
+      loadBuildingKit(),
+      ...ISLAND_PEOPLE.map((who) => fetchPerson(who, { raid: true })),
+    ];
+    void loadingScreen().cover(
+      [...ready, Promise.allSettled(ready).then(() => frames(3))],
+      "Loading the island",
+    );
     for (const type of ["pointerdown", "pointermove", "wheel"]) {
       window.addEventListener(type, () => (this.touched = performance.now()), {
         capture: true,
@@ -1292,7 +1301,9 @@ export class Game {
     this.stage.scene.add(scene.root);
     this.phase = "boat";
     const crew = this.save.unlocked.length > 0 ? this.save.unlocked : [this.save.hero];
-    void scene.board(crew, this.mapHero).then(() => {
+    const boarding = scene.board(crew, this.mapHero);
+    void loadingScreen().cover([boarding], "Readying the boat");
+    void boarding.then(() => {
       if (this.boatScene !== scene || this.phase !== "boat") return;
       scene.setCrystals(fitLoadout(this.save.shards, this.save.shardLoadout));
       this.boatSelect.show(scene.current);

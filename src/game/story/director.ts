@@ -75,8 +75,12 @@ const LOOK_EVERY = 0.4;
 const BREATH = 2.5;
 /** A cutscene shows this many of its speakers at most. */
 const MOST_CAST = 7;
-/** The longest a cutscene waits for its cast's detailed models before going on with what it has. */
-const CAST_WAIT_MS = 6000;
+/**
+ * The longest a cutscene waits for its cast's detailed models, behind the loading screen, before
+ * going on with what it has: long, since what it has is the stand-ins (the owner's call,
+ * 2026-11-23: none), but not forever, should a fetch never come back.
+ */
+const CAST_WAIT_MS = 30_000;
 
 /** Scenes that are said over a raid as it's fought. */
 function duringRaid({ when }: Scene): boolean {

@@ -39,7 +39,7 @@ import { Lookout } from "./lookout";
 import { buildingModel, GunboatScenery } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
-import { BEACH_FINDS, beachFinds, buildShore, homeCliffs, solidPlants, updateWind } from "./props";
+import { BEACH_FINDS, beachFinds, homeCliffs, shorePalms, solidPlants, updateWind } from "./props";
 import {
   CRYSTAL_COLORS,
   disposeGlint,
@@ -421,7 +421,7 @@ export class CrewIslandView {
     this.root.add(this.heroes.root, this.lights.root, this.fireflies.mesh);
     const scenery = homeScenery(HOME_START);
     const landing = landingPoints();
-    this.overgrowth = new OvergrowthView(scenery);
+    this.overgrowth = new OvergrowthView(scenery, shorePalms(HOME_SEED, scenery, HOME_SHAPE, -0.5));
     this.terrain = buildTerrain(scenery, {
       height: homeHeight,
       shade: this.overgrowth.shade,
@@ -429,7 +429,9 @@ export class CrewIslandView {
     });
     this.clouds = homeClouds();
     // Beyond the grass it's the raid islands' shore; the grass itself is the overgrowth.
-    const shore = buildShore(HOME_SEED, scenery, landing.spawn, homeHeight, -0.5);
+    const shore = new THREE.Group().add(
+      beachFinds(HOME_SEED, scenery, landing.spawn, homeHeight, HOME_SHAPE),
+    );
     this.freshFinds = () => {
       const old = shore.getObjectByName(BEACH_FINDS) as THREE.Mesh | undefined;
       if (old) {

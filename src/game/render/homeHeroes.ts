@@ -23,6 +23,7 @@ import { PersonInRaid, personFor } from "./captainRaid";
 import { AT_EASE, HeroAnimator } from "./heroAnimator";
 import { type StoryFigure, storyFigure } from "./heroModels";
 import { type HeroModel, heroModel } from "./models";
+import { hasBody } from "./riggedHeroes";
 
 /** Anyone who walks about the island: a hero, or one of the story's people. */
 export type Islander = HeroKind | StoryFigure;
@@ -55,6 +56,8 @@ interface Walker {
   waving: number;
   /** Their rigged model, following the figure once it's loaded. */
   person: PersonInRaid | null;
+  /** Drawn as they really look: false for a figure put up before their model had arrived. */
+  real: boolean;
 }
 
 /** Which of the rigged people walks for an islander, if any. */
@@ -87,9 +90,11 @@ export class HomeHeroes {
         this.spots.push(center);
       }
     }
-    // Anyone who's left the island is gone from it.
+    // Anyone who's left the island is gone from it; a figure put up before a hero's model arrived
+    // makes way for the model (behind the loading screen, as the game starts).
     for (const [kind, walker] of this.walkers) {
-      if (kinds.includes(kind)) continue;
+      if (kinds.includes(kind) && (walker.real || isFigure(kind) || !hasBody(kind, false)))
+        continue;
       this.root.remove(walker.model.root);
       walker.person?.root.removeFromParent();
       this.walkers.delete(kind);
@@ -111,6 +116,7 @@ export class HomeHeroes {
         facing: Math.random() * Math.PI * 2,
         waving: 0,
         person: null,
+        real: isFigure(kind) || personOf(kind) !== null || hasBody(kind, false),
       };
       this.walkers.set(kind, walker);
       const who = personOf(kind);

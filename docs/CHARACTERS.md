@@ -15,7 +15,8 @@ of this:
    beside it or packed in.
 4. **Two copies:** `captain-full.glb` keeps all ~490,000 triangles for cutscenes and close-ups,
    packed small with meshopt and WebP (`scripts/blender/game_copy.py`, `scripts/pack-glb.mjs`);
-   `captain-raid.glb` is cut down for raids.
+   `captain-raid.glb`, for raids and the island, is the light copy below at 4,000 triangles
+   (`bake_game.py`; it was 40,000 before the owner's budget for what's seen from above, 2026-11-23).
 5. **The face:** no change to the mesh. Patches shaped to the sockets, brow and mouth carry eyes,
    lids, brows and a mouth drawn in the shader, driven by springs: expressions, blinks, glances,
    and lip sync from text or from sound (`scripts/blender/face_map.py`, `render/face/`,
@@ -56,6 +57,29 @@ Godot or Unreal: no (see below, 2026-11-22). Everything here runs in three.js in
 
 Only the owner can judge the look on the iPhone and sign this off.
 
+### Where it stands (Claude's assessment, 2026-11-23, desktop browser only)
+
+What's changed against the bar above since 2026-11-16:
+
+- **Who's been through it:** the Captain, the Rifleman, the Shaman and Professor Terror (the six other
+  heroes are still the older TRELLIS models rigged by `scripts/rig-hero.mjs`; only the Medic's
+  fingers bend one by one).
+- **Their copies for afar** (raids, the island) are 4,000 triangles with baked colour and normals
+  (the owner's budget for what's seen from above). Checked side by side with the old ones: the
+  same look up close; fingers still separate, curling one by one into a point. The full models stay
+  for close-ups and the hero screen.
+- **Faces:** the flash on foreheads was the painted eye's shader breaking when a face is a few
+  pixels across, not the lamps; fixed. Faces further than 24 metres away aren't drawn. Up close
+  (the hero screen) eyes, blinks and expressions show as before.
+- **Hair in the breeze:** still set aside by the owner, and waiting on who makes the hair as
+  separate locks on bones (`docs/HAIR_AND_FACE_GUIDE.md`: the owner, or an artist). Face shapes
+  for the skin itself (smiles, frowns) wait on the same answer.
+- **Godot or Unreal, again:** still no. Today's frame-rate work (plants as cards in one draw call, a
+  smaller shadow map fitted to the view, 4,000-triangle models) is the kind of budgeting either
+  engine would ask for too, and none of it needed one; the reasons against below stand (Unreal
+  doesn't build for the web, and MetaHuman isn't this style; Godot has no character tools).
+- **The phone:** nothing from 2026-11-23 has been seen on an iPhone yet.
+
 ### The Rifleman, the Shaman and Professor Terror (2026-11-21)
 
 The owner remade the Rifleman and the Shaman and made the old Professor Terror, rigged in AccuRig on
@@ -66,11 +90,13 @@ the Captain's skeleton, blank-faced as he was. Each went through the Captain's p
 2. A full copy for close-ups (`game_copy.py`, every triangle, pictures at 2048, AccuRig's face
    shapes dropped), packed with meshopt: `public/models/rifleman-full.glb` 3.4 MB,
    `shaman-full.glb` 5.3 MB, `terror-full.glb` 4.9 MB.
-3. A light copy for afar (`bake_game.py`), done as the owner's walkthrough has it: thinned to
-   8,000 triangles, its faces turned outward, unwrapped afresh, colour and normals baked from the
-   full model at 2048 in Cycles; about 1 MB each (`rifleman.glb`, `shaman.glb`, `terror.glb`). A
-   few small flecks of skin show through on the Rifleman's sleeves where the thinned mesh bridges
-   the armpit; it's only drawn when he's small on the screen.
+3. A light copy for afar (`bake_game.py`), done as the owner's walkthrough has it, at the owner's
+   budget for what's seen from above (2026-11-23): one closed skin over everything (a voxel remesh,
+   so clothes over the body thin without breaking up into holes, as the Captain's shirt did), its
+   bones' weights carried over from the full model, thinned to 4,000 triangles with a third of
+   them kept for the head, its faces turned outward, unwrapped afresh, colour and normals baked from
+   the full model at 1024 in Cycles; about 0.5 MB each (`rifleman.glb`, `shaman.glb`,
+   `terror.glb`, `captain-raid.glb`). It was 8,000 at 2048 (the Captain's 40,000).
 4. Their faces mapped (`face_map.py`): eye sockets, brow ridges and mouths found on the blank
    faces. The Shaman's sculpted face hid his sockets from the finder (it took his temples); his are
    given by hand (`eyes=0.024,0.885,0.905`: the deepest point of the socket and the brow ridge's
@@ -174,6 +200,8 @@ It's about a week of work a character, against the hour or so the way now takes,
 done in Blender, not in an engine (see below).
 
 ### The brief for the hair and faces (2026-11-22)
+
+Step by step in Blender, for the owner or an artist: `docs/HAIR_AND_FACE_GUIDE.md` (2026-11-23).
 
 The owner doesn't model in Blender. Whoever does this (an artist on commission, or the owner
 following a guide written from it), each character's delivery is:

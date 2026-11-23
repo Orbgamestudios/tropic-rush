@@ -656,31 +656,36 @@ export function loadCaptain(options: CaptainOptions = {}): Promise<Captain> {
   return loadPerson("captain", options);
 }
 
-/** Loads one of the people rigged as the Captain is, standing 1.8 m on y = 0. */
-export async function loadPerson(who: Person, options: CaptainOptions = {}): Promise<Captain> {
-  const files = PEOPLE[who];
-  let faceMap: Promise<FaceMap | null> = Promise.resolve(null);
-  let faceSkin: Promise<THREE.Texture | null> = Promise.resolve(null);
-  if (files.face) {
-    const url = files.face;
-    let mapLoad = faceMaps.get(url);
-    if (!mapLoad) {
-      mapLoad = fetch(url).then((r) => {
-        if (!r.ok) throw new Error("No face map");
-        return r.json() as Promise<FaceMap>;
-      });
-      faceMaps.set(url, mapLoad);
-    }
-    let skinLoad = faceSkins.get(url);
-    if (!skinLoad) {
-      skinLoad = mapLoad.then((m) => new THREE.TextureLoader().loadAsync(`/models/${m.picture}`));
-      faceSkins.set(url, skinLoad);
-    }
-    // A face that can't be had leaves them blank-faced, not missing.
-    faceMap = mapLoad.catch(() => null);
-    faceSkin = skinLoad.catch(() => null);
+/** A face map and the picture of the skin under its patches, each fetched once; null if not had. */
+function faceFiles(
+  url: string | undefined,
+): [Promise<FaceMap | null>, Promise<THREE.Texture | null>] {
+  if (!url) return [Promise.resolve(null), Promise.resolve(null)];
+  let mapLoad = faceMaps.get(url);
+  if (!mapLoad) {
+    mapLoad = fetch(url).then((r) => {
+      if (!r.ok) throw new Error("No face map");
+      return r.json() as Promise<FaceMap>;
+    });
+    faceMaps.set(url, mapLoad);
   }
-  const [full, light, map, skin, clips] = await Promise.all([
+  let skinLoad = faceSkins.get(url);
+  if (!skinLoad) {
+    skinLoad = mapLoad.then((m) => new THREE.TextureLoader().loadAsync(`/models/${m.picture}`));
+    faceSkins.set(url, skinLoad);
+  }
+  // A face that can't be had leaves them blank-faced, not missing.
+  return [mapLoad.catch(() => null), skinLoad.catch(() => null)];
+}
+
+/**
+ * Everything one of them is made of, each file fetched once, without making them: what loadPerson
+ * builds them from, and what a loading screen waits on so they're there at once when wanted.
+ */
+export function fetchPerson(who: Person, options: CaptainOptions = {}) {
+  const files = PEOPLE[who];
+  const [faceMap, faceSkin] = faceFiles(files.face);
+  return Promise.all([
     options.raid && files.light ? null : file(files.model),
     files.light ? file(files.light) : null,
     faceMap,
@@ -688,6 +693,12 @@ export async function loadPerson(who: Person, options: CaptainOptions = {}): Pro
     // The owner's stock clips; without them (offline) he stands at ease on moves of his own.
     stockClips(),
   ]);
+}
+
+/** Loads one of the people rigged as the Captain is, standing 1.8 m on y = 0. */
+export async function loadPerson(who: Person, options: CaptainOptions = {}): Promise<Captain> {
+  const files = PEOPLE[who];
+  const [full, light, map, skin, clips] = await fetchPerson(who, options);
   const base = full ?? light;
   if (!base) throw new Error(`No model for ${who}`);
   const model = clone(base.scene);
@@ -762,7 +773,7 @@ export async function loadPerson(who: Person, options: CaptainOptions = {}): Pro
   if (parts) {
     model.updateMatrixWorld(true);
     const eyes = new THREE.Vector3();
-    const patches = parts.head.children.filter((o) => o instanceof THREE.Mesh);
+    const { patches } = parts;
     // The patches are drawn in the head's own space, so where they are is in their points.
     for (const p of patches) {
       p.geometry.computeBoundingBox();

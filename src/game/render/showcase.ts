@@ -5,10 +5,11 @@
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
+import { fetchPerson } from "./captain";
 import { PersonInRaid, personFor } from "./captainRaid";
 import { AT_EASE, type HeroAnimator, type HeroMove } from "./heroAnimator";
 import { heroOnHand, type MenuHero } from "./heroAssets";
-import { hasBody, loadMenuBody, loadRigs } from "./riggedHeroes";
+import { loadMenuBody, loadRigs } from "./riggedHeroes";
 import type { Stage } from "./stage";
 
 function backdropTexture(): THREE.CanvasTexture {
@@ -312,23 +313,26 @@ export class Showcase {
   }
 
   /**
-   * Puts a hero on the pedestal (it drops in with a little bounce). The detailed model can take a
-   * while on a slow connection or never come at all, so whatever's here already goes up straight
-   * away, and the detailed one takes over when it lands.
+   * Puts a hero on the pedestal (it drops in with a little bounce) once their model's here: nothing
+   * stands in while it's fetched (the owner's call, 2026-11-23); the loading screen covers the wait
+   * (heroSelect.ts). Without it (offline) they stand as their figure.
    */
   async setHero(kind: HeroKind): Promise<void> {
     if (kind === this.kind) return;
     this.kind = kind;
     const token = ++this.token;
     const detailed = !this.raidCopy;
+    const who = personFor(kind);
+    await Promise.all([
+      detailed ? loadMenuBody(kind) : loadRigs(),
+      who ? fetchPerson(who).catch(() => null) : null,
+    ]);
+    if (token !== this.token) return;
     this.stand(kind, heroOnHand(kind, detailed));
     this.drop = 0;
     // A cheer as they land, and it goes round from there.
     this.act = 0;
     this.acting = -0.45;
-    if (hasBody(kind, detailed)) return;
-    await (detailed ? loadMenuBody(kind) : loadRigs());
-    if (token === this.token) this.stand(kind, heroOnHand(kind, detailed));
   }
 
   private stand(kind: HeroKind, { holder: model, animator, model: figure }: MenuHero): void {

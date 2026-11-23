@@ -1,30 +1,29 @@
 // Everything that grows or lies on the raid island: the rules' palms and boulders,
 // plus a dense jungle around the base's clearing (broadleaf trees, palms, elephant-ear plants),
 // ferns, flowers and grass across the open ground, and whatever the tide has left on the beach.
-// Each kind is one merged geometry drawn with instancing, so thousands of plants cost a couple of
-// dozen draw calls on the phone. Plants sway in the wind in the vertex shader.
+// The plants are cards, every one on the island in a single draw call (foliage.ts); on Ultra they're
+// solid, each kind one merged geometry drawn with instancing. Plants sway in the wind in the vertex
+// shader.
 
 import * as THREE from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { VIEW_YAW } from "../config";
 import { HOME_CLIFFS } from "../logic/crewIsland";
 import { HOME_SHAPE, homeHeight, type IslandLayout, type IslandShape } from "../logic/island";
 import { createRng, type Rng } from "../logic/rng";
 import { lotTide, TIDE_LOTS } from "../logic/tides";
 import { smoothstep, type Vec2 } from "../logic/vec";
 import { withDetail } from "./detail";
+import { blobShadows, FOCUS, PlantBatch, type PlantShapes, WIND } from "./foliage";
 import { meadowTint } from "./meadow";
 import { COLORS } from "./palette";
 import type { SceneryMap } from "./scenery";
 import { merge, painted, vertexColored } from "./shapes";
 import { SKY } from "./sky";
-import { plantPicture } from "./thumbnails";
 
 // ---------------------------------------------------------------------------------------------
 // Wind
 
-const wind = { value: 0 };
-/** The hero the camera follows; plants between them and the camera dissolve. */
-const focus = { value: new THREE.Vector3(0, -100, 0) };
 const swayMaterials = new Map<string, THREE.MeshLambertMaterial>();
 
 /**
@@ -40,8 +39,8 @@ export function swaying(dissolve = true, stiff = false): THREE.MeshLambertMateri
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   if (!stiff) m.color = SKY.forest.value;
   m.onBeforeCompile = (shader) => {
-    shader.uniforms.uWind = wind;
-    shader.uniforms.uFocus = focus;
+    shader.uniforms.uWind = WIND;
+    shader.uniforms.uFocus = FOCUS;
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -95,20 +94,17 @@ export function swaying(dissolve = true, stiff = false): THREE.MeshLambertMateri
 
 /** Advances the wind and tells the plants where the followed hero is; call once a frame. */
 export function updateWind(time: number, hero: THREE.Vector3 | null): void {
-  wind.value = time;
-  if (hero) focus.value.copy(hero);
-  else focus.value.set(0, -100, 0);
+  WIND.value = time;
+  if (hero) FOCUS.value.copy(hero);
+  else FOCUS.value.set(0, -100, 0);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Small plants drawn flat: each kind is drawn once into a picture, and every plant of that kind is
-// a card with it on, turned to face the camera and swaying in the wind. Two triangles a plant
-// rather than dozens, with thousands of them on an island. The Ultra graphics setting keeps them
-// solid.
+// Plants are cards (foliage.ts), or solid on the Ultra graphics setting.
 
 let solid = false;
 
-/** Keeps the small plants solid (Ultra) or draws them as cards. Islands drawn after this follow it. */
+/** Keeps the plants solid (Ultra) or draws them as cards. Islands drawn after this follow it. */
 export function setSolidPlants(on: boolean): void {
   solid = on;
 }
@@ -117,67 +113,34 @@ export function solidPlants(): boolean {
   return solid;
 }
 
-/** How far the camera looks down, in radians: the cards are drawn as seen from about here. */
-const CARD_PITCH = 0.95;
+/** What each kind of card is a picture of. */
+const PLANT_SHAPES: PlantShapes = {
+  palm: palmGeometry,
+  tree: jungleTreeGeometry,
+  pine: pineGeometry,
+  ear: elephantEarGeometry,
+  bush: bushGeometry,
+  snowyBush: () => snowCapped(bushGeometry(), 0.9),
+  fern: fernGeometry,
+  tuft: tuftGeometry,
+  red: () => flowerGeometry(0xff5a6e, 0xffe066),
+  yellow: () => flowerGeometry(0xffd23f, 0xff8a1c),
+  white: () => flowerGeometry(0xf4f1ff, 0xffc93a),
+};
 
-const cards = new Map<string, { geometry: THREE.BufferGeometry; material: THREE.Material }>();
+/** Which way along the ground the camera usually sits from what it looks at. */
+const TOWARDS_CAMERA = new THREE.Vector2(Math.sin(VIEW_YAW), Math.cos(VIEW_YAW));
 
-function card(name: string, plant: () => THREE.BufferGeometry) {
-  let made = cards.get(name);
-  if (made) return made;
-  const picture = plantPicture(plant(), CARD_PITCH);
-  const map = new THREE.CanvasTexture(picture.canvas);
-  map.colorSpace = THREE.SRGBColorSpace;
-  const geometry = new THREE.PlaneGeometry(
-    picture.right - picture.left,
-    picture.top - picture.bottom,
-  );
-  geometry.translate((picture.left + picture.right) / 2, (picture.bottom + picture.top) / 2, 0);
-  // Lit as the ground is, from above, whichever way the card turns.
-  const normals = geometry.getAttribute("normal");
-  for (let i = 0; i < normals.count; i++) normals.setXYZ(i, 0, 1, 0);
-  const material = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
-  material.color = SKY.forest.value;
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uWind = wind;
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform float uWind;")
-      .replace(
-        "#include <project_vertex>",
-        /* glsl */ `
-        // Stood upright on its root and turned square to the camera, flipped for some of them so
-        // they don't all lean the same way, its top swaying in the wind.
-        vec4 root = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        vec3 rootWorld = instanceMatrix[3].xyz;
-        float size = length(instanceMatrix[0].xyz);
-        float flip = instanceMatrix[0].x < 0.0 ? -1.0 : 1.0;
-        float lift = max(transformed.y, 0.0) * size;
-        float phase = uWind * 1.4 + rootWorld.x * 0.21 + rootWorld.z * 0.17;
-        float gust = 0.6 + 0.4 * sin(uWind * 0.37 + rootWorld.x * 0.03);
-        vec4 mvPosition = root + vec4(transformed.x * size * flip, transformed.y * size, 0.0, 0.0);
-        mvPosition.x += sin(phase) * lift * lift * 0.05 * gust;
-        gl_Position = projectionMatrix * mvPosition;`,
-      );
-  };
-  material.customProgramCacheKey = () => "tropic-plant-card";
-  made = { geometry, material };
-  cards.set(name, made);
-  return made;
-}
-
-/** A kind of small plant over the island: solid on Ultra, otherwise cards. */
-export function smallPlants(
-  name: string,
-  plant: () => THREE.BufferGeometry,
-  items: readonly PropInstance[],
-  material: THREE.Material,
+/** Every plant in the batch as one mesh of cards; `big` is how many aren't small (see PlantBatch). */
+export function plantCards(
+  batch: PlantBatch,
   ground: (x: number, y: number) => number,
-  blend = false,
-): THREE.Group {
-  if (solid) return chunked(plant(), items, false, material, ground, blend);
-  const { geometry, material: flat } = card(name, plant);
-  return chunked(geometry, items, false, flat, ground, blend);
+): { mesh: THREE.InstancedMesh; big: number } {
+  return batch.build(PLANT_SHAPES, ground, TOWARDS_CAMERA);
 }
+
+/** How far round a bush its shadow spreads, at its own size. */
+const BUSH_SHADOW = 1.3;
 
 // ---------------------------------------------------------------------------------------------
 // Shapes
@@ -809,34 +772,54 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
 
   const sway = swaying();
   const low = swaying(false);
-  if ((layout.snow ?? 0) > 0.5) {
-    // The snowy north: pines where the palms and jungle would be, snow on the rocks and bushes,
-    // and nothing flowering.
-    root.add(
-      chunked(snowy.pine(), [...palms, ...trees], true, sway, ground),
-      instanced(snowy.rock(), rocks, true, vertexColored(), ground),
-      instanced(snowy.cliff(), cliffs, true, swaying(true, true), ground),
-      instanced(snowy.pebbles(), pebbles, true, vertexColored(), ground),
-      instanced(snowy.bush(), [...bushes, ...ears], true, low, ground, true),
-      buildShore(layout.seed, map, layout.spawn, ground, 5, shape, true),
-    );
+  const north = (layout.snow ?? 0) > 0.5;
+  // The snowy north: pines where the palms and jungle would be, snow on the rocks and bushes, and
+  // nothing flowering. Rock stays solid; only boulders and cliffs, big enough for it to show, cast a
+  // shadow, and the bushes have a soft one laid on the ground under them instead.
+  const shrubs = north ? [...bushes, ...ears] : bushes;
+  root.add(
+    instanced(north ? snowy.rock() : rockGeometry(), rocks, true, vertexColored(), ground),
+    instanced(north ? snowy.cliff() : cliffGeometry(), cliffs, true, swaying(true, true), ground),
+    instanced(north ? snowy.pebbles() : pebblesGeometry(), pebbles, false, vertexColored(), ground),
+    blobShadows(shrubs, ground, BUSH_SHADOW),
+  );
+  if (solid) {
+    if (north) {
+      root.add(
+        chunked(snowy.pine(), [...palms, ...trees], true, sway, ground),
+        instanced(snowy.bush(), shrubs, false, low, ground, true),
+      );
+    } else {
+      root.add(
+        chunked(palmGeometry(), palms, true, sway, ground),
+        chunked(jungleTreeGeometry(), trees, true, sway, ground),
+        chunked(elephantEarGeometry(), ears, false, sway, ground),
+        instanced(bushGeometry(), bushes, false, low, ground, true),
+        chunked(fernGeometry(), ferns, false, low, ground, true),
+        chunked(PLANT_SHAPES.red(), flowers[0] ?? [], false, low, ground),
+        chunked(PLANT_SHAPES.yellow(), flowers[1] ?? [], false, low, ground),
+        chunked(PLANT_SHAPES.white(), flowers[2] ?? [], false, low, ground),
+        chunked(tuftGeometry(), tufts, false, low, ground, true),
+      );
+    }
+    root.add(buildShore(layout.seed, map, layout.spawn, ground, 5, shape, north));
     return root;
   }
-  root.add(
-    chunked(palmGeometry(), palms, true, sway, ground),
-    chunked(jungleTreeGeometry(), trees, true, sway, ground),
-    chunked(elephantEarGeometry(), ears, false, sway, ground),
-    instanced(rockGeometry(), rocks, true, vertexColored(), ground),
-    instanced(cliffGeometry(), cliffs, true, swaying(true, true), ground),
-    instanced(pebblesGeometry(), pebbles, true, vertexColored(), ground),
-    instanced(bushGeometry(), bushes, true, low, ground, true),
-    smallPlants("fern", fernGeometry, ferns, low, ground, true),
-    smallPlants("red", () => flowerGeometry(0xff5a6e, 0xffe066), flowers[0] ?? [], low, ground),
-    smallPlants("yellow", () => flowerGeometry(0xffd23f, 0xff8a1c), flowers[1] ?? [], low, ground),
-    smallPlants("white", () => flowerGeometry(0xf4f1ff, 0xffc93a), flowers[2] ?? [], low, ground),
-    smallPlants("tuft", tuftGeometry, tufts, low, ground, true),
-    buildShore(layout.seed, map, layout.spawn, ground, 5, shape),
-  );
+  const plants = new PlantBatch();
+  if (north) plants.add("pine", [...palms, ...trees]).add("snowyBush", shrubs, true);
+  else
+    plants
+      .add("palm", palms)
+      .add("tree", trees)
+      .add("ear", ears)
+      .add("bush", bushes, true)
+      .add("fern", ferns, true)
+      .add("red", flowers[0] ?? [])
+      .add("yellow", flowers[1] ?? [])
+      .add("white", flowers[2] ?? [])
+      .add("tuft", tufts, true);
+  root.add(buildShore(layout.seed, map, layout.spawn, ground, 5, shape, north, plants));
+  root.add(plantCards(plants, ground).mesh);
   return root;
 }
 
@@ -870,7 +853,25 @@ export function buildShore(
   inland = 5,
   shape: IslandShape = HOME_SHAPE,
   snowy = false,
+  /** Where the palms go: into these cards, or (when it's not given) drawn solid here. */
+  plants?: PlantBatch,
 ): THREE.Group {
+  const palms = shorePalms(seed, map, shape, inland);
+  const root = new THREE.Group();
+  if (plants) plants.add(snowy ? "pine" : "palm", palms);
+  else
+    root.add(chunked(snowy ? pineGeometry() : palmGeometry(), palms, true, swaying(false), ground));
+  root.add(beachFinds(seed, map, landing, ground, shape));
+  return root;
+}
+
+/** The palms along the top of the sand: `inland` is how far past it they may grow. */
+export function shorePalms(
+  seed: number,
+  map: SceneryMap,
+  shape: IslandShape = HOME_SHAPE,
+  inland = 5,
+): PropInstance[] {
   const rng = createRng(seed + 29);
   const extent = shape.reach;
   const palms: PropInstance[] = [];
@@ -885,13 +886,7 @@ export function buildShore(
     },
     extent,
   );
-
-  const root = new THREE.Group();
-  root.add(
-    chunked(snowy ? pineGeometry() : palmGeometry(), palms, true, swaying(false), ground),
-    beachFinds(seed, map, landing, ground, shape),
-  );
-  return root;
+  return palms;
 }
 
 let findShapes: ReturnType<typeof makeFindShapes> | null = null;
@@ -960,7 +955,8 @@ export function beachFinds(
   );
   for (const piece of pieces) piece.dispose();
   mesh.name = BEACH_FINDS;
-  mesh.castShadow = true;
+  // Shells and starfish: too small for a shadow to show, and every one would be drawn again for it.
+  mesh.castShadow = false;
   mesh.receiveShadow = true;
   return mesh;
 }

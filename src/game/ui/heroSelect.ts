@@ -35,6 +35,7 @@ import {
 import { sfx } from "./kit/fx";
 import { icon } from "./kit/icons";
 import { timeGem } from "./kit/timeIcons";
+import { loadingScreen } from "./loadingScreen";
 
 export interface HeroSelectHost {
   save(): SaveData;
@@ -200,7 +201,7 @@ export class HeroSelect {
   private choose(kind: HeroKind, quiet = false): void {
     if (!quiet && kind !== this.hero) sfx.whoosh();
     this.hero = kind;
-    void this.showcase.setHero(kind);
+    void loadingScreen().cover([this.showcase.setHero(kind)], "Bringing in the crew");
     this.refresh();
   }
 

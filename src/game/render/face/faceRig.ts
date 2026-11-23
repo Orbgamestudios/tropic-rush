@@ -132,7 +132,16 @@ export interface FaceParts {
   mouth: MouthUniforms;
   head: THREE.Bone;
   map: FaceMap;
+  /** The eye and mouth patches, in the head bone's space. */
+  patches: THREE.Mesh[];
 }
+
+/**
+ * Beyond this many meters from the camera the painted face isn't drawn: a face there is ten pixels
+ * tall at most and its eyes one or two, three draw calls and thousands of triangles for nothing
+ * (the owner's budget for what's seen from above, 2026-11-23).
+ */
+const FACE_FAR = 24;
 
 /**
  * Hangs the painted face on a model just loaded, before anything has moved it: the patches are in
@@ -168,13 +177,14 @@ export function addFace(
   }
   // The mouth's line at rest reaches most of the way across its pocket.
   mouth.mood.value.w = 0.78;
+  const patches: THREE.Mesh[] = [];
   const add = (
     patch: Patch,
     centre: [number, number],
     size: number,
     mirror: boolean,
     material: THREE.Material,
-  ) => head.add(patchMesh(patch, map.tiles, toBone, centre, size, mirror, material));
+  ) => patches.push(patchMesh(patch, map.tiles, toBone, centre, size, mirror, material));
   add(
     map.patches.eyeL,
     map.eyes[0],
@@ -196,7 +206,11 @@ export function addFace(
     false,
     facePatchMaterial({ kind: "mouth", skin, roughness, palette, mouth }),
   );
-  return { eyes, mouth, head, map };
+  const drawn = new THREE.LOD();
+  drawn.addLevel(new THREE.Group().add(...patches), 0);
+  drawn.addLevel(new THREE.Object3D(), FACE_FAR);
+  head.add(drawn);
+  return { eyes, mouth, head, map, patches };
 }
 
 type MouthKey = keyof MouthShape;

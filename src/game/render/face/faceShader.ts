@@ -190,8 +190,10 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
   float inside = edge(max(max(e.y - up, low - e.y), abs(e.x) - 1.0));
   if (inside > 0.0) {
     // The white: warm, shaded under the upper lid and towards the corners.
-    // The lid's shadow on the eye: a soft band under its edge.
-    float underLid = exp(-(up - e.y) * 5.0);
+    // The lid's shadow on the eye: a soft band under its edge. Held to 1 above the edge: with the
+    // face a few pixels across, the soft edges spread the eye over its whole patch, and unbounded this
+    // grew past what the picture can hold, a NaN that bloomed into a white flash on the forehead.
+    float underLid = exp(-max(up - e.y, 0.0) * 5.0);
     float corner = smoothstep(0.55, 1.0, abs(e.x));
     vec3 white = vec3(0.86, 0.83, 0.8) * (1.0 - 0.45 * underLid) * (1.0 - 0.25 * corner);
     // Pink by the nose.

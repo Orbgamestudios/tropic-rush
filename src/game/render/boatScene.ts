@@ -223,8 +223,9 @@ export class BoatScene {
   }
 
   /**
-   * Puts the crew aboard: straight away in their raid copies (already loaded), so she's never
-   * empty; the detailed models follow for close-ups as they arrive.
+   * Puts the crew aboard, every model each of them is drawn with fetched first: nothing stands in
+   * or changes in front of the camera (the owner's call, 2026-11-23); the loading screen covers the
+   * wait (Game.showBoat).
    */
   async board(kinds: readonly HeroKind[], chosen: HeroKind): Promise<void> {
     await loadRigs();
@@ -277,15 +278,14 @@ export class BoatScene {
     this.hull.updateMatrixWorld(true);
     for (const c of this.crew) c.shot = this.planShot(c);
     this.choose(chosen, true);
-    // The detailed models, as they come.
+    // The detailed models, for close-ups.
+    await Promise.all(this.crew.map((c) => (c.person ? null : loadMenuBody(c.kind))));
     for (const c of this.crew) {
       if (c.person) continue;
-      void loadMenuBody(c.kind).then(() => {
-        const model = heroModel(c.kind, true);
-        model.root.visible = false;
-        c.holder.add(model.root);
-        c.near = { model, animator: model.rig && new HeroAnimator(model.rig) };
-      });
+      const model = heroModel(c.kind, true);
+      model.root.visible = false;
+      c.holder.add(model.root);
+      c.near = { model, animator: model.rig && new HeroAnimator(model.rig) };
     }
   }
 

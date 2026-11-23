@@ -16,6 +16,10 @@ import { LIGHT_DISTANCE, Sky } from "./sky";
 const snapRight = new THREE.Vector3();
 const snapUp = new THREE.Vector3();
 const snapAt = new THREE.Vector3();
+const viewRay = new THREE.Vector3();
+const viewPoint = new THREE.Vector3();
+/** How high over the ground in view the shadows still matter: the treetops. */
+const VIEW_TOPS = 9;
 
 /** How sharp a fight is at each step of quality: any more only costs battery on a phone. */
 const PIXEL_RATIOS = [1.5, 1.3, 1.15, 1.15];
@@ -124,31 +128,77 @@ export class Stage {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Keeps crisp shadows around what the camera is looking at. */
+  /**
+   * Keeps crisp shadows on what the camera can see round `target`: the sun's view is fitted to the
+   * ground in sight (and the treetops over it), never more than `size` either way of the target, so
+   * the shadow map's pixels go only where they show. The owner, 2026-11-23: a smaller map, spent on
+   * the view.
+   */
   focusShadows(target: THREE.Vector3, size: number): void {
-    // Kept on the shadow map's own grid of pixels as it follows something moving: otherwise every
-    // edge in the map shifts by part of a pixel each frame and shadows shimmer and flicker.
     const d = this.sky.direction;
     const right = snapRight.set(-d.z, 0, d.x);
     if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
     right.normalize();
     const up = snapUp.crossVectors(d, right).normalize();
-    const texel = (2 * size) / this.sun.shadow.mapSize.x;
-    const a = Math.round(target.dot(right) / texel) * texel - target.dot(right);
-    const b = Math.round(target.dot(up) / texel) * texel - target.dot(up);
+    // Each corner of the view, where it meets the ground and the treetops, in the sun's terms.
+    const view = this.camera;
+    view.updateMatrixWorld();
+    const ta = target.dot(right);
+    const tb = target.dot(up);
+    let minA = size;
+    let maxA = -size;
+    let minB = size;
+    let maxB = -size;
+    for (let corner = 0; corner < 4; corner++) {
+      const ray = viewRay
+        .set(corner & 1 ? 1 : -1, corner & 2 ? 1 : -1, 1)
+        .unproject(view)
+        .sub(view.position)
+        .normalize();
+      for (const height of [target.y - 1, target.y + VIEW_TOPS]) {
+        // Looking over the horizon, as far as a shadow could matter.
+        let t = ray.y < -1e-4 ? (height - view.position.y) / ray.y : Number.POSITIVE_INFINITY;
+        if (!(t > 0)) t = Number.POSITIVE_INFINITY;
+        const p = viewPoint.copy(view.position).addScaledVector(ray, Math.min(t, size * 4));
+        const a = p.dot(right) - ta;
+        const b = p.dot(up) - tb;
+        minA = Math.min(minA, a);
+        maxA = Math.max(maxA, a);
+        minB = Math.min(minB, b);
+        maxB = Math.max(maxB, b);
+      }
+    }
+    minA = Math.max(minA, -size);
+    maxA = Math.min(maxA, size);
+    minB = Math.max(minB, -size);
+    maxB = Math.min(maxB, size);
+    // In whole steps, with a step to spare: a frame that changed size with every small move of the
+    // camera would move every shadow's edge with it, and they'd shimmer.
+    const step = Math.max(0.5, size / 16);
+    const halfA = Math.min(size, (Math.ceil((maxA - minA) / 2 / step) + 1) * step);
+    const halfB = Math.min(size, (Math.ceil((maxB - minB) / 2 / step) + 1) * step);
+    const midA = Math.max(-size + halfA, Math.min(size - halfA, (minA + maxA) / 2));
+    const midB = Math.max(-size + halfB, Math.min(size - halfB, (minB + maxB) / 2));
+    // Kept on the shadow map's own grid of pixels as it follows something moving: otherwise every
+    // edge in the map shifts by part of a pixel each frame and shadows shimmer and flicker.
+    const map = this.sun.shadow.mapSize.x;
+    const texelA = (2 * halfA) / map;
+    const texelB = (2 * halfB) / map;
+    const a = Math.round((ta + midA) / texelA) * texelA - ta;
+    const b = Math.round((tb + midB) / texelB) * texelB - tb;
     const at = snapAt.copy(target).addScaledVector(right, a).addScaledVector(up, b);
     this.sun.position.copy(at).addScaledVector(d, LIGHT_DISTANCE);
     this.sun.target.position.copy(at);
     const cam = this.sun.shadow.camera;
-    if (cam.right !== size) {
-      cam.left = -size;
-      cam.right = size;
-      cam.top = size;
-      cam.bottom = -size;
+    if (cam.right !== halfA || cam.top !== halfB) {
+      cam.left = -halfA;
+      cam.right = halfA;
+      cam.top = halfB;
+      cam.bottom = -halfB;
       cam.updateProjectionMatrix();
       // The offset that keeps a surface from shadowing itself in stripes goes with the size of a
       // shadow's pixel: close up it's small, so the chin's shadow sits on the neck, not off it.
-      this.sun.shadow.normalBias = Math.min(0.04, Math.max(0.006, size * 0.0025));
+      this.sun.shadow.normalBias = Math.min(0.04, Math.max(0.006, Math.max(texelA, texelB) * 1.9));
       this.shadowsStale = true;
     }
   }
@@ -192,9 +242,10 @@ export class Stage {
   /** Each step down: resolution, then a smaller shadow map drawn less often, then no shadows. */
   private setQuality(quality: number): void {
     this.quality = quality;
-    // A cutscene is short, and comes in close: it gets Ultra's shadows whatever the setting.
-    const ultra = this.graphics === "ultra" || this.filming;
-    const shadowSize = ultra ? ULTRA_SHADOW_MAP : quality >= 2 ? 1024 : 1536;
+    // The sun's view is fitted to what's on screen (focusShadows), so a smaller map does: 1024, 512
+    // on a phone that's struggling. Only Ultra keeps a big one.
+    const ultra = this.graphics === "ultra";
+    const shadowSize = ultra ? ULTRA_SHADOW_MAP : quality >= 2 ? 512 : 1024;
     if (this.sun.shadow.mapSize.x !== shadowSize) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
       this.sun.shadow.map?.dispose();

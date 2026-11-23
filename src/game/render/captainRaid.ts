@@ -105,6 +105,8 @@ export class PersonInRaid {
     rig: HeroRig,
     /** Whether they carry what the figure does: a story figure walking about doesn't. */
     private readonly armed: boolean,
+    /** The figure's parts that were showing before it went out of sight. */
+    hidden: readonly THREE.Mesh[],
   ) {
     this.lead = model.root;
     this.rifle = rig.rifle;
@@ -242,10 +244,9 @@ export class PersonInRaid {
     lead.position.copy(leadAt);
     lead.updateMatrixWorld(true);
 
-    // The figure's body goes out of sight; what it holds stays, for the person's hands to hold.
-    lead.traverse((o) => {
-      if (o instanceof THREE.Mesh && (!armed || !isUnder(o, rig.rifle))) o.visible = false;
-    });
+    // The figure's body stays out of sight (see follow); what it holds comes back, for the person's
+    // hands to hold.
+    for (const mesh of hidden) if (armed && isUnder(mesh, rig.rifle)) mesh.visible = true;
     const grip = armed ? 0.8 : RELAXED;
     captain.hands.clasp("L", grip);
     captain.hands.clasp("R", grip);
@@ -263,8 +264,20 @@ export class PersonInRaid {
   ): Promise<PersonInRaid | null> {
     const rig = model.rig;
     if (!rig) return null;
+    // Nothing stands in for them while they're fetched (the owner's call, 2026-11-23): the figure
+    // goes out of sight now, and comes back only if they can't be had at all, so a hero is never
+    // missing from a fight.
+    const hidden: THREE.Mesh[] = [];
+    model.root.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.visible) hidden.push(o);
+    });
+    for (const mesh of hidden) mesh.visible = false;
     const person = await loadPerson(who, { raid: !options.full }).catch(() => null);
-    return person && new PersonInRaid(person, model, rig, options.armed ?? true);
+    if (!person) {
+      for (const mesh of hidden) mesh.visible = true;
+      return null;
+    }
+    return new PersonInRaid(person, model, rig, options.armed ?? true, hidden);
   }
 
   /** The person themself: their face, their hands, and how much of them is drawn. */

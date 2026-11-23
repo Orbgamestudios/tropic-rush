@@ -1,6 +1,7 @@
 // The heroes' real models (scripts/rig-hero.mjs makes them), with a skeleton for everyone on foot,
 // each in two copies: a light one, fetched as the game starts, and a detailed one fetched for the
-// hero screen. Until a model arrives the block figure stands in, so nothing ever waits on them.
+// hero screen and the boat. Screens wait for them behind the loading screen (ui/loadingScreen.ts);
+// a block figure is drawn only for one that can't be had at all (offline).
 // Each hero on screen is a clone sharing the same mesh and texture.
 
 import * as THREE from "three";
@@ -10,15 +11,8 @@ import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { HeroKind } from "../logic/heroes";
 import { addFacePatches, type FaceNotes } from "./facePaint";
 
-const MODELED: readonly HeroKind[] = [
-  "rifleman",
-  "heavy",
-  "medic",
-  "grenadier",
-  "bazooka",
-  "engineer",
-  "tank",
-];
+// The Captain and the Rifleman are the owner's rigged people (captain.ts) instead.
+const MODELED: readonly HeroKind[] = ["heavy", "medic", "grenadier", "bazooka", "engineer", "tank"];
 
 /** Everywhere a hero's body can get to, from the ground between their feet. */
 const REACH = new THREE.Sphere(new THREE.Vector3(0, 1.1, 0), 2.4);

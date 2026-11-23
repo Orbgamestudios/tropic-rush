@@ -18,6 +18,7 @@ import {
 } from "../logic/crewIsland";
 import { homeHeight } from "../logic/island";
 import { createRng } from "../logic/rng";
+import { PlantBatch } from "./foliage";
 import {
   bushGeometry,
   chunked,
@@ -28,8 +29,8 @@ import {
   type PropInstance,
   palmGeometry,
   pebblesGeometry,
+  plantCards,
   rockGeometry,
-  smallPlants,
   solidPlants,
   swaying,
   tuftGeometry,
@@ -159,6 +160,9 @@ export class OvergrowthView {
   private readonly plants = new THREE.Group();
   /** The small plants, which a zoomed-out camera can't make out anyway. */
   private readonly detail = new THREE.Group();
+  /** Every plant as one mesh of cards (foliage.ts), unless they're solid; and how many it has. */
+  private cards: { mesh: THREE.InstancedMesh; big: number; all: number } | null = null;
+  private near = true;
   private key = "";
   private readonly mark: THREE.Mesh;
   private readonly chips: Chip[] = [];
@@ -166,7 +170,11 @@ export class OvergrowthView {
   private readonly leafMaterial = new THREE.MeshLambertMaterial({ color: 0x5cbb4c });
   private readonly stoneMaterial = new THREE.MeshLambertMaterial({ color: 0xa8a293 });
 
-  constructor(private readonly map: SceneryMap) {
+  /** `shore`: the palms along the top of the beach, drawn with the rest (props.ts shorePalms). */
+  constructor(
+    private readonly map: SceneryMap,
+    private readonly shore: readonly PropInstance[] = [],
+  ) {
     this.shade = new THREE.DataTexture(this.shadeData, SHADE_SIZE, SHADE_SIZE, THREE.RGBAFormat);
     this.shade.magFilter = THREE.LinearFilter;
     this.shade.minFilter = THREE.LinearFilter;
@@ -197,6 +205,8 @@ export class OvergrowthView {
     this.key = key;
     disposeInstances(this.plants);
     disposeInstances(this.detail);
+    this.cards?.mesh.geometry.dispose();
+    this.cards = null;
     this.plants.clear();
     this.detail.clear();
 
@@ -234,21 +244,39 @@ export class OvergrowthView {
       (small ? this.detail : this.plants).add(
         chunked(g[kind], out[kind], shadow, material, homeHeight, !shadow),
       );
-    // Only the tall plants cast shadows: the rest would double their cost for little you can see.
-    add("palm", true, sway);
-    add("tree", true, sway);
-    add("ear", false, sway);
-    add("bush", false, sway);
     add("rock", false, still);
     add("pebbles", false, still, true);
-    for (const kind of ["fern", "tuft", "red", "yellow", "white"] as const) {
-      this.detail.add(smallPlants(kind, () => g[kind], out[kind], sway, homeHeight, true));
+    out.palm.push(...this.shore);
+    if (solidPlants()) {
+      // Only the tall plants cast shadows: the rest would double their cost for little you can see.
+      add("palm", true, sway);
+      add("tree", true, sway);
+      add("ear", false, sway);
+      add("bush", false, sway);
+      for (const kind of ["fern", "tuft", "red", "yellow", "white"] as const) {
+        add(kind, false, sway, true);
+      }
+      return;
     }
+    const batch = new PlantBatch()
+      .add("palm", out.palm)
+      .add("tree", out.tree)
+      .add("ear", out.ear, true)
+      .add("bush", out.bush, true);
+    for (const kind of ["fern", "tuft", "red", "yellow", "white"] as const) {
+      batch.add(kind, out[kind], true);
+    }
+    const { mesh, big } = plantCards(batch, homeHeight);
+    this.cards = { mesh, big, all: mesh.count };
+    mesh.count = this.near ? this.cards.all : big;
+    this.plants.add(mesh);
   }
 
   /** Leaves out the smallest plants once the camera is this far back, except on Ultra. */
   setDistance(distance: number): void {
-    this.detail.visible = solidPlants() || distance < DETAIL_DISTANCE;
+    this.near = distance < DETAIL_DISTANCE;
+    this.detail.visible = solidPlants() || this.near;
+    if (this.cards) this.cards.mesh.count = this.near ? this.cards.all : this.cards.big;
   }
 
   private paintShade(tx: number, ty: number, channel: number, amount: number): void {

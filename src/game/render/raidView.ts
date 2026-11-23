@@ -51,7 +51,7 @@ import {
 } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS } from "./palette";
-import { buildProps, buildShore, homeCliffs, updateWind } from "./props";
+import { beachFinds, buildProps, homeCliffs, shorePalms, updateWind } from "./props";
 import { crystalGem } from "./relics";
 import { SandMask } from "./sandPatches";
 import { homeScenery, sceneryMap } from "./scenery";
@@ -425,7 +425,7 @@ export class RaidView {
     this.ground = (x, y) => Math.max(0, height(x, y));
     if (home) {
       const scenery = homeScenery(HOME_START);
-      this.overgrowth = new OvergrowthView(scenery);
+      this.overgrowth = new OvergrowthView(scenery, shorePalms(layout.seed, scenery, shape, -0.5));
       this.overgrowth.sync(home);
       this.terrain = buildTerrain(scenery, {
         height,
@@ -433,7 +433,7 @@ export class RaidView {
         sand: this.sand.texture,
       });
       this.props = new THREE.Group();
-      this.props.add(buildShore(layout.seed, scenery, layout.spawn, height, -0.5), homeCliffs());
+      this.props.add(beachFinds(layout.seed, scenery, layout.spawn, height, shape), homeCliffs());
       this.root.add(this.overgrowth.root);
     } else {
       const scenery = sceneryMap(layout);

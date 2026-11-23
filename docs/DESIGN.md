@@ -64,9 +64,11 @@ These were explicitly left out to keep the first version to a basic structure:
   reached their level, whatever an old save says.
 - **Starting strength:** every hero starts at 85% of the old health and damage, so first islands
   take some care. The upgrades and checkpoints earn it back.
-- **Hero models:** all seven heroes use real TRELLIS.2 models, in menus and in raids: about 32,000
+- **Hero models:** all seven heroes use real TRELLIS.2 models, in menus and in raids (changed: the
+  Captain and the Rifleman are the owner's rigged models now, see 2026-11-23): about 32,000
   triangles on the hero screen, the full source model, and about 15,000 in a raid, nearly half of
-  them on the head, with a normal map baked from the full model. The six on foot have skeletons. The
+  them on the head, with a normal map baked from the full model. **Changed 2026-11-23 (owner):**
+  4,000 in a raid; see "Models seen from above". The six on foot have skeletons. The
   Tank is one solid piece. Hands close on what they hold, each weapon is one mesh, and a hero costs
   two draw calls however detailed their gear.
 - **Grass:** big swathes of light and deep green, shared by the ground and the plants on it, with
@@ -197,7 +199,50 @@ These were explicitly left out to keep the first version to a basic structure:
   what's laid on it and never anyone in front of them. Drawn over the finished picture, a pool
   beyond the Captain blew his face out white round his pupil, on and off as he moved, on land or
   aboard: the flashing light on his face (`render/lightPool.ts`). People standing in a pool aren't
-  lit by it now; the world map keeps its pools as they were.
+  lit by it now; the world map keeps its pools as they were. **Corrected the same day:** the flash
+  kept coming in daylight, on every face, and wasn't the lamps. With a face only a few pixels across
+  the painted eye's shadow under its lid grew without limit, to a value the phone's picture can't
+  hold; the bloom spread it into a white glow, with a black dot where the broken pixel was. It's
+  held in bounds now (`render/face/faceShader.ts`), and faces further than 24 metres from the
+  camera aren't drawn at all.
+- **Plants are cards (Decided 2026-11-23, the owner's call; replaces "Flat small plants" below):**
+  every plant on an island (palms, jungle trees, pines, elephant ears, bushes, ferns, grass tufts
+  and flowers) is a picture on a card that stands upright and turns about the upright to face the
+  camera, cut out by its picture rather than blended, all of them one instanced mesh: one draw call
+  for the lot, and one more for the shadows of the palms, trees and pines, which cast the shape of
+  their picture. The tall plants are drawn as seen from the home island's camera height, a raid's,
+  and low down for cutscenes; bushes and ears from the first two; the small plants from the first.
+  Their tops sway in the wind; on a raid the tall ones still dissolve between the camera and the
+  hero. Ultra keeps every plant solid. On the home island this took a frame from 87 draw calls and
+  425,000 triangles to 35 and 182,000, and pulled right back from 140 and 770,000 to 52 and 277,000
+  (`render/foliage.ts`).
+- **Cheaper shadows (Decided 2026-11-23, the owner's call):** the shadow map is 1024 pixels (512 on a
+  phone that's struggling; Ultra keeps 2048, and cutscenes no longer get Ultra's), and the sun's view
+  is fitted to the ground the camera can see rather than a square round where it looks. Pebbles,
+  what's washed up on the beach and bushes cast none; a bush has a soft round shadow laid on the
+  ground under it instead.
+- **Models seen from above (Decided 2026-11-23, the owner's call; replaces the raid budget of
+  15,000 from 2026-11-02):** every copy of a person or hero that's only seen from the game's high
+  cameras (raids, the home island) is 4,000 triangles, half of a hero's and a third of a person's
+  on the head, with its look in a baked color picture (1024) and normal map (512 for heroes, 1024
+  for people): the six other heroes' raid copies (were 15,000), the Rifleman's, the Shaman's and
+  Terror's (were 8,000) and the Captain's (was 40,000). Close-ups, cutscenes within 3 metres and
+  the hero screen keep the full models. Buildings were already within it (500 to 2,300 triangles a
+  stage). The boat's raid copy (about 39,000 triangles) is unchanged. With the plants and shadows
+  above, a frame of the home island is 26 draw calls and 125,000 triangles (it was 87 and 425,000),
+  and pulled right back 43 and 176,000 (it was 140 and 770,000).
+- **A loading screen, no stand-ins (Decided 2026-11-23, the owner's call):** nothing stands in for a
+  model while it's fetched. A loading screen in the game's navy and brass (its name in gold, a bar
+  that fills as the models come in, a word on what's loading) covers the wait: as the game starts,
+  until the island's heroes, people and buildings are all in and drawn; opening the boat, until the
+  whole crew is aboard in every model the camera will see; choosing a hero on the hero screen; and
+  before a cutscene, until its cast is here (for up to 30 seconds, after which it goes on). A load
+  quicker than a sixth of a second never shows it, and once up it stays half a second, so it never
+  flickers (`ui/loadingScreen.ts`, the first one in `index.html`). A block figure is now drawn only
+  for a model that can't be had at all (offline), for the green echoes the time crystals leave, and
+  for Theo, Clara and the young Professor, who have no models yet.
+- **The Rifleman's old model is gone (2026-11-23, the owner's call):** the TRELLIS Rifleman (his raid
+  and hero-screen copies) is deleted; the Rifleman is the owner's rigged model everywhere.
 - **Frame rate (2026-11-22):** a screen nobody's touched for a second and a half still runs at half
   speed to save the battery, except a raid, the boat, the world map and any cutscene, which always
   run at full speed (the map and the films had read as the game dropping to 30). A cutscene is drawn
@@ -469,7 +514,8 @@ These were explicitly left out to keep the first version to a basic structure:
   **Changed (owner):** that left a dark ring round every building, so it's gone; see below.
 - **Flat small plants, and an Ultra setting:** ferns, grass tufts and flowers are flat cards turned to
   the camera, swaying, two triangles each instead of dozens, which takes a fifth off what the home
-  island draws. Graphics: ultra is the best the game looks: solid small plants at any distance, up
+  island draws. **Changed 2026-11-23 (owner):** every plant is a card now, all in one draw call;
+  see "Plants are cards". Graphics: ultra is the best the game looks: solid small plants at any distance, up
   to twice the screen's resolution, and a bigger shadow map redrawn every frame.
 - **Shorter shadows:** shadows are cast as if the sun or moon were never lower than 38 degrees, so a
   palm's shadow keeps its crown near it instead of being a long bar of trunk across the island.
@@ -694,6 +740,7 @@ These were explicitly left out to keep the first version to a basic structure:
 
 - **Hero models:** the owner found them too undetailed, with features broken by too few triangles.
   Raid copies went from 5,400 to 15,000 triangles, 512 to 1024 textures, and gained a normal map.
+  **Changed 2026-11-23 (owner):** 4,000; see "Models seen from above".
 - **Gunboat upgrades:** every weapon goes from level 1 to 6 at the laboratory, for gold, at
   headquarters 4, 8, 11, 15 and 18, so 3 or 4 headquarters levels apart. Artillery, Medkit and
   Barrage gain 15% a level, the Shock Grenade half a second of stun and the Smokescreen a second and

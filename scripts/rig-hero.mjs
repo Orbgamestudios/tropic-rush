@@ -11,7 +11,9 @@
 // The full model's surface is carried over the same way, as a normal map, so the light copy shades
 // like the full one: folds, noses and rims keep their form with a fraction of the triangles.
 //
-//   node scripts/rig-hero.mjs rifleman
+//   node scripts/rig-hero.mjs medic [rig|hi]
+//
+// Naming a copy writes only that one.
 //
 // Joints are [sideways, up, forward] as shares of the model's height, read off its outline. Limbs
 // are listed for one side and mirrored. Every bone rests with no rotation, so the animator can turn
@@ -63,23 +65,6 @@ const HEROES = {
       elbow: [0.219, 0.539, 0.01],
       wrist: [0.304, 0.452, 0.03],
       fingers: [0.39, 0.345, 0.05],
-    },
-  },
-  rifleman: {
-    source: "models-wip/rifleman-tpose-raw.glb",
-    out: "public/models/rifleman",
-    joints: {
-      hip: [0.08, 0.265, -0.04],
-      knee: [0.08, 0.155, -0.045],
-      ankle: [0.085, 0.07, -0.05],
-      toe: [0.1, 0.03, 0.07],
-      waist: [0, 0.42, -0.03],
-      neck: [0, 0.79, -0.015],
-      top: [0, 1, 0.01],
-      shoulder: [0.175, 0.69, -0.03],
-      elbow: [0.33, 0.665, -0.03],
-      wrist: [0.48, 0.64, -0.03],
-      fingers: [0.63, 0.625, -0.03],
     },
   },
   medic: {
@@ -172,14 +157,18 @@ const HEROES = {
     out: "public/models/tank",
     height: 2.6,
     middle: -0.1,
-    // Hard edges take more triangles than people do, and it's the biggest thing on the beach.
-    raidTriangles: 14000,
+    // The owner's budget for what's seen from the raid's camera (2026-11-23): 2,000 to 4,000.
+    raidTriangles: 4000,
   },
 };
 
-/** The two copies written: light for raids, detailed for the hero screen. */
+/**
+ * The two copies written: light for raids, detailed for the hero screen. The light one is held to
+ * the owner's budget for what's only seen from above (2026-11-23): 4,000 triangles, the head a
+ * share of its own, its look carried by the baked color and normal map.
+ */
 const COPIES = [
-  { suffix: "rig", triangles: 8000, headTriangles: 7000, texture: 1024, quality: 84, rebake: true },
+  { suffix: "rig", triangles: 2000, headTriangles: 2000, texture: 1024, quality: 84, rebake: true },
   { suffix: "hi", triangles: 57000, texture: 1024, quality: 92, rebake: false },
 ];
 const HERO_HEIGHT = 2.25;
@@ -196,6 +185,8 @@ const RELIEF_QUALITY = 86;
 const HEAD_ROOM = 1.7;
 /** A texture's baked this many times too fine and scaled down, which evens out the sampling. */
 const BAKE_FINER = 2;
+/** The least and most far out from the light copy's surface its colors are looked for, in meters. */
+const OUTSIDE = [0.03, 0.12];
 /** Passes of spreading a baked texture's edges outward, so its patches don't bleed. */
 const BAKE_SPREAD = 12;
 /** Pieces with less than this share of the triangles are thrown away. */
@@ -205,6 +196,7 @@ const SHADOW_THICKNESS = 0.012;
 const SHADOW_HEIGHT = 0.02;
 
 const name = process.argv[2];
+const onlyCopy = process.argv[3];
 const hero = HEROES[name];
 if (!hero) throw new Error(`Say which hero: ${Object.keys(HEROES).join(", ")}`);
 
@@ -514,7 +506,14 @@ function unwrapped(indices, positions, size) {
  * and how its surface faces there compared with the light copy's. That comparison is made in the
  * same frame three.js builds in its shader for a mesh with no tangents, so it needs none stored.
  */
-async function bakedTextures(full, flat, { positions, normals, indices, uvs }, size, quality) {
+async function bakedTextures(
+  full,
+  flat,
+  { positions, normals, indices, uvs },
+  size,
+  quality,
+  reach,
+) {
   const source = await sharp(flat.texture.getImage())
     .removeAlpha()
     .raw()
@@ -529,7 +528,9 @@ async function bakedTextures(full, flat, { positions, normals, indices, uvs }, s
   const relief = new Uint8Array(size * size * 3);
   const filled = new Uint8Array(size * size);
   const point = new THREE.Vector3();
-  const hit = {};
+  const hit = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 };
+  const outside = new THREE.Ray();
+  const facingOut = new THREE.Vector3();
   const tri = new THREE.Triangle();
   const [a, b, c] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
   const bary = new THREE.Vector3();
@@ -558,6 +559,11 @@ async function bakedTextures(full, flat, { positions, normals, indices, uvs }, s
     p.fromArray(positions, i0 * 3);
     edgeA.fromArray(positions, i1 * 3).sub(p);
     edgeB.fromArray(positions, i2 * 3).sub(p);
+    // Which way this thinned triangle itself faces: the normals its corners kept are the full
+    // model's, and on a thinned lock of hair they can point down into the head.
+    facingOut.crossVectors(edgeA, edgeB).normalize();
+    blended(low, normals, 3, [i0, i1, i2], [1 / 3, 1 / 3, 1 / 3]);
+    if (facingOut.dot(low) < 0) facingOut.negate();
     const [ax, ay] = [uvs[i1 * 2] - uvs[i0 * 2], uvs[i1 * 2 + 1] - uvs[i0 * 2 + 1]];
     const [bx, by] = [uvs[i2 * 2] - uvs[i0 * 2], uvs[i2 * 2 + 1] - uvs[i0 * 2 + 1]];
     const xs = [p0[0], p1[0], p2[0]];
@@ -581,7 +587,16 @@ async function bakedTextures(full, flat, { positions, normals, indices, uvs }, s
         const sum = Math.max(0, w0) + Math.max(0, w1) + Math.max(0, w2);
         const shares = [w0, w1, w2].map((w) => Math.max(0, w) / sum);
         blended(point, positions, 3, [i0, i1, i2], shares);
-        bvh.closestPointToPoint(point, hit);
+        // Looked for from outside, as far out as the thinning may have moved the surface, so it's
+        // the outermost layer that's found: the nearest point to where a thinned head has sunk
+        // under its hair is the scalp (bare patches on the Medic's head from above, at 4,000).
+        outside.origin.copy(point).addScaledVector(facingOut, reach);
+        outside.direction.copy(facingOut).negate();
+        const first = bvh.raycastFirst(outside, THREE.DoubleSide, 0, reach * 2);
+        if (first) {
+          hit.point.copy(first.point);
+          hit.faceIndex = first.faceIndex;
+        } else bvh.closestPointToPoint(point, hit);
         const f = hit.faceIndex * 3;
         const [v0, v1, v2] = [faces[f], faces[f + 1], faces[f + 2]];
         a.fromArray(full.positions, v0 * 3);
@@ -724,9 +739,9 @@ async function rebaked(full, flat, skin, { triangles: most, headTriangles, textu
   const parts = splitAtNeck(whole);
   const hasHead = parts.head.length > 0;
   const [body, error] = simplifiedPart(whole, parts.body, triangles, hasHead ? ["LockBorder"] : []);
-  const [face] = hasHead
+  const [face, faceError] = hasHead
     ? simplifiedPart(whole, parts.head, headTriangles, ["LockBorder"])
-    : [new Uint32Array(0)];
+    : [new Uint32Array(0), 0];
   const cut = new Uint32Array(body.length + face.length);
   cut.set(body);
   cut.set(face, body.length);
@@ -744,7 +759,7 @@ async function rebaked(full, flat, skin, { triangles: most, headTriangles, textu
   const atlas = await unwrapped(remapped, unwrapFrom, texture);
   const [made] = atlas.meshes;
   console.log(
-    `  ${cut.length / 3} triangles, error ${error.toFixed(4)}, ${made.vertexCount} vertices, ${atlas.atlasCount} atlas ${atlas.width}x${atlas.height}`,
+    `  ${cut.length / 3} triangles, error ${error.toFixed(4)} (head ${faceError.toFixed(4)}), ${made.vertexCount} vertices, ${atlas.atlasCount} atlas ${atlas.width}x${atlas.height}`,
   );
   const out = {
     positions: new Float32Array(made.vertexCount * 3),
@@ -761,7 +776,10 @@ async function rebaked(full, flat, skin, { triangles: most, headTriangles, textu
     joints.set(whole.joints.subarray(v * 4, v * 4 + 4), i * 4);
     weights.set(whole.weights.subarray(v * 4, v * 4 + 4), i * 4);
   });
-  const baked = await bakedTextures(full, flat, out, texture * BAKE_FINER, quality);
+  // The simplifier's error is a share of the model's size: how far its surface may have moved.
+  const moved = Math.max(error, faceError) * HERO_HEIGHT * 1.5;
+  const reach = Math.min(OUTSIDE[1], Math.max(OUTSIDE[0], moved));
+  const baked = await bakedTextures(full, flat, out, texture * BAKE_FINER, quality, reach);
   return { mesh: out, skin: skin && { joints, weights }, ...baked };
 }
 
@@ -1169,6 +1187,7 @@ const skin = bones && topFour(blended, bones.length);
 for (const copy of COPIES) {
   // A model that comes light already is only written whole.
   if (hero.copies && !hero.copies.includes(copy.suffix)) continue;
+  if (onlyCopy && copy.suffix !== onlyCopy) continue;
   const made = copy.rebake
     ? await rebaked(full, flat, skin, copy)
     : reduced(full, skin, copy.triangles);
