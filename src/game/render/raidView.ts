@@ -28,13 +28,13 @@ import { AimView } from "./aimCone";
 import { type AreaMark, areaMark } from "./areaMarks";
 import { kitPiece, lampSpots, levelSize, type Piece } from "./buildingKit";
 import { buildCamp } from "./camp";
-import { CaptainInRaid } from "./captainRaid";
+import { PersonInRaid, personFor } from "./captainRaid";
 import { type CloudView, homeClouds } from "./clouds";
 import { DefenseReach } from "./defenseReach";
 import { Effects } from "./effects";
 import { Fireflies } from "./fireflies";
 import { tileFit, tileRotation } from "./footprint";
-import { boatRise, boatRoll, type CrewBoat, crewBoatModel, gearBag, SITTING } from "./gunboat";
+import { boatRise, boatRoll, type CrewBoat, crewBoatModel, SITTING, type Station } from "./gunboat";
 import { AT_EASE, HeroAnimator } from "./heroAnimator";
 import { Lightning } from "./lightning";
 import { buildingLamps, type Lamp, LightPool } from "./lightPool";
@@ -59,15 +59,13 @@ import { at, ball, barrel, cone, cyl, disposeGeometries } from "./shapes";
 import { Snowfall } from "./snowfall";
 import { buildTerrain, type TerrainView } from "./terrain";
 
-/** Whose place the Captain takes in a raid. */
-const CAPTAIN_KIND: HeroKind = "rifleman";
-
 /** One of the crew left aboard the gunboat for the raid. */
 interface DeckHand {
   model: HeroModel;
   animator: HeroAnimator | null;
   sit: boolean;
-  captain: CaptainInRaid | null;
+  /** The Captain or the Rifleman, wearing the figure's moves, once they've loaded. */
+  person: PersonInRaid | null;
 }
 
 interface BuildingView {
@@ -115,8 +113,8 @@ interface HeroView {
   greened: Map<THREE.Mesh, THREE.Material | THREE.Material[]> | null;
   /** Fast forward's barrier round them, made the first time they have one. */
   bubble: THREE.Mesh | null;
-  /** The Captain, wearing the Rifleman's moves, once he's loaded. */
-  captain: CaptainInRaid | null;
+  /** The Captain or the Rifleman, wearing the figure's moves, once they've loaded. */
+  person: PersonInRaid | null;
 }
 
 /**
@@ -347,7 +345,7 @@ export class RaidView {
   /** Who's playing each hero, for the tags over crewmates. */
   names: readonly string[] = [];
   readonly effects: Effects;
-  private readonly lights = new LightPool();
+  private readonly lights = new LightPool({ onGround: true });
   private readonly sand = new SandMask();
   private readonly fireflies: Fireflies;
   /** How hard the last blasts should shake the camera; Game takes it each frame. */
@@ -562,25 +560,24 @@ export class RaidView {
    * stations and the same models they had when the player chose, so the landing hands over without
    * a cut.
    */
-  crewAboard(kinds: readonly HeroKind[]): void {
-    kinds.forEach((kind, i) => {
-      const station = this.boat.stations[i];
-      if (!station) return;
+  crewAboard(crew: readonly { kind: HeroKind; station: Station }[]): void {
+    for (const { kind, station } of crew) {
       const model = heroModel(kind);
       model.root.position.set(station.x, station.y, station.z);
       model.root.rotation.y = -station.facing;
       this.boat.root.add(model.root);
       const animator = model.rig ? new HeroAnimator(model.rig) : null;
-      const deck: DeckHand = { model, animator, sit: station.sit, captain: null };
+      const deck: DeckHand = { model, animator, sit: station.sit, person: null };
       this.deckHands.push(deck);
-      if (kind === CAPTAIN_KIND && model.rig) {
-        void CaptainInRaid.follow(model).then((captain) => {
-          if (!captain || !this.deckHands.includes(deck)) return;
-          deck.captain = captain;
-          this.boat.root.add(captain.root);
+      const who = personFor(kind);
+      if (who && model.rig) {
+        void PersonInRaid.follow(model, who).then((person) => {
+          if (!person || !this.deckHands.includes(deck)) return;
+          deck.person = person;
+          this.boat.root.add(person.root);
         });
       }
-    });
+    }
   }
 
   /**
@@ -592,22 +589,12 @@ export class RaidView {
       view.model.root.removeFromParent();
       view.ring.removeFromParent();
       view.bubble?.removeFromParent();
-      view.captain?.root.removeFromParent();
+      view.person?.root.removeFromParent();
     }
     this.heroes.clear();
     this.before.clear();
     this.eased.clear();
     this.aboard.clear();
-  }
-
-  /** Gear the crew threw ashore at the landing, left lying where it fell. */
-  dropGear(at: readonly { x: number; y: number; z: number; turn: number }[]): void {
-    for (const g of at) {
-      const bag = gearBag();
-      bag.position.set(g.x, g.y, g.z);
-      bag.rotation.y = g.turn;
-      this.root.add(bag);
-    }
   }
 
   handleEvents(events: readonly RaidEvent[], state: RaidState): void {
@@ -924,16 +911,17 @@ export class RaidView {
       ring,
       greened: null,
       bubble: null,
-      captain: null,
+      person: null,
     };
     this.heroes.set(h.id, view);
-    // The Captain is the player's own character, in the Rifleman's place (docs/DESIGN.md): he
-    // follows the Rifleman's moves once his model's here; until then, or without it, the Rifleman.
-    if (h.kind === CAPTAIN_KIND && h.copyOf === null && model.rig) {
-      void CaptainInRaid.follow(model).then((captain) => {
-        if (!captain || this.heroes.get(h.id) !== view) return;
-        view.captain = captain;
-        this.root.add(captain.root);
+    // The Captain and the Rifleman are the owner's rigged models (docs/CHARACTERS.md): each follows
+    // their figure's moves once their model's here; until then, or without it, the figure.
+    const who = personFor(h.kind);
+    if (who && h.copyOf === null && model.rig) {
+      void PersonInRaid.follow(model, who).then((person) => {
+        if (!person || this.heroes.get(h.id) !== view) return;
+        view.person = person;
+        this.root.add(person.root);
       });
     }
     return view;
@@ -1261,7 +1249,7 @@ export class RaidView {
       cheering: (state.status === "won" || state.conquest !== null) && !h.moving,
       turn: view.turn,
     });
-    view.captain?.update(dt);
+    view.person?.update(dt);
   }
 
   private takeFromPool(kind: ProjectileKind, team: Team, variant: string): THREE.Object3D {
@@ -1524,7 +1512,7 @@ export class RaidView {
     root.rotation.z = boatRoll(time);
     for (const d of this.deckHands) {
       d.animator?.update(dt, d.sit ? SITTING : AT_EASE);
-      d.captain?.update(dt, "deck-still");
+      d.person?.update(dt, "deck-still");
     }
     const relative = -angleDiff(this.cannonAim, this.boatHeading);
     cannon.rotation.y += (relative - cannon.rotation.y) * 0.1;

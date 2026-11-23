@@ -17,29 +17,31 @@ import { heroTree } from "./heroTrees";
 const everything = (kind: (typeof HERO_KINDS)[number]) => heroTree(kind).map((u) => u.id);
 
 describe("hero progress", () => {
-  it("names every hero and starts with the Rifleman alone", () => {
+  it("names every hero and starts with the Captain and the Rifleman", () => {
     for (const kind of HERO_KINDS) {
       expect(HERO_NAMES[kind].length).toBeGreaterThan(0);
       expect(HERO_UNLOCK_HQ[kind] === 1).toBe(isStarter(kind));
     }
-    expect(HERO_KINDS.filter(isStarter)).toEqual(["rifleman"]);
+    expect(HERO_KINDS.filter(isStarter)).toEqual(["captain", "rifleman"]);
   });
 
   it("has only the heroes the headquarters has reached", () => {
-    expect(heroesAt(1)).toEqual(["rifleman"]);
-    expect(heroesAt(3)).toEqual(expect.arrayContaining(["rifleman", "heavy"]));
-    expect(heroesAt(3)).toHaveLength(2);
+    expect(heroesAt(1)).toEqual(["captain", "rifleman"]);
+    expect(heroesAt(3)).toEqual(expect.arrayContaining(["captain", "rifleman", "heavy"]));
+    expect(heroesAt(3)).toHaveLength(3);
     expect(heroesAt(MAX_HQ_LEVEL)).toHaveLength(HERO_KINDS.length);
   });
 
   it("brings in a hero every few headquarters levels", () => {
-    expect(heroesJoining(["rifleman"], 2)).toEqual([]);
-    expect(heroesJoining(["rifleman"], 3)).toEqual(["heavy"]);
-    expect(heroesJoining(["rifleman", "heavy"], 3)).toEqual([]);
-    expect(heroesJoining(["rifleman", "heavy"], 6)).toEqual(["medic"]);
-    expect(heroesJoining(["rifleman"], 20)).toHaveLength(HERO_KINDS.length - 1);
+    const starters = ["captain", "rifleman"] as const;
+    expect(heroesJoining(starters, 2)).toEqual([]);
+    expect(heroesJoining(starters, 3)).toEqual(["heavy"]);
+    expect(heroesJoining([...starters, "heavy"], 3)).toEqual([]);
+    expect(heroesJoining([...starters, "heavy"], 6)).toEqual(["medic"]);
+    expect(heroesJoining(starters, 20)).toHaveLength(HERO_KINDS.length - 2);
+    // One hero a level after the two that start.
     const levels = Object.values(HERO_UNLOCK_HQ).sort((a, b) => a - b);
-    expect(new Set(levels).size).toBe(HERO_KINDS.length);
+    expect(new Set(levels).size).toBe(HERO_KINDS.length - 1);
     expect(Math.max(...levels)).toBeLessThanOrEqual(MAX_HQ_LEVEL);
   });
 

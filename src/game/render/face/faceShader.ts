@@ -6,8 +6,8 @@
 // lights), and the features are worked out per pixel from a handful of numbers, so the face moves
 // every frame without a picture ever being redrawn or sent to the graphics card again. Where the
 // patch paints nothing it's clear, so the lids are the face's own skin: a blink closes the opening
-// and the skin is simply there. The eye and the inside of the mouth are made glossy and wet; the
-// brows, lids and lips stay as matte as the skin round them.
+// and the skin is simply there. The eye and the inside of the mouth are a little glossier than the
+// skin, with no lamp reflected in them; the brows, lids and lips stay as matte as the skin round them.
 //
 // Every length is a share of the feature's own size: an eye's half-width, or the mouth's.
 
@@ -21,7 +21,12 @@ export interface EyeUniforms {
   gaze: { value: THREE.Vector3 };
   /** The brow's inner end, middle and outer end, raised (+) or lowered, and its base height. */
   brow: { value: THREE.Vector4 };
+  /** Where the brow's head starts, across the socket (negative, towards the nose). */
+  browFrom: { value: number };
 }
+
+/** Where a brow's head starts unless a face says otherwise: in over the root of the nose. */
+export const BROW_FROM = -1.04;
 
 /** The numbers the mouth is drawn from: see visemes.ts for what each means. */
 export interface MouthUniforms {
@@ -68,24 +73,32 @@ const EYE = /* glsl */ `
 uniform vec4 uLids;
 uniform vec3 uGaze;
 uniform vec4 uBrow;
+uniform float uBrowFrom;
 uniform vec3 uIris;
 uniform vec3 uHair;
 uniform vec3 uHairShade;
 uniform vec3 uLash;
 
-// The lids' edges across the eye: x from -1 (by the nose) to 1 (by the ear).
+// The lids' edges across the eye: x from -1 (by the nose) to 1 (by the ear). A human eye's opening
+// (the owner's call, 2026-11-22: human, not cartoon): about a third as tall as it's wide, an almond,
+// the upper lid at its highest a little in towards the nose and the lower at its lowest a little out
+// towards the ear, and the outer corner a touch higher than the inner, the eye tilting up.
+float lidAcross(float x, float peak) {
+  return x < peak ? (x - peak) / (1.0 + peak) : (x - peak) / (1.0 - peak);
+}
+
 float upperLid(float x, float open, float slant) {
-  float shape = pow(max(0.0, 1.0 - x * x), 0.62);
-  float shut = -0.12 + 0.05 * x;
-  // The top of the eye sits a little towards the nose, as eyes do: a rounded almond, as drawn.
-  float rest = 0.56 * shape * (1.0 - 0.1 * x) + slant * x * 0.25;
+  float s = lidAcross(x, -0.18);
+  float rest = 0.38 * pow(max(0.0, 1.0 - s * s), 0.75) + 0.07 * x + slant * x * 0.2;
+  float shut = -0.1 + 0.07 * x;
   return mix(shut, rest, open);
 }
 
 float lowerLid(float x, float raised, float open) {
-  float shape = pow(max(0.0, 1.0 - x * x), 0.95);
-  float rest = -0.36 * shape - 0.02 * x;
-  float shut = -0.12 + 0.05 * x;
+  float s = lidAcross(x, 0.2);
+  // Shallow: a lower lid that dipped far showed white under the iris, a stare.
+  float rest = -0.21 * pow(max(0.0, 1.0 - s * s), 1.2) + 0.07 * x;
+  float shut = -0.1 + 0.07 * x;
   return mix(rest, shut, clamp(raised * 0.55 + (1.0 - clamp(open, 0.0, 1.0)) * 0.25, 0.0, 1.0));
 }
 
@@ -104,13 +117,17 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
   // Shut, the upper lid comes all the way down onto the lower one, wherever that is.
   float up = mix(low, restUp, open);
 
-  // The brow: a thick stroke along the ridge through its inner end, middle and outer end.
-  float b0 = uBrow.w + uBrow.x;
-  float b1 = uBrow.w + 0.2 + uBrow.y;
-  float b2 = uBrow.w - 0.02 + uBrow.z;
-  float xa = -0.95;
-  float xb = 0.12;
-  float xc = 1.18;
+  // The brow along the ridge, as a person's runs: its head over the eye's inner corner, a low arch
+  // over the outer third, its tail past the outer corner and level with its head; set down onto the
+  // bottom of the ridge, about two thirds of an eye's width over the eye's middle.
+  float b0 = uBrow.w - 0.3 + uBrow.x;
+  float b1 = uBrow.w - 0.2 + uBrow.y;
+  float b2 = uBrow.w - 0.3 + uBrow.z;
+  // Its head reaches in over the root of the nose, not stopping short over the eye's corner, nor
+  // onto the bridge's side (BROW_FROM, or where the face says).
+  float xa = uBrowFrom;
+  float xb = 0.55;
+  float xc = 1.22;
   // Through three points, as a curve of x.
   float la = (x - xb) * (x - xc) / ((xa - xb) * (xa - xc));
   float lb = (x - xa) * (x - xc) / ((xb - xa) * (xb - xc));
@@ -121,24 +138,27 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
     + b2 * (2.0 * x - xa - xb) / ((xc - xa) * (xc - xb));
   float across = (y - centre) / sqrt(1.0 + slope * slope);
   float along = clamp((x - xa) / (xc - xa), 0.0, 1.0);
-  // Thick and nearly even, tapering only a little to the outer end, the ends rounded: as drawn.
-  float thick = mix(0.5, 0.36, smoothstep(0.2, 1.0, along)) * (1.0 + 0.08 * uBrow.x);
+  // Thickest at its head and tapering to a fine tail, as a brow grows.
+  float thick = mix(0.42, 0.13, smoothstep(0.05, 1.0, along)) * (1.0 + 0.08 * uBrow.x);
   float ends = max(xa - x, x - xc);
-  float browShape = max(abs(across) - thick * 0.5, ends * 1.4) - 0.04;
-  float brow = edge(browShape);
-  // Its shadow on the skin below it.
-  float shade = smoothstep(0.18, 0.0, -(across + thick * 0.5)) * step(across, -thick * 0.5)
-    * smoothstep(0.0, 0.1, -ends) * 0.32;
-  over(col, skin * 0.72, shade);
+  // Hairs, not a painted bar: they stand up at the head and lie along it towards the tail, and the
+  // edge is ragged with them.
+  float lean = mix(1.5, 0.5, smoothstep(0.0, 0.45, along));
+  float strand = (x - across * lean) * 26.0;
+  float own = hash12(vec2(floor(strand), 7.1));
+  float hairs = mix(0.75, 1.0, own) * (0.88 + 0.12 * sin(fract(strand) * 3.1416));
+  float ragged = (hash12(vec2(floor(strand), 2.3)) - 0.5) * 0.09;
+  // The head starts soft, sparse hairs thickening over its first stretch; the tail ends finer.
+  float browShape = max(abs(across) - thick * 0.5 + ragged, max((xa - x) * 0.9, (x - xc) * 2.2));
+  float brow = smoothstep(0.035, -0.02, browShape) * mix(0.8, 1.0, own) * smoothstep(-0.05, 0.18, x - xa);
+  // A faint shadow on the skin below it.
+  float shade = smoothstep(0.14, 0.0, -(across + thick * 0.5)) * step(across, -thick * 0.5)
+    * smoothstep(0.0, 0.1, -ends) * 0.18;
+  over(col, skin * 0.78, shade);
   if (brow > 0.0) {
     float n = across / (thick * 0.5);
-    // Rounded like a bevel: lit along the top, darker underneath.
-    float light = 0.98 + 0.22 * n - 0.3 * n * n;
-    // Soft, sculpted-looking hair: a faint grain along it rather than drawn strands, paler than
-    // the hair on his head.
-    float strands = 0.95 + 0.06 * sin((x - n * mix(0.5, 0.12, along)) * 40.0);
-    vec3 browHair = mix(uHair, vec3(0.9, 0.78, 0.55), 0.25);
-    vec3 hair = mix(uHairShade, browHair, smoothstep(-1.0, 0.4, n)) * light * strands;
+    vec3 browHair = mix(uHair, uHairShade, 0.25);
+    vec3 hair = mix(uHairShade, browHair, smoothstep(-1.0, 0.6, n)) * (0.9 + 0.2 * hairs);
     over(col, hair, brow);
   }
 
@@ -148,7 +168,7 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
 
   // The upper lid: skin rounding over the eye, from the lash line up to its crease, catching the
   // light along the middle and darker into the crease, the way the designs model it.
-  float lidH = 0.26;
+  float lidH = 0.24;
   float lidT = (e.y - up) / lidH;
   float lidSpan = smoothstep(1.12, 0.92, abs(e.x));
   if (lidT > 0.0 && lidT < 1.35) {
@@ -159,7 +179,7 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
     over(col, skin * 0.62, crease);
   }
   // The lower lid: a slight fullness under the eye, lit on top, shadowed underneath.
-  float lowT = (low - e.y) / 0.2;
+  float lowT = (low - e.y) / 0.15;
   if (lowT > 0.0 && lowT < 1.4) {
     float lowSpan = smoothstep(1.0, 0.75, abs(e.x));
     float lowLit = lowT < 0.45 ? 1.04 : mix(1.04, 0.86, smoothstep(0.45, 1.0, lowT));
@@ -177,12 +197,12 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
     // Pink by the nose.
     white = mix(white, vec3(0.75, 0.42, 0.38), smoothstep(-0.7, -0.98, e.x) * 0.5);
     vec3 eye = white;
-    // The iris, where the eye looks: big for the opening, dark, with a soft darker rim and only a
-    // little pattern, as in the designs.
-    vec2 at = vec2(uGaze.x * 0.42, uGaze.y * 0.18 - 0.02);
+    // The iris, where the eye looks: two fifths of the eye across, as a person's is, its top fifth
+    // under the upper lid and its bottom resting on the lower, with a darker rim.
+    vec2 at = vec2(uGaze.x * 0.38, 0.15 + uGaze.y * 0.12);
     vec2 d = e - at;
     float r = length(d);
-    float R = 0.46;
+    float R = 0.4;
     float iris = edge(r - R);
     if (iris > 0.0) {
       float a = atan(d.y, d.x);
@@ -190,12 +210,12 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
       // Lighter brown round the pupil, deepening to a dark rim, as drawn.
       vec3 irisCol = mix(uIris * 1.35, uIris * 0.4, smoothstep(0.45, 0.98, r / R)) * fibres;
       irisCol *= 1.0 - 0.45 * underLid;
-      float pupil = edge(r - R * 0.55 * uGaze.z);
+      float pupil = edge(r - R * 0.42 * uGaze.z);
       irisCol = mix(irisCol, vec3(0.012, 0.01, 0.009), pupil);
       eye = mix(eye, irisCol, iris);
     }
     // One small catchlight, up and to one side.
-    float glint = edge(length(e - at - vec2(-0.13, 0.14)) - 0.075);
+    float glint = edge(length(e - at - vec2(-0.12, 0.12)) - 0.055);
     eye = mix(eye, vec3(0.97), glint);
     over(col, eye, inside);
     faceWet = inside;
@@ -203,7 +223,7 @@ vec4 eyeFeature(vec2 q, vec3 skin) {
 
   // The upper lid's edge: a thin dark line, a touch heavier at the outer end; no wing, and only a
   // hint of one under the lower lid.
-  float lashWidth = 0.04 + 0.025 * smoothstep(0.1, 1.0, e.x);
+  float lashWidth = 0.035 + 0.02 * smoothstep(0.1, 1.0, e.x);
   float upperLash = edge(max(abs(e.y - up - lashWidth * 0.5) - lashWidth * 0.5, abs(e.x) - 1.0));
   float lowerLash = edge(max(abs(e.y - low + 0.01) - 0.012, abs(e.x) - 0.85)) * 0.25 * clamp(open, 0.0, 1.0);
   over(col, uLash, max(upperLash, lowerLash));
@@ -331,6 +351,7 @@ export function facePatchMaterial(options: FacePatchMaterialOptions): THREE.Mesh
       shader.uniforms.uLids = options.eye.lids;
       shader.uniforms.uGaze = options.eye.gaze;
       shader.uniforms.uBrow = options.eye.brow;
+      shader.uniforms.uBrowFrom = options.eye.browFrom;
       shader.uniforms.uIris = { value: linear(palette.iris) };
       shader.uniforms.uHair = { value: linear(palette.hair) };
       shader.uniforms.uHairShade = { value: linear(palette.hairShade) };
@@ -354,13 +375,13 @@ export function facePatchMaterial(options: FacePatchMaterialOptions): THREE.Mesh
       )
       .replace(
         "#include <roughnessmap_fragment>",
-        "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.07, faceWet);",
+        "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.3, faceWet);",
       )
-      // Only what's wet (the eyes, the inside of the mouth) reflects a lamp; the skin round them
-      // doesn't, as the rest of his face doesn't (captain.ts).
+      // No lamp or sun reflects in the face: the eye's shine is its painted catchlight, which stays
+      // put; a glossy eye's reflection is a point far brighter than the screen can show.
       .replace(
         "#include <lights_fragment_end>",
-        "#include <lights_fragment_end>\nreflectedLight.directSpecular *= mix(0.08, 1.0, faceWet);",
+        "#include <lights_fragment_end>\nreflectedLight.directSpecular = vec3(0.0);",
       );
   };
   // One program for every face that's the same kind of feature.
@@ -373,6 +394,7 @@ export function eyeUniforms(): EyeUniforms {
     lids: { value: new THREE.Vector4(1, 0, 0, 0) },
     gaze: { value: new THREE.Vector3(0, 0, 1) },
     brow: { value: new THREE.Vector4(0, 0, 0, 1.25) },
+    browFrom: { value: BROW_FROM },
   };
 }
 

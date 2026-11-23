@@ -24,6 +24,11 @@ const FIXED_QUALITY = { ultra: 0, high: 0, medium: 2, low: 3 } as const;
 const LOW_PIXEL_RATIO = 1;
 /** Ultra: as sharp as a light screen everywhere, with bigger shadows redrawn every frame. */
 const ULTRA_PIXEL_RATIO = 2;
+/**
+ * A cutscene: the game's own top sharpness. At Ultra's, with the film look's four-sample picture in
+ * full range and its depth on top, a phone drew a cutscene at 30 frames a second.
+ */
+const FILM_PIXEL_RATIO = 1.5;
 const ULTRA_SHADOW_MAP = 2048;
 /** A screen with little on it, that mostly sits still, can afford to be sharper. */
 const LIGHT_PIXEL_RATIO = 2;
@@ -195,7 +200,8 @@ export class Stage {
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
     }
-    this.shadowEvery = ultra ? 1 : quality >= 2 ? 4 : 3;
+    // A cutscene's people move slowly: their shadows every other frame is half the work, unseen.
+    this.shadowEvery = this.graphics === "ultra" ? 1 : this.filming ? 2 : quality >= 2 ? 4 : 3;
     this.sun.castShadow = quality < 3 || this.filming;
     this.shadowsStale = true;
     this.setPixelRatio();
@@ -210,7 +216,9 @@ export class Stage {
 
   private setPixelRatio(): void {
     const ratio = this.filming
-      ? ULTRA_PIXEL_RATIO
+      ? this.graphics === "ultra"
+        ? ULTRA_PIXEL_RATIO
+        : FILM_PIXEL_RATIO
       : this.graphics === "low"
         ? LOW_PIXEL_RATIO
         : this.graphics === "ultra"
@@ -228,6 +236,13 @@ export class Stage {
     this.filming = on;
     this.lens.fade = 1;
     this.setQuality(this.quality);
+  }
+
+  /** Whether the phone's keeping up at the top quality: for things worth drawing only then. */
+  get detailed(): boolean {
+    if (this.graphics === "ultra" || this.graphics === "high") return true;
+    // On auto, until frames first run under 45 a second (when the lens goes too).
+    return this.graphics === "auto" && this.quality === 0 && !this.lensOff;
   }
 
   /** The lens the picture goes through, for whoever's pulling its focus. */

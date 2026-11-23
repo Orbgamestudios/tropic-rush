@@ -27,8 +27,6 @@ export interface BoatSelectHost {
   /** The next hero round the boat, or the one before; returns who's chosen now. */
   step(by: number): HeroKind | null;
   ready(hero: HeroKind): void;
-  /** What a hero's called aboard, where it isn't their usual name. */
-  nameOf(hero: HeroKind): string | null;
   /** The crystals owned, and the ones chosen to take. */
   crystals(): { owned: Shards; loadout: readonly TimePower[] | null };
   setLoadout(loadout: TimePower[]): void;
@@ -133,7 +131,7 @@ export class BoatSelect {
 
   set(hero: HeroKind | null): void {
     this.hero = hero;
-    this.name.textContent = hero ? (this.host.nameOf(hero) ?? HERO_NAMES[hero]) : "";
+    this.name.textContent = hero ? HERO_NAMES[hero] : "";
     this.role.textContent = hero ? HEROES[hero].role : "";
   }
 

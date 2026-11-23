@@ -1,6 +1,6 @@
 // The Captain (docs/CHARACTERS.md, The way now): the owner's model, his face (render/face/), the
-// stock clips where they're there to play (render/clipLibrary.ts), fingers that curl one by one,
-// and his hair moving in the breeze.
+// stock clips where they're there to play (render/clipLibrary.ts), and fingers that curl one by one.
+// The hair doesn't move: the breeze in it was set aside by the owner (2026-11-22).
 //
 // Two copies of the same body on one skeleton: every one of the ~490,000 triangles for when the
 // camera's close, and a 40,000 one for when it isn't, which also casts his shadow either way (no one
@@ -22,8 +22,11 @@ const FACE = "/models/captain-face.json";
 const CLIPS = "/models/anims/";
 /** How tall the heroes stand in menus (heroAssets.ts). */
 const HEIGHT = 1.8;
-/** Nearer than this (metres, camera to head) he's drawn in full. */
-const NEAR = 4.2;
+/**
+ * Nearer than this (metres, camera to head) he's drawn in full: head and shoulders. Further off,
+ * the light copy's as good to the eye, and the full one is several times the work for the phone.
+ */
+const NEAR = 3;
 
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const files = new Map<string, Promise<GLTF>>();
@@ -40,8 +43,6 @@ function file(url: string): Promise<GLTF> {
 /** Each face map, and the picture of the skin under its patches, fetched once. */
 const faceMaps = new Map<string, Promise<FaceMap>>();
 const faceSkins = new Map<string, Promise<THREE.Texture>>();
-/** The hair found on each mesh, worked out once (it's the same mesh for every Captain). */
-const hairOf = new WeakMap<THREE.BufferGeometry, Float32Array>();
 
 export type Side = "L" | "R";
 export const FINGERS = ["Thumb", "Index", "Mid", "Ring", "Pinky"] as const;
@@ -155,141 +156,6 @@ class Hands {
 }
 
 /**
- * Whose hair a colour is (0 to 1 each), and whether it hangs below the brow. `range`, for the
- * shader: the least its darkest channel can be, the most its brightest can, and the most saturated
- * it can be (the Captain's blond is told apart in his relief shader instead).
- */
-interface HairLook {
-  is: (r: number, g: number, b: number) => boolean;
-  long: boolean;
-  range?: readonly [number, number, number];
-}
-
-/** A hair colour test from a range: darkest channel at least, brightest at most, saturation at most. */
-const hairIn = (least: number, most: number, saturated: number, long: boolean): HairLook => ({
-  is: (r, g, b) =>
-    Math.min(r, g, b) >= least && Math.max(r, g, b) <= most && saturation(r, g, b) <= saturated,
-  long,
-  range: [least, most, saturated],
-});
-
-/** The bones a lock of hair can hang from: the head, and for long hair the neck. */
-const HAIR_BONES = ["CC_Base_Head", "CC_Base_NeckTwist01", "CC_Base_NeckTwist02"];
-
-/**
- * The hair: which points of the mesh are loose hair, and how loose (more towards the tips), found
- * from the paint (the person's hair colour, on the head; above the brow unless it's long). The
- * breeze then moves them in the vertex shader, each lock a little out of time with the next.
- */
-function looseHair(
-  mesh: THREE.SkinnedMesh,
-  browHeight: number,
-  look: HairLook,
-): Float32Array | null {
-  const geometry = mesh.geometry;
-  const position = geometry.getAttribute("position");
-  const uv = geometry.getAttribute("uv");
-  const skinIndex = geometry.getAttribute("skinIndex");
-  const skinWeight = geometry.getAttribute("skinWeight");
-  const material = mesh.material as THREE.MeshStandardMaterial;
-  const image = material.map?.image as CanvasImageSource & { width: number; height: number };
-  const head = mesh.skeleton.bones.findIndex((b) => b.name === "CC_Base_Head");
-  const hangs = new Set(
-    mesh.skeleton.bones.flatMap((b, i) =>
-      HAIR_BONES.includes(b.name) && (look.long || i === head) ? [i] : [],
-    ),
-  );
-  if (!position || !uv || !skinIndex || !skinWeight || !image || head < 0) return null;
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return null;
-  context.drawImage(image, 0, 0, size, size);
-  const pixels = context.getImageData(0, 0, size, size).data;
-  const count = position.count;
-  const hair = new Float32Array(count);
-  const centre = new THREE.Vector3();
-  let found = 0;
-  // The bare skin round the hair, for holding each lock's roots still (below).
-  const bare: number[] = [];
-  for (let i = 0; i < count; i++) {
-    let weight = 0;
-    for (let k = 0; k < 4; k++)
-      if (hangs.has(skinIndex.getComponent(i, k))) weight += skinWeight.getComponent(i, k);
-    const below = position.getY(i) < browHeight;
-    if (weight < 0.3) continue;
-    if (weight < 0.6 || (below && !look.long)) {
-      bare.push(i);
-      continue;
-    }
-    const x = Math.min(size - 1, Math.max(0, Math.floor(uv.getX(i) * size)));
-    const y = Math.min(size - 1, Math.max(0, Math.floor(uv.getY(i) * size)));
-    const p = (y * size + x) * 4;
-    const r = (pixels[p] ?? 0) / 255;
-    const g = (pixels[p + 1] ?? 0) / 255;
-    const b = (pixels[p + 2] ?? 0) / 255;
-    if (!look.is(r, g, b)) {
-      bare.push(i);
-      continue;
-    }
-    hair[i] = 1;
-    centre.x += position.getX(i);
-    centre.y += position.getY(i);
-    centre.z += position.getZ(i);
-    found++;
-  }
-  if (found < 50) return null;
-  centre.divideScalar(found);
-  // Looser further out from the middle of the hair: the tips of the locks move, the roots don't.
-  centre.y -= 0.04;
-  let reach = 0;
-  const p = new THREE.Vector3();
-  for (let i = 0; i < count; i++) {
-    if (!hair[i]) continue;
-    reach = Math.max(reach, p.fromBufferAttribute(position, i).distanceTo(centre));
-  }
-  // And held still where it grows from the skin, loosening over the first `ROOTS` of its length:
-  // a lock (or a beard) that moved right up to the skin tore away from it.
-  const cells = new Map<number, number[]>();
-  const cellOf = (x: number, y: number, z: number) =>
-    (Math.floor(x / ROOTS) * 73856093) ^
-    (Math.floor(y / ROOTS) * 19349663) ^
-    (Math.floor(z / ROOTS) * 83492791);
-  for (const i of bare) {
-    const key = cellOf(position.getX(i), position.getY(i), position.getZ(i));
-    const list = cells.get(key);
-    if (list) list.push(i);
-    else cells.set(key, [i]);
-  }
-  const q = new THREE.Vector3();
-  for (let i = 0; i < count; i++) {
-    if (!hair[i]) continue;
-    p.fromBufferAttribute(position, i);
-    const out = p.distanceTo(centre) / reach;
-    const t = Math.min(1, Math.max(0, (out - 0.55) / 0.45));
-    let nearest = ROOTS;
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
-          const list = cells.get(cellOf(p.x + dx * ROOTS, p.y + dy * ROOTS, p.z + dz * ROOTS));
-          if (!list) continue;
-          for (const j of list)
-            nearest = Math.min(nearest, q.fromBufferAttribute(position, j).distanceTo(p));
-        }
-      }
-    }
-    const held = nearest / ROOTS;
-    hair[i] = t * t * (3 - 2 * t) * held * held * (3 - 2 * held);
-  }
-  return hair;
-}
-
-/** How far from the skin a lock of hair is held still, in the model's units (about 3 cm). */
-const ROOTS = 0.018;
-
-/**
  * Standing at ease without any clip: the arms brought down from the rig's pose to hang by his
  * sides with the elbows a little bent, breathing, and a slow shift of weight. For when the stock
  * clips aren't there (they aren't in the repo), and a start on moves of his own.
@@ -374,9 +240,6 @@ class AtEase {
     }
   }
 }
-
-/** The breeze's clock, shared by every Captain on screen, seconds. */
-export const windTime = { value: 0 };
 
 /**
  * The cloth, leather, skin and hair up close: the generated paint is smooth, so each is given a
@@ -494,32 +357,20 @@ const SURFACE_NORMAL = /* glsl */ `
   }
 `;
 
-/** The surface's relief, and the loose hair (all zero if none was found) blowing in the breeze. */
-function dress(
-  mesh: THREE.SkinnedMesh,
-  loose: Float32Array,
-  relief: boolean,
-  hair: HairLook,
-): void {
-  mesh.geometry.setAttribute("aHair", new THREE.BufferAttribute(loose, 1));
+/** The surface's relief: the Captain's made for his paint, a twill in the others' cloth. */
+function dress(mesh: THREE.SkinnedMesh, relief: boolean, hairRange: HairRange | undefined): void {
   const material = mesh.material as THREE.MeshStandardMaterial;
-  const [least, most, saturated] = hair.range ?? [2, 0, 0];
+  const [least, most, saturated] = hairRange ?? [2, 0, 0];
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uWindTime = windTime;
-    // Long hair sways less, and its locks more nearly together: locks that lie over each other
-    // and moved apart opened gaps between them.
-    shader.uniforms.uBreeze = {
-      value: new THREE.Vector2(hair.long ? 0.6 : 1, hair.long ? 0.3 : 1),
-    };
     shader.uniforms.uHairRange = { value: new THREE.Vector3(least, most, saturated) };
-    // Kept to hand, for tuning the breeze and the hair's colours while looking (models-wip/debug).
+    // Kept to hand, for tuning the hair's colours while looking (models-wip/debug).
     material.userData.uniforms = shader.uniforms;
     shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCPos;\nvarying vec3 vCNorm;")
       .replace(
-        "#include <common>",
-        "#include <common>\nattribute float aHair;\nuniform float uWindTime;\nuniform vec2 uBreeze;\nvarying vec3 vCPos;\nvarying vec3 vCNorm;\nvarying float vCHair;",
-      )
-      .replace("#include <skinning_vertex>", `#include <skinning_vertex>\n${BREEZE}`);
+        "#include <skinning_vertex>",
+        "#include <skinning_vertex>\n  vCPos = position;\n  vCNorm = normal;",
+      );
     if (!relief) {
       // The others: a fine twill in their cloth (everything that isn't skin or loose hair), and
       // their shine held down (their generated paint can be glossy in patches, and a lamp's
@@ -527,7 +378,7 @@ function dress(
       shader.fragmentShader = shader.fragmentShader
         .replace(
           "#include <common>",
-          `#include <common>\nvarying vec3 vCPos;\nvarying vec3 vCNorm;\nvarying float vCHair;\nuniform vec3 uHairRange;\n${SURFACE}`,
+          `#include <common>\nvarying vec3 vCPos;\nvarying vec3 vCNorm;\nuniform vec3 uHairRange;\n${SURFACE}`,
         )
         .replace("#include <map_fragment>", `#include <map_fragment>\n${CLOTH_COLOR}`)
         .replace(
@@ -566,13 +417,14 @@ function dress(
         "#include <lights_fragment_end>\nreflectedLight.directSpecular *= 1.0 - 0.92 * kSkin - 0.5 * kHair;",
       );
   };
-  material.customProgramCacheKey = () => (relief ? "captain-hair" : "person-hair");
+  material.customProgramCacheKey = () => (relief ? "captain-relief" : "person-relief");
 }
 
 /**
- * The others' cloth: everything that isn't skin (warm, a little saturated, not dark) or loose hair
- * gets the Captain's twill, fine and at four times the scale, fading out before it's finer than a
- * pixel; and the bump that goes with it (SURFACE_NORMAL, which leaves skin alone).
+ * The others' cloth: everything that isn't skin (warm, a little saturated, not dark)
+ * or hair (by its colour) gets the Captain's twill, fine and at four times the scale, fading out
+ * before it's finer than a pixel; and the bump that goes with it (SURFACE_NORMAL, which leaves skin
+ * alone).
  */
 const CLOTH_COLOR = /* glsl */ `
   float kSkin;
@@ -586,7 +438,7 @@ const CLOTH_COLOR = /* glsl */ `
     kSkin = warm * smoothstep(0.15, 0.25, sat) * (1.0 - smoothstep(0.62, 0.75, sat)) * smoothstep(0.28, 0.38, hi);
     // Not their hair either, by its colour: hair woven like cloth reads as stripes.
     float hairy = step(uHairRange.x, lo) * step(hi, uHairRange.y) * step(sat, uHairRange.z);
-    float cloth = (1.0 - kSkin) * (1.0 - hairy) * (1.0 - step(0.001, vCHair));
+    float cloth = (1.0 - kSkin) * (1.0 - hairy);
     vec3 cAt = vCPos * 4800.0;
     vec3 cN = abs(vCNorm);
     vec2 cTexel = cN.x > cN.y && cN.x > cN.z ? cAt.yz : (cN.y > cN.z ? cAt.xz : cAt.xy);
@@ -597,20 +449,6 @@ const CLOTH_COLOR = /* glsl */ `
     diffuseColor.rgb *= 1.0 + cloth * 0.05 * cH * cFine;
   }
 `;
-
-/** The breeze in the loose hair, in the vertex shader. */
-const BREEZE = /* glsl */ `
-  vCPos = position;
-  vCNorm = normal;
-  vCHair = aHair;
-  if (aHair > 0.0) {
-    // Each lock on its own phase; gusts that build and fall; a lean downwind, a lift, a sway.
-    float phase = dot(position, vec3(41.0, 23.0, 37.0)) * uBreeze.y;
-    float gust = 0.55 + 0.45 * sin(uWindTime * 0.37) * sin(uWindTime * 0.23 + 1.3);
-    float sway = sin(uWindTime * 2.3 + phase) * 0.6 + sin(uWindTime * 4.1 + phase * 1.7) * 0.4;
-    vec3 wind = normalize(vec3(0.85, 0.05, -0.5));
-    transformed += (wind * (0.55 + sway) * gust + vec3(0.0, 0.35 * sway, 0.0)) * aHair * 0.02 * uBreeze.x;
-  }`;
 
 export interface Captain {
   holder: THREE.Group;
@@ -710,26 +548,24 @@ class PoseFade {
 
 const srgb = (r: number, g: number, b: number) =>
   new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
-/** How saturated a colour is, 0 to 1. */
-const saturation = (r: number, g: number, b: number) => {
-  const high = Math.max(r, g, b);
-  return high > 0 ? (high - Math.min(r, g, b)) / high : 0;
-};
 
 /**
  * The people rigged as the Captain is (AccuRig, on the same skeleton), each in full for close-ups
  * and a light copy for afar (`scripts/blender/game_copy.py`, `bake_game.py`), with a face mapped
- * onto their blank one (`face_map.py`), the colours it's painted in, and their hair's colour to
- * find it by for the breeze. Only the Captain's cloth and skin get the relief made for his paint.
+ * onto their blank one (`face_map.py`), the colours it's painted in, and their hair's colours (kept
+ * out of the twill laid on their cloth). Only the Captain's cloth and skin get the relief made for
+ * his paint.
  */
 interface PersonLook {
   model: string;
   light?: string;
   face?: string;
   palette: FacePalette;
-  hair: HairLook;
+  hairRange?: HairRange;
   relief?: boolean;
 }
+/** Their hair's colours: the least its darkest channel can be, the most its brightest can, and the most saturated it can be (0 to 1 each). */
+type HairRange = readonly [number, number, number];
 export type Person = "captain" | "shaman" | "terror" | "rifleman";
 const PEOPLE: Record<Person, PersonLook> = {
   captain: {
@@ -737,12 +573,6 @@ const PEOPLE: Record<Person, PersonLook> = {
     light: RAID_MODEL,
     face: FACE,
     palette: CAPTAIN_PALETTE,
-    // Blond: saturated, red over green over blue, with green well up (skin's is lower and pinker).
-    hair: {
-      is: (r, g, b) =>
-        Math.max(r, g, b) > 0.25 && saturation(r, g, b) > 0.45 && r >= g && g > b && g / r > 0.62,
-      long: false,
-    },
     relief: true,
   },
   rifleman: {
@@ -756,8 +586,8 @@ const PEOPLE: Record<Person, PersonLook> = {
       lash: srgb(0.05, 0.04, 0.04),
       lip: srgb(0.92, 0.64, 0.6),
     },
-    // Black, swept back over his ears and down to his collar.
-    hair: hairIn(0, 0.32, 0.75, true),
+    // Black.
+    hairRange: [0, 0.32, 0.75],
   },
   shaman: {
     model: "/models/shaman-full.glb",
@@ -770,8 +600,8 @@ const PEOPLE: Record<Person, PersonLook> = {
       lash: srgb(0.3, 0.26, 0.24),
       lip: srgb(0.8, 0.52, 0.46),
     },
-    // White, and long: the locks down his back, and his beard.
-    hair: hairIn(0.52, 1, 0.16, true),
+    // White, his beard too.
+    hairRange: [0.52, 1, 0.16],
   },
   terror: {
     model: "/models/terror-full.glb",
@@ -784,8 +614,8 @@ const PEOPLE: Record<Person, PersonLook> = {
       lash: srgb(0.24, 0.22, 0.2),
       lip: srgb(0.88, 0.6, 0.58),
     },
-    // Grey to white, swept back to his collar.
-    hair: hairIn(0.45, 1, 0.16, true),
+    // Grey to white.
+    hairRange: [0.45, 1, 0.16],
   },
 };
 
@@ -889,14 +719,7 @@ export async function loadPerson(who: Person, options: CaptainOptions = {}): Pro
   const farMaterial = new Map<THREE.SkinnedMesh, THREE.Material | THREE.Material[]>();
   for (const o of [...nearMeshes, ...farMeshes]) {
     o.frustumCulled = false;
-    // Their hair given the breeze, found from their own paint; the Captain's cloth its relief.
-    let loose = hairOf.get(o.geometry);
-    if (!loose) {
-      const count = o.geometry.getAttribute("position")?.count ?? 0;
-      loose = (map && looseHair(o, map.browZ, files.hair)) || new Float32Array(count);
-      hairOf.set(o.geometry, loose);
-    }
-    dress(o, loose, files.relief === true, files.hair);
+    dress(o, files.relief === true, files.hairRange);
   }
   for (const o of nearMeshes) o.castShadow = farMeshes.length === 0;
   for (const o of farMeshes) {
@@ -972,7 +795,6 @@ export async function loadPerson(who: Person, options: CaptainOptions = {}): Pro
     player,
     clipStep,
     update(dt: number, pose?: () => void) {
-      windTime.value += dt;
       hands.release();
       if (pose) pose();
       else if (player) clipStep(dt, "stand");

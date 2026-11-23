@@ -1,6 +1,8 @@
 // The crew's unlocked heroes, strolling round the base between jobs: each ambles to a random open
 // spot, stands about for a while, and sets off again. Tap one and they stop, turn and wave. The
 // story's people who live on the island (the Shaman, and whoever the ending brings) stroll too.
+// Those the owner has made as rigged models (the Captain, the Rifleman, the Shaman, Professor
+// Terror) walk in them, following their block figure's steps (captainRaid.ts).
 
 import * as THREE from "three";
 import {
@@ -16,6 +18,8 @@ import {
 import type { HeroKind } from "../logic/heroes";
 import { homeHeight } from "../logic/island";
 import { angleDiff, type Vec2, vec } from "../logic/vec";
+import type { Person } from "./captain";
+import { PersonInRaid, personFor } from "./captainRaid";
 import { AT_EASE, HeroAnimator } from "./heroAnimator";
 import { type StoryFigure, storyFigure } from "./heroModels";
 import { type HeroModel, heroModel } from "./models";
@@ -49,6 +53,14 @@ interface Walker {
   facing: number;
   /** Seconds of waving left, after being tapped. */
   waving: number;
+  /** Their rigged model, following the figure once it's loaded. */
+  person: PersonInRaid | null;
+}
+
+/** Which of the rigged people walks for an islander, if any. */
+function personOf(who: Islander): Person | null {
+  if (who === "shaman" || who === "terror") return who;
+  return isFigure(who) ? null : personFor(who);
 }
 
 export class HomeHeroes {
@@ -79,6 +91,7 @@ export class HomeHeroes {
     for (const [kind, walker] of this.walkers) {
       if (kinds.includes(kind)) continue;
       this.root.remove(walker.model.root);
+      walker.person?.root.removeFromParent();
       this.walkers.delete(kind);
     }
     for (const kind of kinds) {
@@ -87,7 +100,7 @@ export class HomeHeroes {
       if (kind === "tank") model.root.scale.setScalar(0.6);
       this.root.add(model.root);
       const start = this.randomSpot();
-      this.walkers.set(kind, {
+      const walker: Walker = {
         kind,
         model,
         pos: { ...start },
@@ -97,7 +110,17 @@ export class HomeHeroes {
         animator: model.rig && new HeroAnimator(model.rig),
         facing: Math.random() * Math.PI * 2,
         waving: 0,
-      });
+        person: null,
+      };
+      this.walkers.set(kind, walker);
+      const who = personOf(kind);
+      if (who && model.rig) {
+        void PersonInRaid.follow(model, who, { armed: !isFigure(kind) }).then((person) => {
+          if (!person || this.walkers.get(kind) !== walker) return;
+          walker.person = person;
+          this.root.add(person.root);
+        });
+      }
     }
   }
 
@@ -176,6 +199,8 @@ export class HomeHeroes {
           speed: moving ? WALK_SPEED : 0,
           waving: w.waving > 0,
         });
+        // Standing about on the stock clips, or walking on the figure's legs; waving as it does.
+        w.person?.update(dt, w.waving > 0 ? "fight" : moving ? "deck-walk" : "deck-still");
         continue;
       }
       const swing = moving ? Math.sin(w.walk) : 0;
@@ -214,6 +239,7 @@ export class HomeHeroes {
   }
 
   dispose(): void {
+    for (const w of this.walkers.values()) w.person?.root.removeFromParent();
     this.walkers.clear();
   }
 }

@@ -22,6 +22,11 @@ export interface SpeakerInfo {
 }
 
 export const SPEAKERS: Record<Speaker, SpeakerInfo> = {
+  captain: {
+    name: "The Captain",
+    voice:
+      "A boat captain: easy, sun-weathered, quietly sure of himself. Says little, means all of it.",
+  },
   rifleman: {
     name: "Sgt. Steele",
     voice:

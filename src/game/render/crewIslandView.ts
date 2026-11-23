@@ -346,7 +346,7 @@ export class CrewIslandView {
       sign: THREE.Group | null;
     }
   >();
-  private readonly lights = new LightPool();
+  private readonly lights = new LightPool({ onGround: true });
   private readonly sand = new SandMask();
   private readonly fireflies = new Fireflies(7, (x, z) => Math.max(0, homeHeight(x, z)));
   /** What sync() last drew, so a frame where nothing changed costs nothing. */

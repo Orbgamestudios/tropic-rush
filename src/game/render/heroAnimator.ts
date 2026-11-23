@@ -160,6 +160,20 @@ export const RIFLE_POSES: HeroPoses = {
   slung: [0.1, 0.88, 0.36, 0.1, 0.12, -1.2],
 };
 
+/** The Captain's pistols, one in each hand, held out together. */
+export const PISTOL_POSES: HeroPoses = {
+  low: [0.34, 1.0, 0, 0.15, 0.55, -0.25],
+  running: [0.3, 1.12, 0, 0.3, 0.6, 0.35],
+  aimed: [0.4, 1.3, 0, 0, 0, 0],
+  working: [0.3, 1.14, 0, 0.3, 0.2, 0.45],
+  cheering: [0.04, 1.98, 0.6, 0.5, 0.1, 1.25],
+  rightHand: PISTOL_GRIP([0, -0.07, 0.17]),
+  leftHand: FRONT_GRIP([0, -0.07, -0.17]),
+  bolt: NO_BOLT,
+  thrown: null,
+  slung: [0.1, 0.9, 0.3, 0.1, 0.12, -1.2],
+};
+
 export const MINIGUN_POSES: HeroPoses = {
   low: [0.44, 0.92, 0.04, 0, 0, -0.14],
   running: [0.38, 1.0, 0.1, 0, 0.14, 0.14],
@@ -1027,7 +1041,5 @@ export class HeroAnimator {
       const open = Math.max(this.wave, this.saluting, this.down.pray);
       curl(rig.left, lerp(lerp(holding, GRIP, cheer), 0, open), this.pointing);
     }
-    // Last, once the body is where it's going this frame: the hair follows it.
-    rig.springs?.update(dt);
   }
 }

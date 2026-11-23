@@ -41,7 +41,7 @@ const HALVE = /* glsl */ `
       float soft = clamp(bright - uThreshold + 0.5, 0.0, 1.0);
       c *= max(soft * soft * 0.5, bright - uThreshold) / max(bright, 1e-4);
       // One glint a pixel wide mustn't light the whole chain up as it flickers.
-      c = min(c, vec3(12.0));
+      c = min(c, vec3(4.0));
     }
     gl_FragColor = vec4(c, 1.0);
   }

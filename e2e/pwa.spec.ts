@@ -347,7 +347,8 @@ test("buys the first upgrade, and holds the next back for a better headquarters"
   });
   await page.getByRole("button", { name: "Upgrades" }).click();
   const buy = page.locator(".tree-buy");
-  await expect(page.locator(".tree-spec-name")).toHaveText("Basic Training");
+  // The Captain's tree: the hero a new player plays as.
+  await expect(page.locator(".tree-spec-name")).toHaveText("Sea Legs");
   await buy.click();
   // The first mini leads to tier 2, at headquarters 2.
   await page.locator(".tree-step").first().click();

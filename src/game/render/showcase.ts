@@ -5,6 +5,7 @@
 
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
+import { PersonInRaid, personFor } from "./captainRaid";
 import { AT_EASE, type HeroAnimator, type HeroMove } from "./heroAnimator";
 import { heroOnHand, type MenuHero } from "./heroAssets";
 import { hasBody, loadMenuBody, loadRigs } from "./riggedHeroes";
@@ -242,6 +243,8 @@ export class Showcase {
   private readonly floor: THREE.Mesh;
   private hero: THREE.Object3D | null = null;
   private animator: HeroAnimator | null = null;
+  /** The Captain or the Rifleman in their own model, wearing the figure's moves once loaded. */
+  private person: PersonInRaid | null = null;
   private act = 0;
   /** Seconds into what they're doing, or below zero while they wait to do it. */
   private acting = 0;
@@ -328,9 +331,19 @@ export class Showcase {
     if (token === this.token) this.stand(kind, heroOnHand(kind, detailed));
   }
 
-  private stand(kind: HeroKind, { holder: model, animator }: MenuHero): void {
+  private stand(kind: HeroKind, { holder: model, animator, model: figure }: MenuHero): void {
     if (this.hero) this.turntable.remove(this.hero);
     this.animator = animator;
+    this.person = null;
+    const who = personFor(kind);
+    if (who) {
+      const token = this.token;
+      void PersonInRaid.follow(figure, who, { full: true }).then((person) => {
+        if (!person || token !== this.token || this.hero !== model) return;
+        this.person = person;
+        model.add(person.root);
+      });
+    }
     // Face the camera (models face +x; the camera looks along -z).
     model.rotation.y = -Math.PI / 2;
     if (kind === "tank") model.scale.multiplyScalar(0.55);
@@ -411,6 +424,8 @@ export class Showcase {
       this.hero.position.y = fall + bounce + Math.sin(this.leap * Math.PI) * 0.9;
       const move = this.perform(dt);
       this.animator?.update(dt, move);
+      this.person?.update(dt);
+      this.person?.self.detailFor(this.stage.camera);
       // The Tank just sits there running, and rocks back on its tracks when it fires.
       this.jolt *= Math.exp(-dt * 7);
       if (!this.animator) this.hero.rotation.z = Math.sin(time * 31) * 0.0012 + this.jolt * 0.07;

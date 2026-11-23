@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HERO_KINDS } from "../heroes";
+import { HERO_KINDS, STARTER_HEROES } from "../heroes";
 import {
   allLines,
   deliveryOf,
@@ -73,7 +73,7 @@ describe("the story's script", () => {
   });
 
   it("gives every hero a signal, a landing, a rescue and a homecoming", () => {
-    for (const hero of HERO_KINDS.filter((h) => h !== "rifleman")) {
+    for (const hero of HERO_KINDS.filter((h) => !STARTER_HEROES.includes(h))) {
       for (const stage of ["signal", "landing", "won", "home"]) {
         const found = SCENES.filter(
           (s) => s.when.on === "rescue" && s.when.hero === hero && s.when.stage === stage,

@@ -10,6 +10,8 @@ import type { HeroKind } from "./heroes";
 export const OLD_CRYSTAL_ORDER: readonly CrystalKind[] = ["nature", "fire", "ice", "dark"];
 
 export const OLD_UPGRADE_COSTS: Record<HeroKind, Record<string, readonly number[]>> = {
+  // The Captain came after the old trees.
+  captain: {},
   rifleman: {
     "basic-training": [150, 1, 0, 0, 0],
     "step-0-0": [500],
@@ -421,9 +423,11 @@ const BRANCH_CRYSTALS = [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5] as const;
 const BRANCH_CHECKPOINT_GOLD = [0, 0, 300, 450, 650, 900, 1200, 1600, 2100, 2700, 3400] as const;
 
 /** Each hero's first upgrade and its crystal, then each branch's upgrades from tier 2 to 10. */
-const BRANCH_TREES: Record<
-  HeroKind,
-  { first: readonly [string, CrystalKind]; branches: Record<CrystalKind, readonly string[]> }
+const BRANCH_TREES: Partial<
+  Record<
+    HeroKind,
+    { first: readonly [string, CrystalKind]; branches: Record<CrystalKind, readonly string[]> }
+  >
 > = {
   rifleman: {
     first: ["basic-training", "nature"],
@@ -772,7 +776,9 @@ const BRANCH_TREES: Record<
 
 /** What one upgrade of a four-branch tree cost: gold, then crystals in OLD_CRYSTAL_ORDER. */
 export function branchTreeCost(kind: HeroKind, name: string): readonly number[] | undefined {
-  const { first, branches } = BRANCH_TREES[kind];
+  const tree = BRANCH_TREES[kind];
+  if (!tree) return undefined;
+  const { first, branches } = tree;
   const crystals = (kind: CrystalKind, n: number) =>
     OLD_CRYSTAL_ORDER.map((k) => (k === kind ? n : 0));
   if (name === first[0]) return [BRANCH_GOLD[1], ...crystals(first[1], 1)];

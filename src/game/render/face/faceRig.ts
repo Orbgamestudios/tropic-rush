@@ -19,6 +19,7 @@ import { type Cue, type Look, type ScriptedLine, scriptLine } from "../../logic/
 import { SpringSet } from "../../logic/face/springs";
 import { MOUTH, type MouthShape, mouthAt } from "../../logic/face/visemes";
 import {
+  BROW_FROM,
   type EyeUniforms,
   eyeUniforms,
   type FacePalette,
@@ -47,6 +48,11 @@ export interface FaceMap {
   /** His left eye, then his right: across and height, in the model's space. */
   eyes: [[number, number], [number, number]];
   browZ: number;
+  /**
+   * How far from the nose's middle the brows start, in the model's units: where its bridge leaves
+   * off, on a face with a wide one (the Rifleman's). Without it they start in over the nose's root.
+   */
+  browStart?: number;
   eyeHalf: number;
   mouth: [number, number];
   mouthHalf: number;
@@ -151,7 +157,15 @@ export function addFace(
   const eyes: [EyeUniforms, EyeUniforms] = [eyeUniforms(), eyeUniforms()];
   const mouth = mouthUniforms();
   const browUp = (map.browZ - map.eyes[0][1]) / map.eyeHalf;
-  for (const e of eyes) e.brow.value.w = browUp;
+  const apart = (map.eyes[0][0] - map.eyes[1][0]) / 2;
+  const browFrom =
+    map.browStart === undefined
+      ? BROW_FROM
+      : Math.max(BROW_FROM, (map.browStart - apart) / map.eyeHalf);
+  for (const e of eyes) {
+    e.brow.value.w = browUp;
+    e.browFrom.value = browFrom;
+  }
   // The mouth's line at rest reaches most of the way across its pocket.
   mouth.mood.value.w = 0.78;
   const add = (

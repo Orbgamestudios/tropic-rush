@@ -15,6 +15,7 @@ import {
   HeroAnimator,
   type HeroPoses,
   MINIGUN_POSES,
+  PISTOL_POSES,
   POSED_SHOULDER,
   RIFLE_POSES,
   TUBE_POSES,
@@ -23,7 +24,6 @@ import {
 import { COLORS as C, material } from "./palette";
 import { riggedBody, type StoryBody, storyBody, storyFace, TWIST_STEPS } from "./riggedHeroes";
 import { at, ball, barrel, capsule, cone, cyl, flatten, mesh, rbox } from "./shapes";
-import { LONG_HAIR, SHORT_HAIR, SpringChains } from "./springBones";
 
 type Pair = [THREE.Object3D, THREE.Object3D];
 
@@ -88,8 +88,6 @@ export interface HeroRig {
   jaw?: THREE.Object3D | null;
   /** On a block figure, the dark of an open mouth, which grows as it opens. */
   mouth?: THREE.Object3D | null;
-  /** Hair that swings, on a model that has chains of bones down it. */
-  springs?: SpringChains | null;
   /** Eyes that turn to look, and lids that close over them: on a model built in pieces. */
   eyes?: readonly THREE.Object3D[] | null;
   lids?: readonly THREE.Object3D[] | null;
@@ -133,6 +131,15 @@ interface Look {
 }
 
 const LOOKS: Record<Human, Look> = {
+  // The Captain: a light blue shirt with the sleeves rolled, white trousers, boat shoes.
+  captain: {
+    shirt: 0x9cc4e4,
+    pants: 0xece6d8,
+    skin: C.skin,
+    bulk: 1,
+    bareArms: true,
+    boots: 0x7a5230,
+  },
   rifleman: {
     shirt: C.crewBlue,
     pants: 0x3f6fa8,
@@ -469,6 +476,25 @@ function baked(weapon: THREE.Group): THREE.Group {
   return weapon;
 }
 
+/** Two pistols side by side, each where a hand holds it, barrels along +x. */
+function pistols(): THREE.Group {
+  const g = new THREE.Group();
+  for (const z of [0.17, -0.17]) {
+    g.add(at(rbox(0.2, 0.05, 0.035, GUNMETAL), 0.06, 0.0, z));
+    g.add(at(rbox(0.16, 0.012, 0.03, BLUED), 0.07, 0.03, z));
+    const grip = [
+      [-0.04, -0.02],
+      [0.03, -0.02],
+      [0.01, -0.12],
+      [-0.05, -0.11],
+    ] as const;
+    const handle = cutOut(grip, 0.032, C.wood);
+    handle.position.z = z;
+    g.add(handle);
+  }
+  return g;
+}
+
 function rifle(): THREE.Group {
   const g = new THREE.Group();
   const stock = [
@@ -643,6 +669,21 @@ function grenade(color = 0x6d7a45): THREE.Group {
 function human(kind: Human): HeroModel {
   let built: Built;
   switch (kind) {
+    case "captain": {
+      built = person(kind, v(0.42, 1.0, 0.02), { brows: "stern", mouth: "smile" });
+      const { head, headRadius: r } = built;
+      // Swept-back blond hair and a short beard.
+      const hair = ball(r * 1.06, C.hairBlonde, 18);
+      hair.scale.set(1.04, 0.9, 1.02);
+      head.add(at(hair, -r * 0.16, r * 0.2, 0));
+      const quiff = ball(r * 0.55, C.hairBlonde, 12);
+      quiff.scale.set(0.9, 0.6, 1.3);
+      head.add(at(quiff, r * 0.45, r * 0.72, 0));
+      const beard = ball(r * 0.78, C.hairBlonde, 14);
+      beard.scale.set(0.6, 0.62, 1.02);
+      head.add(at(beard, r * 0.48, -r * 0.48, 0));
+      break;
+    }
     case "rifleman": {
       built = person(kind, v(0.42, 1.0, 0.02), { brows: "stern", mouth: "line" });
       const { head, headRadius: r, body } = built;
@@ -816,6 +857,7 @@ function human(kind: Human): HeroModel {
 
 /** What each hero carries, how they carry it, and how far along it the shots start. */
 const WEAPONS: Record<Human, () => { gun: THREE.Group; poses: HeroPoses; muzzle: number }> = {
+  captain: () => ({ gun: pistols(), poses: PISTOL_POSES, muzzle: 0.17 }),
   rifleman: () => ({ gun: rifle(), poses: RIFLE_POSES, muzzle: 0.86 }),
   medic: () => ({ gun: healingBottle(), poses: BOTTLE_POSES, muzzle: 0.5 }),
   heavy: () => ({ gun: minigun(), poses: MINIGUN_POSES, muzzle: 1.05 }),
@@ -878,8 +920,6 @@ export function storyRigged(who: StoryBody): HeroModel | null {
   };
   const lid = find("lidL");
   const notes = storyFace(who);
-  const springs = SpringChains.from(scene, bone("head"));
-  if (springs) springs.feel = who === "shaman" ? LONG_HAIR : SHORT_HAIR;
   const props: Record<string, THREE.Object3D> = {};
   for (const name of ["hat", "toothpick"]) {
     const p = find(name);
@@ -902,7 +942,6 @@ export function storyRigged(who: StoryBody): HeroModel | null {
     lift: right.shoulder.y - POSED_SHOULDER,
     stretch: (right.upperLength + right.foreLength) / POSED_ARM,
     jaw: find("jaw"),
-    springs,
     eyes: pair("eyeL", "eyeR"),
     lids: pair("lidL", "lidR"),
     blink: typeof lid?.userData.close === "number" ? lid.userData.close : 1.2,
@@ -999,7 +1038,6 @@ function skinnedHero(kind: Human, detailed: boolean): HeroModel | null {
     lift: right.shoulder.y - POSED_SHOULDER,
     stretch: (right.upperLength + right.foreLength) / POSED_ARM,
     jaw: scene.getObjectByName("jaw") ?? null,
-    springs: SpringChains.from(scene, bone("head")),
   };
   gun.add(rig.muzzle);
   new HeroAnimator(rig).update(0, AT_EASE);

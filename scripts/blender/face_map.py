@@ -1,9 +1,21 @@
 """Maps a blank-faced character's face, for the painted features to sit in (docs/CHARACTERS.md).
 
-  blender -b -P scripts/blender/face_map.py -- <rigged.glb> <out.json> [<picture-prefix>] [eyes=<half>,<height>[,<brow>]]
+  blender -b -P scripts/blender/face_map.py -- <rigged.glb> <out.json> [<picture-prefix>] [eyes=<height>,<brow>] [place=<eye width>,<eye middle from the nose>] [brows=<start>]
 
-Where a face is sculpted so the sockets can't be found (the Shaman's), `eyes=` says where they
-are: half the distance between them, their height, and the brow's, in the model's own units.
+Where a face is sculpted so the sockets can't be found (the Shaman's), `eyes=` says how high they
+are, and the brow, in the model's own units. Take the height from the deepest point of the socket and
+the brow's from the ridge's most forward point, looking down a column through the eye (the Shaman's,
+2026-11-22: 0.885 and 0.905; 0.899 put his eyes up on the ridge).
+
+How far apart the eyes are and how big, by a human face's proportions (the owner's call, 2026-11-22:
+"match them to what humans look like"): an eye is a fifth of the face's width at the cheekbones, and
+about 0.13 of the head from chin to crown; it's drawn the mean of the two, since these faces are
+wider or narrower than a person's. One eye's width between the two. The face's width is measured on
+its bare skin just under the eyes, to the hairline or where the face turns away. `place=` sets an
+eye's width and how far its middle is from the nose's, where a face wants its own (2026-11-23: each
+face's, from the owner's notes and the second opinion they asked for; see docs/CHARACTERS.md).
+`brows=` is how far from the nose's middle the brows start, on a face whose nose bridge is wide
+enough that they'd run onto it (the Rifleman's).
 
 The Captain was made with a blank face: sculpted sockets where the eyes go, a brow ridge, a nose,
 and a pocket of skin in the beard where the mouth goes, all one skin. Nothing is cut into it. This
@@ -37,6 +49,8 @@ args = sys.argv[sys.argv.index("--") + 1 :]
 source, out = os.path.abspath(args[0]), os.path.abspath(args[1])
 pictures = os.path.abspath(args[2]) if len(args) > 2 and not args[2].startswith("eyes=") else None
 told = next((a[5:] for a in args[2:] if a.startswith("eyes=")), None)
+placed = next((a[6:] for a in args[2:] if a.startswith("place=")), None)
+brow_start = next((float(a[6:]) for a in args[2:] if a.startswith("brows=")), None)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=source)
@@ -155,7 +169,6 @@ eyes.sort(key=lambda e: -e[0])
 # Across the socket at its height, its middle is halfway between where its sides rise back to
 # the face: the single deepest point sits towards the nose.
 refined = []
-widths = []
 for x0, z0, dip in eyes:
     j = int(np.argmin(np.abs(zs - z0)))
     side = 1 if x0 > nose_x else -1
@@ -177,26 +190,61 @@ for x0, z0, dip in eyes:
     strong = [(x, o) for x, o in over if o > most * 0.85]
     middle = sum(x * o for x, o in strong) / sum(o for _, o in strong)
     refined.append((middle, z0, dip))
-    widths.append((max(x for x, _ in strong) - min(x for x, _ in strong)) / 2)
     print("FACE socket", side, "overhang", round(most, 4), "strongest from", round(min(x for x, _ in strong), 4), "to", round(max(x for x, _ in strong), 4))
 eyes = sorted(refined, key=lambda e: -e[0])
-if told:
-    told_half, told_z = (float(v) for v in told.split(",")[:2])
-    eyes = [(nose_x + told_half, told_z, 0.0), (nose_x - told_half, told_z, 0.0)]
-    widths = [told_half * 0.75, told_half * 0.75]
-    print("FACE sockets as told", told_half, told_z)
-# Made symmetric: the two sockets mirror each other about the nose.
+told_numbers = [float(v) for v in told.split(",")] if told else []
+eye_z = told_numbers[0] if told_numbers else (eyes[0][1] + eyes[1][1]) / 2
 mid = nose_x
-half = (abs(eyes[0][0] - mid) + abs(eyes[1][0] - mid)) / 2
-eye_z = (eyes[0][1] + eyes[1][1]) / 2
-print("FACE sockets", [(round(e[0], 4), round(e[1], 4), round(e[2], 4)) for e in eyes], "half apart", round(half, 4))
+print("FACE sockets found", [(round(e[0], 4), round(e[1], 4), round(e[2], 4)) for e in eyes], "height used", round(eye_z, 4))
+
+
+# Skin, loosely (shaded skin included), for measuring the face across.
+bare_skin = (hue > 0.0) & (hue < 0.09) & (sat > 0.18) & (v > 0.25)
+
+
+def skin_width(z):
+    """How wide the bare skin is across the face at this height, from the nose out each way to the
+    hairline (or where the head turns away), stepping over a single odd cell."""
+    j = int(np.argmin(np.abs(zs - z)))
+    i0 = int(np.argmin(np.abs(xs - nose_x)))
+    ends = []
+    for step in (-1, 1):
+        i, last, gap = i0, i0, 0
+        while 0 <= i + step < len(xs):
+            i += step
+            # Bare skin still facing the front: past the cheekbone the head turns away to the ears.
+            if bare_skin[j, i] and not np.isnan(depth[j, i]) and depth[j, i] - front < size * 0.4:
+                last, gap = i, 0
+            else:
+                gap += 1
+                if gap > 1:
+                    break
+        ends.append(xs[last])
+    return float(ends[1] - ends[0])
+
+
+# The face's width at the cheekbones, just under the eyes (the sockets' shading breaks the skin up
+# at the eyes themselves).
+face_width = max(skin_width(eye_z - size * 0.07), skin_width(eye_z - size * 0.1))
+# An eye: between a fifth of the face across and 0.13 of the head, scaled as told; one eye's width
+# between them, so each eye's middle an eye's width out from the nose.
+eye_width = (face_width / 5 + size * 0.13) / 2
+eye_middle = eye_width
+if placed:
+    eye_width, eye_middle = (float(v) for v in placed.split(","))
+print("FACE width at the cheekbones", round(face_width, 4), "head", round(size, 4), "an eye", round(eye_width, 4),
+      "its middle", round(eye_middle, 4), "from the nose")
+# In the game's terms (render/face/faceShader.ts): an eye is drawn 0.7 of its socket's half-width
+# either side of a middle set 0.13 of it in towards the nose.
+eye_half = eye_width / 1.4
+half = eye_middle + 0.13 * eye_half
 
 # The brow ridge: straight up from each socket, the most forward point.
 ci = int(np.argmin(np.abs(xs - (mid + half))))
 column = [(zs[j], depth[j, ci]) for j in range(len(zs)) if eye_z < zs[j] < eye_z + size * 0.22 and not np.isnan(depth[j, ci])]
 brow_z = min(column, key=lambda c: c[1])[0]
-if told and len(told.split(",")) > 2:
-    brow_z = float(told.split(",")[2])
+if len(told_numbers) > 1:
+    brow_z = told_numbers[1]
 print("FACE brow ridge at", round(float(brow_z), 4), "above the socket by", round(float(brow_z - eye_z), 4))
 
 # The mouth: below the nose, the band of bare skin in the beard nearest the middle.
@@ -211,8 +259,8 @@ for j in range(len(zs)):
 bare = [m for m in mouth_rows if m[1] > 6]
 if bare:
     mouth_z = float(sum(m[0] * m[1] for m in bare) / sum(m[1] for m in bare))
-    widths = [(max(xs[i] for i in m[3]) - min(xs[i] for i in m[3])) / 2 for m in bare]
-    mouth_half = float(np.percentile(widths, 75))
+    mouth_widths = [(max(xs[i] for i in m[3]) - min(xs[i] for i in m[3])) / 2 for m in bare]
+    mouth_half = float(np.percentile(mouth_widths, 75))
     mouth_tall = (max(m[0] for m in bare) - min(m[0] for m in bare)) / 2
 else:
     mouth_z, mouth_half, mouth_tall = nose_z - size * 0.15, size * 0.12, size * 0.04
@@ -267,7 +315,10 @@ def patch(centre_x, centre_z, half_wide, half_tall, columns, rows):
     }
 
 
-eye_patch_wide = half * 0.62
+# Wide enough for the whole brow, which reaches past the eye at both ends (render/face/faceShader.ts:
+# from 0.95 of the socket in towards the nose to 1.18 out towards the ear, its ends rounded). Patches
+# that stopped short cut the brows off square.
+eye_patch_wide = eye_half * 1.3
 eye_patch_low = eye_z - size * 0.085
 # Room above the brow for it to rise in surprise.
 eye_patch_high = brow_z + size * 0.135
@@ -275,8 +326,8 @@ facts = {
     "head": size,
     "eyes": [[mid + s * half, eye_z] for s in (1, -1)],
     "browZ": float(brow_z),
-    # How wide and tall an eye is drawn, by the socket's own width.
-    "eyeHalf": float(sum(widths) / len(widths)) * 0.78,
+    "eyeHalf": float(eye_half),
+    **({"browStart": brow_start} if brow_start is not None else {}),
     "mouth": [mid, mouth_z],
     "mouthHalf": mouth_half,
     "mouthTall": float(mouth_tall),

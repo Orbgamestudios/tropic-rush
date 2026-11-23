@@ -95,14 +95,16 @@ These were explicitly left out to keep the first version to a basic structure:
 - **Setting out from the boat, in one unbroken shot (Decided, the owner's call):** choosing a hero
   for a raid happens aboard the gunboat out at sea, in the late afternoon, with the island ahead.
   The crew stand and sit about her deck; arrows either side swing the camera round from one to the
-  next. Ready sends the one picked into the cabin to the console, where the three time crystals
-  they'll take are set in its holders (this is where the loadout is chosen now). Set off: she runs
-  in, the camera pulling out of the cabin and round, and runs up onto the beach; kit's thrown ashore,
-  the hero goes over the bow rail and walks up the sand, and the camera comes to rest just where the
-  player's camera sits in a raid, which takes over from there with no cut. The rest of the crew stay
-  aboard her for the raid, and the kit lies where it fell. Skip jumps to the end of the walk to the
-  console, or of the run in and landing (`render/boatScene.ts`, `ui/boatSelect.ts`). Alone for now:
-  a party still goes through the map's lobby, and the squad-ready step aboard is still to do.
+  next. Ready sends the one picked to the console, where the three time crystals they'll take are
+  set in its holders (this is where the loadout is chosen now), while she runs in to the island: by
+  the time they're set she's all but on the beach. Set off (changed 2026-11-23, the owner's call:
+  the long run in took too long, and no kit's thrown ashore any more): a cut to the sand ahead as she
+  grounds, the hero at her bow; they hop over onto the beach, and the camera comes up and round to
+  just where the player's camera sits in a raid, which starts there, where they landed. Those of the
+  crew who come along (below) are ashore beside them; the rest stay aboard her for the raid. Skip
+  jumps to the end of the walk to the console, or of the landing (`render/boatScene.ts`,
+  `ui/boatSelect.ts`). Alone for now: a party still goes through the map's lobby, and the
+  squad-ready step aboard is still to do.
 - **The crew's gunboat (Decided; redesigned 2026-11-21 to the owner's concept views, kept out of the
   repo):** a sleek charcoal-and-white walkaround dayboat big enough for the whole crew at their
   raid size. Her hull is lofted along four lines: a near-plumb stem raking back into the forefoot,
@@ -121,17 +123,41 @@ These were explicitly left out to keep the first version to a basic structure:
 - **The landing film (Decided):** what a raid opens with when it doesn't come from the boat scene (a
   party, or a test): the crew going over the side and up the beach, the camera low by the boat
   rising to sit over the player's hero (`render/raidShots.ts`).
-- **The way home (Decided):** a win alone no longer sits on the burning base. Three shots at dusk:
-  close on a hero carrying a crate of loot down the beach, from the water as the crates come over
-  the side and the crew climbs in, and wide as she pulls away; then the results. A cutscene after a
-  raid can follow in the boat at night. With a crew, the old ending stays for now.
+- **The way home (Decided; changed 2026-11-23, the owner's call: no walk back across the island):**
+  a win alone puts the results up at once, over the way home at dusk, cut together behind them:
+  from the water off her quarter, the crew at the water's edge by her bow tossing the loot aboard
+  and climbing in; then wide and high as she pulls away, held there. The results are lighter round
+  their card over it, so it shows through. A cutscene after a raid can follow in the boat at night.
+  With a crew, the old ending stays for now.
 - **Animation from the stock clips (Proposed):** the ActorCore clips the owner downloaded are
   converted to the Captain's skeleton, with blends between them chosen by what each move is
   (`render/clipLibrary.ts`, `docs/ANIMATION.md`). The clips are in the repo (the owner's
   call: the game isn't sold for profit). The Captain stands on the stock idle aboard the boat and in
   cutscenes, easing onto the game's own walk when he moves; in a raid he follows the Rifleman.
-- **The Captain aboard (Decided):** the full-detail Captain stands on the boat in the Rifleman's
-  place, named "The Captain", with his face, hands and wind-blown hair (`render/captain.ts`).
+- **The Captain and the Rifleman (Decided 2026-11-22, the owner's call, replacing "The Captain
+  aboard"):** the Rifleman is the owner's new Rifleman model, and the Captain is a hero of his own,
+  one of the two every player starts with (the other is the Rifleman): a pistol in each hand, a
+  little quicker and a little less deadly than the Rifleman, and the one the player plays as unless
+  they pick someone else. Both stand aboard the boat, fight in raids and walk the home island in
+  their rigged models, following their block figures' moves (`render/captainRaid.ts`); the Shaman
+  and Professor Terror walk the island in theirs. Their hair doesn't move: the breeze in it was set
+  aside (the owner's call, 2026-11-22). The Captain's numbers and upgrade tree are Proposed
+  (`logic/heroes.ts`, `logic/heroTrees.ts`). The cutscenes are unchanged: the Captain still plays
+  Steele's part, while the dialogue box shows Steele's (now the Rifleman's) picture.
+- **The crew on your raids (Decided 2026-11-22, the owner's call; the numbers Proposed):** on a raid
+  of their own the player takes up to three of the other heroes they have along, played by the
+  phone: a heavy first (the Heavy, then the Tank), then the Medic, then guns. They keep with the
+  player and fight what the player's locked onto or firing at, or else the defense reaching them.
+  A heavy walks in ahead to stand between the player and that defense, inside its reach, so its guns
+  turn on them; the rest shoot from as far back as their weapons reach, on the player's side, where
+  no other defense reaches; the Medic heals whoever's hurt; badly hurt with no medic, they fall back.
+  Each says what they're starting in a small line along the bottom of the screen ("Big Mo: Going
+  in!"), no box, a line at a time (`logic/bots.ts`). They show in the squad panel like a party's.
+- **The boat's camera (Decided 2026-11-22):** never passes through a post, the roof or the glass
+  and never comes close enough to anything to cut into it: the boat's surfaces are marked in a grid
+  once, and a camera that comes into a marked cell moves to the nearest open spot
+  (`render/cameraGuard.ts`). The console shot is from out over the side deck, the hero's face
+  three-quarters on with the crystals in front of them; the run in leaves from there.
 
 - **The Captain** is the character the player plays as, in place of Sgt. Steele, and mans the
   gunboat; the Shaman has a new design. Both are to be built as separate pieces so they can act in
@@ -166,6 +192,18 @@ These were explicitly left out to keep the first version to a basic structure:
   sand), worked out from one small noise texture with no new draw calls.
 - **The world map** is drawn at the game's own sharpness, not the hero screen's: its sea and cloud
   are each a shader over the whole screen, and at that sharpness they were what made it lag.
+- **Lamp light lies under people (2026-11-23):** on an island, the pools of lamp light at dusk and
+  at night are drawn with the ground, before anyone standing on it, so they light the ground and
+  what's laid on it and never anyone in front of them. Drawn over the finished picture, a pool
+  beyond the Captain blew his face out white round his pupil, on and off as he moved, on land or
+  aboard: the flashing light on his face (`render/lightPool.ts`). People standing in a pool aren't
+  lit by it now; the world map keeps its pools as they were.
+- **Frame rate (2026-11-22):** a screen nobody's touched for a second and a half still runs at half
+  speed to save the battery, except a raid, the boat, the world map and any cutscene, which always
+  run at full speed (the map and the films had read as the game dropping to 30). A cutscene is drawn
+  at the game's own top sharpness, not Ultra's, its shadows redrawn every other frame; people are
+  drawn in full only within 3 metres; and the crystals stop bending the light once the phone falls
+  behind (`render/stage.ts`).
 - **Running:** upright once going, leaning into setting off and back on pulling up; heroes gather
   speed over their first steps and take a step or two to stop; the Grenadier's throws no longer
   flash a muzzle. In cutscenes people also kneel, pray, sit, point, nod, shake their heads and

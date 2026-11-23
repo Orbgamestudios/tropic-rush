@@ -2141,7 +2141,9 @@ function spawnDirect(
   p.splash = splash;
   p.buildingBonus = buildingBonus;
   p.maxDistance = range;
-  if (hero.kind === "rifleman" || hero.kind === "bazooka") p.charges = hero.mods.signature;
+  if (hero.kind === "captain" || hero.kind === "rifleman" || hero.kind === "bazooka") {
+    p.charges = hero.mods.signature;
+  }
   if (kind === "rocket" && hero.mods.guided) {
     p.homing = hero.targetId;
     // A curving rocket flies a longer way round than a straight one.
@@ -2320,7 +2322,7 @@ function detonate(state: RaidState, p: Projectile, pos: Vec2): void {
   if (p.kind === "grenade" && p.lob) skipGrenade(state, p, p.lob, pos);
 }
 
-/** The Rifleman's signature: a bullet jumps from the building it hit to the next one along. */
+/** The Rifleman's (and the Captain's) signature: a bullet jumps from the building it hit to the next one along. */
 function ricochet(state: RaidState, p: Projectile, from: RaidBuilding): void {
   let next: RaidBuilding | null = null;
   let best: number = SIGNATURE.ricochetRange;

@@ -7,6 +7,7 @@ import type { BuildingType } from "../logic/buildings";
 import type { HeroKind } from "../logic/heroes";
 import { kitVersion, stageFor } from "./buildingKit";
 import { loadPerson, type Person } from "./captain";
+import { personFor } from "./captainRaid";
 import { menuHero, visibleBox } from "./heroAssets";
 import { type StoryFigure, storyFigure } from "./heroModels";
 import { buildingModel } from "./models";
@@ -143,25 +144,28 @@ const people = new Map<Person, Promise<string>>();
 export function personPortrait(who: Person & StoryFigure): Promise<string> {
   let pending = people.get(who);
   if (!pending) {
-    pending = loadPerson(who)
-      .then((person) => {
-        // Faced to the camera, then a little round to three-quarters; the face set going.
-        person.holder.rotation.y = -Math.atan2(person.forward.x, person.forward.z) + 0.4;
-        person.face?.express("neutral");
-        person.update(0.05, () => undefined);
-        const box = visibleBox(person.holder);
-        const height = box.max.y - box.min.y;
-        const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
-        const target = new THREE.Vector3(0, box.max.y - 0.36, 0);
-        const distance = 0.78 / (2 * Math.tan(THREE.MathUtils.degToRad(14)));
-        camera.position.set(target.x + 0.15, target.y + height * 0.06, target.z + distance);
-        camera.lookAt(target);
-        return snapshot(person.holder, camera);
-      })
-      .catch(() => figurePortrait(who));
+    pending = personPicture(who).catch(() => figurePortrait(who));
     people.set(who, pending);
   }
   return pending;
+}
+
+/** A head-and-shoulders picture of one of the people, their face on it; `light`, from their light copy. */
+function personPicture(who: Person, light = false): Promise<string> {
+  return loadPerson(who, { raid: light }).then((person) => {
+    // Faced to the camera, then a little round to three-quarters; the face set going.
+    person.holder.rotation.y = -Math.atan2(person.forward.x, person.forward.z) + 0.4;
+    person.face?.express("neutral");
+    person.update(0.05, () => undefined);
+    const box = visibleBox(person.holder);
+    const height = box.max.y - box.min.y;
+    const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
+    const target = new THREE.Vector3(0, box.max.y - 0.36, 0);
+    const distance = 0.78 / (2 * Math.tan(THREE.MathUtils.degToRad(14)));
+    camera.position.set(target.x + 0.15, target.y + height * 0.06, target.z + distance);
+    camera.lookAt(target);
+    return snapshot(person.holder, camera);
+  });
 }
 
 const portraits = new Map<HeroKind, Promise<string>>();
@@ -171,27 +175,34 @@ const icons = new Map<string, string>();
 export function heroPortrait(kind: HeroKind): Promise<string> {
   let pending = portraits.get(kind);
   if (!pending) {
-    pending = menuHero(kind).then(({ holder: model }) => {
-      // Turn to a three-quarter view, facing the camera.
-      model.rotation.y = -Math.PI / 2 + 0.45;
-      const box = visibleBox(model);
-      const height = box.max.y - box.min.y;
-      const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
-      // Head and shoulders: centered a fifth of the way down from the top of the head.
-      const target = new THREE.Vector3(
-        0,
-        kind === "tank" ? box.min.y + height * 0.55 : box.max.y - 0.36,
-        0,
-      );
-      const frame = kind === "tank" ? height * 1.05 : 0.78;
-      const distance = frame / (2 * Math.tan(THREE.MathUtils.degToRad(14)));
-      camera.position.set(target.x + 0.15, target.y + height * 0.06, target.z + distance);
-      camera.lookAt(target);
-      return snapshot(model, camera);
-    });
+    // The Captain and the Rifleman in their own models (the light copies), their block figures
+    // if those can't be had.
+    const who = personFor(kind);
+    pending = who ? personPicture(who, true).catch(() => blockPortrait(kind)) : blockPortrait(kind);
     portraits.set(kind, pending);
   }
   return pending;
+}
+
+function blockPortrait(kind: HeroKind): Promise<string> {
+  return menuHero(kind).then(({ holder: model }) => {
+    // Turn to a three-quarter view, facing the camera.
+    model.rotation.y = -Math.PI / 2 + 0.45;
+    const box = visibleBox(model);
+    const height = box.max.y - box.min.y;
+    const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 50);
+    // Head and shoulders: centered a fifth of the way down from the top of the head.
+    const target = new THREE.Vector3(
+      0,
+      kind === "tank" ? box.min.y + height * 0.55 : box.max.y - 0.36,
+      0,
+    );
+    const frame = kind === "tank" ? height * 1.05 : 0.78;
+    const distance = frame / (2 * Math.tan(THREE.MathUtils.degToRad(14)));
+    camera.position.set(target.x + 0.15, target.y + height * 0.06, target.z + distance);
+    camera.lookAt(target);
+    return snapshot(model, camera);
+  });
 }
 
 function iconKey(type: BuildingType, level: number): string {

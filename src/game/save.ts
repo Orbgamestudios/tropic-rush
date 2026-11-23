@@ -186,7 +186,7 @@ function readSettings(value: unknown): Settings {
 const starters = (): HeroKind[] => HERO_KINDS.filter((k) => STARTER_HEROES.includes(k));
 
 const DEFAULT_SAVE: SaveData = {
-  hero: "rifleman",
+  hero: "captain",
   level: 1,
   wins: 0,
   bestDestruction: 0,

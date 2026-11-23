@@ -250,6 +250,7 @@ type MiniStat =
 
 /** What the time between shots is called for each hero. */
 const RELOAD_WORDS: Record<HeroKind, { name: string; verb: string }> = {
+  captain: { name: "Quick Reload", verb: "Reloads" },
   rifleman: { name: "Quick Reload", verb: "Reloads" },
   medic: { name: "Quick Throw", verb: "Throws" },
   heavy: { name: "Hot Trigger", verb: "Fires" },
@@ -280,6 +281,12 @@ const WEAPON_MINI: Record<
     stat: "unload" | "spinUp" | "flight" | "shotSpeed";
   }
 > = {
+  captain: {
+    names: ["Quick Draw", "Light Trigger"],
+    text: "Both pistols fire {}% quicker.",
+    icon: "barrage",
+    stat: "unload",
+  },
   rifleman: {
     names: ["Quick Unload", "Trigger Discipline"],
     text: "Bullets leave a burst {}% quicker.",
@@ -426,6 +433,54 @@ interface TreeDraft {
 }
 
 const TREES: Record<HeroKind, TreeDraft> = {
+  captain: {
+    first: up("Sea Legs", "+10% health.", { nature: 1 }, "heart", { hp: 1.1 }),
+    quick: special("Quick Draw", "Both pistols fire 20% quicker.", "barrage", { unload: 0.8 }),
+    sapper: special("Hollow Points", "+15% damage to buildings.", "hammer", {
+      buildingDamage: 1.15,
+    }),
+    scrapper: special("Ship's Rum", "Destroying a building heals 5%.", "medkit", {
+      healOnKill: 0.05,
+    }),
+    branches: {
+      nature: {
+        name: "Old Salt",
+        opener: special("Oilskin Coat", "Takes 15% less damage.", "shield", { damageTaken: 0.85 }),
+        capstone: special(
+          "Go Down Fighting",
+          "Enrages below 30% health: fires 40% faster and takes 25% less damage.",
+          "skull",
+          { lastStand: true },
+        ),
+      },
+      fire: {
+        name: "Gunslinger",
+        opener: special("Deadeye", "+25% damage to defenses.", "crosshair", {
+          defenseDamage: 1.25,
+        }),
+        capstone: special("Fan the Hammer", "One more shot in every volley.", "barrage", {
+          shots: 1,
+        }),
+      },
+      ice: {
+        name: "Duelist",
+        opener: special("Snap Shot", "Reloads 15% faster.", "clock", { reload: 0.85 }),
+        capstone: special("Fast Hands", "Reloads 40% faster.", "clock", { reload: 0.6 }),
+      },
+      dark: {
+        name: "Skipper",
+        opener: special(
+          "Steady Nerves",
+          "Heals 3% a second after 4 seconds without being hit.",
+          "medkit",
+          { fieldDressing: true },
+        ),
+        capstone: special("Ricochet", "Bullets bounce off a building into the next one.", "star", {
+          signature: 1,
+        }),
+      },
+    },
+  },
   rifleman: {
     first: up("Basic Training", "+10% health.", { nature: 1 }, "heart", { hp: 1.1 }),
     quick: special("Smooth Action", "Bullets leave a burst 20% quicker.", "barrage", {

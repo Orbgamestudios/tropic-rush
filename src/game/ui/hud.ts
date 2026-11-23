@@ -94,6 +94,9 @@ export class Hud {
   private retryShown = 0;
   private readonly flashText = el("div", "hud-flash");
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A crewmate's line, small along the bottom of the screen. */
+  private readonly calloutText = el("div", "hud-callout");
+  private calloutTimer: ReturnType<typeof setTimeout> | null = null;
   private lastHp = -1;
   private lagHp = 0;
   private mapTimer = 0;
@@ -216,6 +219,7 @@ export class Hud {
       this.trayBox,
       this.boatButton,
       this.flashText,
+      this.calloutText,
     );
     for (const node of [card, objective, right, this.trayBox, this.boatButton]) {
       stop(node);
@@ -271,6 +275,14 @@ export class Hud {
     this.flashText.classList.add("on");
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = setTimeout(() => this.flashText.classList.remove("on"), 1600);
+  }
+
+  /** What one of the crew says as they do something ("Going in!"), for a moment. */
+  callout(who: string, line: string): void {
+    this.calloutText.textContent = `${who}: ${line}`;
+    this.calloutText.classList.add("on");
+    if (this.calloutTimer) clearTimeout(this.calloutTimer);
+    this.calloutTimer = setTimeout(() => this.calloutText.classList.remove("on"), 2400);
   }
 
   update(

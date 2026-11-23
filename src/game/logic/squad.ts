@@ -73,11 +73,11 @@ const BURST = [0.15, 0.5] as const;
 const HOLD_FIRE = 0.5;
 
 /** Where each squadmate stands relative to the leader when nothing is in reach (behind, fanned). */
-const SLOTS: readonly Vec2[] = [vec(-2.6, 2.4), vec(2.6, 2.4), vec(0, 3.8), vec(-4, 4.2)];
+export const SLOTS: readonly Vec2[] = [vec(-2.6, 2.4), vec(2.6, 2.4), vec(0, 3.8), vec(-4, 4.2)];
 
 const dot = (a: Vec2, b: Vec2) => a.x * b.x + a.y * b.y;
 
-function shotBlocked(state: RaidState, from: Vec2, to: Vec2): boolean {
+export function shotBlocked(state: RaidState, from: Vec2, to: Vec2): boolean {
   const d = sub(to, from);
   const len2 = d.x * d.x + d.y * d.y || 1;
   return state.obstacles.some((o) => {
@@ -119,7 +119,7 @@ function spacing(state: RaidState, hero: RaidHero): Vec2 {
   return push;
 }
 
-function steer(state: RaidState, hero: RaidHero, toward: Vec2): Vec2 {
+export function steer(state: RaidState, hero: RaidHero, toward: Vec2): Vec2 {
   const dir = normalize(sub(toward, hero.pos));
   const push = spacing(state, hero);
   return length(push) > 0 ? normalize(add(dir, scaleVec(push, 0.6))) : dir;
@@ -129,7 +129,7 @@ function scaleVec(a: Vec2, s: number): Vec2 {
   return vec(a.x * s, a.y * s);
 }
 
-function aimAt(hero: RaidHero, pos: Vec2): Vec2 {
+export function aimAt(hero: RaidHero, pos: Vec2): Vec2 {
   const range = HEROES[hero.kind].attack.range;
   const d = sub(pos, hero.pos);
   // The stick's length sets the distance for lobbed shots, so aim exactly at the target.
@@ -245,7 +245,7 @@ function shootsBack(state: RaidState, hero: RaidHero, index: number, shot: Proje
 }
 
 /** The defenses that can reach a spot, with a little to spare. */
-function underFire(state: RaidState, pos: Vec2, spare = 1.5): RaidBuilding[] {
+export function underFire(state: RaidState, pos: Vec2, spare = 1.5): RaidBuilding[] {
   return state.buildings.filter((b) => {
     const attack = BUILDINGS[b.type].attack;
     return (

@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import type { HeroKind } from "../logic/heroes";
 import { HeroAnimator } from "./heroAnimator";
-import { heroModel } from "./models";
+import { type HeroModel, heroModel } from "./models";
 import { loadMenuBody, loadRigs } from "./riggedHeroes";
 
 /** Bounds of the visible meshes only (hidden effects like spray cones don't count). */
@@ -24,11 +24,14 @@ const HERO_HEIGHT = 1.8;
 export interface MenuHero {
   holder: THREE.Group;
   animator: HeroAnimator | null;
+  /** The figure itself, inside the holder: for one of the rigged people to follow. */
+  model: HeroModel;
 }
 
 /** A hero as things stand: the best copy that's arrived, or the block figure if none has. */
 export function heroOnHand(kind: HeroKind, detailed: boolean): MenuHero {
-  const { root, rig } = heroModel(kind, detailed);
+  const model = heroModel(kind, detailed);
+  const { root, rig } = model;
   const box = visibleBox(root);
   const height = box.max.y - box.min.y;
   if (kind !== "tank" && height > 0) root.scale.setScalar(HERO_HEIGHT / height);
@@ -37,7 +40,7 @@ export function heroOnHand(kind: HeroKind, detailed: boolean): MenuHero {
   });
   const holder = new THREE.Group();
   holder.add(root);
-  return { holder, animator: rig && new HeroAnimator(rig) };
+  return { holder, animator: rig && new HeroAnimator(rig), model };
 }
 
 /** A fresh copy of a hero's model, the detailed one if the hero's going to be seen up close. */

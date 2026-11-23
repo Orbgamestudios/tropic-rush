@@ -4,9 +4,10 @@
 // the fight starts, and the camera starts low by the boat and rises to sit over the player's hero,
 // where it stays for the raid.
 //
-// The way home, after a win: the crew walks back down to the boat carrying what they took, throws
-// it aboard, climbs in, and she pulls away as the light goes; three shots, cut together: close on a
-// hero with a crate, from the water as the loot comes over the side, and wide as she leaves.
+// The way home, after a win, shown behind the results (the owner's call, 2026-11-23: no walk back
+// across the island): two shots, cut together. From the water off her quarter, the crew already at
+// the water's edge by her bow, tossing what they took aboard one after another and climbing in; then
+// wide and high as she pulls away as the light goes, held there.
 //
 // Both only say where the crew is and where the camera is at each moment; the raid's own view draws
 // them. Nothing here changes how a raid plays.
@@ -72,7 +73,7 @@ export function landing(
   return { places, shot: { camera, look, weight } };
 }
 
-export const DEPARTURE_SECONDS = 8.5;
+export const DEPARTURE_SECONDS = 7;
 /** How high a crate's carried, above the sand. */
 export const CARRIED = 1.15;
 
@@ -82,7 +83,7 @@ export interface Crate {
   held: boolean;
 }
 /** When each shot of the way home starts. */
-const SHOTS = [0, 2.8, 5.6] as const;
+const SHOTS = [0, 2.6] as const;
 
 /** A crate of loot, carried and thrown aboard. */
 export function lootCrate(): THREE.Object3D {
@@ -101,15 +102,15 @@ export function lootCrate(): THREE.Object3D {
 }
 
 /**
- * The way home: who's where, where each crate is (null once it's aboard, out of sight), the
- * boat's pull away from the beach, and the camera, `t` seconds in. `from` is where each of the crew
- * stood when the raid was won.
+ * The way home: who's where, where each crate is (null once it's aboard, out of sight), the boat's
+ * pull away from the beach, and the camera, `t` seconds in, for a crew of `crew`. After the last
+ * shot's done it holds where it ends.
  */
 export function departure(
   t: number,
   boat: Vec2,
   shore: Vec2,
-  from: readonly Vec2[],
+  crew: number,
 ): { places: CrewPlace[]; crates: (Crate | null)[]; boatOut: number; shot: Shot } {
   const places: CrewPlace[] = [];
   const crates: (Crate | null)[] = [];
@@ -121,54 +122,40 @@ export function departure(
     x: boat.x + u.x * up + v.x * along,
     y: boat.y + u.y * up + v.y * along,
   });
-  from.forEach((start, i) => {
-    // Everyone walks down to the water's edge by the boat in the first two shots.
-    const to = at(3, (i - (from.length - 1) / 2) * 1.4);
-    const walk = ease(t / (SHOTS[2] - 0.6 - i * 0.2));
-    const pos = { x: start.x + (to.x - start.x) * walk, y: start.y + (to.y - start.y) * walk };
-    const facing = Math.atan2(to.y - start.y, to.x - start.x);
-    // Carried out in front, chest high; over the side at the start of the second shot, one after
-    // another; then they climb in.
-    const throwAt = SHOTS[1] + 0.4 + i * 0.35;
-    const flight = (t - throwAt) / 0.7;
+  const facing = inland + Math.PI;
+  for (let i = 0; i < crew; i++) {
+    // In a row at the water's edge by her bow, each a crate in front of them, chest high; over the
+    // side one after another, then in after it.
+    const pos = at(2.6, (i - (crew - 1) / 2) * 1.4);
+    const throwAt = 0.35 + i * 0.32;
+    const flight = (t - throwAt) / 0.6;
     const held = { x: pos.x + Math.cos(facing) * 0.55, y: pos.y + Math.sin(facing) * 0.55 };
     if (flight < 0) crates.push({ at: new THREE.Vector3(held.x, CARRIED, held.y), held: true });
     else if (flight < 1) {
       const x = held.x + (boat.x - held.x) * flight;
       const y = held.y + (boat.y - held.y) * flight;
-      const up = CARRIED + Math.sin(flight * Math.PI) * 2.6;
+      const up = CARRIED + Math.sin(flight * Math.PI) * 2.2;
       crates.push({ at: new THREE.Vector3(x, up, y), held: false });
     } else crates.push(null);
-    const aboard = t > throwAt + 1.1;
-    places.push({ pos: aboard ? boat : pos, facing, moving: walk > 0 && walk < 1, aboard });
-  });
-  const boatOut = ease((t - SHOTS[2] - 0.3) / (DEPARTURE_SECONDS - SHOTS[2] - 0.3)) * 22;
-  const lead = places[0]?.pos ?? boat;
+    const aboard = t > throwAt + 0.9;
+    places.push({ pos: aboard ? boat : pos, facing, moving: false, aboard });
+  }
+  const boatOut = ease((t - SHOTS[1] - 0.2) / (DEPARTURE_SECONDS - SHOTS[1] - 0.2)) * 22;
   let shot: Shot;
   if (t < SHOTS[1]) {
-    // Close on the first of the crew, walking with the crate, from a little ahead and below.
-    const ahead = Math.atan2(boat.y - lead.y, boat.x - lead.x);
+    // Low from the water off her quarter, looking in past her bow at the crew and the loot, drifting
+    // a little closer.
+    const drift = ease(t / SHOTS[1]);
+    const cam = at(-7 + drift * 1.2, -5 + drift * 0.8);
+    const look = at(2.2, 0);
     shot = {
-      camera: new THREE.Vector3(
-        lead.x + Math.cos(ahead + 0.5) * 5,
-        1.6,
-        lead.y + Math.sin(ahead + 0.5) * 5,
-      ),
-      look: new THREE.Vector3(lead.x, 1.4, lead.y),
-      weight: 1,
-    };
-  } else if (t < SHOTS[2]) {
-    // From the water off the boat's quarter, looking in past her at the loot coming over the side.
-    const cam = at(-9, -4);
-    const look = at(2, 0);
-    shot = {
-      camera: new THREE.Vector3(cam.x, 1.4, cam.y),
-      look: new THREE.Vector3(look.x, 1.6, look.y),
+      camera: new THREE.Vector3(cam.x, 1.3, cam.y),
+      look: new THREE.Vector3(look.x, 1.3, look.y),
       weight: 1,
     };
   } else {
-    // Wide and high from the beach as she pulls away into the dark.
-    const out = (t - SHOTS[2]) / (DEPARTURE_SECONDS - SHOTS[2]);
+    // Wide and high from the beach as she pulls away into the dusk, drifting slowly back.
+    const out = Math.min(1, (t - SHOTS[1]) / (DEPARTURE_SECONDS - SHOTS[1]));
     const cam = at(10 + out * 3, 12);
     const look = at(-boatOut, 0);
     shot = {

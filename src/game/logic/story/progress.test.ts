@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HERO_KINDS } from "../heroes";
+import { HERO_KINDS, STARTER_HEROES } from "../heroes";
 import { SCENES, STORY_ISLANDS, scene } from ".";
 import {
   advance,
@@ -107,7 +107,9 @@ describe("the story's progress", () => {
       const order = rescues(seed);
       expect(order.map((r) => r.hero).slice(0, 2)).toEqual(["medic", "heavy"]);
       expect(order.map((r) => r.hq)).toEqual([3, 5, 8, 10, 12, 15]);
-      expect(new Set(order.map((r) => r.hero)).size).toBe(HERO_KINDS.length - 1);
+      expect(new Set(order.map((r) => r.hero)).size).toBe(
+        HERO_KINDS.length - STARTER_HEROES.length,
+      );
       expect(rescues(seed)).toEqual(order);
     }
     expect(rescues(1).map((r) => r.hero)).not.toEqual(rescues(2).map((r) => r.hero));
@@ -121,7 +123,7 @@ describe("the story's progress", () => {
     story = advance(story, { rescued: "medic" });
     expect(signal(story, 5, 1, 9)).toBeNull();
     expect(signal(story, 5, 2, 9)?.hero).toBe("heavy");
-    expect(crewHeroes(story)).toEqual(["rifleman", "medic"]);
+    expect(crewHeroes(story)).toEqual(["captain", "rifleman", "medic"]);
   });
 
   it("has all four scenes for every rescue", () => {

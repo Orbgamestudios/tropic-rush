@@ -54,7 +54,6 @@ import {
 } from "./boatFittings";
 import { bakeByMaterial, chartScreen, decal, hullV, planUV } from "./boatParts";
 import { AT_EASE, type HeroMove } from "./heroAnimator";
-import { at, cyl, flatten, rbox } from "./shapes";
 
 type V3 = THREE.Vector3;
 
@@ -1462,19 +1461,4 @@ export function crewBoatModel(detail: Detail = "full"): CrewBoat {
     length: STEM - STERN,
     beam: HALF * 2 + 0.06,
   };
-}
-
-/** A kit bag, thrown ashore at a landing. */
-export function gearBag(): THREE.Group {
-  const bag = new THREE.Group();
-  const body = cyl(0.32, 0.32, 1.1, 0x5c6b3c, 12);
-  bag.add(at(body, 0, 0.32, 0, 0, 0, Math.PI / 2));
-  bag.add(at(rbox(0.1, 0.12, 0.7, 0x3a2a1a), 0, 0.62, 0));
-  bag.add(at(cyl(0.33, 0.33, 0.06, 0x3a2a1a, 12), 0.4, 0.32, 0, 0, 0, Math.PI / 2));
-  bag.add(at(cyl(0.33, 0.33, 0.06, 0x3a2a1a, 12), -0.4, 0.32, 0, 0, 0, Math.PI / 2));
-  flatten(bag);
-  bag.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.castShadow = true;
-  });
-  return bag;
 }

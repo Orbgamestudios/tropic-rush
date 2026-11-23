@@ -7,6 +7,7 @@ import { heroMods, heroTree, UPGRADES_PER_HERO } from "./heroTrees";
 
 /** Display names for the hero cards. */
 export const HERO_NAMES: Record<HeroKind, string> = {
+  captain: "The Captain",
   rifleman: "Sgt. Steele",
   medic: "Doc Penny",
   tank: "Tilly & Tank",
@@ -21,6 +22,7 @@ export const HERO_NAMES: Record<HeroKind, string> = {
  * in later.
  */
 export const HERO_UNLOCK_HQ: Record<HeroKind, number> = {
+  captain: 1,
   rifleman: 1,
   heavy: 3,
   medic: 6,

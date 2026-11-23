@@ -4,10 +4,17 @@
 // own color, which a multiply can't bring to a channel the night has left black; and a third adds a
 // little glare at each lamp. Buildings keep lamps; weapons and explosions throw short flashes. By day
 // none of the three draw calls happens.
+//
+// On an island the discs go down with the ground, before anything standing on it is drawn: they
+// light the ground and whatever's laid on it, and anyone standing there covers them. Drawn over the
+// finished picture, as they were, a pool beyond someone lit them too, wherever the disc fell on the
+// screen: a white blowout over the Captain's face, his pupil the one dark spot in it, that came and
+// went as he moved (the owner, 2026-11-23).
 
 import * as THREE from "three";
 import type { BuildingType } from "../logic/buildings";
 import { BUILDINGS } from "../logic/buildings";
+import { ON_GROUND_ORDER } from "./shapes";
 import { SKY } from "./sky";
 
 const LAMPS = 70;
@@ -334,7 +341,8 @@ export class LightPool {
   /** The lamps' pools changed and still need uploading. */
   private lampsDirty = false;
 
-  constructor() {
+  /** `onGround`: on an island, drawn with the ground under anything standing on it (see above). */
+  constructor({ onGround = false }: { onGround?: boolean } = {}) {
     const uniforms = { uTime: this.time, uDark: SKY.dark, uBalance: SKY.lampBalance };
     this.poolMesh = new THREE.Mesh(
       this.pools.geometry,
@@ -394,6 +402,13 @@ export class LightPool {
     // overlay like a selection square would blow it out.
     this.poolMesh.renderOrder = -1;
     this.spillMesh.renderOrder = -0.9;
+    if (onGround) {
+      for (const mesh of [this.poolMesh, this.spillMesh]) {
+        (mesh.material as THREE.ShaderMaterial).transparent = false;
+      }
+      this.poolMesh.renderOrder = ON_GROUND_ORDER;
+      this.spillMesh.renderOrder = ON_GROUND_ORDER + 0.05;
+    }
     this.haloMesh.renderOrder = 7;
     this.root.add(this.poolMesh, this.spillMesh, this.haloMesh);
     this.root.visible = false;

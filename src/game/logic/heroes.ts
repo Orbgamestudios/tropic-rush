@@ -1,7 +1,8 @@
-// The seven heroes. Looks are Decided in docs/DESIGN.md; these gameplay numbers are the
+// The eight heroes. Looks are Decided in docs/DESIGN.md; these gameplay numbers are the
 // unreviewed first pass ("Proposed"), tuned only enough to make the draft playable.
 
 export type HeroKind =
+  | "captain"
   | "rifleman"
   | "medic"
   | "tank"
@@ -11,6 +12,7 @@ export type HeroKind =
   | "engineer";
 
 export const HERO_KINDS: readonly HeroKind[] = [
+  "captain",
   "rifleman",
   "medic",
   "tank",
@@ -106,6 +108,26 @@ export interface HeroSpec {
 }
 
 export const HEROES: Record<HeroKind, HeroSpec> = {
+  // The Captain (the owner's call, 2026-11-22): the player's own hero, a pistol in each hand, one
+  // shot from each at a time; a little quicker on his feet than the Rifleman and a little less
+  // damage, with the crew to back him up.
+  captain: {
+    name: "Captain",
+    role: "Leads the crew, a pistol in each hand",
+    hp: 1300,
+    speed: 6.4,
+    radius: 0.55,
+    attack: {
+      kind: "burst",
+      range: 13,
+      damage: 42,
+      reload: 0.6,
+      speed: 34,
+      shots: 2,
+      interval: 0.12,
+    },
+    heavy: false,
+  },
   rifleman: {
     name: "Rifleman",
     role: "All-rounder",
@@ -222,4 +244,4 @@ export const HEROES: Record<HeroKind, HeroSpec> = {
 };
 
 /** Heroes a new player can pick right away; the rest come with headquarters levels. */
-export const STARTER_HEROES: readonly HeroKind[] = ["rifleman"];
+export const STARTER_HEROES: readonly HeroKind[] = ["captain", "rifleman"];

@@ -337,6 +337,10 @@
   overflow: hidden;
 }
 
+.screen-results.over-film {
+  background: radial-gradient(ellipse at 50% 40%, rgb(20 30 50 / 0.2), rgb(8 12 22 / 0.5));
+}
+
 .results-rays {
   position: absolute;
   left: 50%;

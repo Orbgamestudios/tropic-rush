@@ -294,12 +294,16 @@ function farGlass(color: THREE.Color): THREE.MeshStandardMaterial {
 const NEAR = 3.5;
 const at = new THREE.Vector3();
 
-/** Shows a crystal in full glass when `camera` is close to it, and lighter when it isn't. */
-export function crystalDetail(crystal: THREE.Object3D, camera: THREE.Camera): void {
+/**
+ * Shows a crystal in full glass when `camera` is close to it, and lighter when it isn't, or when
+ * the phone isn't keeping up (`rich` false): glass that bends the light draws everything behind it
+ * a second time.
+ */
+export function crystalDetail(crystal: THREE.Object3D, camera: THREE.Camera, rich = true): void {
   const body = crystal.userData.body as THREE.Mesh | undefined;
   const look = crystal.userData.look as { glass: THREE.Material; far: THREE.Material } | undefined;
   if (!body || !look) return;
-  const near = camera.position.distanceTo(crystal.getWorldPosition(at)) < NEAR;
+  const near = rich && camera.position.distanceTo(crystal.getWorldPosition(at)) < NEAR;
   body.material = near ? look.glass : look.far;
 }
 

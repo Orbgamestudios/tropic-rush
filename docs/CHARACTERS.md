@@ -24,18 +24,18 @@ of this:
 7. **Hands:** every finger bends on its own, three joints each, eased; the bend's axis is worked
    out at rest from the bones, so a fist, a point or a loose hand is just a number per finger
    (`render/captain.ts`).
-8. **Hair in the breeze:** the loose hair is found from the paint (the saturated blond above the
-   brow, on the head), looser towards the tips, and the vertex shader blows it about in gusts,
-   each lock on its own phase. No extra bones and no change to the mesh.
+8. **Hair in the breeze:** set aside by the owner (2026-11-22): moving the sculpted hair's points
+   tore it into jagged bits up close (the Captain's crown at the console) and cost every frame.
+   The hair is still now, and so is the block figures' (their swinging ponytails too).
 
-In the game since 2026-11-16: the full Captain stands aboard the boat in the Rifleman's place, with
-his face, the stock idle, his hands and his hair; picked, he says his line and eases his hands, and
+In the game since 2026-11-16 (since 2026-11-22 a hero of his own, not in the Rifleman's place; see
+DESIGN.md): the Captain stands aboard the boat with his face, the stock idle and his hands; picked, he says his line and eases his hands, and
 on Ready closes them into fists. He plays Steele's part in the cutscenes too: his own face says each
 line, lips in time with the words, his expression set by the line's mood (`MOOD_FACE`). In a raid
-he wears the Rifleman's moves (`render/captainRaid.ts`). Standing aboard and in cutscenes he's on
+he wears his block figure's moves, a pistol in each hand (`render/captainRaid.ts`). Standing aboard and in cutscenes he's on
 the stock idle (the clips are in the repo since 2026-11-16); without them he stands at ease on a
 pose of his own: arms down, breathing, his weight shifting.
-Offline, where his model can't be fetched, the Rifleman stands in his place.
+Offline, where his model can't be fetched, his block figure stands in his place.
 `models-wip/debug/captain/captain.html` shows him under a still camera.
 
 ### Against the bar (Claude's assessment, 2026-11-16, desktop browser only)
@@ -47,7 +47,7 @@ Checked on the Captain against the owner's list and `docs/concept/tpose/captain-
 | Emotions                                     | Met. Eleven expressions eased on springs (the spec's eight plus happy, sad, scared), tagged lines, glances, nods.                                                                                                                                                                                                                                                                                                                               |
 | Blinking eyes                                | Met. About one blink every 3–4 s, closing in 70 ms and opening in 130 ms, sometimes twice when the mood changes. The lid now shuts all the way (it used to stop at a slit).                                                                                                                                                                                                                                                                     |
 | Fingers that move and clasp separately       | Met. Each finger bends on its own; a fist, a point and a loose hand were checked.                                                                                                                                                                                                                                                                                                                                                               |
-| Hair chunks in the breeze                    | Met for a sculpted style. The locks of the quiff and fringe move in gusts, each on its own phase, up to about 3.5 cm at the tips, without tearing. They're part of the sculpted mesh, not separate cards, so they sway as clumps rather than strands.                                                                                                                                                                                           |
+| Hair chunks in the breeze                    | Set aside by the owner (2026-11-22): the hair is still. It was met for a sculpted style, the quiff and fringe moving in gusts.                                                                                                                                                                                                                                                                                                                  |
 | In the style of the images, fitting the game | Close. The silhouette, quiff, beard, rolled-sleeve blue shirt, belt, white trousers, boat shoes and watch all match the concept. The hair is a deeper gold than the concept's pale blond, and the eyes are bigger and glossier (as the face spec asked).                                                                                                                                                                                        |
 | Interesting textures                         | Met. Each material gets its own relief in the shader, laid on the body from three sides (the paint's layout is too broken up to lay patterns across): an oxford weave and heathered slubs in the shirt, a diagonal twill in the trousers, pebbled grain, mottling and a worn sheen on the belt and shoes, pores in the skin, strands in the hair and beard. Two scales, so there's texture both at arm's length and up close. No stitching yet. |
 | Game ready, $50 standard                     | For close-ups, yes: a rigged, textured, full-detail model with a face and hands, on the boat and in the cutscenes. In a raid he wears the Rifleman's moves, hands on the rifle. Not yet: the other heroes and the Shaman haven't been through this pipeline, and he hasn't run on a phone.                                                                                                                                                      |
@@ -73,7 +73,36 @@ the Captain's skeleton, blank-faced as he was. Each went through the Captain's p
    the armpit; it's only drawn when he's small on the screen.
 4. Their faces mapped (`face_map.py`): eye sockets, brow ridges and mouths found on the blank
    faces. The Shaman's sculpted face hid his sockets from the finder (it took his temples); his are
-   given by hand (`eyes=0.024,0.899,0.922`), and the finder now looks only on bare skin.
+   given by hand (`eyes=0.024,0.885,0.905`: the deepest point of the socket and the brow ridge's
+   most forward, down a column through the eye; the first hand-placing put his eyes up on the
+   ridge), and the finder now looks only on bare skin. Each eye's patch is wide enough for the
+   whole brow: narrower ones had cut the three faces' brows off square, like bars.
+
+**Eyes by human proportions (2026-11-22/23, the owner's call: "match them to what humans look
+like"):** each face's eyes were placed by the human canon (an eye a fifth of the face across at the
+cheekbones, about 0.13 of the head from chin to crown, one eye's width between them), then trimmed
+by the owner's eye (the Captain's a bit big, the Rifleman's a bit small and low) and by a second
+opinion the owner asked for (Antigravity, shown the four faces front on; its answers are in
+`models-wip/debug/faces/`). After the second round it called the Captain and the Shaman fine. What
+each map is made with (`face_map.py`, `eyes=<height>,<brow>` `place=<eye width>,<middle from the
+nose>`, model units):
+
+| Face             | eyes          | place          |
+| ---------------- | ------------- | -------------- |
+| The Captain      | 0.8358, 0.860 | 0.0335, 0.036  |
+| The Rifleman     | 0.8857, 0.899 | 0.023, 0.024   |
+| The Shaman       | 0.8875, 0.905 | 0.0207, 0.0224 |
+| Professor Terror | 0.9039, 0.918 | 0.022, 0.0238  |
+
+The Rifleman's ran onto the sides of his wide nose bridge (the owner, 2026-11-23), and a third round
+settled it the human way: smaller eyes, not further apart. His face is five equal widths across
+(cheek, eye, bridge, eye, cheek), the inner corners just clear of the bridge's edge, and his brows
+start there too (`brows=0.0127`, the map's `browStart`). The eye itself is drawn as a person's
+(`render/face/faceShader.ts`): an almond about a third as tall as it's wide, the upper lid highest
+towards the nose and over the top fifth of the iris, the lower lid shallow and lowest towards the
+ear, the outer corner a touch higher, an iris two fifths of the eye across. The brows are hair, not
+painted bars: thickest at the head, which fades in over the root of the nose, a low arch over the
+outer third, tapering to a fine tail level with the head, each hair its own shade.
 
 In the game (`render/captain.ts`, `loadPerson`) each is the Captain's equal: the full model up
 close and the light one afar on one skeleton, the stock clips, every finger bending on its own, a
@@ -86,15 +115,15 @@ all four, with their faces, expressions, hands and hair.
 
 Against the bar (Claude's assessment, 2026-11-22, desktop browser only):
 
-| The owner's bar                              | The Rifleman, the Shaman, Professor Terror                                                                                                                                                                                                                                                                                                |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Emotions                                     | Met, as the Captain's: the same face rig, eleven expressions on springs.                                                                                                                                                                                                                                                                  |
-| Blinking eyes                                | Met, as the Captain's.                                                                                                                                                                                                                                                                                                                    |
-| Fingers that move and clasp separately       | Met: the Captain's hands on the same skeleton; a fist was checked on the Shaman.                                                                                                                                                                                                                                                          |
-| Hair chunks in the breeze                    | Met. Each one's hair is found by its own colour (black, white, grey), down to the collar and the beards too, about 5,700 to 23,000 points each. Every lock is held still where it grows from the skin and loosens towards its tip, so nothing tears; long hair sways a little less, its locks more nearly together, so layers don't part. |
-| In the style of the images, fitting the game | Close: their silhouettes and outfits match the owner's concepts. The painted faces are in the Captain's style.                                                                                                                                                                                                                            |
-| Interesting textures                         | Their own generated paint at 2048 (the knit cuffs, camouflage, patchwork and its stitches, the suit), with a fine twill laid over their cloth in the shader, sharp up close and fading out at a distance; skin and hair are left alone. The Captain's richer relief (a weave per garment) is tuned to his colours.                        |
-| Game ready                                   | Rigged, textured, faced, two levels of detail. Not seen on a phone. Where the new Rifleman goes is the owner's call (the Captain stands in his place).                                                                                                                                                                                    |
+| The owner's bar                              | The Rifleman, the Shaman, Professor Terror                                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Emotions                                     | Met, as the Captain's: the same face rig, eleven expressions on springs.                                                                                                                                                                                                                                           |
+| Blinking eyes                                | Met, as the Captain's.                                                                                                                                                                                                                                                                                             |
+| Fingers that move and clasp separately       | Met: the Captain's hands on the same skeleton; a fist was checked on the Shaman.                                                                                                                                                                                                                                   |
+| Hair chunks in the breeze                    | Set aside by the owner (2026-11-22): the hair is still. It was met: each one's hair found by its colour, held at the roots.                                                                                                                                                                                        |
+| In the style of the images, fitting the game | Close: their silhouettes and outfits match the owner's concepts. The painted faces are in the Captain's style.                                                                                                                                                                                                     |
+| Interesting textures                         | Their own generated paint at 2048 (the knit cuffs, camouflage, patchwork and its stitches, the suit), with a fine twill laid over their cloth in the shader, sharp up close and fading out at a distance; skin and hair are left alone. The Captain's richer relief (a weave per garment) is tuned to his colours. |
+| Game ready                                   | Rigged, textured, faced, two levels of detail. Since 2026-11-22 the Rifleman is the Rifleman hero (the Captain a hero of his own), aboard, in raids and on the island; the Shaman and Terror walk the island. Not seen on a phone.                                                                                 |
 
 ### Building them from scratch (Proposed, 2026-11-22)
 

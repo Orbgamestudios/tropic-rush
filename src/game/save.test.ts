@@ -32,7 +32,7 @@ function memoryStorage() {
 }
 
 const DEFAULTS: SaveData = {
-  hero: "rifleman",
+  hero: "captain",
   level: 1,
   wins: 0,
   bestDestruction: 0,
@@ -47,7 +47,7 @@ const DEFAULTS: SaveData = {
   upgrades: noUpgrades(),
   blueprints: [],
   blueprintDrought: 0,
-  unlocked: ["rifleman"],
+  unlocked: ["captain", "rifleman"],
   settings: DEFAULT_SETTINGS,
   nightChecked: 0,
   nightSeen: 0,
@@ -147,8 +147,8 @@ describe("accounts on this phone", () => {
     clearPhone(loadSave(phone).settings, phone);
     const after = loadSave(phone);
     expect(after.upgrades).toEqual(noUpgrades());
-    expect(after.unlocked).toEqual(["rifleman"]);
-    expect(after.hero).toBe("rifleman");
+    expect(after.unlocked).toEqual(["captain", "rifleman"]);
+    expect(after.hero).toBe("captain");
     expect(after.crystals).toEqual(noCrystals());
     expect(after.blueprints).toEqual([]);
   });
@@ -238,7 +238,7 @@ describe("save", () => {
       upgrades: { ...noUpgrades(), grenadier: ["grenadier/bigger-charge"] },
       blueprints: ["mortar"],
       blueprintDrought: 2,
-      unlocked: ["rifleman", "medic", "heavy", "grenadier"],
+      unlocked: ["captain", "rifleman", "medic", "heavy", "grenadier"],
       settings: {
         tilt: -0.2,
         zoom: 0.9,
@@ -421,7 +421,7 @@ describe("save", () => {
       level: 3,
       bestDestruction: 100,
       blueprints: ["mortar"],
-      unlocked: ["rifleman", "tank"],
+      unlocked: ["captain", "rifleman", "tank"],
     });
   });
 

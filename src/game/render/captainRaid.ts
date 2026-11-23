@@ -1,11 +1,13 @@
-// The Captain in a raid (docs/CHARACTERS.md, The way now): the game's own animator goes on moving
-// the Rifleman as it always has, hidden, and the Captain follows him, frame by frame. His hips, chest
-// and head turn as the Rifleman's do; his hands reach for where the Rifleman's are, so they close on
-// the same rifle; and his feet go where the Rifleman's go, flat on the ground. No stock clips: the
-// moves are the game's own, worn by a better body.
+// The rigged people in the game's world (docs/CHARACTERS.md, The way now): the game's own animator
+// goes on moving a hero's block figure as it always has, hidden, and one of the people rigged as the
+// Captain is (the Captain, the Rifleman, the Shaman, Professor Terror) follows it, frame by frame.
+// Their hips, chest and head turn as the figure's do; their hands reach for where its hands are, so
+// they close on the same weapon; and their feet go where its feet go, flat on the ground. No stock
+// clips in a fight: the moves are the game's own, worn by a better body.
 
 import * as THREE from "three";
-import { type Captain, loadCaptain } from "./captain";
+import type { HeroKind } from "../logic/heroes";
+import { type Captain, loadPerson, type Person } from "./captain";
 import { namesUnder, UPPER_BODY_ROOT } from "./clipLibrary";
 import type { HeroModel, HeroRig } from "./heroModels";
 
@@ -13,12 +15,15 @@ const q = new THREE.Quaternion();
 const q2 = new THREE.Quaternion();
 const v = new THREE.Vector3();
 const v2 = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+/** How far the fingers curl on an empty hand. */
+const RELAXED = 0.2;
 
 /** A bone turned the way another is turned, from how each stood at the start. */
 interface Copied {
   from: THREE.Object3D;
   to: THREE.Object3D;
-  /** Each's turn at the start, against its own frame (the Rifleman's root; the Captain's facing). */
+  /** Each's turn at the start, against its own frame (the figure's root; the person's facing). */
   fromRest: THREE.Quaternion;
   toRest: THREE.Quaternion;
 }
@@ -28,7 +33,7 @@ interface Limb {
   root: THREE.Object3D;
   mid: THREE.Object3D;
   end: THREE.Object3D;
-  /** Where the end goes, and which way the middle joint bends: the Rifleman's. */
+  /** Where the end goes, and which way the middle joint bends: the figure's. */
   target: THREE.Object3D;
   pole: THREE.Object3D;
   a: number;
@@ -53,8 +58,13 @@ function setWorld(bone: THREE.Object3D, world: THREE.Quaternion): void {
   bone.updateMatrixWorld(true);
 }
 
-export class CaptainInRaid {
-  /** Placed where the Rifleman is, facing his way; the Captain stands in it. */
+/** Who wears a hero's moves, for the heroes who are one of the rigged people; null for the rest. */
+export function personFor(kind: HeroKind): Person | null {
+  return kind === "captain" || kind === "rifleman" ? kind : null;
+}
+
+export class PersonInRaid {
+  /** Placed where the figure is, facing its way; the person stands in it. */
   readonly root = new THREE.Group();
   private readonly frame = new THREE.Group();
   private readonly copied: Copied[] = [];
@@ -70,17 +80,19 @@ export class CaptainInRaid {
   private readonly hipRest = new THREE.Vector3();
   private readonly leadHipRest = new THREE.Vector3();
   private readonly lead: THREE.Object3D;
-  /** What the Rifleman holds, in the Captain's hands while he fights. */
+  /** What the figure holds, in the person's hands while they fight. */
   private readonly rifle: THREE.Object3D;
-  /** The same rifle slung across his back, while he isn't fighting. */
+  /** The same rifle slung across their back, while they aren't fighting (pistols are put away). */
   private readonly slung: THREE.Object3D | null;
   /** Every bone, and where the stock clips put each this frame, to blend towards. */
   private readonly bones: THREE.Object3D[] = [];
   private readonly upper: boolean[] = [];
   private readonly clipPose: THREE.Quaternion[] = [];
   private readonly clipHip = new THREE.Vector3();
+  /** Which way is forward for his hips, in their own space (from how he stands at rest). */
+  private readonly hipFront = new THREE.Vector3();
   /**
-   * How much of him is on the stock clips rather than the Rifleman's moves, eased so a change never
+   * How much of them is on the stock clips rather than the figure's moves, eased so a change never
    * pops: all of him, standing about on deck; his upper body, walking on deck (arms swinging, not
    * holding a rifle that isn't there).
    */
@@ -91,6 +103,8 @@ export class CaptainInRaid {
     private readonly captain: Captain,
     model: HeroModel,
     rig: HeroRig,
+    /** Whether they carry what the figure does: a story figure walking about doesn't. */
+    private readonly armed: boolean,
   ) {
     this.lead = model.root;
     this.rifle = rig.rifle;
@@ -105,7 +119,7 @@ export class CaptainInRaid {
     });
     this.frame.add(body);
     this.root.add(this.frame);
-    // His own facing turned to the Rifleman's (+x), and his height made the Rifleman's.
+    // Their own facing turned to the figure's (+x), and their height made the figure's.
     this.frame.rotation.y = Math.atan2(captain.forward.z, captain.forward.x);
     const lead = model.root;
     const leadTurn = lead.rotation.y;
@@ -139,6 +153,12 @@ export class CaptainInRaid {
     this.hip = bone("CC_Base_Hip");
     this.hip?.getWorldPosition(this.hipRest);
     this.root.worldToLocal(this.hipRest);
+    if (this.hip) {
+      this.hipFront
+        .set(1, 0, 0)
+        .applyQuaternion(this.root.getWorldQuaternion(q))
+        .applyQuaternion(this.hip.getWorldQuaternion(q2).invert());
+    }
     rig.lower.getWorldPosition(this.leadHipRest);
     lead.worldToLocal(this.leadHipRest);
 
@@ -183,10 +203,13 @@ export class CaptainInRaid {
       const f = bone(`CC_Base_${side}_Foot`);
       if (f) this.feet.push({ foot: f, rest: restIn(f, this.root) });
     });
-    // A copy of the rifle slung across his back, barrel up over his left shoulder.
+    // A copy of the rifle slung across their back, barrel up over the left shoulder. Anything
+    // shorter than a rifle (the Captain's pistols) is simply put away.
     const spine = bone("CC_Base_Spine02");
     this.slung = null;
-    if (spine) {
+    rig.rifle.updateMatrixWorld(true);
+    const carried = new THREE.Box3().setFromObject(rig.rifle).getSize(new THREE.Vector3());
+    if (spine && armed && Math.max(carried.x, carried.y, carried.z) > 0.5) {
       const slung = rig.rifle.clone(true);
       slung.traverse((o) => {
         if (o instanceof THREE.Mesh) o.castShadow = true;
@@ -219,34 +242,40 @@ export class CaptainInRaid {
     lead.position.copy(leadAt);
     lead.updateMatrixWorld(true);
 
-    // The Rifleman's body goes out of sight; what he holds stays, for the Captain's hands to hold.
+    // The figure's body goes out of sight; what it holds stays, for the person's hands to hold.
     lead.traverse((o) => {
-      if (o instanceof THREE.Mesh && !isUnder(o, rig.rifle)) o.visible = false;
+      if (o instanceof THREE.Mesh && (!armed || !isUnder(o, rig.rifle))) o.visible = false;
     });
-    captain.hands.clasp("L", 0.8);
-    captain.hands.clasp("R", 0.8);
+    const grip = armed ? 0.8 : RELAXED;
+    captain.hands.clasp("L", grip);
+    captain.hands.clasp("R", grip);
   }
 
   /**
-   * Loads the Captain to follow a Rifleman, or null if he can't be had: his raid copy, or with
-   * `full`, every triangle (for close-ups: aboard the boat).
+   * Loads one of the people to follow a hero's figure, or null if they can't be had (offline): the
+   * light copy, or with `full`, the full one too for close-ups. `armed` false for someone who
+   * carries nothing (the Shaman, Terror).
    */
-  static async follow(model: HeroModel, full = false): Promise<CaptainInRaid | null> {
+  static async follow(
+    model: HeroModel,
+    who: Person,
+    options: { full?: boolean; armed?: boolean } = {},
+  ): Promise<PersonInRaid | null> {
     const rig = model.rig;
     if (!rig) return null;
-    const captain = await loadCaptain({ raid: !full }).catch(() => null);
-    return captain && new CaptainInRaid(captain, model, rig);
+    const person = await loadPerson(who, { raid: !options.full }).catch(() => null);
+    return person && new PersonInRaid(person, model, rig, options.armed ?? true);
   }
 
-  /** The Captain himself: his face, his hands, and how much of him is drawn. */
+  /** The person themself: their face, their hands, and how much of them is drawn. */
   get self(): Captain {
     return this.captain;
   }
 
   /**
-   * Call after the Rifleman's been moved this frame. `fight`: the Rifleman's moves, rifle in hand.
+   * Call after the figure's been moved this frame. `fight`: the figure's moves, weapon in hand.
    * Aboard, nothing to fight: `deck-still` he stands about on the stock clips, `deck-walk` his legs
-   * walk as the Rifleman's do while his arms swing loose, the rifle slung on his back either way.
+   * walk as the figure's do while their arms swing loose, the rifle slung on their back either way.
    */
   update(dt: number, mode: "fight" | "deck-still" | "deck-walk" = "fight"): void {
     const { lead, root } = this;
@@ -261,11 +290,11 @@ export class CaptainInRaid {
     this.whole += ((mode === "deck-still" && clips ? 1 : 0) - this.whole) * ease;
     this.upperBody += ((mode !== "fight" && clips ? 1 : 0) - this.upperBody) * ease;
     const away = Math.max(this.whole, this.upperBody);
-    // The rifle goes from his back to his hands halfway through his arms coming round to it.
-    const holding = away < 0.5 || !clips;
+    // The rifle goes from their back to their hands halfway through their arms coming round to it.
+    const holding = (away < 0.5 || !clips) && this.armed;
     this.rifle.visible = holding;
-    if (this.slung) this.slung.visible = !holding;
-    const grip = 0.8 - 0.55 * away;
+    if (this.slung) this.slung.visible = !holding && this.armed;
+    const grip = this.armed ? 0.8 - 0.55 * away : RELAXED;
     this.captain.hands.clasp("L", grip);
     this.captain.hands.clasp("R", grip);
     const blending = away > 0.001 && clips;
@@ -284,14 +313,32 @@ export class CaptainInRaid {
         if (to) b.quaternion.slerp(to, this.upper[i] ? away : this.whole);
       });
       this.hip?.position.lerp(this.clipHip, this.whole);
+      this.faceFront(this.whole);
     });
+  }
+
+  /**
+   * Turns him back to face the way he's been put, by `amount` (0 to 1): the stock take he stands
+   * about on is a man pacing, and it turned him round, so at the console he stood with his back to it.
+   */
+  private faceFront(amount: number): void {
+    const hip = this.hip;
+    if (!hip || amount <= 0.001) return;
+    this.root.updateMatrixWorld(true);
+    const turn = hip.getWorldQuaternion(new THREE.Quaternion());
+    const now = v.copy(this.hipFront).applyQuaternion(turn);
+    const want = v2.set(1, 0, 0).applyQuaternion(this.root.getWorldQuaternion(q));
+    if (now.x * now.x + now.z * now.z < 1e-6 || want.x * want.x + want.z * want.z < 1e-6) return;
+    let yaw = Math.atan2(now.z, now.x) - Math.atan2(want.z, want.x);
+    yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+    setWorld(hip, q.setFromAxisAngle(UP, yaw * amount).multiply(turn));
   }
 
   private pose(): void {
     const { lead, root } = this;
     const leadTurn = lead.getWorldQuaternion(new THREE.Quaternion());
     const ownTurn = root.getWorldQuaternion(new THREE.Quaternion());
-    // The hips go up and down with the Rifleman's.
+    // The hips go up and down with the figure's.
     if (this.hip) {
       const now = this.copied[0]?.from.getWorldPosition(new THREE.Vector3());
       if (now) {
@@ -310,7 +357,7 @@ export class CaptainInRaid {
       const change = turned.multiply(c.fromRest.clone().invert());
       setWorld(c.to, ownTurn.clone().multiply(change).multiply(c.toRest));
     }
-    // Arms and legs reach for the Rifleman's hands and feet, bending the way his do.
+    // Arms and legs reach for the figure's hands and feet, bending the way its do.
     for (const l of this.limbs) {
       const start = l.root.getWorldPosition(new THREE.Vector3());
       const target = l.target.getWorldPosition(new THREE.Vector3());
