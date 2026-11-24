@@ -47,6 +47,8 @@ export interface WorldMapHandlers {
   screen(x: number, y: number): { x: number; y: number };
   /** How often the view has moved, to skip moving plates that haven't. */
   moves(): number;
+  /** Whether the view's pulled far enough back for the plates to be dots. */
+  far(): boolean;
   /** How many crewmates could team up right now. */
   crewOnline(): number;
   /** Blueprints still to find on this base, by name. */
@@ -229,8 +231,9 @@ export class WorldMapScreen {
         pin.setAttribute("aria-label", island.name);
         pin.classList.toggle("rival", island.rival !== null);
         // The story's islands say what they are: a call for help, or the Professor's own.
-        pin.classList.toggle("story", island.story !== undefined);
-        pin.classList.toggle("signal", island.rescue !== undefined);
+        // (Named for the map: the story's own `.story` overlay filled the screen with the Professor's.)
+        pin.classList.toggle("map-story", island.story !== undefined);
+        pin.classList.toggle("map-signal", island.rescue !== undefined);
         const title = island.rescue ? "Signal" : island.story ? "Professor" : "Raid";
         pin.append(
           el("span", "map-pin-title", title),
@@ -384,6 +387,7 @@ export class WorldMapScreen {
     const moves = this.handlers.moves();
     if (moves === this.drawnMoves) return;
     this.drawnMoves = moves;
+    this.root.classList.toggle("map-far", this.handlers.far());
     const place = layerPlacer(this.root);
     const home = { x: 0, y: -islandRadius(HOME_SIZE) * 0.7, node: this.homePin };
     const ship = this.shipAt

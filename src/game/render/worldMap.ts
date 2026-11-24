@@ -17,6 +17,7 @@ import {
   type WorldProgress,
 } from "../logic/worldMap";
 import { cloudTexture } from "./clouds";
+import { PlantBatch } from "./foliage";
 import { type Lamp, LightPool } from "./lightPool";
 import { MapClouds } from "./mapClouds";
 import { MapShallows } from "./mapShallows";
@@ -29,7 +30,7 @@ import {
   jungleTreeGeometry,
   type PropInstance,
   palmGeometry,
-  swaying,
+  plantCards,
 } from "./props";
 import { merge, painted, vertexColored } from "./shapes";
 import { SKY } from "./sky";
@@ -39,6 +40,8 @@ const PITCH = 1.12;
 /** The nearest and furthest the camera gets. */
 const DISTANCE = [62, 190] as const;
 const START_DISTANCE = 112;
+/** Further back than this the islands' plates are dots (the owner, 2026-11-23: it got crowded). */
+const PLATES_TO = 135;
 const LOOK_Z = 2;
 /** How far past the clear sky the camera can drift, in map units. */
 const PAN_MARGIN = 26;
@@ -355,15 +358,21 @@ function buildBatch(batch: Batch): THREE.Group {
   const group = new THREE.Group();
   if (batch.land.length > 0) group.add(new THREE.Mesh(merge(batch.land), vertexColored()));
   const s = sharedShapes();
-  const sway = swaying(false);
   const still = vertexColored();
   const lifted = () => 0.4;
+  // The plants as cards, the same as on every island (foliage.ts).
+  {
+    const plants = new PlantBatch()
+      .add("pine", batch.pines)
+      .add("palm", batch.palms)
+      .add("tree", batch.trees)
+      .add("bush", batch.bushes);
+    const { mesh } = plantCards(plants, lifted);
+    mesh.castShadow = false;
+    group.add(mesh);
+  }
   group.add(
-    instanced(s.pine, batch.pines, false, sway, lifted),
     instanced(s.iceberg, batch.icebergs, false, still, () => 0),
-    instanced(s.palm, batch.palms, false, sway, lifted),
-    instanced(s.tree, batch.trees, false, sway, lifted),
-    instanced(s.bush, batch.bushes, false, sway, lifted),
     instanced(s.enemyHq, batch.enemyHqs, false, still, lifted),
     instanced(s.crewHq, batch.crewHqs, false, still, lifted),
     instanced(s.tower, batch.towers, false, still, lifted),
@@ -594,6 +603,11 @@ export class WorldMapView {
 
   zoom(factor: number): void {
     this.targetDistance = clamp(this.targetDistance * factor, DISTANCE[0], DISTANCE[1]);
+  }
+
+  /** Pulled back far enough that the islands' plates would crowd the map, and are dots instead. */
+  get far(): boolean {
+    return this.distance > PLATES_TO;
   }
 
   /** Points the camera at a map spot, smoothly. */

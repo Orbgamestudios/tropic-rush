@@ -1971,25 +1971,53 @@
 }
 
 /* The story's islands on the map: the Professor's are tagged red, a call for help glows green. */
-.map-pin.story {
+.map-pin.map-story {
   border-color: #ff7a5c;
   background: linear-gradient(180deg, #7a1d16, #2c0b0b);
 }
 
-.map-pin.story::after {
+.map-pin.map-story::after {
   background: #2c0b0b;
   border-color: #ff7a5c;
 }
 
-.map-pin.signal {
+.map-pin.map-signal {
   border-color: #8cf0a8;
   background: linear-gradient(180deg, #17553a, #0a2419);
   animation: map-signal 1.6s ease-in-out infinite;
 }
 
-.map-pin.signal::after {
+.map-pin.map-signal::after {
   background: #0a2419;
   border-color: #8cf0a8;
+}
+
+/* Pulled well back, an island's plate is just a dot in its difficulty's colour (the Professor's red, a
+   call for help green): the map got crowded. Home and the raiders' ship keep theirs. */
+.map-far .map-pin:not(.map-home-pin, .map-ship-pin) {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--pin);
+  box-shadow:
+    0 0 0 1.5px var(--brass),
+    0 2px 4px rgb(0 0 0 / 0.5);
+  animation: none;
+}
+
+.map-far .map-pin.map-story {
+  background: #ff7a5c;
+}
+
+.map-far .map-pin.map-signal {
+  background: #8cf0a8;
+}
+
+.map-far .map-pin:not(.map-home-pin, .map-ship-pin) > *,
+.map-far .map-pin:not(.map-home-pin, .map-ship-pin)::after {
+  display: none;
 }
 
 @keyframes map-signal {

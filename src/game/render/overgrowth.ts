@@ -19,22 +19,7 @@ import {
 import { homeHeight } from "../logic/island";
 import { createRng } from "../logic/rng";
 import { PlantBatch } from "./foliage";
-import {
-  bushGeometry,
-  chunked,
-  elephantEarGeometry,
-  fernGeometry,
-  flowerGeometry,
-  jungleTreeGeometry,
-  type PropInstance,
-  palmGeometry,
-  pebblesGeometry,
-  plantCards,
-  rockGeometry,
-  solidPlants,
-  swaying,
-  tuftGeometry,
-} from "./props";
+import { chunked, type PropInstance, pebblesGeometry, plantCards, rockGeometry } from "./props";
 import type { SceneryMap } from "./scenery";
 import { vertexColored } from "./shapes";
 import { SHADE_HALF } from "./terrain";
@@ -54,23 +39,12 @@ const KINDS = [
 ] as const;
 type Kind = (typeof KINDS)[number];
 
-let geometries: Record<Kind, THREE.BufferGeometry> | null = null;
+/** The stones, the one thing here that stays solid; every plant is a card (foliage.ts). */
+let stones: { rock: THREE.BufferGeometry; pebbles: THREE.BufferGeometry } | null = null;
 
-function shapes(): Record<Kind, THREE.BufferGeometry> {
-  geometries ??= {
-    palm: palmGeometry(),
-    tree: jungleTreeGeometry(),
-    ear: elephantEarGeometry(),
-    fern: fernGeometry(),
-    bush: bushGeometry(),
-    rock: rockGeometry(),
-    pebbles: pebblesGeometry(),
-    tuft: tuftGeometry(),
-    red: flowerGeometry(0xff5a6e, 0xffe066),
-    yellow: flowerGeometry(0xffd23f, 0xff8a1c),
-    white: flowerGeometry(0xf4f1ff, 0xffc93a),
-  };
-  return geometries;
+function stoneShapes() {
+  stones ??= { rock: rockGeometry(), pebbles: pebblesGeometry() };
+  return stones;
 }
 
 function hash(id: string): number {
@@ -198,7 +172,7 @@ export class OvergrowthView {
   /** Redraws the plants and shade when obstacles are cleared or buildings change. */
   sync(layout: Pick<CrewLayout, "cleared" | "buildings">): void {
     const { cleared, buildings } = layout;
-    const key = `${solidPlants()}:${cleared.length}:${cleared[cleared.length - 1] ?? ""}:${buildings
+    const key = `${cleared.length}:${cleared[cleared.length - 1] ?? ""}:${buildings
       .map((b) => `${b.id}${b.x}.${b.y}.${b.rotated}`)
       .join()}`;
     if (key === this.key) return;
@@ -236,28 +210,11 @@ export class OvergrowthView {
     }
     this.growOpenGround(covered, out);
 
-    const g = shapes();
-    // Nothing here hides a hero, so none of it needs the dissolve.
-    const sway = swaying(false);
+    const g = stoneShapes();
     const still = vertexColored();
-    const add = (kind: Kind, shadow: boolean, material: THREE.Material, small = false) =>
-      (small ? this.detail : this.plants).add(
-        chunked(g[kind], out[kind], shadow, material, homeHeight, !shadow),
-      );
-    add("rock", false, still);
-    add("pebbles", false, still, true);
+    this.plants.add(chunked(g.rock, out.rock, false, still, homeHeight, true));
+    this.detail.add(chunked(g.pebbles, out.pebbles, false, still, homeHeight, true));
     out.palm.push(...this.shore);
-    if (solidPlants()) {
-      // Only the tall plants cast shadows: the rest would double their cost for little you can see.
-      add("palm", true, sway);
-      add("tree", true, sway);
-      add("ear", false, sway);
-      add("bush", false, sway);
-      for (const kind of ["fern", "tuft", "red", "yellow", "white"] as const) {
-        add(kind, false, sway, true);
-      }
-      return;
-    }
     const batch = new PlantBatch()
       .add("palm", out.palm)
       .add("tree", out.tree)
@@ -272,10 +229,10 @@ export class OvergrowthView {
     this.plants.add(mesh);
   }
 
-  /** Leaves out the smallest plants once the camera is this far back, except on Ultra. */
+  /** Leaves out the smallest plants once the camera is this far back. */
   setDistance(distance: number): void {
     this.near = distance < DETAIL_DISTANCE;
-    this.detail.visible = solidPlants() || this.near;
+    this.detail.visible = this.near;
     if (this.cards) this.cards.mesh.count = this.near ? this.cards.all : this.cards.big;
   }
 

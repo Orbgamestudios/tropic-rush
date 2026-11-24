@@ -106,7 +106,7 @@ import { DangerMap } from "./render/dangerMap";
 import type { Station } from "./render/gunboat";
 import { AT_EASE, type HeroMove } from "./render/heroAnimator";
 import { heroModel } from "./render/models";
-import { setSolidPlants, updateWind } from "./render/props";
+import { updateWind } from "./render/props";
 import { departure, LANDING_SECONDS, landing, lootCrate } from "./render/raidShots";
 import { RaidView } from "./render/raidView";
 import { loadMenuBody, loadRigs } from "./render/riggedHeroes";
@@ -196,6 +196,8 @@ const FRAME_WOBBLE = 0.002;
 const SYNC_SECONDS = 20;
 /** How long the crew island gets before the game asks about the phone's location. */
 const SKY_CARD_MS = 12_000;
+/** How much the sky's light is lifted on the crew's faces while they're chosen (the sun's behind). */
+const FACES_LIT = 1.45;
 /** The rigged people who can be about the crew's island, fetched before it's shown. */
 const ISLAND_PEOPLE: readonly Person[] = ["captain", "rifleman", "shaman", "terror"];
 
@@ -452,6 +454,7 @@ export class Game {
       onPan: (dx, dy) => this.mapView.pan(dx, dy),
       onZoom: (factor) => this.mapView.zoom(factor),
       screen: (x, y) => this.mapView.screen(x, y),
+      far: () => this.mapView.far,
       moves: () => this.mapView.moves,
       crewOnline: () => this.crewOnline(),
     });
@@ -843,7 +846,6 @@ export class Game {
     music.setVolume(s.musicVolume);
     setHaptics(s.haptics);
     this.stage.setGraphics(s.graphics);
-    setSolidPlants(s.graphics === "ultra");
   }
 
   /** The track for wherever the player is now. */
@@ -1356,6 +1358,7 @@ export class Game {
     this.boatSelect.showSkip(scene.skippable);
     const shade = scene.shadowFocus;
     this.stage.focusShadows(shade.at, shade.size);
+    this.stage.sky.fillBoost = scene.facesLit ? FACES_LIT : 1;
     if (state && view)
       view.update(state, dt, this.time, this.stage.camera, this.stage.width, this.stage.height);
     const island = this.attacking;
@@ -1369,6 +1372,7 @@ export class Game {
   }
 
   private endBoat(): void {
+    this.stage.sky.fillBoost = 1;
     this.boatSelect.hide();
     this.boatSelect.showSkip(false);
     this.boatScene?.dispose();

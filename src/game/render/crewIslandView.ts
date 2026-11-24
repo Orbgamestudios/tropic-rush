@@ -39,7 +39,7 @@ import { Lookout } from "./lookout";
 import { buildingModel, GunboatScenery } from "./models";
 import { OvergrowthView } from "./overgrowth";
 import { COLORS, material } from "./palette";
-import { BEACH_FINDS, beachFinds, homeCliffs, shorePalms, solidPlants, updateWind } from "./props";
+import { BEACH_FINDS, beachFinds, homeCliffs, shorePalms, updateWind } from "./props";
 import {
   CRYSTAL_COLORS,
   disposeGlint,
@@ -282,7 +282,8 @@ class HomeCamera {
       this.smoothFocus.z + Math.cos(VIEW_YAW) * flat,
     );
     cam.lookAt(this.smoothFocus);
-    this.stage.focusShadows(this.smoothFocus, Math.max(30, this.smoothDistance * 0.75));
+    // Far enough to reach whatever is in view (fitted to it in focusShadows), even looking out low.
+    this.stage.focusShadows(this.smoothFocus, Math.max(40, this.smoothDistance * 1.1));
     this.stage.setFogRange(this.smoothDistance + 60, this.smoothDistance + 260);
   }
 
@@ -355,13 +356,11 @@ export class CrewIslandView {
     hidden: string | null;
     held: string;
     kit: number;
-    plants: boolean;
   } = {
     layout: null,
     hidden: null,
     held: "",
     kit: -1,
-    plants: false,
   };
   /** Radar dishes and the like, turning all the while. */
   private spinners: THREE.Object3D[] = [];
@@ -495,16 +494,14 @@ export class CrewIslandView {
     const held = holders.map((h) => h.buildingId).join();
     const { drawn } = this;
     const kit = kitVersion();
-    const plants = solidPlants();
     if (
-      drawn.plants === plants &&
       drawn.layout === layout &&
       drawn.hidden === hiddenId &&
       drawn.held === held &&
       drawn.kit === kit
     )
       return;
-    this.drawn = { layout, hidden: hiddenId, held, kit, plants };
+    this.drawn = { layout, hidden: hiddenId, held, kit };
     this.overgrowth.sync(layout);
     this.sand.paint(
       layout.buildings.map((b) => {

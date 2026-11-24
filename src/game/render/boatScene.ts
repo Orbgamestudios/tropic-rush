@@ -69,6 +69,17 @@ const CAMERA_MOVE = 1.2;
  * roof, the posts and the heads of the crew on the close shots under the hardtop.
  */
 const BOAT_NEAR = 0.2;
+/**
+ * Choosing who goes: a long lens (the owner, 2026-11-23), each shot of the crew from further off so
+ * it frames them the same, out past the rail where no post or crewmate gets in the way; a cut from
+ * one to the next, never a move through the boat; then a push in, slow and heavy.
+ */
+const CHOOSE_FOV = 28;
+const LONG_LENS =
+  Math.tan(THREE.MathUtils.degToRad(19)) / Math.tan(THREE.MathUtils.degToRad(CHOOSE_FOV / 2));
+/** Metres a second the camera creeps in on whoever's picked, and the most it creeps. */
+const PUSH_IN = 0.05;
+const PUSH_MOST = 0.6;
 
 type Step = "choose" | "console" | "run" | "ashore" | "done";
 
@@ -181,6 +192,7 @@ export class BoatScene {
   /** The camera, and its own near plane, given back when she's done with. */
   private camera: THREE.PerspectiveCamera | null = null;
   private cameraNear = 0;
+  private cameraFov = 0;
   /** Called once the hero picked is at the console. */
   onConsole: (() => void) | null = null;
   /** Straight down over the boat, for laying out where the crew stands. */
@@ -462,7 +474,7 @@ export class BoatScene {
       for (const lift of [0.35, 1.1, 2.0]) {
         for (const turn of turns) {
           const bearing = c.station.facing + turn;
-          const reach = (1.4 + c.tall * 1.5) * reachK;
+          const reach = (1.4 + c.tall * 1.5) * reachK * LONG_LENS;
           const eye = new THREE.Vector3(
             local.x + Math.cos(bearing) * reach,
             local.y + eyes + lift,
@@ -542,8 +554,13 @@ export class BoatScene {
     if (!c || this.stage !== "choose") return;
     this.setStep("console");
     c.sitting = false;
-    const { console } = this.boat;
-    c.path = this.routeTo(c, { x: console.stand.x, z: console.stand.z });
+    // A cut to the helm with them already at it: walked there, they went through the boat's posts.
+    const { stand } = this.boat.console;
+    c.path = [];
+    c.holder.position.set(stand.x, c.holder.position.y, stand.z);
+    c.facing = stand.facing;
+    this.cameraSince = 999;
+    this.arrived(c);
     c.person?.self.face?.express("tactical_focus");
   }
 
@@ -610,36 +627,6 @@ export class BoatScene {
     return { eye, look };
   }
 
-  /**
-   * The way along the deck from where someone is to a point: across the cockpit as the crow flies,
-   * and between the cockpit and the bow along a side deck past the cuddy (the side they're on).
-   */
-  private routeTo(c: Crew, to: { x: number; z: number }): THREE.Vector3[] {
-    const from = { x: c.holder.position.x, z: c.holder.position.z };
-    const fore = (p: { x: number; z: number }) => p.x > this.boat.foreOf;
-    const lane = (side: number) => this.boat.sideDeck.map((p) => ({ x: p.x, z: p.z * side }));
-    const route: { x: number; z: number }[] = [];
-    if (fore(from) !== fore(to)) {
-      const side = Math.sign(fore(from) ? from.z : to.z) || Math.sign(from.z) || 1;
-      // Only the stretch of the side deck between where they are and where they're going.
-      const between = lane(side).filter(
-        (p) => p.x > Math.min(from.x, to.x) && p.x < Math.max(from.x, to.x),
-      );
-      route.push(...(fore(to) ? between : between.reverse()));
-    } else if (
-      fore(from) &&
-      Math.sign(from.z) !== Math.sign(to.z) &&
-      Math.min(from.x, to.x) < 5.8
-    ) {
-      // From one side deck to the other: round the cuddy's nose.
-      const out = lane(Math.sign(from.z) || 1).filter((p) => p.x > from.x);
-      const back = lane(Math.sign(to.z) || 1).filter((p) => p.x > to.x);
-      route.push(...out, ...back.reverse());
-    }
-    route.push(to);
-    return route.map((p) => new THREE.Vector3(p.x, deckY(p.x), p.z));
-  }
-
   /** Whether there's something to skip just now: a walk to the console, or the landing. */
   get skippable(): boolean {
     const c = this.crew[this.chosen];
@@ -701,9 +688,22 @@ export class BoatScene {
   }
 
   /** Where the sun's shadows are kept sharp, and how far round. */
+  /**
+   * While the crew are chosen and at the helm: the sun's behind the boat and their faces were in
+   * shadow, so the sky's light is lifted on them (no extra lamp: adding one rebuilds every shader).
+   */
+  get facesLit(): boolean {
+    return this.stage === "choose" || this.stage === "console";
+  }
+
   get shadowFocus(): { at: THREE.Vector3; size: number } {
     const c = this.crew[this.chosen];
-    if (c && (this.stage === "choose" || this.stage === "console" || this.stage === "ashore")) {
+    // Close on the boat while the crew are chosen: the whole of her, so every crewmate's shadow
+    // lands, sharp, on her deck.
+    if (this.stage === "choose" || this.stage === "console") {
+      return { at: this.root.getWorldPosition(new THREE.Vector3()), size: 12 };
+    }
+    if (c && this.stage === "ashore") {
       return { at: c.holder.getWorldPosition(new THREE.Vector3()), size: 4 };
     }
     return { at: this.root.position.clone(), size: 11 };
@@ -954,8 +954,14 @@ export class BoatScene {
       eye = this.root.localToWorld(new THREE.Vector3(-14, 7, 12));
       look = this.root.localToWorld(new THREE.Vector3(0, 2, 0));
     } else if (this.stage === "choose") {
-      eye = this.hull.localToWorld(c.shot.eye.clone());
-      look = this.hull.localToWorld(c.shot.look.clone());
+      const shot = c.shot;
+      const push = Math.min(PUSH_MOST, this.cameraSince * PUSH_IN);
+      const breath = Math.sin(this.cameraSince * 1.3) * 0.012;
+      eye = this.hull.localToWorld(
+        shot.look.clone().sub(shot.eye).normalize().multiplyScalar(push).add(shot.eye),
+      );
+      eye.y += breath;
+      look = this.hull.localToWorld(shot.look.clone());
     } else if (this.stage === "console") {
       const shot = this.consoleView(c);
       eye = this.hull.localToWorld(shot.eye.clone());
@@ -983,11 +989,7 @@ export class BoatScene {
     // Eased towards where it wants to be (a move, never a jump), except on the landing, which is
     // cut together and laid out move by move above.
     const landing = this.stage === "run" || this.stage === "ashore";
-    const settle = landing
-      ? 1
-      : this.stage === "choose"
-        ? 1 - Math.exp(-dt * 4)
-        : 1 - Math.exp(-dt * 9);
+    const settle = landing || this.stage === "choose" ? 1 : 1 - Math.exp(-dt * 9);
     if (this.cameraSince > 90) {
       this.cameraAt.copy(eye);
       this.cameraLook.copy(look);
@@ -1008,9 +1010,16 @@ export class BoatScene {
     if (camera.near !== BOAT_NEAR) {
       this.camera = camera;
       this.cameraNear = camera.near;
+      this.cameraFov = camera.fov;
       camera.near = BOAT_NEAR;
       camera.updateProjectionMatrix();
     }
+    const fov = this.stage === "choose" ? CHOOSE_FOV : this.cameraFov;
+    if (camera.fov !== fov) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+
     void CAMERA_MOVE;
   }
 
@@ -1029,6 +1038,7 @@ export class BoatScene {
   dispose(): void {
     if (this.camera) {
       this.camera.near = this.cameraNear;
+      this.camera.fov = this.cameraFov;
       this.camera.updateProjectionMatrix();
     }
     this.root.removeFromParent();

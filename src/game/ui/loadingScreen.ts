@@ -8,6 +8,8 @@
 const SHOW_AFTER_MS = 150;
 /** Once up, it stays at least this long, so it never flickers. */
 const LEAST_SHOWN_MS = 450;
+/** The longest it covers anything: a fetch that never comes back mustn't stop the game. */
+const MOST_SHOWN_MS = 25_000;
 
 class LoadingScreen {
   private readonly root: HTMLElement;
@@ -51,14 +53,17 @@ class LoadingScreen {
     if (this.shownAt === 0 && !this.showTimer) {
       this.showTimer = setTimeout(() => this.show(), SHOW_AFTER_MS);
     }
-    await Promise.all(
-      work.map((p) =>
-        p.then(
-          () => this.step(),
-          () => this.step(),
+    await Promise.race([
+      Promise.all(
+        work.map((p) =>
+          p.then(
+            () => this.step(),
+            () => this.step(),
+          ),
         ),
       ),
-    );
+      new Promise((r) => setTimeout(r, MOST_SHOWN_MS)),
+    ]);
     this.covering--;
     if (this.covering > 0) return;
     if (this.showTimer) clearTimeout(this.showTimer);

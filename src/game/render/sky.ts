@@ -593,6 +593,9 @@ export class Sky {
   private readonly shown = moment();
   private showing = false;
 
+  /** How much the sky's light is lifted, for faces it'd otherwise leave in shadow (the boat). */
+  fillBoost = 1;
+
   constructor(
     scene: THREE.Scene,
     private readonly sun: THREE.DirectionalLight,
@@ -748,7 +751,7 @@ export class Sky {
     sun.intensity = look.sunPower;
     fill.color.copy(look.top);
     fill.groundColor.copy(look.bottom);
-    fill.intensity = look.fill;
+    fill.intensity = look.fill * this.fillBoost;
     uniforms.uZenith.value.copy(look.zenith);
     this.background.copy(look.horizon);
     uniforms.uGlow.value.copy(look.glow);

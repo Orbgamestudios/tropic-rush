@@ -259,7 +259,13 @@ const CARD_VERTEX = /* glsl */ `
   vec4 box = uBox[kind];
   vec4 info = uInfo[kind];
   vec3 rootWorld = (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz;
-  vec3 toCamera = cameraPosition - rootWorld;
+  #ifdef CARD_SHADOW
+    // Facing the sun itself, not wherever its view is centred: that follows the camera about, and
+    // the shadows turned with it.
+    vec3 toCamera = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]) * 100.0;
+  #else
+    vec3 toCamera = cameraPosition - rootWorld;
+  #endif
   float across = max(length(toCamera.xz), 1e-3);
   vec3 front = vec3(toCamera.x, 0.0, toCamera.z) / across;
   vec3 side = vec3(front.z, 0.0, -front.x);
@@ -387,7 +393,7 @@ function cardMaterials(shapes: PlantShapes) {
   depth.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", `#include <common>\n${CARD_VERTEX_PARS}`)
+      .replace("#include <common>", `#define CARD_SHADOW\n#include <common>\n${CARD_VERTEX_PARS}`)
       .replace("#include <begin_vertex>", CARD_VERTEX)
       // Only the tall ones cast a shadow: the rest are put out of the light's sight.
       .replace(

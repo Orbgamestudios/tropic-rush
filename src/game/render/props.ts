@@ -1,9 +1,8 @@
 // Everything that grows or lies on the raid island: the rules' palms and boulders,
 // plus a dense jungle around the base's clearing (broadleaf trees, palms, elephant-ear plants),
 // ferns, flowers and grass across the open ground, and whatever the tide has left on the beach.
-// The plants are cards, every one on the island in a single draw call (foliage.ts); on Ultra they're
-// solid, each kind one merged geometry drawn with instancing. Plants sway in the wind in the vertex
-// shader.
+// The plants are cards, every one on the island in a single draw call (foliage.ts). They sway in the
+// wind in the vertex shader.
 
 import * as THREE from "three";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
@@ -100,18 +99,7 @@ export function updateWind(time: number, hero: THREE.Vector3 | null): void {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Plants are cards (foliage.ts), or solid on the Ultra graphics setting.
-
-let solid = false;
-
-/** Keeps the plants solid (Ultra) or draws them as cards. Islands drawn after this follow it. */
-export function setSolidPlants(on: boolean): void {
-  solid = on;
-}
-
-export function solidPlants(): boolean {
-  return solid;
-}
+// Plants are cards (foliage.ts), on every graphics setting (the owner, 2026-11-23).
 
 /** What each kind of card is a picture of. */
 const PLANT_SHAPES: PlantShapes = {
@@ -770,8 +758,6 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     extent,
   );
 
-  const sway = swaying();
-  const low = swaying(false);
   const north = (layout.snow ?? 0) > 0.5;
   // The snowy north: pines where the palms and jungle would be, snow on the rocks and bushes, and
   // nothing flowering. Rock stays solid; only boulders and cliffs, big enough for it to show, cast a
@@ -783,28 +769,6 @@ export function buildProps(layout: IslandLayout, map: SceneryMap): THREE.Group {
     instanced(north ? snowy.pebbles() : pebblesGeometry(), pebbles, false, vertexColored(), ground),
     blobShadows(shrubs, ground, BUSH_SHADOW),
   );
-  if (solid) {
-    if (north) {
-      root.add(
-        chunked(snowy.pine(), [...palms, ...trees], true, sway, ground),
-        instanced(snowy.bush(), shrubs, false, low, ground, true),
-      );
-    } else {
-      root.add(
-        chunked(palmGeometry(), palms, true, sway, ground),
-        chunked(jungleTreeGeometry(), trees, true, sway, ground),
-        chunked(elephantEarGeometry(), ears, false, sway, ground),
-        instanced(bushGeometry(), bushes, false, low, ground, true),
-        chunked(fernGeometry(), ferns, false, low, ground, true),
-        chunked(PLANT_SHAPES.red(), flowers[0] ?? [], false, low, ground),
-        chunked(PLANT_SHAPES.yellow(), flowers[1] ?? [], false, low, ground),
-        chunked(PLANT_SHAPES.white(), flowers[2] ?? [], false, low, ground),
-        chunked(tuftGeometry(), tufts, false, low, ground, true),
-      );
-    }
-    root.add(buildShore(layout.seed, map, layout.spawn, ground, 5, shape, north));
-    return root;
-  }
   const plants = new PlantBatch();
   if (north) plants.add("pine", [...palms, ...trees]).add("snowyBush", shrubs, true);
   else
@@ -853,16 +817,11 @@ export function buildShore(
   inland = 5,
   shape: IslandShape = HOME_SHAPE,
   snowy = false,
-  /** Where the palms go: into these cards, or (when it's not given) drawn solid here. */
-  plants?: PlantBatch,
+  /** The island's plants, which its palms join. */
+  plants: PlantBatch,
 ): THREE.Group {
-  const palms = shorePalms(seed, map, shape, inland);
-  const root = new THREE.Group();
-  if (plants) plants.add(snowy ? "pine" : "palm", palms);
-  else
-    root.add(chunked(snowy ? pineGeometry() : palmGeometry(), palms, true, swaying(false), ground));
-  root.add(beachFinds(seed, map, landing, ground, shape));
-  return root;
+  plants.add(snowy ? "pine" : "palm", shorePalms(seed, map, shape, inland));
+  return new THREE.Group().add(beachFinds(seed, map, landing, ground, shape));
 }
 
 /** The palms along the top of the sand: `inland` is how far past it they may grow. */
